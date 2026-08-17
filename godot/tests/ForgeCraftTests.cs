@@ -5,8 +5,10 @@ using System.Linq;
 using GameSim;
 using GameSim.Advisor;
 using GameSim.Contracts;
+using GameSim.Crafting;
 using GameSim.Economy;
 using GameSim.Materials;
+using GameSim.Professions;
 using GdUnit4;
 using Godot;
 using GodotClient.Minigames;
@@ -631,6 +633,135 @@ public class ForgeCraftTests
         }
 
         throw new InvalidOperationException($"No MaterialSelect item '{materialKey}'.");
+    }
+
+    // ── U-T1-10 (register #157/#149): "an enabled button the sim then rejects stops existing" —
+    // sweep every ENABLED craft/work/masterwork/commission button the panel actually renders, and
+    // prove ActionLegality (the sim's own mirror) agrees with the rendering. Iterating the RENDERED
+    // button set (rather than a hand-maintained id list) means a new verb is covered the day it
+    // ships, the same reflection-over-what-exists idiom ActionReachabilityCensusTests and
+    // ActionLegalityTests already use on the sim side. ──────────────────────────────────────────
+
+    /// <summary>Generously stocked AND fully talent-unlocked (every blacksmith node, including the
+    /// two U-T1-9 Forge-Tier-gated ones) so every tier's Craft/Work-the-forge/Masterwork/Commission
+    /// buttons render enabled — the broad sweep this test needs, not just the tier-1 slice a plain
+    /// fresh save would offer.</summary>
+    private static SimAdapter FullyUnlockedRichSession()
+    {
+        var state = GameComposition.NewCampaign(ScriptedSession.Seed);
+        var materials = ImmutableSortedDictionary<string, int>.Empty
+            .SetItem(MaterialRegistry.Copper, 1000)
+            .SetItem(MaterialRegistry.Iron, 1000)
+            .SetItem(MaterialRegistry.Steel, 1000)
+            .SetItem(MaterialRegistry.Mithril, 1000)
+            .SetItem(ForgeSupplyHandlers.Coal, 100)
+            .SetItem(ForgeSupplyHandlers.Flux, 100)
+            .SetItem(ForgeTierHandlers.ForgeTierKey, ForgeTierHandlers.MaxUpgradeIndex);
+        var everyBlacksmithTalent = ImmutableSortedSet.CreateRange(StringComparer.Ordinal, TalentTree.Nodes.Keys);
+
+        return new SimAdapter(state with
+        {
+            Player = state.Player with
+            {
+                Gold = 999_999,
+                Materials = materials,
+                Talents = state.Player.Talents.SetItem(ProfessionRegistry.BlacksmithId, everyBlacksmithTalent),
+            },
+        });
+    }
+
+    /// <summary>Rebuilds the <see cref="PlayerAction"/> a button's own <c>Pressed</c> handler would
+    /// queue, from nothing but its rendered <c>Name</c> — the recipe id suffix plus the recipe's own
+    /// material (this test never touches <c>MaterialSelect</c>, so every card stays on "(recipe
+    /// default)", exactly <see cref="ForgePanel.SelectedMaterialOr"/>'s own no-op path). Returns
+    /// null for a button name this sweep doesn't cover (Unlock/BuySupply/UpgradeForge/... — covered
+    /// by their own dedicated tests elsewhere in this file).</summary>
+    private static PlayerAction? RebuildAction(string buttonName)
+    {
+        (string Prefix, Func<string, string, PlayerAction> Build)[] verbs =
+        [
+            ("Craft_", (id, mat) => new CraftAction(id, mat)),
+            ("WorkForge_", (id, mat) => new CraftAction(id, mat)),
+            ("Brew_", (id, mat) => new CraftAction(id, mat)),
+            ("Assemble_", (id, mat) => new CraftAction(id, mat)),
+            ("Scrape_", (id, mat) => new CraftAction(id, mat)),
+            ("Masterwork_", (id, mat) => new MasterworkAttemptAction(id, mat)),
+            ("Commission_", (id, mat) => new CommissionLegendaryWorkAction(id, mat)),
+        ];
+
+        foreach (var (prefix, build) in verbs)
+        {
+            if (!buttonName.StartsWith(prefix, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var recipeId = buttonName[prefix.Length..];
+            if (!ProfessionRegistry.TryGetRecipe(recipeId, out var recipe))
+            {
+                return null; // not actually a recipe-shaped suffix (defensive; never hit today)
+            }
+
+            return build(recipeId, recipe!.MaterialKey);
+        }
+
+        return null;
+    }
+
+    /// <summary>Every <see cref="Button"/> anywhere under <paramref name="root"/> — same recursive
+    /// walk-the-live-tree shape as <c>UiTestSupport.DisableAllRendering</c>, so a button nested
+    /// inside any future wrapper container is still found without this test needing to know the
+    /// panel's internal layout.</summary>
+    private static List<Button> AllButtons(Node root)
+    {
+        var found = new List<Button>();
+        if (root is Button button)
+        {
+            found.Add(button);
+        }
+
+        foreach (var child in root.GetChildren())
+        {
+            found.AddRange(AllButtons(child));
+        }
+
+        return found;
+    }
+
+    [TestCase]
+    public void EveryEnabledCraftButton_IsAnActionTheSimAcceptsToday()
+    {
+        var ui = MountMainUi(FullyUnlockedRichSession());
+        try
+        {
+            ui.OpenPanel("Forge");
+            var state = ui.Adapter.CurrentState;
+
+            var enabledButtons = AllButtons(ui.Forge).Where(b => !b.Disabled).ToList();
+
+            var swept = 0;
+            foreach (var button in enabledButtons)
+            {
+                var action = RebuildAction(button.Name.ToString());
+                if (action is null)
+                {
+                    continue; // a verb outside this sweep's scope (Unlock/BuySupply/UpgradeForge/...)
+                }
+
+                swept++;
+                var legal = ActionLegality.IsLegal(state, action, state.Phase);
+                AssertThat(legal)
+                    .OverrideFailureMessage($"{button.Name}: rendered ENABLED but ActionLegality.IsLegal says no for {action}.")
+                    .IsTrue();
+            }
+
+            // Fixture-assumption guard: a broken sweep (wrong panel, wrong session) would pass
+            // vacuously by finding nothing to check.
+            AssertThat(swept > 0)
+                .OverrideFailureMessage("Swept zero craft/work/masterwork/commission buttons — the fixture is vacuous.")
+                .IsTrue();
+        }
+        finally { Unmount(ui); }
     }
 }
 #endif

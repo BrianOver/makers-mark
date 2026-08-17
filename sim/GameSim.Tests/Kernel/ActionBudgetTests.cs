@@ -17,15 +17,22 @@ namespace GameSim.Tests.Kernel;
 public class ActionBudgetTests
 {
     /// <summary>
-    /// The nine action types whose handlers actually decrement <c>ActionSlotsRemaining</c>, found by
+    /// The ten action types whose handlers actually decrement <c>ActionSlotsRemaining</c>, found by
     /// grepping for that decrement rather than by reading the predicate that is supposed to describe
     /// them. Until 2026-08-14 the predicate named only the first four.
+    ///
+    /// <para><see cref="UnlockTalentAction"/> is the tenth, joining here in the same PR that made
+    /// <c>CraftingHandlers.ApplyUnlock</c> spend a slot (U-T1-9, register #157, owner ruling R14.3).
+    /// The two had to move together: a handler that spends a slot while
+    /// <see cref="ActionBudget.ConsumesSlot"/> reports free is the same fiction the 2026-08-14
+    /// correction was about, just pointing the other way.</para>
     /// </summary>
     private static readonly Type[] ConsumingTypes =
     [
         typeof(CraftAction), typeof(BuyOreAction), typeof(BuyMaterialAction), typeof(PostBountyAction),
         typeof(ReforgeHeirloomAction), typeof(BuyForgeSupplyAction), typeof(UpgradeForgeAction),
         typeof(MasterworkAttemptAction), typeof(CommissionLegendaryWorkAction),
+        typeof(UnlockTalentAction),
     ];
 
     /// <summary>
@@ -36,7 +43,7 @@ public class ActionBudgetTests
     /// </summary>
     private static readonly Type[] FreeTypes =
     [
-        typeof(StockAction), typeof(SetPriceAction), typeof(UnstockAction), typeof(UnlockTalentAction),
+        typeof(StockAction), typeof(SetPriceAction), typeof(UnstockAction),
         typeof(SendSupplyAction), typeof(RecallPartyAction), typeof(SetProfessionsAction),
         typeof(OpenCounterAction), typeof(CloseCounterAction), typeof(PresentItemAction),
         typeof(SuggestItemAction), typeof(HaggleResponseAction), typeof(AcceptCommissionAction),
@@ -104,11 +111,15 @@ public class ActionBudgetTests
         Assert.True(ActionBudget.ConsumesSlot(new MasterworkAttemptAction("dagger", "copper")));
         Assert.True(ActionBudget.ConsumesSlot(new CommissionLegendaryWorkAction("dagger", "copper")));
 
+        // The tenth, and the reason this PR touches Contracts at all: opening the recipe ladder is
+        // real work now (U-T1-9, register #157, R14.3), so it competes with the day's crafting
+        // instead of being a freebie taken on the way past.
+        Assert.True(ActionBudget.ConsumesSlot(new UnlockTalentAction("keen-eye", "blacksmith")));
+
         // Free/UI moves never compete for the day's attention budget.
         Assert.False(ActionBudget.ConsumesSlot(new StockAction(new ItemId(1), 10)));
         Assert.False(ActionBudget.ConsumesSlot(new SetPriceAction(new ItemId(1), 10)));
         Assert.False(ActionBudget.ConsumesSlot(new UnstockAction(new ItemId(1))));
-        Assert.False(ActionBudget.ConsumesSlot(new UnlockTalentAction("keen-eye", "blacksmith")));
         Assert.False(ActionBudget.ConsumesSlot(new SendSupplyAction(new HeroId(1), new ItemId(1))));
         Assert.False(ActionBudget.ConsumesSlot(new RecallPartyAction(new HeroId(1))));
         Assert.False(ActionBudget.ConsumesSlot(new HonorMemorialAction(new HeroId(1))));
@@ -162,15 +173,33 @@ public class ActionBudgetTests
         Assert.Contains("Unknown recipe", rejection.Reason);
     }
 
+    // U-T1-9 (register #157, owner ruling "Forge Tier plus an action slot"): unlocking a talent is
+    // now "real work" too — it spends exactly one slot on success and is refused, like every other
+    // real-work handler, once the day's budget hits zero. Replaces the old
+    // UnlockTalent_NeverConsumesASlot_EvenAtZeroRemaining pin (that WAS the bug register #157 named:
+    // two free clicks on day 1 unlocked every core recipe).
+
     [Fact]
-    public void UnlockTalent_NeverConsumesASlot_EvenAtZeroRemaining()
+    public void UnlockTalent_Success_ConsumesExactlyOneSlot()
+    {
+        var state = CraftReadyState(ActionBudget.SlotsPerDay);
+        var result = CraftKernel.Tick(state, ImmutableList.Create<PlayerAction>(new UnlockTalentAction("keen-eye", "blacksmith")));
+
+        Assert.Empty(result.Rejected);
+        Assert.Equal(ActionBudget.SlotsPerDay - 1, result.NewState.ActionSlotsRemaining);
+        Assert.Contains("keen-eye", result.NewState.Player.TalentsFor("blacksmith"));
+    }
+
+    [Fact]
+    public void UnlockTalent_ZeroSlotsRemaining_IsRejected_TalentNotGranted()
     {
         var state = CraftReadyState(0);
         var result = CraftKernel.Tick(state, ImmutableList.Create<PlayerAction>(new UnlockTalentAction("keen-eye", "blacksmith")));
 
-        Assert.Empty(result.Rejected);
-        Assert.Equal(0, result.NewState.ActionSlotsRemaining); // untouched — still zero, not negative
-        Assert.Contains("keen-eye", result.NewState.Player.TalentsFor("blacksmith"));
+        var rejection = Assert.Single(result.Rejected);
+        Assert.Contains("No action slots left today (0/5)", rejection.Reason);
+        Assert.Equal(0, result.NewState.ActionSlotsRemaining); // stays at zero, never negative
+        Assert.DoesNotContain("keen-eye", result.NewState.Player.TalentsFor("blacksmith"));
     }
 
     // ---- PostBounty: same gate/consume contract -------------------------------------------

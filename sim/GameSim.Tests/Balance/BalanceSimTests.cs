@@ -30,7 +30,22 @@ public class BalanceSimTests
     // all (exactly the blind spot draft #413's placeholder-Days upper bound existed to close, back
     // when floor 5 was unreachable on every seed). Measured post-L5 (`characterize --seeds 2026`):
     // main seed clears floor 5 on day 18, inside the plan's own [8,18] rung-0 rule.
-    private const int Floor5ByDay = 18;
+    //
+    // RE-BASELINE (2026-08-17, U-T1-9, §11.14.10-authorized): composing U-T1-9 (register #157,
+    // UnlockTalentAction now spends an action slot, tier-2/3-smithing Forge-Tier-gated) with U-T1-11
+    // (the reference smith buys ore, accepts commissions, and climbs the Forge Tier ladder) pushes
+    // rung-0 clear on the main seed from day 18 to day 25 — BaselinePlayer now spends real action
+    // slots and real gold on Forge Tier purchases and commission fulfillment instead of pure combat
+    // support, so the whole roster gears up slightly slower. RNG-position pin asserted unchanged:
+    // grepped this diff's non-test sim files (ActionLegality.cs, ActionBudget.cs,
+    // CraftingHandlers.cs, TalentTree.cs, BaselinePlayer.cs, CommissionSystem.cs,
+    // CommissionHandlers.cs, GoldLedger.cs) for new RNG/Random/.Next( calls — none found. The day-18
+    // -> day-25 shift is entirely a different LEGAL-ACTION trajectory (different actions submitted
+    // on different days), not a new or moved random draw; the fast lane's golden-replay test (same
+    // seed, empty action stream) is unaffected and stays green. 18 -> 27 (two days of headroom over
+    // the day-25 measurement, not shaved to the exact number, matching this file's own "change them
+    // consciously" rule).
+    private const int Floor5ByDay = 27;
     private const int MinAliveAtEnd = 3;      // recruit trickle keeps the town alive
     private const int GrinWindowDays = 60;    // grin-rate measured over the last N days
     private const int MinBeatsPerWindow = 60; // ≥1 attribution beat per day once rolling

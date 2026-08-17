@@ -32,30 +32,41 @@ public static class BaselinePlayer
                 // own every threshold; this only asks, never re-derives). Checked FIRST in Morning:
                 // it is the day's highest-leverage action whenever it's legal (unlocking an entire
                 // Forge Tier's worth of recipes, not one talent node), so it should win any tie for
-                // the day's action slot. On this branch alone that tie never actually happens —
-                // Stock/UnlockTalent spend no slot per ActionBudget, so trying the upgrade first
-                // costs nothing on the days it can't fire and never displaces the talent-unlock or
-                // shelf restock below. But register #157 (PR #549) adds UnlockTalentAction to the
-                // slot-consuming list, so once composed with that change the two DO compete for the
-                // same slot — checking the tier purchase first is what makes it win that
-                // competition, rather than losing the day's one slot to whichever talent this policy
-                // would otherwise reach for.
+                // the day's action slot. Register #157 (PR #549) puts UnlockTalentAction on the
+                // slot-consuming list too, so the two DO compete for the same slot once both are
+                // legal on the same day — checking the tier purchase first is what makes it win that
+                // competition: a tier purchase opens a whole tier of recipes and is legal only on the
+                // handful of days gold and ore line up, while a talent unlock is available almost
+                // every morning and simply happens a day later. Displacing the rarer, larger move for
+                // the common one would be the wrong way round.
                 var upgrade = new UpgradeForgeAction();
                 if (ActionLegality.IsLegal(state, upgrade, state.Phase))
                 {
                     actions.Add(upgrade);
                 }
 
-                // Unlock one affordable talent per morning, prereq order (they're free in v1).
+                // Unlock one talent per morning, prereq order. U-T1-9: the two smithing-tier gate
+                // nodes also require a matching Forge Tier, so (mirroring the Expedition craft loop's
+                // own "walk down to a legal one" fix below) ask ActionLegality first and skip a
+                // prereq-eligible-but-Forge-Tier-locked candidate rather than emit the same doomed
+                // unlock every morning forever.
+                //
+                // U-T1-9's own note here — that this scripted policy never submits
+                // UpgradeForgeAction and its peak gold never approaches the 400g Forge Tier II cost
+                // — was true when written and is now false: the block directly above submits it, and
+                // (per U-T1-11's re-baseline measurement) all 11 balance seeds standalone, 9 of 11
+                // composed with this change, reach Forge Tier II. Deleted rather than corrected in
+                // place, per CLAUDE.md rule 8.
                 var smithTalents = state.Player.TalentsFor(ProfessionRegistry.BlacksmithId);
                 var next = TalentTree.Nodes.Values
                     .Where(n => !smithTalents.Contains(n.NodeId)
                                 && n.Prerequisites.All(smithTalents.Contains))
                     .OrderBy(n => n.NodeId, StringComparer.Ordinal)
-                    .FirstOrDefault();
+                    .Select(n => new UnlockTalentAction(n.NodeId, ProfessionRegistry.BlacksmithId))
+                    .FirstOrDefault(candidate => ActionLegality.IsLegal(state, candidate, state.Phase));
                 if (next is not null)
                 {
-                    actions.Add(new UnlockTalentAction(next.NodeId, ProfessionRegistry.BlacksmithId));
+                    actions.Add(next);
                 }
 
                 // U-T1-11 re-baseline: accept every open GEAR commission. Free (AcceptCommissionAction

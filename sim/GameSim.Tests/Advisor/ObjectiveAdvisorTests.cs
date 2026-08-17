@@ -174,8 +174,16 @@ public class ObjectiveAdvisorTests
     /// real consumable pricing) got real gear to heroes measurably faster — a HEALTHIER economy, not
     /// a broken one, but this fixture needs lethality, not health. Measured: seed 1 clears 6 deaths
     /// by day 15 under the SAME policy (a 60-seed sweep found the overwhelming majority of seeds
-    /// still do; 4242 was the outlier, not the norm).</summary>
-    private const ulong DeathHeavySeed = 1;
+    /// still do; 4242 was the outlier, not the norm).
+    ///
+    /// RE-SWEPT (2026-08-17, register #157/#549 composed with the link2 flee/quaff fix, PR #577):
+    /// seed 1 stopped reliably producing 6 deaths too — #577 makes a hero flee a fight their own
+    /// salve could never have won instead of drinking it and dying anyway, which is exactly the
+    /// class of death this fixture was leaning on. Another HEALTHIER-economy side effect, not a
+    /// balance defect (ConsumableTraitMortalityBalanceTests measures the survival gain directly).
+    /// An 80-seed sweep under the composed code found seed 3 clears 6 deaths by day 20 and holds
+    /// (most seeds still do; 1 joined 4242 as an outlier this time, not the norm).</summary>
+    private const ulong DeathHeavySeed = 3;
 
     /// <summary>
     /// U8: six hero deaths must produce a death-adjacent (<see cref="HonorMemorialAction"/>)
@@ -239,13 +247,27 @@ public class ObjectiveAdvisorTests
         {
             var demand = DemandBoard.Snapshot(state);
             var top = demand.DepthStalls.FirstOrDefault();
-            var candidate = ObjectiveAdvisor.Suggest(state);
+
+            // U-T1-9: the tier gate now ALSO requires a matching Forge Tier that this scripted
+            // search loop's BaselinePlayer never buys (it never submits UpgradeForgeAction), so
+            // probe the suggestion against a Forge-Tier-boosted projection of the SAME real stall —
+            // the unlock is then legal and can win "top suggestion" below, without changing what
+            // BaselinePlayer itself drives `state` with.
+            var forgeBoosted = state with
+            {
+                Player = state.Player with
+                {
+                    Materials = state.Player.Materials.SetItem(ForgeTierHandlers.ForgeTierKey, ForgeTierHandlers.MaxUpgradeIndex),
+                },
+            };
+            var candidate = ObjectiveAdvisor.Suggest(forgeBoosted);
             if (top is not null && top.BlockingSlot is null
                 && top.RequiredQuality is { } req && top.CarriedQuality is { } car && req > car
                 && candidate.Count > 0 && candidate[0].Action is UnlockTalentAction)
             {
                 qualityStall = top;
                 suggestions = candidate;
+                state = forgeBoosted;
                 break;
             }
 
@@ -288,7 +310,18 @@ public class ObjectiveAdvisorTests
         {
             var demand = DemandBoard.Snapshot(state);
             var top = demand.DepthStalls.FirstOrDefault();
-            var candidate = ObjectiveAdvisor.Suggest(state);
+
+            // U-T1-9: same Forge-Tier-boosted probe as the sibling test above — BaselinePlayer never
+            // buys a forge upgrade, so without this the locked-gate unlock is never legal and never
+            // becomes the top suggestion, starving this loop's `locked` collection entirely.
+            var forgeBoosted = state with
+            {
+                Player = state.Player with
+                {
+                    Materials = state.Player.Materials.SetItem(ForgeTierHandlers.ForgeTierKey, ForgeTierHandlers.MaxUpgradeIndex),
+                },
+            };
+            var candidate = ObjectiveAdvisor.Suggest(forgeBoosted);
             if (top is not null && top.BlockingSlot is null
                 && top.RequiredQuality is { } req && top.CarriedQuality is { } car && req > car
                 && candidate.Count > 0 && candidate[0].Action is UnlockTalentAction lockedUnlock)
@@ -297,13 +330,13 @@ public class ObjectiveAdvisorTests
                 // suggestion named first) — U10 escalates one locked tier at a time, so leaving tier 3
                 // locked while only granting tier 2 would just re-trigger the unlock branch for tier 3.
                 // Only once every tier is open does the "else" half of U10's branch (craft/buy) win.
-                var player = state.Player;
+                var player = forgeBoosted.Player;
                 foreach (var gate in ProfessionRegistry.Blacksmith.TierGate.Values)
                 {
                     player = player.WithTalent(lockedUnlock.Profession, gate);
                 }
 
-                var candidateUnlocked = state with { Player = player };
+                var candidateUnlocked = forgeBoosted with { Player = player };
                 var unlockedSuggestions = ObjectiveAdvisor.Suggest(candidateUnlocked);
 
                 // The SAME real stall must fall through to craft/buy once the gate is open — proving

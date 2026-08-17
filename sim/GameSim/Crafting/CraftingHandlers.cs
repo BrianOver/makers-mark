@@ -1,4 +1,5 @@
 using GameSim.Contracts;
+using GameSim.Economy;
 using GameSim.Professions;
 
 namespace GameSim.Crafting;
@@ -11,9 +12,13 @@ namespace GameSim.Crafting;
 /// Determinism note (KTD4): every rejection happens BEFORE any RNG draw, so a refused
 /// action never advances the stream. Exactly one Roll100 is drawn per successful craft.
 ///
-/// Talent points (v1): unlocking costs nothing beyond prerequisite edges — the
-/// talent-point economy (earn rate, per-node costs) is deliberately deferred; when it
-/// lands, the cost check slots in next to the prerequisite check below.
+/// Talent points (U-T1-9, register #157 — owner ruling "Forge Tier plus an action slot",
+/// explicitly rejecting a new talent-point currency): unlocking a node that gates a recipe
+/// tier also requires the workshop to already be at the matching <see cref="TalentTree.ForgeTierRequirement"/>
+/// Forge Tier, and spends one of the day's action slots like every other piece of real work
+/// — checked LAST, same order as every other handler in this codebase. Every other node
+/// (the quality-shift chain, material efficiency/mastery) keeps the old free,
+/// prerequisite-only unlock; only the two smithing-tier gates are additionally metered.
 /// </summary>
 public sealed class CraftingHandlers : IActionHandler
 {
@@ -329,10 +334,33 @@ public sealed class CraftingHandlers : IActionHandler
             }
         }
 
-        // No cost in v1 (talent-point economy deferred — see class doc).
+        // U-T1-9: the two smithing-tier gate nodes also require the workshop to already be at
+        // the matching Forge Tier (TalentTree.ForgeTierRequirement) — a real, already-shipped
+        // gold+ore sink, resolved through ForgeTierHandlers' own current-tier accessor. Every
+        // other node has no entry in the map and skips this check entirely.
+        if (TalentTree.ForgeTierRequirement.TryGetValue(action.NodeId, out var requiredTierIndex))
+        {
+            var tierIndex = ForgeTierHandlers.CurrentTierIndex(state.Player);
+            if (tierIndex < requiredTierIndex)
+            {
+                return (state, new RejectedAction(action,
+                    $"Talent '{action.NodeId}' requires Forge Tier {requiredTierIndex + 1} or higher (workshop is Tier {tierIndex + 1})."));
+            }
+        }
+
+        // Day action-budget gate — checked LAST, after every other precondition, same order as
+        // every other real-work handler (CraftAction guard 7 above, ForgeTierHandlers, ...): an
+        // unknown node / missing prereq / unmet Forge Tier keeps its own rejection reason even on
+        // a slot-exhausted day; only a genuinely legal unlock with zero slots left is refused here.
+        if (state.ActionSlotsRemaining <= 0)
+        {
+            return (state, new RejectedAction(action, $"No action slots left today (0/{ActionBudget.SlotsPerDay}) — 'next' to advance."));
+        }
+
         var newState = state with
         {
             Player = state.Player.WithTalent(action.Profession, action.NodeId),
+            ActionSlotsRemaining = state.ActionSlotsRemaining - 1,
         };
         return (newState, null);
     }

@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using GameSim.Contracts;
 using GameSim.Crafting;
+using GameSim.Economy;
 using GameSim.Kernel;
 using GameSim.Professions;
 
@@ -32,6 +33,14 @@ public class CraftingHandlersTests
         var set = state.Player.TalentsFor(Blacksmith).Union(talents);
         return state with { Player = state.Player with { Talents = state.Player.Talents.SetItem(Blacksmith, set) } };
     }
+
+    /// <summary>U-T1-9: <see cref="TalentTree.Tier2Smithing"/>/<see cref="TalentTree.Tier3Smithing"/>
+    /// now also require a matching Forge Tier — set it directly on the reserved materials key
+    /// (<see cref="ForgeTierHandlers.ForgeTierKey"/>) the same way <see cref="ForgeTierHandlers"/>
+    /// itself reads it, since this file's <see cref="Kernel"/> only registers <see cref="CraftingHandlers"/>
+    /// and never runs an <see cref="UpgradeForgeAction"/> through it.</summary>
+    private static GameState WithForgeTier(GameState state, int tierIndex) =>
+        state with { Player = state.Player with { Materials = state.Player.Materials.SetItem(ForgeTierHandlers.ForgeTierKey, tierIndex) } };
 
     private sealed class TestSink : IEventSink
     {
@@ -222,8 +231,9 @@ public class CraftingHandlersTests
     [Fact]
     public void UnlockThenCraft_SameTick_TalentApplies()
     {
-        // Actions in one batch apply in order: unlock tier-2, then craft tier-2.
-        var state = StateWith(("iron", 5));
+        // Actions in one batch apply in order: unlock tier-2, then craft tier-2. U-T1-9: the
+        // unlock also needs the workshop already at Forge Tier II.
+        var state = WithForgeTier(StateWith(("iron", 5)), tierIndex: 1);
         var result = Kernel.Tick(state, ImmutableList.Create<PlayerAction>(
             new UnlockTalentAction(TalentTree.Tier2Smithing, Blacksmith),
             new CraftAction("longsword", "iron")));
@@ -237,7 +247,8 @@ public class CraftingHandlersTests
     [Fact]
     public void SameState_SameCraftAction_IdenticalItem_ByteIdenticalState()
     {
-        var state = StateWith(("iron", 10));
+        // U-T1-9: the unlock also needs the workshop already at Forge Tier II.
+        var state = WithForgeTier(StateWith(("iron", 10)), tierIndex: 1);
         var actions = ImmutableList.Create<PlayerAction>(
             new UnlockTalentAction(TalentTree.Tier2Smithing, Blacksmith),
             new CraftAction("longsword", "iron"));

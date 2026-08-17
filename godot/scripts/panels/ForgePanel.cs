@@ -701,6 +701,33 @@ public partial class ForgePanel : SimPanel
                 var needed = Math.Max(1, recipe.MaterialQuantity - efficiency);
                 var affordable = have >= needed;
 
+                // U-T1-10 (register #157/#149): mirror CraftingHandlers.ApplyCraft's own tier-gate
+                // guard (recipe.Tier -> profession.TierGate -> the talent node) BEFORE any card
+                // renders — a locked recipe gets one compact row instead of the full five-button
+                // card below, so day 1 goes from 22 five-button cards to ~7 cards plus ~15 rows.
+                // SurfaceUnlocks' own doctrine applies at this row level too: greyed with a named
+                // reason, never hidden — the player sees what is coming and why it is closed.
+                var hasTierGate = profession.TierGate.TryGetValue(recipe.Tier, out var tierGateNode);
+                var tierTalentOk = !hasTierGate || unlocked.Contains(tierGateNode!);
+
+                if (!tierTalentOk)
+                {
+                    var gateName = profession.TalentNodes.TryGetValue(tierGateNode!, out var gateNode)
+                        ? gateNode.Name
+                        : tierGateNode!;
+                    var lockedButton = new Button { Name = $"Locked_{recipe.RecipeId}", Text = "Locked" };
+                    var lockedRow = ListRow(
+                        IconRegistry.Slot(recipe.Slot),
+                        $"{recipe.Name} (t{recipe.Tier} {recipe.Slot}) — requires {gateName}",
+                        string.Empty,
+                        string.Empty,
+                        lockedButton,
+                        enabled: false,
+                        whyNot: $"Requires '{gateName}' — unlock it in the Talents section below.");
+                    _recipeRows!.AddChild(lockedRow);
+                    continue;
+                }
+
                 var card = Card($"RecipeCard_{recipe.RecipeId}");
                 _recipeRows!.AddChild(card);
                 var cardBody = new VBoxContainer();
@@ -826,13 +853,11 @@ public partial class ForgePanel : SimPanel
                 // Both new gates must ALSO mirror the handlers' recipe tier-gate talent check
                 // (MasterworkAttemptHandlers.Apply guard 5, LegendaryCommissionHandlers.Apply
                 // guard 5) or a talent-locked recipe shows an enabled button the sim then rejects.
-                // `unlocked` is this card's own talent set (see :527). NOTE: the plain Craft button
-                // above has this same gap and is NOT fixed here — pre-existing, booked, not a §2
-                // link break, and widening this diff to chase it is exactly the drift the plan bans.
-                var tierTalentOk = !(profession is not null
-                    && profession.TierGate.TryGetValue(recipe.Tier, out var tierGateNode)
-                    && !unlocked.Contains(tierGateNode));
-
+                // `unlocked` is this card's own talent set (see :527). U-T1-10 pays off the booking
+                // this comment used to carry: the plain Craft/Work-the-forge button above USED to
+                // have this same gap (an enabled button the sim would then reject) — closed now,
+                // since a tier-gated recipe never reaches card rendering at all (see the locked-row
+                // continue near the top of this loop) — `tierTalentOk` computed there is reused here.
                 var atMasterworkTier = tierIndex >= MasterworkAttemptHandlers.RequiredForgeTierIndex;
                 var mwCoalOk = coalHave >= MasterworkAttemptHandlers.CoalCost;
                 var mwFluxOk = fluxHave >= MasterworkAttemptHandlers.FluxCost;
@@ -906,8 +931,24 @@ public partial class ForgePanel : SimPanel
                 AddLabel(infoCol, $"{node.Name} — {node.Description}{(hasNode ? " [unlocked]" : string.Empty)}");
                 if (!hasNode)
                 {
+                    // U-T1-10: mirrors CraftingHandlers.ApplyUnlock's FULL guard chain now, not just
+                    // the prerequisite check — U-T1-9 added a Forge Tier requirement (the two
+                    // smithing-tier gate nodes) and an action-slot cost (every node), and an Unlock
+                    // button that only asked CanUnlock would show ENABLED for a Forge-Tier-locked or
+                    // slot-exhausted day the kernel then rejects — the exact defect this whole unit
+                    // exists to close, just one button over from the Craft/Work-the-forge fix above.
                     var button = AddButton(row, $"Unlock_{node.NodeId}", "Unlock", () => OnUnlockPressed(node.NodeId, professionId));
-                    button.Disabled = !profession.CanUnlock(node.NodeId, unlocked);
+                    var prereqsOk = profession.CanUnlock(node.NodeId, unlocked);
+                    var missingPrereq = node.Prerequisites.FirstOrDefault(p => !unlocked.Contains(p));
+                    var forgeTierOk = !TalentTree.ForgeTierRequirement.TryGetValue(node.NodeId, out var requiredTierIndex)
+                        || tierIndex >= requiredTierIndex;
+                    var unlockLegal = prereqsOk && forgeTierOk && state.ActionSlotsRemaining > 0;
+                    var unlockWhyNot = !prereqsOk
+                        ? $"Requires '{missingPrereq}' first."
+                        : !forgeTierOk
+                            ? $"Requires Forge Tier {requiredTierIndex + 1} or higher (workshop is Tier {tierIndex + 1})."
+                            : $"No action slots left today (0/{ActionBudget.SlotsPerDay}) — 'next' to advance.";
+                    GateButton(button, unlockLegal, unlockWhyNot);
                 }
             }
         }

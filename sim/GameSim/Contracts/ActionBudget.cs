@@ -20,16 +20,26 @@ public static class ActionBudget
     /// <summary>
     /// Whether <paramref name="action"/> is "real work" that spends a slot.
     ///
-    /// <para>This list is the NINE action types whose handlers actually decrement
+    /// <para>This list is the TEN action types whose handlers actually decrement
     /// <c>ActionSlotsRemaining</c> — verified by grep, not by intent. It named only four until
     /// 2026-08-14, while nine handlers spent slots, so any surface built on it would have
     /// under-reported the day's real cost. Nothing called it at runtime, which is the only reason
     /// the lie was harmless: it was a trap armed for the next caller, not a live bug.</para>
     ///
-    /// <para>Shelf-arranging (stock/price/unstock), profession and talent picks, counter-session
-    /// moves (open/close/present/suggest/haggle), commission answers, the farewell rite, and Camp
-    /// verbs (send/recall) stay free — they don't compete for the day's attention budget. That half
-    /// of the original comment was always true; it was the "real work" half that was wrong.</para>
+    /// <para><b><see cref="UnlockTalentAction"/> is the tenth, added by U-T1-9 (register #157, owner
+    /// ruling R14.3).</b> Twenty-two blacksmith recipes used to open on two free clicks; a talent
+    /// unlock now requires a Forge Tier AND costs a slot, so opening the ladder competes with the
+    /// day's crafting instead of being a freebie taken on the way past. This predicate and
+    /// <c>CraftingHandlers.ApplyUnlock</c> had to move in the same PR: the handler spending a slot
+    /// while this file still said "free" is the exact fiction the 2026-08-14 correction above was
+    /// about, and shipping the two halves apart would have re-armed the same trap in the opposite
+    /// direction.</para>
+    ///
+    /// <para>Shelf-arranging (stock/price/unstock), profession picks, counter-session moves
+    /// (open/close/present/suggest/haggle), commission answers, the farewell rite, and Camp verbs
+    /// (send/recall) stay free — they don't compete for the day's attention budget. That half of the
+    /// original comment was always true; it was the "real work" half that was wrong. Note that
+    /// "talent picks" used to be listed here and no longer is.</para>
     ///
     /// <para><c>ActionBudgetTests</c> pins this by REFLECTION over every concrete
     /// <see cref="PlayerAction"/> subtype: each must be explicitly consuming or explicitly free, so
@@ -46,5 +56,6 @@ public static class ActionBudget
             or BuyForgeSupplyAction
             or UpgradeForgeAction
             or MasterworkAttemptAction
-            or CommissionLegendaryWorkAction;
+            or CommissionLegendaryWorkAction
+            or UnlockTalentAction;
 }
