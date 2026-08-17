@@ -17,15 +17,22 @@ namespace GameSim.Tests.Kernel;
 public class ActionBudgetTests
 {
     /// <summary>
-    /// The nine action types whose handlers actually decrement <c>ActionSlotsRemaining</c>, found by
+    /// The ten action types whose handlers actually decrement <c>ActionSlotsRemaining</c>, found by
     /// grepping for that decrement rather than by reading the predicate that is supposed to describe
     /// them. Until 2026-08-14 the predicate named only the first four.
+    ///
+    /// <para><see cref="UnlockTalentAction"/> is the tenth, joining here in the same PR that made
+    /// <c>CraftingHandlers.ApplyUnlock</c> spend a slot (U-T1-9, register #157, owner ruling R14.3).
+    /// The two had to move together: a handler that spends a slot while
+    /// <see cref="ActionBudget.ConsumesSlot"/> reports free is the same fiction the 2026-08-14
+    /// correction was about, just pointing the other way.</para>
     /// </summary>
     private static readonly Type[] ConsumingTypes =
     [
         typeof(CraftAction), typeof(BuyOreAction), typeof(BuyMaterialAction), typeof(PostBountyAction),
         typeof(ReforgeHeirloomAction), typeof(BuyForgeSupplyAction), typeof(UpgradeForgeAction),
         typeof(MasterworkAttemptAction), typeof(CommissionLegendaryWorkAction),
+        typeof(UnlockTalentAction),
     ];
 
     /// <summary>
@@ -34,18 +41,9 @@ public class ActionBudgetTests
     /// whole point of <see cref="ConsumesSlot_EveryActionTypeIsExplicitlyClassified"/> is that a new
     /// action type must be a deliberate decision, not a silent default.
     /// </summary>
-    // KNOWN STALE (U-T1-9, register #157): UnlockTalentAction's OWN handler (CraftingHandlers.
-    // ApplyUnlock) now decrements ActionSlotsRemaining on success — see
-    // UnlockTalent_Success_ConsumesExactlyOneSlot below, which drives that real behavior through the
-    // kernel. It stays classified FREE here (and ActionBudget.ConsumesSlot keeps returning false for
-    // it — see ConsumesSlot_AgreesWithTheClassification) only because ActionBudget.cs lives in the
-    // deny-listed sim/GameSim/Contracts/: this PR's brief is explicit that a Contracts change is a
-    // stop-and-report, not a do-it-yourself. Reclassifying UnlockTalentAction into ConsumingTypes
-    // (and flipping ActionBudget.ConsumesSlot to match) is the one remaining piece of this fix and
-    // belongs in a dedicated Contracts micro-PR per CLAUDE.md's amendment process.
     private static readonly Type[] FreeTypes =
     [
-        typeof(StockAction), typeof(SetPriceAction), typeof(UnstockAction), typeof(UnlockTalentAction),
+        typeof(StockAction), typeof(SetPriceAction), typeof(UnstockAction),
         typeof(SendSupplyAction), typeof(RecallPartyAction), typeof(SetProfessionsAction),
         typeof(OpenCounterAction), typeof(CloseCounterAction), typeof(PresentItemAction),
         typeof(SuggestItemAction), typeof(HaggleResponseAction), typeof(AcceptCommissionAction),
@@ -113,13 +111,15 @@ public class ActionBudgetTests
         Assert.True(ActionBudget.ConsumesSlot(new MasterworkAttemptAction("dagger", "copper")));
         Assert.True(ActionBudget.ConsumesSlot(new CommissionLegendaryWorkAction("dagger", "copper")));
 
+        // The tenth, and the reason this PR touches Contracts at all: opening the recipe ladder is
+        // real work now (U-T1-9, register #157, R14.3), so it competes with the day's crafting
+        // instead of being a freebie taken on the way past.
+        Assert.True(ActionBudget.ConsumesSlot(new UnlockTalentAction("keen-eye", "blacksmith")));
+
         // Free/UI moves never compete for the day's attention budget.
         Assert.False(ActionBudget.ConsumesSlot(new StockAction(new ItemId(1), 10)));
         Assert.False(ActionBudget.ConsumesSlot(new SetPriceAction(new ItemId(1), 10)));
         Assert.False(ActionBudget.ConsumesSlot(new UnstockAction(new ItemId(1))));
-        // KNOWN STALE (see the FreeTypes comment above): the real handler now spends a slot; this
-        // predicate does not yet agree, pending the deny-listed Contracts change this PR could not make.
-        Assert.False(ActionBudget.ConsumesSlot(new UnlockTalentAction("keen-eye", "blacksmith")));
         Assert.False(ActionBudget.ConsumesSlot(new SendSupplyAction(new HeroId(1), new ItemId(1))));
         Assert.False(ActionBudget.ConsumesSlot(new RecallPartyAction(new HeroId(1))));
         Assert.False(ActionBudget.ConsumesSlot(new HonorMemorialAction(new HeroId(1))));
