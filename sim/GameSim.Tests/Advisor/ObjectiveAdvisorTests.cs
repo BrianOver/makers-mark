@@ -239,13 +239,27 @@ public class ObjectiveAdvisorTests
         {
             var demand = DemandBoard.Snapshot(state);
             var top = demand.DepthStalls.FirstOrDefault();
-            var candidate = ObjectiveAdvisor.Suggest(state);
+
+            // U-T1-9: the tier gate now ALSO requires a matching Forge Tier that this scripted
+            // search loop's BaselinePlayer never buys (it never submits UpgradeForgeAction), so
+            // probe the suggestion against a Forge-Tier-boosted projection of the SAME real stall —
+            // the unlock is then legal and can win "top suggestion" below, without changing what
+            // BaselinePlayer itself drives `state` with.
+            var forgeBoosted = state with
+            {
+                Player = state.Player with
+                {
+                    Materials = state.Player.Materials.SetItem(ForgeTierHandlers.ForgeTierKey, ForgeTierHandlers.MaxUpgradeIndex),
+                },
+            };
+            var candidate = ObjectiveAdvisor.Suggest(forgeBoosted);
             if (top is not null && top.BlockingSlot is null
                 && top.RequiredQuality is { } req && top.CarriedQuality is { } car && req > car
                 && candidate.Count > 0 && candidate[0].Action is UnlockTalentAction)
             {
                 qualityStall = top;
                 suggestions = candidate;
+                state = forgeBoosted;
                 break;
             }
 
@@ -288,7 +302,18 @@ public class ObjectiveAdvisorTests
         {
             var demand = DemandBoard.Snapshot(state);
             var top = demand.DepthStalls.FirstOrDefault();
-            var candidate = ObjectiveAdvisor.Suggest(state);
+
+            // U-T1-9: same Forge-Tier-boosted probe as the sibling test above — BaselinePlayer never
+            // buys a forge upgrade, so without this the locked-gate unlock is never legal and never
+            // becomes the top suggestion, starving this loop's `locked` collection entirely.
+            var forgeBoosted = state with
+            {
+                Player = state.Player with
+                {
+                    Materials = state.Player.Materials.SetItem(ForgeTierHandlers.ForgeTierKey, ForgeTierHandlers.MaxUpgradeIndex),
+                },
+            };
+            var candidate = ObjectiveAdvisor.Suggest(forgeBoosted);
             if (top is not null && top.BlockingSlot is null
                 && top.RequiredQuality is { } req && top.CarriedQuality is { } car && req > car
                 && candidate.Count > 0 && candidate[0].Action is UnlockTalentAction lockedUnlock)
@@ -297,13 +322,13 @@ public class ObjectiveAdvisorTests
                 // suggestion named first) — U10 escalates one locked tier at a time, so leaving tier 3
                 // locked while only granting tier 2 would just re-trigger the unlock branch for tier 3.
                 // Only once every tier is open does the "else" half of U10's branch (craft/buy) win.
-                var player = state.Player;
+                var player = forgeBoosted.Player;
                 foreach (var gate in ProfessionRegistry.Blacksmith.TierGate.Values)
                 {
                     player = player.WithTalent(lockedUnlock.Profession, gate);
                 }
 
-                var candidateUnlocked = state with { Player = player };
+                var candidateUnlocked = forgeBoosted with { Player = player };
                 var unlockedSuggestions = ObjectiveAdvisor.Suggest(candidateUnlocked);
 
                 // The SAME real stall must fall through to craft/buy once the gate is open — proving

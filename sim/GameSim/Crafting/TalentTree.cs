@@ -49,6 +49,22 @@ public static class TalentTree
     }.ToImmutableSortedDictionary(n => n.NodeId, n => n, StringComparer.Ordinal);
 
     /// <summary>
+    /// Forge Tier index (see <see cref="Economy.ForgeTierHandlers.CurrentTierIndex"/>) required
+    /// before a gate node can be unlocked (U-T1-9, register #157 — owner ruling "Forge Tier plus an
+    /// action slot"): <see cref="Tier2Smithing"/> needs Forge Tier II (index 1, the first upgrade
+    /// past baseline — the same threshold <see cref="Economy.MasterworkAttemptHandlers"/> already
+    /// gates on); <see cref="Tier3Smithing"/> needs Forge Tier III (index 2). Absent = no forge-tier
+    /// requirement — every other node keeps the old prerequisite-only unlock rule, and recipe tier 1
+    /// has no gate node at all, so it stays ungated (deliberate).
+    /// </summary>
+    public static readonly ImmutableSortedDictionary<string, int> ForgeTierRequirement =
+        new Dictionary<string, int>
+        {
+            [Tier2Smithing] = 1,
+            [Tier3Smithing] = 2,
+        }.ToImmutableSortedDictionary(StringComparer.Ordinal);
+
+    /// <summary>
     /// Pure validation: a node can be unlocked iff it exists, is not already unlocked,
     /// and every prerequisite is in <paramref name="unlocked"/>.
     /// </summary>

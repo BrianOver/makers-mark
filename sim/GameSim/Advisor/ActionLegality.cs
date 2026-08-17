@@ -538,7 +538,8 @@ public static class ActionLegality
         return action.Professions.All(ProfessionRegistry.IsRegistered);
     }
 
-    // ---- CraftingHandlers.ApplyUnlock guards ----
+    // ---- CraftingHandlers.ApplyUnlock guards (U-T1-9: + Forge Tier requirement for the two gate
+    // nodes, + action-budget checked LAST) ----
     private static bool UnlockTalentLegal(GameState state, UnlockTalentAction action)
     {
         if (!ProfessionRegistry.TryGet(action.Profession, out var profession))
@@ -557,7 +558,18 @@ public static class ActionLegality
             return false;
         }
 
-        return node.Prerequisites.All(talents.Contains);
+        if (!node.Prerequisites.All(talents.Contains))
+        {
+            return false;
+        }
+
+        if (Crafting.TalentTree.ForgeTierRequirement.TryGetValue(action.NodeId, out var requiredTierIndex)
+            && Economy.ForgeTierHandlers.CurrentTierIndex(state.Player) < requiredTierIndex)
+        {
+            return false;
+        }
+
+        return state.ActionSlotsRemaining > 0;
     }
 
     // ---- CampHandlers.ApplySend guards ----

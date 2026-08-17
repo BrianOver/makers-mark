@@ -34,6 +34,15 @@ public class ActionBudgetTests
     /// whole point of <see cref="ConsumesSlot_EveryActionTypeIsExplicitlyClassified"/> is that a new
     /// action type must be a deliberate decision, not a silent default.
     /// </summary>
+    // KNOWN STALE (U-T1-9, register #157): UnlockTalentAction's OWN handler (CraftingHandlers.
+    // ApplyUnlock) now decrements ActionSlotsRemaining on success — see
+    // UnlockTalent_Success_ConsumesExactlyOneSlot below, which drives that real behavior through the
+    // kernel. It stays classified FREE here (and ActionBudget.ConsumesSlot keeps returning false for
+    // it — see ConsumesSlot_AgreesWithTheClassification) only because ActionBudget.cs lives in the
+    // deny-listed sim/GameSim/Contracts/: this PR's brief is explicit that a Contracts change is a
+    // stop-and-report, not a do-it-yourself. Reclassifying UnlockTalentAction into ConsumingTypes
+    // (and flipping ActionBudget.ConsumesSlot to match) is the one remaining piece of this fix and
+    // belongs in a dedicated Contracts micro-PR per CLAUDE.md's amendment process.
     private static readonly Type[] FreeTypes =
     [
         typeof(StockAction), typeof(SetPriceAction), typeof(UnstockAction), typeof(UnlockTalentAction),
@@ -108,6 +117,8 @@ public class ActionBudgetTests
         Assert.False(ActionBudget.ConsumesSlot(new StockAction(new ItemId(1), 10)));
         Assert.False(ActionBudget.ConsumesSlot(new SetPriceAction(new ItemId(1), 10)));
         Assert.False(ActionBudget.ConsumesSlot(new UnstockAction(new ItemId(1))));
+        // KNOWN STALE (see the FreeTypes comment above): the real handler now spends a slot; this
+        // predicate does not yet agree, pending the deny-listed Contracts change this PR could not make.
         Assert.False(ActionBudget.ConsumesSlot(new UnlockTalentAction("keen-eye", "blacksmith")));
         Assert.False(ActionBudget.ConsumesSlot(new SendSupplyAction(new HeroId(1), new ItemId(1))));
         Assert.False(ActionBudget.ConsumesSlot(new RecallPartyAction(new HeroId(1))));
@@ -162,15 +173,33 @@ public class ActionBudgetTests
         Assert.Contains("Unknown recipe", rejection.Reason);
     }
 
+    // U-T1-9 (register #157, owner ruling "Forge Tier plus an action slot"): unlocking a talent is
+    // now "real work" too — it spends exactly one slot on success and is refused, like every other
+    // real-work handler, once the day's budget hits zero. Replaces the old
+    // UnlockTalent_NeverConsumesASlot_EvenAtZeroRemaining pin (that WAS the bug register #157 named:
+    // two free clicks on day 1 unlocked every core recipe).
+
     [Fact]
-    public void UnlockTalent_NeverConsumesASlot_EvenAtZeroRemaining()
+    public void UnlockTalent_Success_ConsumesExactlyOneSlot()
+    {
+        var state = CraftReadyState(ActionBudget.SlotsPerDay);
+        var result = CraftKernel.Tick(state, ImmutableList.Create<PlayerAction>(new UnlockTalentAction("keen-eye", "blacksmith")));
+
+        Assert.Empty(result.Rejected);
+        Assert.Equal(ActionBudget.SlotsPerDay - 1, result.NewState.ActionSlotsRemaining);
+        Assert.Contains("keen-eye", result.NewState.Player.TalentsFor("blacksmith"));
+    }
+
+    [Fact]
+    public void UnlockTalent_ZeroSlotsRemaining_IsRejected_TalentNotGranted()
     {
         var state = CraftReadyState(0);
         var result = CraftKernel.Tick(state, ImmutableList.Create<PlayerAction>(new UnlockTalentAction("keen-eye", "blacksmith")));
 
-        Assert.Empty(result.Rejected);
-        Assert.Equal(0, result.NewState.ActionSlotsRemaining); // untouched — still zero, not negative
-        Assert.Contains("keen-eye", result.NewState.Player.TalentsFor("blacksmith"));
+        var rejection = Assert.Single(result.Rejected);
+        Assert.Contains("No action slots left today (0/5)", rejection.Reason);
+        Assert.Equal(0, result.NewState.ActionSlotsRemaining); // stays at zero, never negative
+        Assert.DoesNotContain("keen-eye", result.NewState.Player.TalentsFor("blacksmith"));
     }
 
     // ---- PostBounty: same gate/consume contract -------------------------------------------
