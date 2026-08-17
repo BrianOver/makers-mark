@@ -289,8 +289,61 @@ public sealed record Commission(
     int PremiumGold,
     bool Accepted = false);
 
-/// <summary>Result of one phase tick: the new world, what happened, and what was refused.</summary>
+/// <summary>
+/// One diagnostic reason the sim computed while deciding something — the cheap half of §11.14.8's
+/// two-tier split, chosen by one test: <b>would the player ever want to read this?</b> If yes, it
+/// belongs in a persisted event. If no — it is an internal number that explains a decision to an
+/// engineer or to the owner reading a session log — it belongs here.
+///
+/// <para><b>Why the split exists at all, and why this tier is the cheap one.</b> The golden-replay
+/// test hashes the entire serialized <see cref="GameState"/> and <see cref="GameState.EventLog"/> is
+/// inside that hash, so a new PERSISTED event moves the SHA — and because event ids seed the prose
+/// variant picker, it also re-rolls rendered flavour text campaign-wide. A trace costs none of that:
+/// <see cref="TickResult"/> is the kernel's return value, never part of <see cref="GameState"/> and
+/// never serialized, so nothing here can move the golden hash or change a single line of prose. That
+/// is the entire reason this type exists rather than everything becoming an event.</para>
+///
+/// <para>The census in §11.14.8 found 21 outcome-changing decisions of which <b>11 compute a reason
+/// and discard it</b> — the sim already calculates the willingness number the whole counter minigame
+/// is played against, the quality roll's shift and band, and the counterfactual margins that ARE the
+/// attribution beats, then returns a bare enum. This is a discard problem, not a computation
+/// problem, and this is the channel the discarded values travel on.</para>
+///
+/// <para>Pure data: strings and ints only, no Godot, no RNG, no clock (KTD2).</para>
+/// </summary>
+/// <param name="What">The decision being made, as a stable slug an analytics pass can group on
+/// (e.g. <c>"quality-roll"</c>, <c>"hero-gear-pick"</c>) — never a sentence.</param>
+/// <param name="Chosen">What the sim actually decided.</param>
+/// <param name="Reason">Why, in the sim's own terms.</param>
+/// <param name="Detail">The numbers behind the reason, when there are any. Empty when the reason is
+/// already complete without them — deliberately not nullable, so a producer never has to decide
+/// between <c>null</c> and <c>""</c> for "no detail".</param>
+public sealed record DecisionTrace(
+    string What,
+    string Chosen,
+    string Reason,
+    string Detail = "");
+
+/// <summary>Result of one phase tick: the new world, what happened, what was refused, and why.</summary>
 public sealed record TickResult(
     GameState NewState,
     ImmutableList<GameEvent> Events,
-    ImmutableList<RejectedAction> Rejected);
+    ImmutableList<RejectedAction> Rejected)
+{
+    /// <summary>
+    /// §11.14.8 (register #164): the diagnostic reasons this tick computed — see
+    /// <see cref="DecisionTrace"/> for why these are a non-persisted trace rather than events.
+    ///
+    /// <para>An <c>init</c> property with an empty default rather than a fourth positional parameter,
+    /// deliberately: <see cref="TickResult"/> is constructed in many places, and the trailing-init
+    /// idiom (the same one <see cref="GameState.Director"/>/<see cref="GameState.Assessment"/>/
+    /// <see cref="GameState.Arc"/> use) means every existing construction site keeps compiling and
+    /// keeps meaning exactly what it meant before — an empty trace list, which is the truth for any
+    /// tick that has not been taught to explain itself yet.</para>
+    ///
+    /// <para>Order is the order the sim decided things in, so a reader can follow a tick's reasoning
+    /// forward. It is never sorted or deduplicated: two identical reasons for two different heroes are
+    /// two real decisions, and collapsing them would hide the second one.</para>
+    /// </summary>
+    public ImmutableList<DecisionTrace> Traces { get; init; } = ImmutableList<DecisionTrace>.Empty;
+}
