@@ -94,7 +94,19 @@ public class JourneyFeedTests
     {
         var head = new JourneyPlayhead();
         head.Bind(1, 5, 5.0); // 1 beat/sec
-        head.Advance(4.0, paused: false); // real progress to beat 4
+
+        // 3.5s, deliberately NOT 4.0s. At exactly 4.0 of 5.0 the playhead sits ON a beat boundary,
+        // where "revealed" is 5 under this playhead's reveal-when-the-beat-BEGINS convention and 4
+        // under a reveal-when-it-ENDS reading — the original 4.0 assumed the latter and read 5.
+        // Which convention is right is a real question, but it is not THIS test's question: this test
+        // exists to prove SetRevealed is monotonic and cannot undo real progress. Asserting it from a
+        // point that is unambiguous under either convention keeps it measuring the one property it
+        // names, instead of failing over a boundary definition it was never about.
+        head.Advance(3.5, paused: false); // real progress, mid-beat, unambiguously 4 revealed
+
+        AssertThat(head.Revealed)
+            .OverrideFailureMessage("Setup: the playhead did not reach 4 revealed beats, so the monotonicity check below would prove nothing.")
+            .IsEqual(4);
 
         head.SetRevealed(1); // a receipt jump that would UNDO real progress
 
