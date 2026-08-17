@@ -510,13 +510,55 @@ public static class ExpeditionResolver
                 return FightOutcome.HeroFled;
             }
 
+            // link1/link2 fix (2026-08-17): a one-shot-risk hero whose ONLY available Heal item
+            // does not heal enough to clear that same worst-case hit was drinking it and fighting
+            // on anyway — the salve got spent, the round's actual roll still exceeded the
+            // post-heal HP, and the hero died with the item already consumed for nothing. Diagnosed
+            // by instrumenting every death carrying an unused-or-just-used Heal item across a
+            // 90-seed sweep: 6 of 6 recorded instances were this EXACT shape (quaffed, then died
+            // the same round to a monster roll the heal never had a chance of covering) — zero
+            // were "never got a chance to drink." A prior CouldDieNextRound(hp, ...) check told the
+            // hero "this could kill you," and the fix asks the one further question that check
+            // never asked: "would drinking actually get you clear of that same worst case?" If a
+            // Heal item exists but even a full quaff leaves the hero within the monster's
+            // worst-case reach, fleeing is STRICTLY safer than gambling a fight the salve cannot
+            // secure — so flee instead of burning the item on a fight it can't save. A hero with NO
+            // Heal item is untouched (nothing to evaluate, existing behaviour), and a hero whose
+            // heal WOULD clear the risk is untouched too (drinks and fights on, as before) — this
+            // only changes the one case where the item was doomed to be wasted anyway. Draws no
+            // RNG (PeekHealMagnitude reads the pack, never consumes); the flee return below skips
+            // this round's hero/monster rolls entirely on the seams where it fires, which is a
+            // real draw-count shift versus the old code path — expected and reported, not hidden.
+            //
+            // Same hp < MaxHp guard as the wounded check below, and for the identical reason: a
+            // heal caps at MaxHp, so at FULL health a salve cannot buy any margin against a
+            // one-shot at all (postHealHp would just be hp again) — there is nothing here for the
+            // item to save, so this must stay silent and let the existing full-health-one-shot
+            // behaviour stand (ConsumableResolverTests.DeathFromAboveFleeThreshold_IsNotSaved:
+            // omitting this guard made a full-HP hero carrying ANY salve flee a fight they used to
+            // (correctly) take, which is a different and much bigger behaviour change than this
+            // fix is scoped to make).
+            var atRiskNow = hp[hero.Id.Value] < hero.MaxHp
+                && CombatMath.CouldDieNextRound(hp[hero.Id.Value], venue.MonsterAttack(floor), heroDefense);
+            if (atRiskNow)
+            {
+                var availableHeal = PeekHealMagnitude(items, packs[hero.Id.Value]);
+                if (availableHeal > 0)
+                {
+                    var postHealHp = Math.Min(hp[hero.Id.Value] + availableHeal, hero.MaxHp);
+                    if (CombatMath.CouldDieNextRound(postHealHp, venue.MonsterAttack(floor), heroDefense))
+                    {
+                        return FightOutcome.HeroFled;
+                    }
+                }
+            }
+
             // The hp < MaxHp guard is load-bearing: a heal caps at MaxHp, so a hero at FULL
             // health drinking because the monster "could one-shot them from full" spends the
             // salve for a literal zero-point heal — insurance burned exactly where it cannot
             // help. (ConsumableResolverTests.DeathFromAboveFleeThreshold_IsNotSaved caught this.)
             var wounded = hp[hero.Id.Value] < hero.MaxHp
-                && (CombatMath.ShouldDrink(hp[hero.Id.Value], hero.MaxHp, effect.FleeThresholdDeltaPct)
-                    || CombatMath.CouldDieNextRound(hp[hero.Id.Value], venue.MonsterAttack(floor), heroDefense));
+                && (CombatMath.ShouldDrink(hp[hero.Id.Value], hero.MaxHp, effect.FleeThresholdDeltaPct) || atRiskNow);
 
             if (wounded && TryQuaff(hero, items, hp, packs, round) is { } use)
             {
@@ -594,6 +636,25 @@ public static class ExpeditionResolver
             // The flee decision now happens at the top of the next round, where a
             // quaff can override it — identical outcomes and draws when packs are empty.
         }
+    }
+
+    /// <summary>
+    /// The healing Magnitude of the FIRST Heal item in pack order — the exact item
+    /// <see cref="TryQuaff"/> would consume — without consuming it. 0 when the pack holds no
+    /// Heal item. Used to answer "would drinking actually clear this danger" before committing to
+    /// the quaff (2026-08-17 flee/quaff-ordering fix, below). Draws no RNG, mutates nothing.
+    /// </summary>
+    private static int PeekHealMagnitude(ImmutableSortedDictionary<int, Item> items, List<ItemId> pack)
+    {
+        foreach (var itemId in pack)
+        {
+            if (items.TryGetValue(itemId.Value, out var item) && item.Effect is { Kind: ConsumableKind.Heal } effect)
+            {
+                return effect.Magnitude;
+            }
+        }
+
+        return 0;
     }
 
     /// <summary>
