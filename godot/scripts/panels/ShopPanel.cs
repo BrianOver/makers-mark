@@ -82,6 +82,21 @@ public partial class ShopPanel : SimPanel
     private Label? _feedback;
     private VBoxContainer? _content;
 
+    /// <summary>
+    /// U-T2 Wave C (§11.14.4, Act II, "pricing as a decision" — dilemma #2): the live tutorial
+    /// chain, wired by <c>MainUi</c> right after both this panel and <see cref="TutorialFlow"/> are
+    /// built (same "needs more than just the adapter" precedent as <c>ForgePanel.Tutorial</c>,
+    /// Wave B) — <see cref="Reprice"/> reads/writes it through <see cref="Mentor"/>. Null-tolerant:
+    /// every call site checks before use, so a caller that never wires this (most existing tests)
+    /// sees zero behavior change.
+    /// </summary>
+    public TutorialFlow? Tutorial { get; set; }
+
+    /// <summary>The shared "Bryn speaks a first-touch lesson" banner (<see cref="MentorBanner"/>,
+    /// Wave C) — owned by <c>MainUi</c> so it draws above whatever panel is open, wired in
+    /// alongside <see cref="Tutorial"/>.</summary>
+    public MentorBanner? Mentor { get; set; }
+
     /// <summary>U5: the provenance popup — a single instance reused across shelf/unshelved
     /// cards, self-contained (this unit's scope keeps MainUi untouched), added as the LAST child
     /// in <see cref="EnsureBuilt"/> so it draws over the shelf sections.</summary>
@@ -699,7 +714,25 @@ public partial class ShopPanel : SimPanel
         var id = new ItemId(itemId);
         Adapter.Queue(new SetPriceAction(id, price));
         _feedback!.Text = $"queued: reprice {id} to {price}g";
+        ShowPricingDecisionLesson();
     }
+
+    /// <summary>
+    /// U-T2 Wave C (§11.14.4, Act II, dilemma #2, R14.7 "one sentence each, both sides, no
+    /// recommendation"): names the pricing dilemma out loud the first time the player EVER touches
+    /// a price — before this unit, of the six dilemmas the game is made of, pricing was one of the
+    /// two never taught at all. Fires once per campaign via the SAME once-ever first-touch engine
+    /// Wave A shipped (<see cref="TutorialFlow.ConsumeFirstTouch"/>), shown on the SAME shared
+    /// banner Wave C introduced for exactly this (<see cref="MentorBanner"/>) rather than a second
+    /// mechanism. Null-tolerant: a caller with no <see cref="Tutorial"/>/<see cref="Mentor"/> wired
+    /// (most existing tests) sees no banner ever, never a crash.
+    /// </summary>
+    private void ShowPricingDecisionLesson() =>
+        Mentor?.ShowFirstTouch(Tutorial?.ConsumeFirstTouch(
+            "pricing-as-a-decision",
+            MentorVoice.Speak(
+                "Price for the sale, or price for the relationship — a fair price earns goodwill "
+                + "that compounds, while squeezing every gold you can from a hero earns it only once.")));
 
     /// <summary>
     /// U5: a pick-up-able card. Godot's native drag-and-drop virtuals

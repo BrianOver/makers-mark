@@ -258,6 +258,11 @@ public partial class MainUi : Control
     /// cref="TutorialOverlay"/>'s own class doc.</summary>
     public TutorialOverlay Overlay { get; private set; } = null!;
 
+    /// <summary>U-T2 Wave C (§11.14.4, Act II): the shared "Bryn speaks a first-touch lesson"
+    /// banner — see <see cref="MentorBanner"/>'s own class doc. Owned here (not by any one panel)
+    /// so it draws above whatever drawer panel or modal is open when a dilemma lesson fires.</summary>
+    public MentorBanner Mentor { get; private set; } = null!;
+
     /// <summary>U18 (R12/KTD13): the top-bar-center day-timeline widget — live phase highlight
     /// + the U15 engaged-wait indicator.</summary>
     public DayTimeline Timeline { get; private set; } = null!;
@@ -2062,6 +2067,13 @@ public partial class MainUi : Control
             if (state.Phase == DayPhase.Expedition)
             {
                 tailParts.Add(DepartureOmen(state));
+                // U-T2 Wave C (link2, "day 1 gets a link-2 beat", #161): the send-off's own beat —
+                // see SendOffSaleBeat's own doc for why this reads LastEvents rather than adding a
+                // sale or a new narrator trigger.
+                if (SendOffSaleBeat(state) is { } saleBeat)
+                {
+                    tailParts.Add(saleBeat);
+                }
             }
 
             if (state.Phase == DayPhase.Morning)
@@ -2137,6 +2149,48 @@ public partial class MainUi : Control
         return parties > 0
             ? $"{parties} {(parties == 1 ? "party marches" : "parties march")} for the Mine — watch them go"
             : "the gate stands quiet today";
+    }
+
+    /// <summary>
+    /// U-T2 Wave C (link2, "day 1 gets a link-2 beat", #161 — plan §11.14.4 "#161 answered"): names
+    /// the one thing the send-off leaves silent today. <see cref="GameSim.Heroes.HeroShoppingSystem"/>
+    /// runs BEFORE <see cref="GameSim.Heroes.MusterSystem"/> in the SAME Morning tick that transitions
+    /// into <see cref="DayPhase.Expedition"/> (<c>GameComposition.BuildKernel</c>'s registration
+    /// order), so by the time this send-off beat is on screen the sim already knows whether anyone in
+    /// the roster that just marched bought something off the player's shelf THIS morning — the game
+    /// simply never said so.
+    ///
+    /// <para>The plan's own answer to #161 is explicit: <b>"the fix is not to add a sale — it is to
+    /// make the moment a hero decided visible."</b> This reads <see cref="SimAdapter.LastEvents"/> —
+    /// that SAME Morning tick's full event batch, still live throughout the Expedition phase since
+    /// nothing else calls <see cref="SimAdapter.AdvancePhase"/> until the player advances again — for
+    /// the tick's own <see cref="PartiesFormed"/> roster crossed against its own <see
+    /// cref="ItemSold"/> events, never a value this method invents. Null (no tail part at all) only
+    /// when nobody marched this tick — <see cref="DepartureOmen"/> already covers that silence.</para>
+    /// </summary>
+    private string? SendOffSaleBeat(GameState state)
+    {
+        var roster = Adapter.LastEvents.OfType<PartiesFormed>().LastOrDefault()?.Parties
+            .SelectMany(party => party.Roster)
+            .ToImmutableHashSet();
+        if (roster is null || roster.Count == 0)
+        {
+            return null; // nobody marched this tick — DepartureOmen already says so
+        }
+
+        var boughtFromShelf = Adapter.LastEvents.OfType<ItemSold>()
+            .Where(sale => sale.FromPlayerShop && roster.Contains(sale.Buyer))
+            .ToImmutableList();
+
+        if (boughtFromShelf.Count == 0)
+        {
+            return "nobody marching today bought anything off your shelf";
+        }
+
+        var first = boughtFromShelf[0];
+        var itemName = state.Items.TryGetValue(first.Item.Value, out var item) ? item.Name : $"Item #{first.Item.Value}";
+        var extra = boughtFromShelf.Count > 1 ? $" (+{boughtFromShelf.Count - 1} more)" : string.Empty;
+        return $"{HeroDisplayName(state, first.Buyer)} marches carrying your {itemName}, bought for {first.Price}g{extra}";
     }
 
     /// <summary>U5: a transient bell-action notice (reuses the rejection-toast banner).</summary>
@@ -2895,6 +2949,22 @@ public partial class MainUi : Control
         AddChild(Overlay);
         Overlay.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         Overlay.Build();
+
+        // --- U-T2 Wave C (§11.14.4, Act II): the shared mentor banner for lessons that live
+        //     outside any one panel (the two dilemma call-outs) — mounted after Overlay so it
+        //     draws over the drawer, every modal (CommissionBoard included), and the tutorial's
+        //     own pointing outline; before the build stamp, which stays always-on-top by contract.
+        Mentor = new MentorBanner();
+        AddChild(Mentor);
+        Mentor.Build();
+
+        // U-T2 Wave C: the two dilemma lessons that do not live in the Forge (pricing, hold-or-
+        // sell) need the SAME live chain + shared banner Forge already got in Wave B — wired here,
+        // after Mentor exists, mirroring Forge.Tutorial's own ordering note above.
+        Shop.Tutorial = Tutorial;
+        Shop.Mentor = Mentor;
+        Commissions.Tutorial = Tutorial;
+        Commissions.Mentor = Mentor;
 
         // --- build-provenance stamp (deploy hygiene): a small always-visible corner label naming
         //     this build — mounted last so it draws over everything else. See BuildStamp's own
