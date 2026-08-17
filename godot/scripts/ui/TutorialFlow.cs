@@ -70,6 +70,40 @@ public enum TutorialAnchorKind
 }
 
 /// <summary>
+/// U-T2-1 (owner ruling, §11.13): the chain numbers within ACTS, never as one global countdown —
+/// "The Hand-Off · 2 of 4", not "Tutorial 7/24". A countdown to ten was never going to survive
+/// becoming a countdown to twenty-four once the pointed chain outgrows day 3 (the owner's own
+/// ruling: the pointed chain now runs through day 7). The four acts ARE the five-link spine
+/// (<c>docs/design/THE-GAME.md</c>), minus the fifth link's own beats (not yet in the registry):
+/// <b>Mark</b> (link 1 — you make a thing, provably yours), <b>HandOff</b> (link 2 — it reaches a
+/// hero through the four honest channels: shelf, counter, commission, vigil runner — and the hero
+/// decides), <b>Dark</b> (links 3-4 — they carry it down on their own judgment, and the raid live
+/// proves it mattered), <b>Memory</b> (link 5 — the town's own record of what happened).
+/// </summary>
+public enum TutorialAct
+{
+    Mark,
+    HandOff,
+    Dark,
+    Memory,
+}
+
+/// <summary>The act's own printed name — shared by the card's copy prefix and <c>LessonsPanel</c>'s
+/// chapter numbering, so the two can never disagree about which chapter a step belongs to (mirrors
+/// <c>PhaseVocab</c>'s "one source of the printed word" precedent).</summary>
+public static class TutorialActVocab
+{
+    public static string DisplayName(TutorialAct act) => act switch
+    {
+        TutorialAct.Mark => "The Mark",
+        TutorialAct.HandOff => "The Hand-Off",
+        TutorialAct.Dark => "The Dark",
+        TutorialAct.Memory => "The Memory",
+        _ => act.ToString(),
+    };
+}
+
+/// <summary>
 /// One step's pointed-at target. <see cref="Key"/> is either a <see cref="TownLayout2D.Venues"/>
 /// key ("forge"/"market"/"tavern"/"minegate"/"noticeboard" — the SAME lowercase vocabulary
 /// <see cref="Town2D.FindBuilding"/> and <c>Building2D.Key</c> already use, never the capitalized
@@ -156,6 +190,9 @@ public readonly record struct ChecklistRow(
 public sealed record TutorialStepDef(
     TutorialStep Step,
     int DisplayIndex,
+    // U-T2-1: which of the four TutorialAct chapters this row belongs to — BuyMaterial/Craft
+    // (shared slot) are always the SAME act, since they are one displayed beat.
+    TutorialAct Act,
     TutorialAnchor Anchor,
     int MinDay,
     string ShortLabel,
@@ -192,7 +229,7 @@ public sealed record TutorialStepDef(
 /// <see cref="TutorialStep.MeetHeroes"/> key off UI navigation that carries no durable sim fact
 /// (opening the Mirror, opening a hero panel) — <c>MainUi</c> calls <see
 /// cref="NotifyMirrorOpened"/>/<see cref="NotifyPanelOpened"/> from the same hooks it already had
-/// for those surfaces. A day-based backstop (<see cref="BackstopDay"/>) guarantees nothing the
+/// for those surfaces. A day-based backstop (<see cref="ChainBackstopDay"/>) guarantees nothing the
 /// player does or fails to do can strand the card forever.</para>
 ///
 /// <para><b>U5: the pointing overlay + checklist.</b> <see cref="Registry"/> names each step's
@@ -249,11 +286,59 @@ public sealed partial class TutorialFlow : PanelContainer
     private static readonly IReadOnlyDictionary<TutorialStep, TutorialStepDef> ByStep =
         Registry.ToDictionary(def => def.Step);
 
-    /// <summary>The "Tutorial N/{TotalSteps}" denominator — derived from <see cref="Registry"/>'s
+    /// <summary>The chain's own total displayed-step count — derived from <see cref="Registry"/>'s
     /// own highest <c>DisplayIndex</c> rather than a hand-typed literal (constraint: "tests pin the
     /// SET" — a registry row is the set here, so the count MUST come from it, never be re-typed
-    /// beside it).</summary>
+    /// beside it). No longer printed on screen as a global "N/{TotalSteps}" (U-T2-1: the chain
+    /// numbers within its own acts now), but still the bookkeeping total every other pin reads.</summary>
     public static readonly int TotalSteps = Registry.Max(def => def.DisplayIndex);
+
+    /// <summary>U-T2-1 (owner ruling): per <see cref="TutorialStep"/>, its 1-based position within
+    /// its own <see cref="TutorialAct"/> and that act's own total displayed-step count — e.g.
+    /// <c>(2, 4)</c> for <see cref="TutorialStep.OpenCounter"/> ("The Hand-Off · 2 of 4"). Shared by
+    /// the card's own copy prefix (<see cref="StepPrefix"/>) and <c>LessonsPanel</c>'s chapter
+    /// numbering, so the two can never disagree about which chapter a step belongs to. Computed once
+    /// from <see cref="Registry"/>, keyed by DISPLAYED slot (not raw <see cref="TutorialStep"/>) so
+    /// BuyMaterial/Craft — sharing both a slot and an act — always read the identical position.</summary>
+    public static (int Position, int Total) ActPosition(TutorialStep step) => ActPositionByStep[step];
+
+    private static readonly IReadOnlyDictionary<TutorialStep, (int Position, int Total)> ActPositionByStep =
+        BuildActPositions();
+
+    private static IReadOnlyDictionary<TutorialStep, (int Position, int Total)> BuildActPositions()
+    {
+        var slots = Registry
+            .GroupBy(def => def.DisplayIndex)
+            .OrderBy(g => g.Key)
+            .Select(g => g.First()) // one representative row per displayed slot — shared-slot rows share an Act too
+            .ToList();
+        var totalsByAct = slots.GroupBy(def => def.Act).ToDictionary(g => g.Key, g => g.Count());
+        var seenByAct = new Dictionary<TutorialAct, int>();
+        var result = new Dictionary<TutorialStep, (int, int)>();
+        foreach (var slot in slots)
+        {
+            seenByAct.TryGetValue(slot.Act, out var soFar);
+            soFar += 1;
+            seenByAct[slot.Act] = soFar;
+            var position = (soFar, totalsByAct[slot.Act]);
+            foreach (var row in Registry.Where(def => def.DisplayIndex == slot.DisplayIndex))
+            {
+                result[row.Step] = position;
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>U-T2-1: the card's own copy prefix — "{Act} · {position} of {total}" — replacing the
+    /// old "Tutorial {DisplayIndex}/{TotalSteps}" global countdown. A countdown to ten was never
+    /// going to survive becoming a countdown to twenty-four once the pointed chain outgrows day 3
+    /// (owner ruling: the pointed chain now runs through day 7).</summary>
+    private static string StepPrefix(TutorialStepDef def)
+    {
+        var (position, total) = ActPositionByStep[def.Step];
+        return $"{TutorialActVocab.DisplayName(def.Act)} · {position} of {total}";
+    }
 
     private static TutorialStepDef[] BuildRegistry() =>
     [
@@ -264,7 +349,8 @@ public sealed partial class TutorialFlow : PanelContainer
             // CurrentAnchor substitutes the LIVE primary profession's own materials-station id at
             // read time (WorkshopVocab.MaterialsStationIdFor), so an alchemist/tanner/engineer
             // start still points at their own real station, never blacksmith's by mistake.
-            Step: TutorialStep.BuyMaterial, DisplayIndex: 1, Anchor: TutorialAnchor.ForStation("forge", "shelf"), MinDay: 1,
+            Step: TutorialStep.BuyMaterial, DisplayIndex: 1, Act: TutorialAct.Mark,
+            Anchor: TutorialAnchor.ForStation("forge", "shelf"), MinDay: 1,
             ShortLabel: "Buy material, then craft your first item",
             TeachNote: "Inside a building you walk up to a station and press E to use it. The material vendor "
                        + "and the crafting station are both stations in your workshop.",
@@ -274,7 +360,8 @@ public sealed partial class TutorialFlow : PanelContainer
             // U2: Station, not Building — see BuyMaterial's own row doc. "anvil" is the static
             // blacksmith default; CurrentAnchor substitutes the live profession's own craft
             // station (WorkshopVocab.CraftStationIdFor).
-            Step: TutorialStep.Craft, DisplayIndex: 1, Anchor: TutorialAnchor.ForStation("forge", "anvil"), MinDay: 1,
+            Step: TutorialStep.Craft, DisplayIndex: 1, Act: TutorialAct.Mark,
+            Anchor: TutorialAnchor.ForStation("forge", "anvil"), MinDay: 1,
             ShortLabel: "Craft your first item",
             TeachNote: "Crafting consumes the material you just bought — or your starter kit — into a finished piece.",
             IsDone: state => state.EventLog.OfType<ItemCrafted>().Any(),
@@ -282,7 +369,8 @@ public sealed partial class TutorialFlow : PanelContainer
             // BuyMaterial (class/TutorialStepDef doc) — the starter-kit-skips-buy case.
             AdvanceFrom: [TutorialStep.BuyMaterial, TutorialStep.Craft], AdvancesTo: TutorialStep.Shelve),
         new(
-            Step: TutorialStep.Shelve, DisplayIndex: 2, Anchor: TutorialAnchor.ForBuilding("market"), MinDay: 1,
+            Step: TutorialStep.Shelve, DisplayIndex: 2, Act: TutorialAct.HandOff,
+            Anchor: TutorialAnchor.ForBuilding("market"), MinDay: 1,
             ShortLabel: "Stock your craft on the Shop's shelf",
             TeachNote: "Heroes only ever buy what is on the shelf. A finished craft sits in your bag, invisible "
                        + "to them, until you stock it — the button for that is labelled Stock.",
@@ -292,7 +380,8 @@ public sealed partial class TutorialFlow : PanelContainer
             IsDone: state => state.Player.Shelf.Count > 0 || state.EventLog.OfType<ItemSold>().Any(s => s.FromPlayerShop),
             AdvanceFrom: [TutorialStep.Shelve], AdvancesTo: TutorialStep.PostBounty),
         new(
-            Step: TutorialStep.PostBounty, DisplayIndex: 3, Anchor: TutorialAnchor.ForBuilding("noticeboard"), MinDay: 1,
+            Step: TutorialStep.PostBounty, DisplayIndex: 3, Act: TutorialAct.Dark,
+            Anchor: TutorialAnchor.ForBuilding("noticeboard"), MinDay: 1,
             ShortLabel: "Post a bounty at the Bounties board",
             // The old note said a bounty "asks heroes to fetch something specific from the Mine",
             // which is not what the sim does at all: PostBountyAction names a FLOOR, never an item.
@@ -304,7 +393,8 @@ public sealed partial class TutorialFlow : PanelContainer
             IsDone: state => state.EventLog.OfType<BountyPosted>().Any(),
             AdvanceFrom: [TutorialStep.PostBounty], AdvancesTo: TutorialStep.WatchDeparture),
         new(
-            Step: TutorialStep.WatchDeparture, DisplayIndex: 4, Anchor: TutorialAnchor.ForBuilding("minegate"), MinDay: 1,
+            Step: TutorialStep.WatchDeparture, DisplayIndex: 4, Act: TutorialAct.Dark,
+            Anchor: TutorialAnchor.ForBuilding("minegate"), MinDay: 1,
             ShortLabel: "Send the party off, and watch them go",
             TeachNote: "Nothing departs on its own. Ending the Morning is what sends the mustered party out; "
                        + "the view follows them to the Mine Gate on its own once you do. "
@@ -325,7 +415,8 @@ public sealed partial class TutorialFlow : PanelContainer
             ],
             AdvancesTo: TutorialStep.LookIn),
         new(
-            Step: TutorialStep.LookIn, DisplayIndex: 5, Anchor: TutorialAnchor.ForHud("WatchButton"), MinDay: 1,
+            Step: TutorialStep.LookIn, DisplayIndex: 5, Act: TutorialAct.Dark,
+            Anchor: TutorialAnchor.ForHud("WatchButton"), MinDay: 1,
             ShortLabel: "Press Watch to look in on them",
             TeachNote: "The Scrying Mirror shows the raid live, floor by floor, including which of your work "
                        + "each hero is carrying. The Watch button appears whenever a party is underground.",
@@ -348,10 +439,28 @@ public sealed partial class TutorialFlow : PanelContainer
             // modal case — a hero who walks with nothing bought — stalled the step forever even
             // though the player did everything the game lets them do. A closed sale is still a
             // real outcome, just no longer the gate.
-            Step: TutorialStep.OpenCounter, DisplayIndex: 6, Anchor: TutorialAnchor.ForBuilding("market"), MinDay: 2,
+            //
+            // U-T2-15 (#162 defect 2): Station, not Building — the Shop's own "counter" station
+            // (InteriorLayout2D, verb "Haggle") exists and the plan specified it explicitly; it just
+            // never got wired. Steps 1/2 already pulse a real station each; this step — the one
+            // about a physical counter — used to pulse the market's own DOOR.
+            //
+            // U-T2-16 (#162 defects 3-4): MinDay drops from 2 to 1 — the real gate was never the
+            // calendar, it was the counter's own Morning-only legality (CounterHandlers.ApplyOpen,
+            // mirrored in StepActionAvailable below), the SAME shape Vigil's own MinDay 2->1 fix
+            // already established. The old copy told the player to wait for "Day 2" for most of
+            // day 1 and then for "the Morning" for most of day 2 — two wait lines for one gate.
+            Step: TutorialStep.OpenCounter, DisplayIndex: 6, Act: TutorialAct.HandOff,
+            Anchor: TutorialAnchor.ForStation("market", "counter"), MinDay: 1,
             ShortLabel: "Open the counter and hear out the customer",
-            TeachNote: "The counter is a live haggle. You present something off your shelf, the customer names "
-                       + "an offer, and you take it, hold your price, or name your own.",
+            // U-T2-16: Present/Suggest/Accept/Hold Firm/Counter move HERE (and into the Lessons
+            // book) — the card itself keeps one sentence (its own StepText case). SuggestItemAction
+            // is named explicitly: CounterAnsweredAtLeastOnce accepts it and, before this, no line
+            // of copy anywhere ever mentioned it.
+            TeachNote: "The counter is a live haggle. **Present** a shelved item, or **Suggest** one first to "
+                       + "raise their interest for a stronger opening offer. Once they've named a price, "
+                       + "**Accept** it, **Hold Firm** and wait them out, or name your own with **Counter**. "
+                       + "Walking away empty — theirs or yours — is a real answer too, not a mistake.",
             // U1 (§11.13): re-gated off what the PLAYER did, not what the customer (ShoppingAi)
             // decided — see CounterAnsweredAtLeastOnce's own doc for why the old CounterSaleClosed-
             // only predicate could stall forever on a perfectly legal walk-away. Verified reachable:
@@ -377,7 +486,8 @@ public sealed partial class TutorialFlow : PanelContainer
             // flip this true: TutorialRegistryConformanceTests
             // .EveryStepsCompletionFact_IsReachableByPlayerActionAlone pins exactly that shape for
             // every non-exempt row, this one included.
-            Step: TutorialStep.Vigil, DisplayIndex: 7, Anchor: TutorialAnchor.ForHud("CampCard"), MinDay: 1,
+            Step: TutorialStep.Vigil, DisplayIndex: 7, Act: TutorialAct.HandOff,
+            Anchor: TutorialAnchor.ForHud("CampCard"), MinDay: 1,
             ShortLabel: "See the vigil, and know it can wait",
             TeachNote: "A camped party waits on your answer before it goes further. A supply costs a runner's "
                        + "fee and reaches them underground; a recall brings them home short of their target. "
@@ -385,7 +495,8 @@ public sealed partial class TutorialFlow : PanelContainer
             IsDone: state => state.EventLog.OfType<SupplyDelivered>().Any() || state.EventLog.OfType<PartyRecalled>().Any(),
             AdvanceFrom: [TutorialStep.Vigil], AdvancesTo: TutorialStep.EveningClose),
         new(
-            Step: TutorialStep.EveningClose, DisplayIndex: 8, Anchor: TutorialAnchor.ForHud("AdvancePhase"), MinDay: 1,
+            Step: TutorialStep.EveningClose, DisplayIndex: 8, Act: TutorialAct.Memory,
+            Anchor: TutorialAnchor.ForHud("AdvancePhase"), MinDay: 1,
             ShortLabel: "Buy ore in the Ledger, then close the day",
             TeachNote: "Evening is the day's last trade. Heroes who came home sell their ore in the Ledger, "
                        + "cheaper than the morning vendor, and the bell then rolls the day to tomorrow.",
@@ -394,12 +505,14 @@ public sealed partial class TutorialFlow : PanelContainer
             IsDone: state => state.Day >= 3,
             // U1 (§11.13): AdvanceFrom now ALSO fires from Vigil — the anti-stranding sweep,
             // exact idiom WatchDeparture already uses across day 1 (class/TutorialStepDef doc). A
-            // day where no party ever camps must not strand the chain on Vigil until BackstopDay's
-            // blanket close (a several-day silent jump straight to Completed); once Day >= 3 an
+            // day where no party ever camps must not strand the chain on Vigil until
+            // ChainBackstopDay's blanket close (a several-day silent jump straight to Completed);
+            // once Day >= 3 an
             // unanswered Vigil now carries straight through to MeetHeroes instead.
             AdvanceFrom: [TutorialStep.Vigil, TutorialStep.EveningClose], AdvancesTo: TutorialStep.MeetHeroes),
         new(
-            Step: TutorialStep.MeetHeroes, DisplayIndex: 9, Anchor: TutorialAnchor.ForHud("OpenHeroCards"), MinDay: 3,
+            Step: TutorialStep.MeetHeroes, DisplayIndex: 9, Act: TutorialAct.Memory,
+            Anchor: TutorialAnchor.ForHud("OpenHeroCards"), MinDay: 3,
             ShortLabel: "Open Renown and read a hero's card",
             TeachNote: "Hero Cards show standing, gear, and deeds — the roster behind every raid. They are the "
                        + "tray's Renown book; the tray's buttons carry no words, only icons and tooltips. "
@@ -413,7 +526,8 @@ public sealed partial class TutorialFlow : PanelContainer
             IsDone: _ => false,
             AdvanceFrom: [TutorialStep.MeetHeroes], AdvancesTo: TutorialStep.Commission),
         new(
-            Step: TutorialStep.Commission, DisplayIndex: 10, Anchor: TutorialAnchor.ForHud("OpenCommissions"), MinDay: 3,
+            Step: TutorialStep.Commission, DisplayIndex: 10, Act: TutorialAct.HandOff,
+            Anchor: TutorialAnchor.ForHud("OpenCommissions"), MinDay: 3,
             ShortLabel: "Accept or decline a commission",
             TeachNote: "A commission is a hero asking you directly for one thing: a named slot, at a minimum "
                        + "quality, by a deadline, for a premium over the shelf price. Declining is a real "
@@ -690,17 +804,17 @@ public sealed partial class TutorialFlow : PanelContainer
             // vendor fallback below, `_workshopStationNoun` for Craft's own suggestion text), so
             // this reuses them rather than inventing a third vocabulary source.
             TutorialStep.BuyMaterial or TutorialStep.Craft =>
-                $"Tutorial {def.DisplayIndex}/{TotalSteps}: {GoTo(building, includeMovementHint: def.Step == TutorialStep.BuyMaterial, alreadyThere, arrivedNoun: def.Step == TutorialStep.BuyMaterial ? "vendor" : _workshopStationNoun)} — " +
+                $"{StepPrefix(def)}: {GoTo(building, includeMovementHint: def.Step == TutorialStep.BuyMaterial, alreadyThere, arrivedNoun: def.Step == TutorialStep.BuyMaterial ? "vendor" : _workshopStationNoun)} — " +
                 (suggestions.Count > 0
                     ? suggestions[0].Reason
                     : $"Buy material at the vendor, then craft at the {_workshopStationNoun}."),
             TutorialStep.Shelve =>
-                $"Tutorial {def.DisplayIndex}/{TotalSteps}: {GoTo(building, includeMovementHint: false, alreadyThere)} — " +
+                $"{StepPrefix(def)}: {GoTo(building, includeMovementHint: false, alreadyThere)} — " +
                 (suggestions.FirstOrDefault(s => s.Action is StockAction)?.Reason
                     ?? "Shelve your finished item so heroes can buy it.") +
                 " Find it under **Unshelved Crafts** and press **Stock** — or drag it to a **+ shelve here** slot.",
             TutorialStep.PostBounty =>
-                $"Tutorial {def.DisplayIndex}/{TotalSteps}: {GoTo(building, includeMovementHint: false, alreadyThere)} — under " +
+                $"{StepPrefix(def)}: {GoTo(building, includeMovementHint: false, alreadyThere)} — under " +
                 "**POST BOUNTY** pick a floor, set the reward on the coins, then press **Post**. The gold goes now; " +
                 "the hero who gets there keeps it.",
             // The departure is not a thing the player watches happen TO them: ending the Morning is
@@ -708,27 +822,25 @@ public sealed partial class TutorialFlow : PanelContainer
             // Naming only the gate answered WHERE and left the owner's actual question — "HOW to
             // watch them depart??" — unanswered, because the answer is a button somewhere else.
             TutorialStep.WatchDeparture =>
-                $"Tutorial {def.DisplayIndex}/{TotalSteps}: They leave when the Morning ends — press **{MorningBell(state)}**, " +
+                $"{StepPrefix(def)}: They leave when the Morning ends — press **{MorningBell(state)}**, " +
                 $"the wide button at the top of the screen. The view swings to the **{building}** and follows them out.",
             // Day-1 capstone: no town building — the taught affordance is the persistent Watch
             // control beside the bell (reachable through Expedition/Camp/ExpeditionDeep). "On the
             // bell row" named a piece of layout vocabulary that appears nowhere on screen. The day
             // holds here until this is answered (RaidConductor's hold), so the copy can promise it.
             TutorialStep.LookIn =>
-                $"Tutorial {def.DisplayIndex}/{TotalSteps}: Press **👁 Watch**, beside the wide button at the top of the " +
+                $"{StepPrefix(def)}: Press **👁 Watch**, beside the wide button at the top of the " +
                 "screen, to open the Scrying Mirror and look in on them — the day waits until you do.",
-            // U1 (§11.13): names the walk-away as legal — the old copy only ever described the
-            // happy path (Present -> Accept/Hold Firm/Counter), and the step's own completion used
-            // to REQUIRE a closed sale (a customer decision), so a player who did everything right
-            // and got walked on watched this step repeat itself forever with no acknowledgement
-            // that anything had happened at all. Kept over U2/U3's alternate rewrite (which leaned
-            // on a "last night's Forecast board" callback): that copy paired naturally with the
-            // CustomerApproached-keyed IsDone U2/U3 wrote for this row, which lost to U1's
-            // ActionLog-only predicate above — this text matches the predicate that actually ships.
+            // U-T2-16 (#162 defects 3-4): ONE sentence — walk to the counter, press Open Counter,
+            // they speak first. Present/Suggest/Accept/Hold Firm/Counter (the OLD copy's own five
+            // controls) moved to this row's own TeachNote and the Lessons book; naming all of them
+            // here is what pushed this card to the very edge of ObjectiveTracker's own 3-line budget
+            // (NoStepsCopy_OutgrowsTheObjectiveCardsOwnUnclampedLineBudget "passed only barely").
+            // arrivedNoun names the STATION (the counter itself), same idiom as BuyMaterial/Craft's
+            // own Station anchors, now that this step points at one too (U-T2-15).
             TutorialStep.OpenCounter =>
-                $"Tutorial {def.DisplayIndex}/{TotalSteps}: {GoTo(building, includeMovementHint: false, alreadyThere)} — press " +
-                "**Open Counter** and **Present** a shelved item, answering **Accept**, **Hold Firm**, or **Counter**. " +
-                "Walking away empty is a real answer too, not a mistake.",
+                $"{StepPrefix(def)}: {GoTo(building, includeMovementHint: false, alreadyThere, arrivedNoun: "counter")} — " +
+                "press **Open Counter**; they speak first.",
             // Vigil: no walk-there destination — the camp card opens itself the moment a party camps
             // below the checkpoint (CampPanel.ShowModal, called from MainUi's own SyncCampModal every
             // Camp tick); the lesson is which of its verbs to press. "The winch-house slate" and "the
@@ -737,10 +849,10 @@ public sealed partial class TutorialFlow : PanelContainer
             // guess whether today is even a day this can happen — staging a stop is the UNCOMMON
             // case (RaidConductor's own doc), so most days the honest answer is "not today."
             TutorialStep.Vigil =>
-                $"Tutorial {def.DisplayIndex}/{TotalSteps}: When they camp, a card fills the screen — pick a supply and " +
+                $"{StepPrefix(def)}: When they camp, a card fills the screen — pick a supply and " +
                 $"press **Send**, or press **Recall**. {VigilGatingNote(state)}",
             TutorialStep.EveningClose =>
-                $"Tutorial {def.DisplayIndex}/{TotalSteps}: Evening. The **EVENING LEDGER** opens itself — press **Buy** " +
+                $"{StepPrefix(def)}: Evening. The **EVENING LEDGER** opens itself — press **Buy** " +
                 $"under **ORE OFFERED**, then close it and press **{EveningBell(state)}** at the top of the screen.",
             // The tray's seven buttons have EMPTY Text (MainUi.TrayButton) — the words live only in
             // tooltips. U7 (§11.12 plan) rewrote every tray tooltip from a one-word restatement of
@@ -752,11 +864,11 @@ public sealed partial class TutorialFlow : PanelContainer
             // .TheTraySteps_QuoteTheTooltipsTheTrayButtonsActuallyCarry_NotTheirPanelTitles pins
             // the join against the LIVE button, not just this string).
             TutorialStep.MeetHeroes =>
-                $"Tutorial {def.DisplayIndex}/{TotalSteps}: The tray is the icon buttons at the top right — no words, so " +
+                $"{StepPrefix(def)}: The tray is the icon buttons at the top right — no words, so " +
                 $"hover for the tooltip and press the one reading \"{GodotClient.MainUi.RenownTrayTooltip}\". " +
                 "(The Tavern works too.) Read one hero.",
             TutorialStep.Commission =>
-                $"Tutorial {def.DisplayIndex}/{TotalSteps}: In that tray at the top right, press the icon tipped " +
+                $"{StepPrefix(def)}: In that tray at the top right, press the icon tipped " +
                 $"\"{GodotClient.MainUi.CommissionsTrayTooltip}\", then **Accept** or **Decline** one — the loop " +
                 "is yours after this.",
             _ => string.Empty,
@@ -860,9 +972,10 @@ public sealed partial class TutorialFlow : PanelContainer
             // or a craft is the same "telling someone to do what they've just done" defect this
             // method's own doc names, one layer in (caught by TutorialKeepsUpTests
             // .OpeningTheStepsBuilding_StopsTheCardTellingYouToWalkThere's sibling check).
-            // `arrivedNoun` carries that word in for the two Station-anchored steps
-            // (BuyMaterial/Craft); every other (Building-anchored) step has no station narrower
-            // than the building itself, so it keeps naming the building, unchanged.
+            // `arrivedNoun` carries that word in for the Station-anchored steps (BuyMaterial/Craft,
+            // and — U-T2-15 — OpenCounter's own "counter" station); every other (Building-anchored)
+            // step has no station narrower than the building itself, so it keeps naming the
+            // building, unchanged.
             return $"You're at the **{arrivedNoun ?? building}**";
         }
 
@@ -932,15 +1045,23 @@ public sealed partial class TutorialFlow : PanelContainer
     /// what the customer (<c>ShoppingAi</c>) decided. The old predicate
     /// (<c>CounterSaleClosed</c> only) required a CLOSED SALE, which the customer can refuse
     /// forever; a walk-away is a real, common, entirely legal answer (law 1: skipping stays
-    /// legal), and the old gate could never see it. True once an <see cref="OpenCounterAction"/>
-    /// appears in <see cref="GameState.ActionLog"/> AND any of <see cref="PresentItemAction"/>/
-    /// <see cref="SuggestItemAction"/>/<see cref="HaggleResponseAction"/>/<see
-    /// cref="CloseCounterAction"/> follows it — same ActionLog-scan idiom the Commission row
-    /// already uses (<see cref="Registry"/>).
+    /// legal), and the old gate could never see it.
+    ///
+    /// <para><b>U-T2-14 (#162 defect 1) tightened this further.</b> True once an <see
+    /// cref="OpenCounterAction"/> appears in <see cref="GameState.ActionLog"/> AND any of <see
+    /// cref="PresentItemAction"/>/<see cref="SuggestItemAction"/>/<see cref="HaggleResponseAction"/>
+    /// follows it — <see cref="CloseCounterAction"/> ALONE, with none of those three in between, is
+    /// no longer enough: opening the counter and closing it again used to complete the game's
+    /// flagship channel without the player ever hearing a want, presenting an item, or haggling
+    /// once. <see cref="CloseCounterAction"/> still counts, but only AFTER one of the other three
+    /// has already fired — the walk-away/holding-the-line ending stays a real, completing answer,
+    /// it just has to follow an actual engagement, same ActionLog-scan idiom the Commission row
+    /// already uses (<see cref="Registry"/>).</para>
     /// </summary>
     private static bool CounterAnsweredAtLeastOnce(GameState state)
     {
         var openedCounter = false;
+        var answered = false;
         foreach (var batch in state.ActionLog)
         {
             foreach (var action in batch.Actions)
@@ -949,15 +1070,18 @@ public sealed partial class TutorialFlow : PanelContainer
                 {
                     openedCounter = true;
                 }
-                else if (openedCounter
-                         && action is PresentItemAction or SuggestItemAction or HaggleResponseAction or CloseCounterAction)
+                else if (openedCounter && action is PresentItemAction or SuggestItemAction or HaggleResponseAction)
+                {
+                    answered = true;
+                }
+                else if (openedCounter && answered && action is CloseCounterAction)
                 {
                     return true;
                 }
             }
         }
 
-        return false;
+        return answered;
     }
 
     /// <summary>
@@ -993,13 +1117,20 @@ public sealed partial class TutorialFlow : PanelContainer
     /// arrived. It now names nothing to press at all.</para></summary>
     private string WaitText(GameState state, TutorialStepDef def)
     {
-        var index = def.DisplayIndex;
         if (state.Day < def.MinDay)
         {
             return def.Step switch
             {
-                TutorialStep.OpenCounter =>
-                    $"Tutorial {index}/{TotalSteps}: The counter is a Day {def.MinDay} lesson — nothing to do here yet; it opens once Day {def.MinDay} begins.",
+                // U-T2-16 (#162 defects 3-4): OpenCounter no longer has a day-gate case here — its
+                // MinDay dropped from 2 to 1, because the real precondition was never the day, it
+                // was the counter's own Morning-only legality (CounterHandlers.ApplyOpen, mirrored
+                // in StepActionAvailable). The OLD line here ("it opens once Day 2 begins") is the
+                // exact "wait line for most of day 1, then a SECOND wait line for most of day 2"
+                // shape the owner's brief calls out. This branch (state.Day < def.MinDay) is
+                // therefore unreachable for OpenCounter now — MinDay is 1, so it is never true —
+                // dropped rather than kept as dead code, same call Vigil's own MinDay 2->1 fix
+                // already made (see that case's own doc just below).
+                //
                 // U2 (tutorial-revamp plan, §11.13): Vigil no longer has a day-gate case here — its
                 // MinDay dropped to 1, because the real precondition was never the day (see
                 // AnyPartyStagedForCheckpointToday's own doc, and GatingNote's Vigil case below,
@@ -1011,9 +1142,9 @@ public sealed partial class TutorialFlow : PanelContainer
                 // U1's own alternate case here (VigilGatingNote, written back when MinDay was still
                 // 2) is dropped rather than kept as dead code.
                 TutorialStep.MeetHeroes =>
-                    $"Tutorial {index}/{TotalSteps}: Meeting your heroes is a Day {def.MinDay} lesson — nothing to do here yet; it opens once Day {def.MinDay} begins.",
+                    $"{StepPrefix(def)}: Meeting your heroes is a Day {def.MinDay} lesson — nothing to do here yet; it opens once Day {def.MinDay} begins.",
                 TutorialStep.Commission =>
-                    $"Tutorial {index}/{TotalSteps}: Your first commission choice is a Day {def.MinDay} lesson — nothing to do here yet; it opens once Day {def.MinDay} begins.",
+                    $"{StepPrefix(def)}: Your first commission choice is a Day {def.MinDay} lesson — nothing to do here yet; it opens once Day {def.MinDay} begins.",
                 _ => string.Empty,
             };
         }
@@ -1033,10 +1164,10 @@ public sealed partial class TutorialFlow : PanelContainer
                 // lanterns"), so the two words a stranger was told to look for are never on screen.
                 // Same defect the owner already caught once in the day-gate branch.
                 TutorialStep.BuyMaterial =>
-                    $"Tutorial {index}/{TotalSteps}: No action slots left today — the wide button at the top of the " +
+                    $"{StepPrefix(def)}: No action slots left today — the wide button at the top of the " +
                     $"screen moves the day along; the vendor and the {_workshopStationNoun} are both still there tomorrow.",
                 TutorialStep.PostBounty =>
-                    $"Tutorial {index}/{TotalSteps}: No action slots left today — the wide button at the top of the " +
+                    $"{StepPrefix(def)}: No action slots left today — the wide button at the top of the " +
                     "screen moves the day along; the board reopens tomorrow.",
                 _ => string.Empty,
             };
@@ -1045,16 +1176,18 @@ public sealed partial class TutorialFlow : PanelContainer
         return def.Step switch
         {
             TutorialStep.BuyMaterial =>
-                $"Tutorial {index}/{TotalSteps}: The {_workshopNametag}'s material vendor only trades in the Morning — it opens back up next Morning. Nothing to do here until then.",
+                $"{StepPrefix(def)}: The {_workshopNametag}'s material vendor only trades in the Morning — it opens back up next Morning. Nothing to do here until then.",
             TutorialStep.PostBounty =>
-                $"Tutorial {index}/{TotalSteps}: The Bounties board only takes postings in the Morning or Evening — come back then to post yours.",
+                $"{StepPrefix(def)}: The Bounties board only takes postings in the Morning or Evening — come back then to post yours.",
+            // U-T2-16: states the gate as what it actually is — a Morning gate on the counter's own
+            // legality, never a day gate (the branch above is unreachable for this step now).
             TutorialStep.OpenCounter =>
-                $"Tutorial {index}/{TotalSteps}: The counter only opens in the Morning — it reopens next Morning.",
+                $"{StepPrefix(def)}: The counter only opens in the Morning — it reopens next Morning.",
             // The Watch control is only on the bell row while a party is out (WatchWindowOpen), so
             // naming it here would point at nothing. Name what is true instead, and the press that
             // brings it back.
             TutorialStep.LookIn =>
-                $"Tutorial {index}/{TotalSteps}: Nobody is down there right now — ring **Send them off** and the Mirror opens on them as they go.",
+                $"{StepPrefix(def)}: Nobody is down there right now — ring **Send them off** and the Mirror opens on them as they go.",
             _ => string.Empty,
         };
     }
@@ -1087,6 +1220,14 @@ public sealed partial class TutorialFlow : PanelContainer
         {
             TutorialStep.BuyMaterial or TutorialStep.OpenCounter when state.Phase != DayPhase.Morning =>
                 "A Morning task — rest until dawn.",
+            // U-T2-14's own named trap: Present/Suggest both need a shelved item, and Haggle needs
+            // a standing offer only Present/Suggest ever create (CounterHandlers' own guard) — so a
+            // player who opens the counter with an EMPTY shelf has no legal way to answer the
+            // customer at all, and CounterAnsweredAtLeastOnce's tightened predicate (no more free
+            // pass on Open+Close alone) would otherwise strand them here silently. Said before they
+            // press Open Counter, never after.
+            TutorialStep.OpenCounter when state.Player.Shelf.Count == 0 =>
+                "Nothing on the shelf yet — stock a craft first, or there's nothing to show them.",
             TutorialStep.PostBounty when state.Phase is not (DayPhase.Morning or DayPhase.Evening) =>
                 "Morning or Evening — the board reopens then.",
             TutorialStep.LookIn when !WatchWindowOpen(state) =>
@@ -1186,13 +1327,13 @@ public sealed partial class TutorialFlow : PanelContainer
     /// check, the day-1-unconditional muster) and why this single pass reproduces both exactly.
     /// </para>
     ///
-    /// <para><see cref="BackstopDay"/> closes the chain regardless of <see cref="Step"/> once
+    /// <para><see cref="ChainBackstopDay"/> closes the chain regardless of <see cref="Step"/> once
     /// enough days have passed — the two UI-only steps (<see cref="TutorialStep.LookIn"/>/<see
     /// cref="TutorialStep.MeetHeroes"/>) carry no durable fact this method could ever see, and
-    /// day-2/3's own real sim outcomes (a hero willing to buy, a party actually camping, an open
+    /// later days' own real sim outcomes (a hero willing to buy, a party actually camping, an open
     /// commission) are not something this class should force — so one day of grace past the
-    /// intended Day-3 finish closes the chain unconditionally instead, preserving "nothing the
-    /// player does or fails to do can strand this card forever".</para>
+    /// pointed chain's own last day closes the chain unconditionally instead, preserving "nothing
+    /// the player does or fails to do can strand this card forever".</para>
     /// </summary>
     public void Advance(GameState state)
     {
@@ -1225,7 +1366,7 @@ public sealed partial class TutorialFlow : PanelContainer
             }
         }
 
-        if (!Completed && state.Day >= BackstopDay)
+        if (!Completed && state.Day >= ChainBackstopDay)
         {
             Complete();
         }
@@ -1241,18 +1382,38 @@ public sealed partial class TutorialFlow : PanelContainer
         }
     }
 
-    /// <summary>One day of grace past the intended Day-3 finish (method doc on <see
-    /// cref="Advance"/>) — sized to the LONGEST realistic path (day 1's own ladder is guaranteed
-    /// to reach <see cref="TutorialStep.LookIn"/> by day 1's Expedition tick at the latest, per
-    /// <see cref="TutorialStep.WatchDeparture"/>'s own unconditional row), so a day of grace after
-    /// day 3 is real slack, not a hair's-width margin.
+    /// <summary>
+    /// U-T2-2 (§11.13): the apprenticeship's own no-death warrant end — <see
+    /// cref="ApprenticeWarrant.LastGraceDay"/> + 1, meaning UNCHANGED from before this split. Used
+    /// only by <see cref="ConsumeWarrantEndBeat"/>'s own day gate; the chain's UNCONDITIONAL close
+    /// is a SEPARATE fact now, <see cref="ChainBackstopDay"/> below.
     ///
-    /// <para>§11.13 amendment (U4/U5): pinned to <see cref="ApprenticeWarrant.LastGraceDay"/> + 1,
-    /// not a second literal — the tutorial's own close and the sim-side warrant's own dated end are
-    /// ONE fact now, not two that could drift apart (<c>TutorialRegistryConformanceTests
-    /// .BackstopDay_EqualsWarrantLastGraceDayPlusOne</c> pins it anyway, belt-and-braces).</para>
+    /// <para><b>Why this had to split.</b> One constant used to mean BOTH "the warrant's no-death
+    /// grace ends" and "the guided chain force-closes" — harmless while the pointed chain finished
+    /// on day 3 (one day before the OLD backstop), but the owner has since ruled the pointed chain
+    /// now runs through day 7: with a single constant, a longer chain either silently extends the
+    /// warrant's own mortality-postponement window, or gets silently force-closed at dawn on day 4,
+    /// mid-lesson. Neither is acceptable, and <see cref="ApprenticeWarrant.LastGraceDay"/> itself
+    /// must not move — the warrant stays three days; mortality must not move with the chain's own
+    /// length. <c>TutorialRegistryConformanceTests.WarrantEndDay_EqualsWarrantLastGraceDayPlusOne</c>
+    /// pins this constant's own value against the sim's, belt-and-braces (same precedent the OLD
+    /// single-constant test already set).</para>
     /// </summary>
-    private const int BackstopDay = ApprenticeWarrant.LastGraceDay + 1;
+    private const int WarrantEndDay = ApprenticeWarrant.LastGraceDay + 1;
+
+    /// <summary>
+    /// U-T2-2 (§11.13): the chain's OWN unconditional close — one day past the pointed chain's own
+    /// last taught day (owner ruling: the pointed chain now runs through day 7), sized the same way
+    /// <see cref="WarrantEndDay"/> always was (one day of grace past the intended finish, day 1's
+    /// own ladder guaranteed to reach <see cref="TutorialStep.LookIn"/> by its Expedition tick at
+    /// the latest, per <see cref="TutorialStep.WatchDeparture"/>'s own unconditional row, so a day
+    /// of grace after the pointed chain's finish is real slack, not a hair's-width margin) — just no
+    /// longer DERIVED from the warrant's own end, since the two now measure different things.
+    /// <c>TutorialRegistryConformanceTests.ChainBackstopDay_IsAtLeastWarrantEndDay_AndClosesTheChainUnconditionally</c>
+    /// pins both halves: this must sit strictly after <see cref="WarrantEndDay"/>, and it must still
+    /// force-complete the chain once reached.
+    /// </summary>
+    private const int ChainBackstopDay = 8;
 
     /// <summary>Day-1 capstone: <see cref="TutorialStep.LookIn"/> is a UI-only fact (opening the
     /// Scrying Mirror carries no sim event to read durably) — <c>MainUi</c> calls this directly
@@ -1387,7 +1548,7 @@ public sealed partial class TutorialFlow : PanelContainer
     /// </summary>
     public string? ConsumeWarrantEndBeat(GameState state)
     {
-        if (_hasSeenWarrantEndBeat || state.Day < ApprenticeWarrant.LastGraceDay + 1)
+        if (_hasSeenWarrantEndBeat || state.Day < WarrantEndDay)
         {
             return null;
         }

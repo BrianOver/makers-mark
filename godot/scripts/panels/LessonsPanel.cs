@@ -48,7 +48,14 @@ public partial class LessonsPanel : SimPanel
 
         var currentStep = Tutorial is { Active: true } ? Tutorial.Step : (TutorialStep?)null;
 
-        foreach (var def in TutorialFlow.Registry.OrderBy(d => d.DisplayIndex).ThenBy(d => (int)d.Step))
+        // U-T2-1 (owner ruling): chapters, not one flat countdown — grouped by Act first so the
+        // book reads as "The Mark", then "The Hand-Off"'s own four lessons together, then "The
+        // Dark", then "The Memory", rather than the registry's own chronological DisplayIndex order
+        // (which interleaves acts across the three in-game days). Each row's own numbering is
+        // act-scoped too (TutorialFlow.ActPosition), matching the card's own "{Act} · N of M" prefix
+        // exactly — the book and the card can never disagree about which chapter a step belongs to.
+        foreach (var def in TutorialFlow.Registry
+                     .OrderBy(d => (int)d.Act).ThenBy(d => d.DisplayIndex).ThenBy(d => (int)d.Step))
         {
             var isCurrent = currentStep == def.Step;
             var card = Card($"Lesson_{def.DisplayIndex}_{def.Step}");
@@ -59,7 +66,9 @@ public partial class LessonsPanel : SimPanel
 
             var titleRow = AddRow(body);
             var marker = isCurrent ? "◆" : "○"; // filled diamond / hollow circle — same glyphs ObjectiveTracker's checklist uses
-            var title = AddLabel(titleRow, $"{marker} {def.DisplayIndex}/{TutorialFlow.TotalSteps} — {def.ShortLabel}");
+            var (position, total) = TutorialFlow.ActPosition(def.Step);
+            var title = AddLabel(
+                titleRow, $"{marker} {TutorialActVocab.DisplayName(def.Act)} · {position} of {total} — {def.ShortLabel}");
             if (isCurrent)
             {
                 title.AddThemeColorOverride("font_color", GameTheme.WarnColor);

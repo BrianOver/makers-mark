@@ -38,7 +38,8 @@ public class TutorialFlowTests
             // applies, so this cannot drift from what the player actually reads.
             AssertThat(ui.Objective.Reason.Text)
                 .IsEqual(ObjectiveTracker.Plain(ui.Tutorial.TopSlotText(ui.Adapter.CurrentState)!));
-            AssertThat(ui.Objective.Reason.Text).StartsWith("Tutorial 1/10:");
+            // U-T2-1: act-scoped numbering — "The Mark · 1 of 1", not "Tutorial 1/10".
+            AssertThat(ui.Objective.Reason.Text).StartsWith("The Mark · 1 of 1:");
             AssertThat(ui.Objective.TutorialDismiss.Visible).IsTrue();
 
             AssertThat(ui.Tutorial.SecondProfessionButton.Visible).IsFalse();
@@ -83,23 +84,28 @@ public class TutorialFlowTests
         // 1/5 to 3/5". BuyMaterial and Craft used to be separately NUMBERED steps (1 and 2), so a
         // player who satisfied both in one compound "get your first item made" beat watched the
         // counter jump two numbers at once — confusing even though the step machine itself was
-        // correct. They now share display slot 1 (StepIndex), so the on-screen counter can only
-        // ever move by exactly one, whatever combination of Buy/Craft the player actually did.
+        // correct. They now share display slot 1 (StepIndex) AND an act (TutorialAct.Mark), so the
+        // on-screen counter can only ever read the SAME "The Mark · 1 of 1", whatever combination
+        // of Buy/Craft the player actually did — the shared-slot guarantee this test exists to pin,
+        // read through U-T2-1's act-scoped label instead of the old global "N/10" one.
         var ui = MountMainUi();
         try
         {
             AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.BuyMaterial);
-            AssertThat(ui.Tutorial.TopSlotText(ui.Adapter.CurrentState)!).StartsWith("Tutorial 1/10:");
+            AssertThat(ui.Tutorial.TopSlotText(ui.Adapter.CurrentState)!).StartsWith("The Mark · 1 of 1:");
 
             ui.Adapter.Queue(new BuyMaterialAction(ScriptedSession.CraftMaterial, ScriptedSession.CopperNeeded));
             AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.Craft); // internal step moved...
             AssertThat(ui.Tutorial.TopSlotText(ui.Adapter.CurrentState)!)
-                .StartsWith("Tutorial 1/10:"); // ...but the ON-SCREEN number did not (same display slot)
+                .StartsWith("The Mark · 1 of 1:"); // ...but the ON-SCREEN number did not (same display slot)
 
             ui.Adapter.Queue(new CraftAction(ScriptedSession.CraftRecipeId, ScriptedSession.CraftMaterial));
             AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.Shelve);
+            // Shelve is a DIFFERENT act (The Hand-Off) — its own numbering starts fresh at 1, which
+            // is the correct per-act behavior, not a skipped or repeated number within Mark's own
+            // one-slot ladder.
             AssertThat(ui.Tutorial.TopSlotText(ui.Adapter.CurrentState)!)
-                .StartsWith("Tutorial 2/10:"); // exactly one number further, never a jump to 3
+                .StartsWith("The Hand-Off · 1 of 4:");
         }
         finally
         {
@@ -362,25 +368,31 @@ public class TutorialFlowTests
 
     /// <summary>U1 (§11.13): the shared "answer the counter" step every later-day helper below
     /// needs to get from <see cref="TutorialStep.OpenCounter"/> to <see cref="TutorialStep.Vigil"/>
-    /// — Open then Close (the customer walks, no sale) rather than a <see cref="CounterSaleClosed"/>
-    /// event, because the step's own completion no longer reads that event at all (see
-    /// <c>TutorialFlow.CounterAnsweredAtLeastOnce</c>'s own doc). Walking is the LEAST favorable
-    /// case the fix has to cover, so using it here (rather than a scripted sale) is the stronger
-    /// proof for every test that merely needs to get PAST this step to reach a later one.</summary>
+    /// — Present, then Close (the customer walks, no sale) rather than a <see
+    /// cref="CounterSaleClosed"/> event, because the step's own completion no longer reads that
+    /// event at all (see <c>TutorialFlow.CounterAnsweredAtLeastOnce</c>'s own doc). Presenting and
+    /// walking away is the LEAST favorable case the fix has to cover that still counts as an ANSWER
+    /// — U-T2-14 tightened the predicate so Open+Close ALONE (no Present/Suggest/Haggle between
+    /// them) no longer completes the step at all — so using it here (rather than a scripted sale) is
+    /// the stronger proof for every test that merely needs to get PAST this step to reach a later
+    /// one.</summary>
     private static void AnswerCounterAndAdvance(MainUi ui, int day) =>
-        CraftedAdvanceWithActions(ui, day, new OpenCounterAction(), new CloseCounterAction());
+        CraftedAdvanceWithActions(
+            ui, day, new OpenCounterAction(), new PresentItemAction(new ItemId(1)), new CloseCounterAction());
 
     /// <summary>
     /// U2 (tutorial-revamp plan, §11.13)'s own OpenCounter helper, KEPT and fixed to match the
     /// predicate the merge actually shipped (<c>TutorialFlow.CounterAnsweredAtLeastOnce</c>, U1's
     /// ActionLog-only version — see the registry row's own comment): needs an <see
     /// cref="OpenCounterAction"/> in the SAME batch, not just a <see cref="CloseCounterAction"/>,
-    /// or the predicate's own `openedCounter` latch never trips. <c>CustomerApproached</c> stays in
-    /// the EventLog deliberately — it proves the completion fact does not care whether a customer
-    /// ever showed up or what they decided, only that the player opened the counter and answered.
-    /// This shared helper exists only so tests further down the chain can get PAST OpenCounter to
-    /// test a LATER step, mirroring <see cref="CraftedAdvance"/>'s own "hand a modified state to a
-    /// pure method" idiom.
+    /// or the predicate's own `openedCounter` latch never trips. U-T2-14 tightened it FURTHER — a
+    /// <see cref="PresentItemAction"/> (or Suggest/Haggle) must sit between Open and Close too, or
+    /// the tightened predicate never flips `answered`. <c>CustomerApproached</c> stays in the
+    /// EventLog deliberately — it proves the completion fact does not care whether a customer ever
+    /// showed up or what they decided, only that the player opened the counter and answered. This
+    /// shared helper exists only so tests further down the chain can get PAST OpenCounter to test a
+    /// LATER step, mirroring <see cref="CraftedAdvance"/>'s own "hand a modified state to a pure
+    /// method" idiom.
     /// </summary>
     private static void CraftedAdvanceOpenCounterComplete(MainUi ui, int day)
     {
@@ -391,7 +403,8 @@ public class TutorialFlowTests
             EventLog = state.EventLog.Add(new CustomerApproached(new HeroId(1))),
             ActionLog = state.ActionLog.Add(
                 new LoggedBatch(day, state.Phase,
-                    ImmutableList.Create<PlayerAction>(new OpenCounterAction(), new CloseCounterAction()))),
+                    ImmutableList.Create<PlayerAction>(
+                        new OpenCounterAction(), new PresentItemAction(new ItemId(1)), new CloseCounterAction()))),
         };
         ui.Tutorial.Advance(crafted);
     }
@@ -526,7 +539,8 @@ public class TutorialFlowTests
             AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.WatchDeparture);
 
             var copy = ui.Tutorial.TopSlotText(ui.Adapter.CurrentState)!;
-            AssertThat(copy).StartsWith("Tutorial 4/10:");
+            // U-T2-1: WatchDeparture is The Dark's 2nd of 3 beats (PostBounty, WatchDeparture, LookIn).
+            AssertThat(copy).StartsWith("The Dark · 2 of 3:");
             AssertThat(copy)
                 .OverrideFailureMessage(
                     $"Step 4 must name the press, not only the sight — the owner's question was literally " +
@@ -601,7 +615,8 @@ public class TutorialFlowTests
             AssertThat(string.IsNullOrWhiteSpace(copy))
                 .OverrideFailureMessage("The tutorial card rendered BLANK — the surface whose whole job is saying what to do.")
                 .IsFalse();
-            AssertThat(copy).StartsWith("Tutorial 5/10:");
+            // U-T2-1: LookIn is The Dark's 3rd (and last) of 3 beats.
+            AssertThat(copy).StartsWith("The Dark · 3 of 3:");
             AssertThat(copy)
                 .OverrideFailureMessage($"The step is still naming the Watch control with nobody out. Copy was: \"{copy}\"")
                 .NotContains("👁 Watch");
@@ -651,11 +666,20 @@ public class TutorialFlowTests
     // camp when we were just selling something?"
 
     [TestCase]
-    public void Step6_Completes_WhenTheCustomerWalks_WithoutASale()
+    public void Step6_Completes_WhenTheCustomerWalks_AfterAGenuinePresent()
     {
-        // The exact case that stalled the owner: a player who opens the counter and gets walked on
-        // (no CounterSaleClosed anywhere in this state at all) must still advance. The old
-        // predicate required the customer's OWN accept, which the customer can refuse forever.
+        // The exact case that stalled the owner: a player who opens the counter, presents
+        // something, and gets walked on (no CounterSaleClosed anywhere in this state at all) must
+        // still advance. The old predicate required the customer's OWN accept, which the customer
+        // can refuse forever. U-T2-14 tightened the OTHER direction too (Open+Close ALONE, with no
+        // Present/Suggest/Haggle between them, no longer completes — see
+        // Step6_DoesNotComplete_OnOpenThenCloseAlone_WithNoAnswerBetween below) — Present-then-walk
+        // is the least favorable case that still counts as a genuine answer.
+        //
+        // U-T2-16 also dropped OpenCounter's own MinDay from 2 to 1 (the real gate was always the
+        // counter's own Morning-only legality, never the calendar) — proven here on DAY 1 itself,
+        // the moment the party's own day-1 send-off has opened the step at all, rather than the OLD
+        // "must wait for Day 2" shape this test used to pin.
         var ui = MountMainUi();
         try
         {
@@ -663,18 +687,14 @@ public class TutorialFlowTests
             ui.Mirror.ShowMirror();
             AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.OpenCounter);
 
-            // Still day 1 — must not complete a Day-2 lesson early.
-            CraftedAdvanceWithActions(ui, day: 1, new OpenCounterAction(), new CloseCounterAction());
-            AssertThat(ui.Tutorial.Step)
-                .OverrideFailureMessage("A counter answer on Day 1 completed a Day-2 step — the MinDay gate is missing or wrong.")
-                .IsEqual(TutorialStep.OpenCounter);
-
-            CraftedAdvanceWithActions(ui, day: 2, new OpenCounterAction(), new CloseCounterAction());
+            CraftedAdvanceWithActions(
+                ui, day: 1, new OpenCounterAction(), new PresentItemAction(new ItemId(1)), new CloseCounterAction());
             AssertThat(ui.Tutorial.Step)
                 .OverrideFailureMessage(
-                    "The customer walked (no CounterSaleClosed event exists anywhere in this state) and the " +
-                    "step did not advance — a player who does everything right and gets no sale would watch " +
-                    "this step repeat itself forever, which is the owner's exact complaint.")
+                    "The customer walked after a genuine Present on DAY 1 (no CounterSaleClosed event exists " +
+                    "anywhere in this state) and the step did not advance — a player who does everything right " +
+                    "and gets no sale would watch this step repeat itself forever, which is the owner's exact " +
+                    "complaint, and U-T2-16 dropped MinDay to 1 specifically so this need not wait for Day 2.")
                 .IsEqual(TutorialStep.Vigil);
         }
         finally
@@ -728,15 +748,47 @@ public class TutorialFlowTests
     }
 
     /// <summary>
+    /// U-T2-14 (#162 defect 1) — the CORE regression this unit exists to fix: "Open the counter,
+    /// close it, the step ticks. The player can complete the game's flagship channel without
+    /// hearing a want, presenting an item, or haggling once." Before this fix,
+    /// <c>Step6_Completes_WhenTheCustomerWalks_AfterAGenuinePresent</c>'s OWN Open+Close-only body
+    /// (with no Present in between) already proved this step complete — this test pins the OPPOSITE
+    /// claim directly: Open then Close, nothing between them, must NOT complete the step.
+    /// </summary>
+    [TestCase]
+    public void Step6_DoesNotComplete_OnOpenThenCloseAlone_WithNoAnswerBetween()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            DriveDay1ToLookIn(ui);
+            ui.Mirror.ShowMirror();
+            AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.OpenCounter);
+
+            CraftedAdvanceWithActions(ui, day: 2, new OpenCounterAction(), new CloseCounterAction());
+            AssertThat(ui.Tutorial.Step)
+                .OverrideFailureMessage(
+                    "Opening the counter and closing it again — with no Present/Suggest/Haggle between them — " +
+                    "completed the step. This is #162 defect 1: the flagship channel completable by opening " +
+                    "and closing a door.")
+                .IsEqual(TutorialStep.OpenCounter);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>
     /// U2 (tutorial-revamp plan, §11.13): the exact case that stalled the owner — the customer's
     /// want is fixed before the player shows anything, and on a starter shelf a hero who WALKS with
     /// nothing bought is the modal case, not bad luck. The step must complete on this outcome, not
     /// only on a closed sale (Test scenario 2 from the unit's own brief). Kept alongside
-    /// <see cref="Step6_Completes_WhenTheCustomerWalks_WithoutASale"/> (same claim, proven the
-    /// other way — a realistic EventLog with CustomerApproached/CustomerWalked rather than a bare
-    /// ActionLog construction) rather than merged into it: fixed to also carry an
-    /// <see cref="OpenCounterAction"/> in the ActionLog batch, which the merge's own predicate
-    /// (<c>TutorialFlow.CounterAnsweredAtLeastOnce</c>) requires and the original draft omitted.
+    /// <see cref="Step6_Completes_WhenTheCustomerWalks_AfterAGenuinePresent"/> (same claim, proven
+    /// the other way — a realistic EventLog with CustomerApproached/CustomerWalked rather than a
+    /// bare ActionLog construction) rather than merged into it: carries an <see
+    /// cref="OpenCounterAction"/> AND a <see cref="PresentItemAction"/> in the ActionLog batch,
+    /// which <c>TutorialFlow.CounterAnsweredAtLeastOnce</c> (U-T2-14 tightened it) requires.
     /// </summary>
     [TestCase]
     public void OpenCounterStep_Completes_WhenTheCustomerWalks_WithoutASale()
@@ -757,13 +809,14 @@ public class TutorialFlowTests
                     .Add(new CustomerWalked(new HeroId(1), null, "no want met")),
                 ActionLog = state.ActionLog.Add(
                     new LoggedBatch(2, state.Phase,
-                        ImmutableList.Create<PlayerAction>(new OpenCounterAction(), new CloseCounterAction()))),
+                        ImmutableList.Create<PlayerAction>(
+                            new OpenCounterAction(), new PresentItemAction(new ItemId(1)), new CloseCounterAction()))),
             };
             ui.Tutorial.Advance(walked);
 
             AssertThat(ui.Tutorial.Step)
                 .OverrideFailureMessage(
-                    "A hero walking with nothing bought did not complete OpenCounter — the step still demands a closed sale.")
+                    "A hero walking with nothing bought, after a genuine Present, did not complete OpenCounter.")
                 .IsEqual(TutorialStep.Vigil);
         }
         finally
@@ -793,11 +846,56 @@ public class TutorialFlowTests
                     .Add(new CounterSaleClosed(new HeroId(1), new ItemId(1), 10, Pinned: false)),
                 ActionLog = state.ActionLog.Add(
                     new LoggedBatch(2, state.Phase,
-                        ImmutableList.Create<PlayerAction>(new OpenCounterAction(), new CloseCounterAction()))),
+                        ImmutableList.Create<PlayerAction>(
+                            new OpenCounterAction(), new PresentItemAction(new ItemId(1)), new CloseCounterAction()))),
             };
             ui.Tutorial.Advance(sold);
 
             AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.Vigil);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>
+    /// U-T2-14's own named trap: <see cref="PresentItemAction"/>/<see cref="SuggestItemAction"/>
+    /// both need a shelved item, and <see cref="HaggleResponseAction"/> needs a standing offer only
+    /// Present/Suggest ever create (<c>CounterHandlers</c>'s own guard) — so a player who opens the
+    /// counter with an EMPTY shelf has no legal way to answer the customer at all, and the tightened
+    /// <c>CounterAnsweredAtLeastOnce</c> would otherwise strand them here silently (no more free pass
+    /// on Open+Close alone). The checklist's gating note must say so BEFORE the player presses Open
+    /// Counter, never after.
+    /// </summary>
+    [TestCase]
+    public void OpenCounterStep_GatingNote_WarnsOfTheEmptyShelfTrap_NeverSilently()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            DriveDay1ToLookIn(ui); // stocks one item along the way
+            ui.Mirror.ShowMirror();
+            AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.OpenCounter);
+
+            var stillStocked = ui.Adapter.CurrentState with { Day = 2, Phase = DayPhase.Morning };
+            AssertThat(stillStocked.Player.Shelf.Count)
+                .OverrideFailureMessage("Test setup drifted — DriveDay1ToLookIn should have shelved one item.")
+                .IsGreaterEqual(1);
+            AssertThat(ui.Tutorial.Checklist(stillStocked).Single(r => r.Current).GatingNote)
+                .OverrideFailureMessage("A stocked shelf should carry no gating note at all in the Morning.")
+                .IsNull();
+
+            var emptyShelf = stillStocked with { Player = stillStocked.Player with { Shelf = ImmutableList<ShelfEntry>.Empty } };
+            var row = ui.Tutorial.Checklist(emptyShelf).Single(r => r.Current);
+            AssertThat(row.GatingNote)
+                .OverrideFailureMessage(
+                    "An empty shelf leaves the player able to open the counter with no legal way to answer it, " +
+                    "and no gating note warned them before they walked in.")
+                .IsNotNull();
+            AssertThat(row.GatingNote!.Contains("shelf", System.StringComparison.OrdinalIgnoreCase))
+                .OverrideFailureMessage($"The gating note does not mention the shelf at all: \"{row.GatingNote}\"")
+                .IsTrue();
         }
         finally
         {
@@ -1142,17 +1240,20 @@ public class TutorialFlowTests
         // LookIn/MeetHeroes key off UI navigation Advance() cannot see at all — a player (or a
         // driven test, like TutorialAllProfessionsTests) who never opens the Mirror must still not
         // be stranded forever. Day 1 -> LookIn for real, then never touch the Mirror again.
+        //
+        // U-T2-2: the chain's own backstop is now day 8 (ChainBackstopDay), not day 4 — the split
+        // that separated "the warrant ends" from "the chain force-closes" (see that unit's own doc).
         var ui = MountMainUi();
         try
         {
             DriveDay1ToLookIn(ui);
 
-            CraftedAdvance(ui, day: 3);
+            CraftedAdvance(ui, day: 7);
             AssertThat(ui.Tutorial.Completed)
                 .OverrideFailureMessage("The backstop fired before its own grace day.")
                 .IsFalse();
 
-            CraftedAdvance(ui, day: 4);
+            CraftedAdvance(ui, day: 8);
             AssertThat(ui.Tutorial.Completed)
                 .OverrideFailureMessage("Stuck on LookIn (Mirror never opened) past the backstop day — the chain never closed.")
                 .IsTrue();
@@ -1169,8 +1270,9 @@ public class TutorialFlowTests
     /// and <c>ExpeditionSystem.CheckpointFor</c> means EVERY hero's first-ever trip (day 1, and any
     /// later day where nobody has yet cleared floor 1) is structurally unstaged, so a real campaign
     /// can plausibly reach the Vigil step's Day-2 gate and still never see the slate open. The OLD
-    /// fix rode the generic BackstopDay=4 all the way to Completed with nothing in between — riding
-    /// silently past Vigil, EveningClose, MeetHeroes and Commission in one jump. The chain now moves
+    /// fix rode the generic backstop (now ChainBackstopDay, day 8) all the way to Completed with
+    /// nothing in between — riding silently past Vigil, EveningClose, MeetHeroes and Commission in
+    /// one jump. The chain now moves
     /// past an unanswered Vigil the moment Day 3 arrives (EveningClose's own AdvanceFrom, the SAME
     /// unconditional-sweep idiom WatchDeparture already uses across day 1), so it no longer needs to
     /// wait that long at all.
@@ -1196,12 +1298,12 @@ public class TutorialFlowTests
             AssertThat(ui.Tutorial.Completed).IsFalse();
 
             // ...but Day 3 must carry an unanswered Vigil straight through to MeetHeroes rather than
-            // stranding it until the generic BackstopDay's much later, much blunter close.
+            // stranding it until ChainBackstopDay's much later, much blunter close.
             CraftedAdvance(ui, day: 3);
             AssertThat(ui.Tutorial.Step)
                 .OverrideFailureMessage(
                     "Day 3 arrived and an unanswered Vigil did not move past it — the chain would otherwise " +
-                    "ride the silent BackstopDay=4 close all the way to Completed with nothing in between.")
+                    "ride the silent ChainBackstopDay=8 close all the way to Completed with nothing in between.")
                 .IsEqual(TutorialStep.MeetHeroes);
             AssertThat(ui.Tutorial.Completed).IsFalse(); // MeetHeroes/Commission still need their own answer
         }
@@ -1356,7 +1458,7 @@ public class TutorialFlowTests
         try
         {
             var text = ui.Tutorial.TopSlotText(ui.Adapter.CurrentState)!;
-            AssertThat(text).StartsWith("Tutorial 1/10:");
+            AssertThat(text).StartsWith("The Mark · 1 of 1:");
             AssertThat(text).Contains("Forge");
             AssertThat(text).Contains("WASD");
         }
@@ -1424,7 +1526,7 @@ public class TutorialFlowTests
             AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Expedition);
 
             var waitText = ui.Tutorial.TopSlotText(ui.Adapter.CurrentState)!;
-            AssertThat(waitText).StartsWith("Tutorial 1/10:");
+            AssertThat(waitText).StartsWith("The Mark · 1 of 1:");
             AssertThat(waitText).Contains("Morning");
             AssertThat(waitText).NotContains("Walk to"); // the raw actionable instruction must be gone
         }
@@ -1457,7 +1559,7 @@ public class TutorialFlowTests
             AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.PostBounty);
 
             var duringExpedition = ui.Tutorial.TopSlotText(ui.Adapter.CurrentState)!;
-            AssertThat(duringExpedition).StartsWith("Tutorial 3/10:");
+            AssertThat(duringExpedition).StartsWith("The Dark · 1 of 3:");
             AssertThat(duringExpedition).Contains("Morning or Evening");
             AssertThat(duringExpedition).NotContains("Walk to");
         }
@@ -1560,7 +1662,7 @@ public class TutorialFlowTests
                     .OverrideFailureMessage(
                         $"{professionId}: the tutorial's first step is not readable on screen in the ordinary " +
                         $"starting view. Rendered: \"{ui.Objective.Reason.Text}\"")
-                    .StartsWith("Tutorial 1/10:");
+                    .StartsWith("The Mark · 1 of 1:");
 
                 var tracker = ui.FindChild("ObjectiveTracker", recursive: true, owned: false) as Control;
                 AssertThat(tracker)
@@ -1620,7 +1722,7 @@ public class TutorialFlowTests
                     .IsFalse();
                 AssertThat(ui.Tutorial.Active).IsTrue();
                 AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.BuyMaterial);
-                AssertThat(ui.Objective.Reason.Text).StartsWith("Tutorial 1/10:");
+                AssertThat(ui.Objective.Reason.Text).StartsWith("The Mark · 1 of 1:");
             }
             finally
             {

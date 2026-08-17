@@ -320,8 +320,8 @@ public class TutorialRegistryConformanceTests
         var ui = MountMainUi();
         try
         {
-            // Drive to OpenCounter (display slot 6, Day-2-gated) the same way
-            // TutorialFlowTests.DriveDay1ToLookIn does, then open the Mirror to advance past LookIn.
+            // Drive to OpenCounter (display slot 6) the same way TutorialFlowTests.DriveDay1ToLookIn
+            // does, then open the Mirror to advance past LookIn.
             var craftedItemId = new ItemId(ui.Adapter.CurrentState.NextItemId);
             ui.Adapter.Queue(new BuyMaterialAction(ScriptedSession.CraftMaterial, ScriptedSession.CopperNeeded));
             ui.Adapter.Queue(new CraftAction(ScriptedSession.CraftRecipeId, ScriptedSession.CraftMaterial));
@@ -332,10 +332,11 @@ public class TutorialRegistryConformanceTests
             ui.Mirror.ShowMirror(); // LookIn -> OpenCounter
             AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.OpenCounter);
 
-            // Still day 1 — OpenCounter's own MinDay is 2, so its checklist row must carry a
-            // gating note naming the day, and it must NEVER be the old "press Next/Advance" copy
-            // the owner explicitly flagged ("Tutorial 6 says press 'next/advance' assuming this
-            // should be 'close the vigil'").
+            // Still Day 1, Phase Camp — U-T2-16 dropped OpenCounter's MinDay from 2 to 1 (the real
+            // gate was never the calendar, it was the counter's own Morning-only legality), so its
+            // checklist row must now carry a MORNING gating note, never a day claim, and never the
+            // old "press Next/Advance" copy the owner explicitly flagged ("Tutorial 6 says press
+            // 'next/advance' assuming this should be 'close the vigil'").
             var row = ui.Tutorial.Checklist(ui.Adapter.CurrentState).Single(r => r.Current);
             AssertThat(row.GatingNote)
                 .OverrideFailureMessage($"OpenCounter's checklist row carried no gating note on day {ui.Adapter.CurrentState.Day}.")
@@ -343,7 +344,10 @@ public class TutorialRegistryConformanceTests
             AssertThat(row.GatingNote!)
                 .OverrideFailureMessage($"Gating note still tells the player to press a button: \"{row.GatingNote}\"")
                 .NotContains("press Next");
-            AssertThat(row.GatingNote!).Contains("Day 2");
+            AssertThat(row.GatingNote!.Contains("Day", System.StringComparison.Ordinal))
+                .OverrideFailureMessage($"OpenCounter's gating note still claims a day gate that no longer exists: \"{row.GatingNote}\"")
+                .IsFalse();
+            AssertThat(row.GatingNote!).Contains("Morning");
         }
         finally
         {
@@ -446,13 +450,17 @@ public class TutorialRegistryConformanceTests
                     EventLog = baseState.EventLog.Add(new PartyDeparted(ImmutableList.Create(hero), 1)),
                 },
                 // U1 fix: the customer's own decision (CounterSaleClosed) is deliberately ABSENT
-                // here — only the player's own two actions, proving the old "a sale must close"
-                // gate is gone.
+                // here — only the player's own actions, proving the old "a sale must close" gate is
+                // gone. U-T2-14 tightened CounterAnsweredAtLeastOnce further: Close alone no longer
+                // counts, so this fixture needs a PresentItemAction too (still entirely player-
+                // caused, never a hero's own decision) — the walk-away/holding-the-line ending, not
+                // a closed sale.
                 TutorialStep.OpenCounter => baseState with
                 {
                     ActionLog = baseState.ActionLog.Add(new LoggedBatch(
                         2, DayPhase.Morning,
-                        ImmutableList.Create<PlayerAction>(new OpenCounterAction(), new CloseCounterAction()))),
+                        ImmutableList.Create<PlayerAction>(
+                            new OpenCounterAction(), new PresentItemAction(item), new CloseCounterAction()))),
                 },
                 // U1 fix: SupplyDelivered/PartyRecalled are still legitimate here — deterministic
                 // consequences of the player's own SendSupply/Recall actions, gated only by state
@@ -557,9 +565,12 @@ public class TutorialRegistryConformanceTests
                 // Fixed alongside the merge's own kept predicate (TutorialFlow.CounterAnsweredAtLeastOnce,
                 // U1's ActionLog-only version — see TutorialFlow.Registry's own comment on the
                 // OpenCounter row): needs an OpenCounterAction in the same batch, not just Close.
+                // U-T2-14 tightened the predicate further — Close alone no longer counts, so a
+                // PresentItemAction (still entirely player-caused) has to sit between Open and Close.
                 ActionLog = ui.Adapter.CurrentState.ActionLog.Add(
                     new LoggedBatch(2, ui.Adapter.CurrentState.Phase,
-                        ImmutableList.Create<PlayerAction>(new OpenCounterAction(), new CloseCounterAction()))),
+                        ImmutableList.Create<PlayerAction>(
+                            new OpenCounterAction(), new PresentItemAction(craftedItemId), new CloseCounterAction()))),
             };
             ui.Tutorial.Advance(day2);
             AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.Vigil);
@@ -598,31 +609,105 @@ public class TutorialRegistryConformanceTests
     }
 
     /// <summary>
-    /// §11.13 amendment (U5, test scenario 10): <c>TutorialFlow.BackstopDay</c> is <c>private</c> —
-    /// pinned here by the OBSERVABLE contract it exists to guarantee (<c>Advance</c>'s own doc:
-    /// unconditional completion once <c>Day &gt;= BackstopDay</c>) rather than reflection, so a
-    /// future drift between the tutorial's own close and <see cref="ApprenticeWarrant.LastGraceDay"/>
-    /// fails by BEHAVIOR, not by a private-field peek.
+    /// U-T2-2 (§11.13): <c>TutorialFlow.BackstopDay</c> used to be ONE constant meaning BOTH "the
+    /// apprenticeship's warrant ends" and "the guided chain force-closes" — harmless while the
+    /// pointed chain finished a day before that backstop, but the owner has since ruled the pointed
+    /// chain now runs through day 7, and a single constant cannot serve both a fixed 3-day warrant
+    /// AND a growing chain without either silently extending mortality's postponement or silently
+    /// force-closing the chain mid-lesson. Split into <c>WarrantEndDay</c> (this test — unchanged
+    /// meaning) and <c>ChainBackstopDay</c> (the next test — the chain's own, now-later close).
+    /// Both constants are <c>private</c> — pinned here by the OBSERVABLE contract each one
+    /// guarantees rather than reflection, so a future drift fails by BEHAVIOR, not a private-field
+    /// peek.
     /// </summary>
     [TestCase]
-    public void BackstopDay_EqualsWarrantLastGraceDayPlusOne()
+    public void WarrantEndDay_EqualsWarrantLastGraceDayPlusOne()
     {
         var ui = MountMainUi(); // fresh campaign: no natural step-progression event has ever fired
         try
         {
             var stillWithinTheWarrant = ui.Adapter.CurrentState with { Day = ApprenticeWarrant.LastGraceDay };
-            ui.Tutorial.Advance(stillWithinTheWarrant);
+            AssertThat(ui.Tutorial.ConsumeWarrantEndBeat(stillWithinTheWarrant))
+                .OverrideFailureMessage(
+                    "The warrant-end beat fired at Day == LastGraceDay, before the warrant's own dawn — WarrantEndDay drifted earlier.")
+                .IsNull();
+
+            var atWarrantEnd = ui.Adapter.CurrentState with { Day = ApprenticeWarrant.LastGraceDay + 1 };
+            AssertThat(ui.Tutorial.ConsumeWarrantEndBeat(atWarrantEnd))
+                .OverrideFailureMessage(
+                    "The warrant-end beat did not fire at Day == LastGraceDay + 1 — WarrantEndDay has drifted from the warrant's own end.")
+                .IsNotNull();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>
+    /// U-T2-2: the chain's OWN unconditional close is now a SEPARATE, LATER fact than the warrant's
+    /// own end — this pins both halves: it must sit strictly after <c>WarrantEndDay</c> (the chain
+    /// must not force-complete the instant the warrant ends, which would silently re-collapse the
+    /// two constants back into one), and it must still force-complete the chain once actually
+    /// reached (day 8 — one day past the pointed chain's own day-7 close, the owner's ruling).
+    /// </summary>
+    [TestCase]
+    public void ChainBackstopDay_IsAtLeastWarrantEndDay_AndClosesTheChainUnconditionally()
+    {
+        var ui = MountMainUi(); // fresh campaign: no natural step-progression event has ever fired
+        try
+        {
+            var atWarrantEnd = ui.Adapter.CurrentState with { Day = ApprenticeWarrant.LastGraceDay + 1 };
+            ui.Tutorial.Advance(atWarrantEnd);
             AssertThat(ui.Tutorial.Completed)
                 .OverrideFailureMessage(
-                    "The chain completed at Day == LastGraceDay, before the warrant's own dawn — BackstopDay drifted earlier.")
+                    "The chain force-closed the instant the warrant ended — ChainBackstopDay has collapsed back onto WarrantEndDay.")
                 .IsFalse();
 
-            var atTheBackstop = ui.Adapter.CurrentState with { Day = ApprenticeWarrant.LastGraceDay + 1 };
-            ui.Tutorial.Advance(atTheBackstop);
+            var dayBeforeChainBackstop = ui.Adapter.CurrentState with { Day = 7 };
+            ui.Tutorial.Advance(dayBeforeChainBackstop);
             AssertThat(ui.Tutorial.Completed)
-                .OverrideFailureMessage(
-                    "The chain did not complete at Day == LastGraceDay + 1 — BackstopDay has drifted from the warrant's own end.")
+                .OverrideFailureMessage("The chain force-closed before its own day-8 backstop.")
+                .IsFalse();
+
+            var atChainBackstop = ui.Adapter.CurrentState with { Day = 8 };
+            ui.Tutorial.Advance(atChainBackstop);
+            AssertThat(ui.Tutorial.Completed)
+                .OverrideFailureMessage("ChainBackstopDay did not force-complete the chain at Day 8.")
                 .IsTrue();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>
+    /// U-T2-15 (#162 defect 2): the counter step's anchor is a real physical station now
+    /// (<see cref="TutorialAnchor.ForStation"/>), not the market's own door — <see
+    /// cref="Registry_EveryStationAnchor_ResolvesAgainstARealRoomStation"/> already covers every
+    /// Station anchor resolving against a real room station; this pins the SPECIFIC join — the
+    /// counter step names the counter, never the building's front door (<c>TutorialAnchorKind.Building</c>).
+    /// </summary>
+    [TestCase]
+    public void TheCounterStep_PointsAtTheCounterStation_NotTheMarketDoor()
+    {
+        var def = TutorialFlow.Registry.Single(d => d.Step == TutorialStep.OpenCounter);
+        AssertThat(def.Anchor.Kind)
+            .OverrideFailureMessage("OpenCounter's anchor is still a Building (the market's door), not a Station.")
+            .IsEqual(TutorialAnchorKind.Station);
+        AssertThat(def.Anchor.Key).IsEqual("market");
+        AssertThat(def.Anchor.StationId)
+            .OverrideFailureMessage("OpenCounter's Station anchor does not name the counter station specifically.")
+            .IsEqual("counter");
+
+        var ui = MountMainUi();
+        try
+        {
+            var station = ui.Town.FindStation(def.Anchor.Key!, def.Anchor.StationId!);
+            AssertThat(station)
+                .OverrideFailureMessage("OpenCounter's counter station does not resolve against the real Shop room.")
+                .IsNotNull();
         }
         finally
         {
