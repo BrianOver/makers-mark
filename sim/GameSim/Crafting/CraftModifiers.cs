@@ -53,6 +53,34 @@ public static class CraftModifiers
         Registry.TryGetValue(id, out var def) && def.Family == family;
 
     /// <summary>
+    /// Register #149 ("the legacy jank crafting menu"): the ONE place a family's player-facing label
+    /// comes from. The forge panel's three modifier selectors used to render as bare <c>OptionButton</c>s
+    /// with no family label of their own — three anonymous "(none)" boxes in a row, which is what made
+    /// the owner read a finished screen as leftover dev tooling. Deriving the label from the
+    /// <see cref="ModifierFamily"/> enum HERE, rather than as a free-standing string at each forge
+    /// call site, means a family added to the enum without a case below throws instead of silently
+    /// shipping a selector with nothing beside it.
+    ///
+    /// <para><b>"Fit", not "Fitting" (engine-run finding on PR #584):</b> the forge's craft-modifier
+    /// row must cost ZERO extra lines — <c>HudBoundsTests.ForgeOpensFresh_PrimaryCraftVerb_
+    /// IsOnScreenWithoutScrolling</c> (the godot test suite) guards exactly this, BECAUSE burying the
+    /// primary craft verb under the vendor list is a known, previously-fixed regression. A same-commit
+    /// engine run proved "Fitting:" was the few extra pixels that tipped the modifier row onto a
+    /// second line, which pushed the fold down onto the craft verb. Fixing the modifiers reading as
+    /// anonymous junk by making the Craft button unreachable would be a straight downgrade for the
+    /// exact register (#149) this label exists to answer. Still unambiguous, still enum-derived,
+    /// still throws on an unhandled family.</para>
+    /// </summary>
+    public static string FamilyLabel(ModifierFamily family) => family switch
+    {
+        ModifierFamily.QuenchOil => "Oil",
+        ModifierFamily.Rune => "Rune",
+        ModifierFamily.Fitting => "Fit",
+        _ => throw new ArgumentOutOfRangeException(
+            nameof(family), family, "Add a display label for this modifier family in CraftModifiers.FamilyLabel."),
+    };
+
+    /// <summary>
     /// The aggregate integer effect a hero's equipped gear grants this expedition — summed over every
     /// modifier on every equipped item. Read ONCE per hero by the resolver (never in the hot combat
     /// loop's inner rounds). Pure.
