@@ -971,7 +971,7 @@ public partial class ForgePanel : SimPanel
         GodotClient.Audio.AudioDirector.For(this)?.Play(GodotClient.Audio.Cue.CraftDone);
         var mods = new[] { oil, rune, fitting }.Where(m => m is not null).ToArray();
         var modText = mods.Length == 0 ? string.Empty : $" + [{string.Join(", ", mods)}]";
-        _feedback!.Text = Confirm(action, $"Crafted {recipeId} with {material}{modText}");
+        SetFeedback(Confirm(action, $"Crafted {recipeId} with {material}{modText}"));
         // Wave B: one first-touch lesson per action (ShowMentorFirstTouch's own doc) — the mark can
         // only be read once material-ceiling has already had its turn on some earlier craft.
         if (!ShowMaterialCeilingLesson())
@@ -1076,7 +1076,7 @@ public partial class ForgePanel : SimPanel
         var action = new CraftAction(recipeId, materialKey, PerformanceGrade: null, Puzzle: trace);
         Adapter.Queue(action);
         GodotClient.Audio.AudioDirector.For(this)?.Play(GodotClient.Audio.Cue.CraftDone);
-        _feedback!.Text = Confirm(action, $"Forged another {recipeId} with {materialKey} (reusing the proven trace)");
+        SetFeedback(Confirm(action, $"Forged another {recipeId} with {materialKey} (reusing the proven trace)"));
         LogMinigame("repeat", "forge", recipeId, materialKey);
     }
 
@@ -1206,9 +1206,9 @@ public partial class ForgePanel : SimPanel
 
         Adapter?.Queue(action);
         _quench.Visible = false;
-        _feedback!.Text = Confirm(action,
+        SetFeedback(Confirm(action,
             $"Forged {action.RecipeId} with {action.MaterialKey} " +
-            $"(preview grade {_quench.PreviewGradePermille}, sub-scores {string.Join("/", action.SubScores ?? ImmutableList<int>.Empty)})");
+            $"(preview grade {_quench.PreviewGradePermille}, sub-scores {string.Join("/", action.SubScores ?? ImmutableList<int>.Empty)})"));
 
         // The overlay closes immediately above, so _Process's continuous glow poll (gated on
         // _minigame.Visible) stops on its own next frame — this just resets it right now instead
@@ -1272,9 +1272,9 @@ public partial class ForgePanel : SimPanel
         Adapter?.Queue(action);
         _brewPuzzle!.Visible = false;
         var preview = action.SubScores is { Count: 3 } scores ? scores[2] : 0;
-        _feedback!.Text = Confirm(action,
+        SetFeedback(Confirm(action,
             $"Brewed {action.RecipeId} with {action.MaterialKey} " +
-            $"(brew score {preview}‰, heading {ForgeMinigame.PreviewGrade(preview)})");
+            $"(brew score {preview}‰, heading {ForgeMinigame.PreviewGrade(preview)})"));
         LogMinigame("done", "brew", action.RecipeId, action.MaterialKey, PreviewDetail(action));
         ShowMarkReadLesson();
     }
@@ -1313,9 +1313,9 @@ public partial class ForgePanel : SimPanel
         Adapter?.Queue(action);
         _engineeringBench!.Visible = false;
         var preview = action.SubScores is { Count: 3 } scores ? scores[2] : 0;
-        _feedback!.Text = Confirm(action,
+        SetFeedback(Confirm(action,
             $"Assembled {action.RecipeId} with {action.MaterialKey} " +
-            $"(assembly score {preview}‰, heading {ForgeMinigame.PreviewGrade(preview)})");
+            $"(assembly score {preview}‰, heading {ForgeMinigame.PreviewGrade(preview)})"));
         LogMinigame("done", "assemble", action.RecipeId, action.MaterialKey, PreviewDetail(action));
         ShowMarkReadLesson();
     }
@@ -1357,9 +1357,9 @@ public partial class ForgePanel : SimPanel
         Adapter?.Queue(action);
         _tanningFrame!.Visible = false;
         var preview = action.SubScores is { Count: 3 } scores ? scores[2] : 0;
-        _feedback!.Text = Confirm(action,
+        SetFeedback(Confirm(action,
             $"Scraped {action.RecipeId} with {action.MaterialKey} " +
-            $"(hide score {preview}‰, heading {ForgeMinigame.PreviewGrade(preview)})");
+            $"(hide score {preview}‰, heading {ForgeMinigame.PreviewGrade(preview)})"));
         LogMinigame("done", "scrape", action.RecipeId, action.MaterialKey, PreviewDetail(action));
         ShowMarkReadLesson();
     }
@@ -1538,7 +1538,7 @@ public partial class ForgePanel : SimPanel
     {
         var action = new UnlockTalentAction(nodeId, professionId);
         Adapter?.Queue(action);
-        _feedback!.Text = Confirm(action, $"Unlocked {nodeId}");
+        SetFeedback(Confirm(action, $"Unlocked {nodeId}"));
         ShowTalentsLesson();
     }
 
@@ -1569,7 +1569,7 @@ public partial class ForgePanel : SimPanel
         Adapter?.Queue(action);
         // Sound the CLICK, not the settlement: the player pressed Buy now, so the coin lands now.
         GodotClient.Audio.AudioDirector.For(this)?.Play(GodotClient.Audio.Cue.Coin);
-        _feedback!.Text = Confirm(action, $"Bought {quantity} {materialKey}");
+        SetFeedback(Confirm(action, $"Bought {quantity} {materialKey}"));
     }
 
     /// <summary>U3: the forge-tier upgrade — always a BELL-RIDER (<see cref="GameSim.Kernel.ActionTiming"/>
@@ -1580,7 +1580,7 @@ public partial class ForgePanel : SimPanel
     {
         var action = new UpgradeForgeAction();
         Adapter?.Queue(action);
-        _feedback!.Text = Confirm(action, "Requested a forge upgrade");
+        SetFeedback(Confirm(action, "Requested a forge upgrade"));
         ShowFoundryVerbsLesson();
     }
 
@@ -1608,7 +1608,7 @@ public partial class ForgePanel : SimPanel
         var action = new BuyForgeSupplyAction(supplyKey, 1);
         Adapter?.Queue(action);
         GodotClient.Audio.AudioDirector.For(this)?.Play(GodotClient.Audio.Cue.Coin);
-        _feedback!.Text = Confirm(action, $"Bought 1 {supplyKey}");
+        SetFeedback(Confirm(action, $"Bought 1 {supplyKey}"));
         ShowFoundryVerbsLesson();
     }
 
@@ -1623,7 +1623,7 @@ public partial class ForgePanel : SimPanel
         var action = new MasterworkAttemptAction(recipeId, materialKey);
         Adapter?.Queue(action);
         GodotClient.Audio.AudioDirector.For(this)?.Play(GodotClient.Audio.Cue.CraftDone);
-        _feedback!.Text = Confirm(action, $"Masterwork attempt on {recipeId} with {materialKey} (guarantees Superior or better)");
+        SetFeedback(Confirm(action, $"Masterwork attempt on {recipeId} with {materialKey} (guarantees Superior or better)"));
         ShowFoundryVerbsLesson();
     }
 
@@ -1639,8 +1639,24 @@ public partial class ForgePanel : SimPanel
     {
         var action = new CommissionLegendaryWorkAction(recipeId, materialKey);
         Adapter?.Queue(action);
-        _feedback!.Text = Confirm(action, $"Commissioned a legendary {recipeId} from {materialKey}");
+        SetFeedback(Confirm(action, $"Commissioned a legendary {recipeId} from {materialKey}"));
         ShowFoundryVerbsLesson();
+    }
+
+    /// <summary>
+    /// Register #149: the ONE place <see cref="_feedback"/>'s text is ever written — every call site
+    /// used to write <c>_feedback!.Text</c> directly, which left the row's reserved height wired only
+    /// to whatever the LAST action happened to say, never to whether there was currently anything to
+    /// say. Toggling <see cref="Label.Visible"/> right alongside <see cref="Label.Text"/> (rather than,
+    /// say, in <see cref="Refresh"/>) matters because every action handler calls
+    /// <see cref="GodotClient.SimAdapter.Queue"/> — which ticks the sim and re-enters
+    /// <see cref="Refresh"/> SYNCHRONOUSLY — BEFORE it sets this text, so a Refresh-timed toggle would
+    /// always be one action stale.
+    /// </summary>
+    private void SetFeedback(string text)
+    {
+        _feedback!.Text = text;
+        _feedback.Visible = !string.IsNullOrEmpty(text);
     }
 
     private string SelectedMaterialOr(string recipeDefault)
@@ -1665,6 +1681,31 @@ public partial class ForgePanel : SimPanel
         }
 
         return select;
+    }
+
+    /// <summary>
+    /// Register #149 ("the legacy jank crafting menu"): pairs a modifier selector with a label naming
+    /// its family, so the row reads "Oil: (none)  Rune: (none)  Fitting: (none)" instead of three
+    /// unlabeled "(none)" boxes a player has no way to tell apart. The label text comes from
+    /// <see cref="GameSim.Crafting.CraftModifiers.FamilyLabel"/> — derived from the
+    /// <see cref="GameSim.Contracts.ModifierFamily"/> enum value actually passed to
+    /// <see cref="BuildModifierSelect"/>, never a second hardcoded string at this call site that could
+    /// drift from it. Grouped in one <see cref="HBoxContainer"/> (rather than two loose children of the
+    /// row) so <see cref="AddWrappingRow"/> wraps the label and its select as one unit, never splitting
+    /// a label from the box it names onto separate lines.
+    /// </summary>
+    private static HBoxContainer ModifierSelectGroup(OptionButton select, GameSim.Contracts.ModifierFamily family)
+    {
+        var group = new HBoxContainer { Name = $"{select.Name}Group" };
+        var label = AddLabel(group, $"{GameSim.Crafting.CraftModifiers.FamilyLabel(family)}:");
+        label.Name = $"{select.Name}Label";
+        // Same "hugging form label" idiom as BountyPanel.FormLabel: left-aligned, non-expanding (must
+        // not itself claim the row's leftover width — AddLabel defaults ExpandFill, tuned for autowrap
+        // labels that DO need it, e.g. recipe names), no autowrap on a label this short.
+        label.SizeFlagsHorizontal = SizeFlags.ShrinkBegin;
+        label.AutowrapMode = TextServer.AutowrapMode.Off;
+        group.AddChild(select);
+        return group;
     }
 
     /// <summary>The registered modifier id the given selector points at, or null for "(none)".</summary>
@@ -1743,6 +1784,13 @@ public partial class ForgePanel : SimPanel
 
         _feedback = AddLabel(root, string.Empty);
         _feedback.Name = "ForgeFeedback";
+        // Register #149: an empty confirmation line used to still reserve a full text row's height at
+        // the very top of the drawer — the row a fresh open (or a station-focused open, before the
+        // player has crafted/bought/unlocked anything this visit) always shows blank, pushing the
+        // Modifiers/Recipes/Vendor sections down for nothing. Godot's own Container layout skips a
+        // Visible=false child entirely, so starting hidden (and toggling in SetFeedback, the only place
+        // this label's Text ever changes) reclaims that space until there is something to say.
+        _feedback.Visible = false;
 
         _craftScroll = new ScrollContainer
         {
@@ -1786,13 +1834,18 @@ public partial class ForgePanel : SimPanel
         // existing Section-based screens.
         var modifiersSection = Section("Modifiers (Optional)");
         _craftViewRoot.AddChild(modifiersSection.Root);
-        var modRow = AddRow(modifiersSection.Body);
+        // Register #149: was a plain AddRow of three bare OptionButtons — three anonymous "(none)"
+        // boxes with nothing beside them naming what any of them were (the owner's own screenshot:
+        // "three (none) dropdowns in a row with nothing saying what any of them are"). Each select now
+        // ships paired with a family label in ModifierSelectGroup, and AddWrappingRow (not AddRow)
+        // keeps a label glued to its own select if the row ever has to wrap onto a second line.
+        var modRow = AddWrappingRow(modifiersSection.Body);
         _oilSelect = BuildModifierSelect("OilSelect", GameSim.Contracts.ModifierFamily.QuenchOil);
         _runeSelect = BuildModifierSelect("RuneSelect", GameSim.Contracts.ModifierFamily.Rune);
         _fitSelect = BuildModifierSelect("FitSelect", GameSim.Contracts.ModifierFamily.Fitting);
-        modRow.AddChild(_oilSelect);
-        modRow.AddChild(_runeSelect);
-        modRow.AddChild(_fitSelect);
+        modRow.AddChild(ModifierSelectGroup(_oilSelect, GameSim.Contracts.ModifierFamily.QuenchOil));
+        modRow.AddChild(ModifierSelectGroup(_runeSelect, GameSim.Contracts.ModifierFamily.Rune));
+        modRow.AddChild(ModifierSelectGroup(_fitSelect, GameSim.Contracts.ModifierFamily.Fitting));
 
         var vendorSection = Section("Morning Vendor");
         vendorSection.Root.Name = "VendorSection"; // U3: distinguishes it from every other Section-built root (all named "Section" otherwise) for FocusSection/test/diagnostic lookup
