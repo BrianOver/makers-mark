@@ -337,7 +337,12 @@ public sealed partial class TutorialFlow : PanelContainer
     private static string StepPrefix(TutorialStepDef def)
     {
         var (position, total) = ActPositionByStep[def.Step];
-        return $"{TutorialActVocab.DisplayName(def.Act)} · {position} of {total}";
+        // "1/3", not "1 of 3". The objective card is 320px wide with a hard height ceiling, and copy
+        // renders unclamped — an over-long line grows the chip off screen rather than trimming. The
+        // prose form pushed a fresh Morning-1 mount to 270px against a 260px pin, which is the
+        // teaching-surface budget the tutorial rework has to live inside: the card carries the
+        // pointer and the verb, and everything else belongs in the world or in the Lessons book.
+        return $"{TutorialActVocab.DisplayName(def.Act)} · {position}/{total}";
     }
 
     private static TutorialStepDef[] BuildRegistry() =>
@@ -1413,7 +1418,10 @@ public sealed partial class TutorialFlow : PanelContainer
     /// pins both halves: this must sit strictly after <see cref="WarrantEndDay"/>, and it must still
     /// force-complete the chain once reached.
     /// </summary>
-    private const int ChainBackstopDay = 8;
+    /// <remarks>Public so tests reach for the constant instead of retyping its value. A literal 4
+    /// in <c>LessonsPanelTests</c> silently stopped meaning "the chain closes" the moment this split
+    /// from the warrant's end, and it failed as a broken panel rather than as a moved constant.</remarks>
+    public const int ChainBackstopDay = 8;
 
     /// <summary>Day-1 capstone: <see cref="TutorialStep.LookIn"/> is a UI-only fact (opening the
     /// Scrying Mirror carries no sim event to read durably) — <c>MainUi</c> calls this directly
