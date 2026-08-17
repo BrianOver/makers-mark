@@ -1189,6 +1189,78 @@ public class MineWatchTests
         }
     }
 
+    // ── §11.14.7 receipt/test hooks: MainUi.StageWatchFightReceipt hand-injects an already-
+    // resolved fight straight at DayPhase.Camp for a screenshot harness — no real PartyDeparted
+    // event ever fires (so the marching figures would otherwise be empty) and no real seconds
+    // pass (so the delve overlay's playhead would otherwise need to wait out the whole Camp
+    // phase duration to reveal a beat). These two hooks are how the harness gets an honest strip
+    // without either wait. Never called from production code — see each hook's own doc.
+
+    [TestCase]
+    public void SeedPartyForReceipt_PopulatesMarchingFigures_WithNoPartyDepartedEvent()
+    {
+        var watch = new MineWatch();
+        try
+        {
+            watch.Build();
+            var result = ResolvedResult();
+            var state = StagedWorld() with { Phase = DayPhase.Camp, PendingExpeditions = ImmutableList.Create(result) };
+
+            // No PartyDeparted in lastEvents — exactly the hand-injected-initial-state shape a
+            // receipt harness produces. Without the seed, _currentParty stays empty forever.
+            watch.Refresh(state, ImmutableList<GameEvent>.Empty);
+            AssertThat(watch.FigureCount).IsEqual(0);
+
+            watch.SeedPartyForReceipt(result.Party);
+            watch.Refresh(state, ImmutableList<GameEvent>.Empty);
+
+            AssertThat(watch.FigureCount).IsEqual(result.Party.Count);
+        }
+        finally
+        {
+            watch.Free();
+        }
+    }
+
+    [TestCase]
+    public void RevealDelveBeatsForReceipt_FiresTheProofFlareAndDropsTheHpBar_WithZeroRealTime()
+    {
+        var watch = new MineWatch();
+        try
+        {
+            watch.Build();
+            var shieldId = new ItemId(101);
+            var weaponId = new ItemId(102);
+            var hero = new HeroId(1);
+            var floors = ImmutableList.Create(
+                new FloorOutcome(1, true, ImmutableList.Create(
+                    new CombatEvent(1, hero, "cave-rat", ImmutableList.Create(4, 5), 8, 25, false, null),
+                    new CombatEvent(1, hero, "cave-rat", ImmutableList.Create(6, 2), 14, 0, true, weaponId))));
+            var result = new ExpeditionResult(
+                Party: ImmutableList.Create(hero), TargetFloor: 1, DeepestFloorCleared: 1, Floors: floors,
+                Survivors: ImmutableList.Create(hero), Deaths: ImmutableList<HeroId>.Empty,
+                Beats: ImmutableList.Create(
+                    new AttributionBeat(BeatType.LethalSave, shieldId, hero, 1, "Ironhide turned a lethal cave-rat hit")),
+                Loot: ImmutableList<OreLoot>.Empty, GoldEarnedByHero: ImmutableSortedDictionary<int, int>.Empty);
+            var state = StagedWorld() with { Phase = DayPhase.Camp, PendingExpeditions = ImmutableList.Create(result) };
+
+            watch.Refresh(state, ImmutableList<GameEvent>.Empty);
+            AssertThat(watch.Delve.LastProofFlareText).IsEmpty();
+
+            // Beats [0]=Descend [1]=Engage [2]=Exchange(round0, the LethalSave-flared one). No
+            // _Process call at all — proving this renders synchronously, not on the next tick.
+            watch.RevealDelveBeatsForReceipt(3);
+
+            AssertThat(watch.Delve.LastProofFlareText).IsEqual("Ironhide turned a lethal cave-rat hit");
+            // Mine floor 1 = 22 HP (VenueDefinition.MonsterHp); round 0 dealt 8 -> 14/22 left.
+            AssertThat(watch.Delve.MonsterHpFraction).IsEqualApprox(14f / 22f, 0.001f);
+        }
+        finally
+        {
+            watch.Free();
+        }
+    }
+
     /// <summary>A clean (no-death) resolved run — the same shape a floor-1 unstaged first trip
     /// produces, just without the death-round noise <see cref="DeathRound_NeverAppearsInMineWatchFeed_RendersCloudInstead"/>
     /// already covers.</summary>

@@ -63,6 +63,56 @@ public class JourneyFeedTests
         AssertThat(head.Idle).IsTrue();
     }
 
+    /// <summary>§11.14.7 receipt/test hook: a screenshot tool jumps straight to a SPECIFIC beat
+    /// count instead of the card's end (<see cref="JourneyPlayhead.Collapse"/>), so it can land on
+    /// the exact beat carrying a proof flare rather than the fully-resolved summary state.</summary>
+    [TestCase]
+    public void Playhead_SetRevealed_JumpsToExactCount()
+    {
+        var head = new JourneyPlayhead();
+        head.Bind(1, 5, 100.0); // long phase, barely started
+
+        head.SetRevealed(3);
+
+        AssertThat(head.Revealed).IsEqual(3);
+        AssertThat(head.Idle).IsFalse();
+    }
+
+    [TestCase]
+    public void Playhead_SetRevealed_ClampsToBeatCount()
+    {
+        var head = new JourneyPlayhead();
+        head.Bind(1, 5, 100.0);
+
+        head.SetRevealed(99);
+
+        AssertThat(head.Revealed).IsEqual(5);
+    }
+
+    [TestCase]
+    public void Playhead_SetRevealed_NeverLowersARealAdvance()
+    {
+        var head = new JourneyPlayhead();
+        head.Bind(1, 5, 5.0); // 1 beat/sec
+
+        // 3.5s, deliberately NOT 4.0s. At exactly 4.0 of 5.0 the playhead sits ON a beat boundary,
+        // where "revealed" is 5 under this playhead's reveal-when-the-beat-BEGINS convention and 4
+        // under a reveal-when-it-ENDS reading — the original 4.0 assumed the latter and read 5.
+        // Which convention is right is a real question, but it is not THIS test's question: this test
+        // exists to prove SetRevealed is monotonic and cannot undo real progress. Asserting it from a
+        // point that is unambiguous under either convention keeps it measuring the one property it
+        // names, instead of failing over a boundary definition it was never about.
+        head.Advance(3.5, paused: false); // real progress, mid-beat, unambiguously 4 revealed
+
+        AssertThat(head.Revealed)
+            .OverrideFailureMessage("Setup: the playhead did not reach 4 revealed beats, so the monotonicity check below would prove nothing.")
+            .IsEqual(4);
+
+        head.SetRevealed(1); // a receipt jump that would UNDO real progress
+
+        AssertThat(head.Revealed).IsEqual(4); // monotonic — the higher value wins
+    }
+
     [TestCase]
     public void Playhead_NewPartyKey_ResetsRevealToZero()
     {

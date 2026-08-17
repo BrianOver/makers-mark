@@ -8,7 +8,12 @@
 # headless failure mode is an infinite hang, so we never wait forever.
 #
 # Usage: powershell -File tools/shoot.ps1 -Out C:\tmp\town.png [-State Tavern]
-#   -State: "" (town, default) | Forge | Shop | Tavern | Gate | Counter
+#   -State: "" (town, default) | Forge | Shop | Tavern | Gate | Counter | Watch
+#   -State Watch (§11.14.7): a hand-built, already-resolved two-floor fight staged straight into
+#   MineWatch (MainUi.StageWatchFightReceipt, gated on SHOT_WATCH_FIGHT below) -- the real day-cycle
+#   route to a populated watch is unreliable to park a screenshot on (a fresh campaign's day-1 party
+#   often resolves without ever staging, and the path there crosses the tutorial gate plus an
+#   auto-opening Camp/Ledger modal), so this bypasses all of it.
 param(
     [Parameter(Mandatory = $true)][string]$Out,
     [string]$State = "",
@@ -21,6 +26,7 @@ $godot = Join-Path $repo "godot"
 
 $env:SHOT_OUT = $Out
 $env:SHOT_STATE = $State
+$env:SHOT_WATCH_FIGHT = if ($State -eq "Watch") { "1" } else { "" }
 if (Test-Path $Out) { Remove-Item $Out -Force }
 
 Write-Host "capturing state='$State' -> $Out" -ForegroundColor Cyan

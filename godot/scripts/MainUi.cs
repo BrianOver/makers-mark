@@ -417,12 +417,9 @@ public partial class MainUi : Control
     private SimAdapter BuildDefaultAdapter()
     {
         var professionOverride = System.Environment.GetEnvironmentVariable("SHOT_PROFESSION");
-        if (string.IsNullOrEmpty(professionOverride))
-        {
-            return new SimAdapter((ulong)Seed);
-        }
-
-        var state = GameComposition.NewCampaign((ulong)Seed, professionOverride);
+        var state = string.IsNullOrEmpty(professionOverride)
+            ? GameComposition.NewCampaign((ulong)Seed)
+            : GameComposition.NewCampaign((ulong)Seed, professionOverride);
 
         // U7 receipt seam ONLY: a second profession, unioned directly (bypassing the real
         // SetProfessionsAction/day-boundary path a player actually takes — legitimate for a
@@ -434,7 +431,116 @@ public partial class MainUi : Control
             state = state with { Player = state.Player with { SelectedProfessions = state.Player.SelectedProfessions.Add(secondProfession) } };
         }
 
+        // §11.14.7 receipt seam ONLY, same contract as SHOT_PROFESSION above: the real day-cycle
+        // route to a populated MineWatch is unreliable to park a screenshot on (a fresh campaign's
+        // day-1 party often resolves without ever staging, and the path there crosses the tutorial
+        // gate and an auto-opening Camp/Ledger modal) — this stages a hand-built, fully-resolved
+        // fight straight into PendingExpeditions instead, bypassing the real Expedition tick
+        // entirely. Never reads in real play.
+        if (System.Environment.GetEnvironmentVariable("SHOT_WATCH_FIGHT") == "1")
+        {
+            state = StageWatchFightReceipt(state);
+        }
+
         return new SimAdapter(state);
+    }
+
+    /// <summary>
+    /// Dev/receipt tool only (never called from real play): builds a REAL two-floor fight —
+    /// heavy damage a proven shield saves a hero from, two player-crafted killing blows — and
+    /// stages it directly as an already-resolved <see cref="ExpeditionResult"/> at <see
+    /// cref="DayPhase.Camp"/>, so <c>MineWatch</c>/<c>DelveStage</c> has something real to render
+    /// the instant the scene mounts: U-T5-9's HP bar depleting by <see
+    /// cref="Venues.VenueDefinition.MonsterHp"/>'s own numbers (not a fabricated fraction), U-T5-10's
+    /// proof flare (the <see cref="BeatType.LethalSave"/> beat below), and U-T5-11/12's
+    /// PresentationScheduler-driven pacing/camera-lean (the LethalSave floor's stakes force it to
+    /// PullFocus — see <c>PresentationScheduler.AllocateBudget</c> — while floor 2 stays a routine,
+    /// undilated Ambient clear for visual contrast in the same shot).
+    /// </summary>
+    private static GameState StageWatchFightReceipt(GameState state)
+    {
+        var heroes = state.Heroes.Values.OrderBy(h => h.Id.Value).ToImmutableList();
+        if (heroes.Count < 2)
+        {
+            return state; // defensive -- a fresh campaign always seeds more heroes than this needs
+        }
+
+        var hero1 = heroes[0];
+        var hero2 = heroes[1];
+
+        var weaponId = new ItemId(state.NextItemId);
+        var shieldId = new ItemId(state.NextItemId + 1);
+        var secondWeaponId = new ItemId(state.NextItemId + 2);
+
+        Item Crafted(ItemId id, string recipe, string name, ItemSlot slot, ItemStats stats) => new(
+            id, recipe, name, slot, QualityGrade.Fine, stats,
+            new MakersMark("Player", state.Day), ImmutableList<ItemHistoryEntry>.Empty);
+
+        var items = state.Items
+            .Add(weaponId.Value, Crafted(weaponId, "dagger", "Emberbite", ItemSlot.Weapon, new ItemStats(6, 0, 2)))
+            .Add(shieldId.Value, Crafted(shieldId, "buckler", "Ironhide", ItemSlot.Shield, new ItemStats(0, 5, 3)))
+            .Add(secondWeaponId.Value, Crafted(secondWeaponId, "sword", "Stormfang", ItemSlot.Weapon, new ItemStats(8, 0, 3)));
+
+        // Floor 1: hero1 takes a heavy hit (round 1), then lands the killing blow (round 2) --
+        // the LethalSave beat below is the proof that Ironhide is why round 1 didn't end the fight.
+        var floors = ImmutableList.Create(
+            new FloorOutcome(1, true, ImmutableList.Create(
+                new CombatEvent(1, hero1.Id, "cave-rat", ImmutableList.Create(4, 5), 8, 25, false, null),
+                new CombatEvent(1, hero1.Id, "cave-rat", ImmutableList.Create(6, 2), 14, 0, true, weaponId))),
+            new FloorOutcome(2, true, ImmutableList.Create(
+                new CombatEvent(2, hero2.Id, "tunnel-spider", ImmutableList.Create(3, 4), 10, 5, false, null),
+                new CombatEvent(2, hero2.Id, "tunnel-spider", ImmutableList.Create(7, 1), 22, 0, true, secondWeaponId))));
+
+        var beats = ImmutableList.Create(
+            new AttributionBeat(BeatType.LethalSave, shieldId, hero1.Id, 1, "Ironhide turned a lethal cave-rat hit"),
+            new AttributionBeat(BeatType.KillingBlow, weaponId, hero1.Id, 1, "Emberbite landed the killing blow on the cave-rat"),
+            new AttributionBeat(BeatType.KillingBlow, secondWeaponId, hero2.Id, 2, "Stormfang landed the killing blow on the tunnel-spider"));
+
+        var result = new ExpeditionResult(
+            Party: ImmutableList.Create(hero1.Id, hero2.Id),
+            TargetFloor: 2,
+            DeepestFloorCleared: 2,
+            Floors: floors,
+            Survivors: ImmutableList.Create(hero1.Id, hero2.Id),
+            Deaths: ImmutableList<HeroId>.Empty,
+            Beats: beats,
+            Loot: ImmutableList<OreLoot>.Empty,
+            GoldEarnedByHero: ImmutableSortedDictionary<int, int>.Empty
+                .Add(hero1.Id.Value, 8)
+                .Add(hero2.Id.Value, 12));
+
+        return state with
+        {
+            Phase = DayPhase.Camp,
+            NextItemId = state.NextItemId + 3,
+            Items = items,
+            PendingExpeditions = ImmutableList.Create(result),
+            InFlight = ImmutableList<InFlightExpedition>.Empty,
+        };
+    }
+
+    /// <summary>
+    /// §11.14.7 receipt seam ONLY, called once from <see cref="_Ready"/> right after the first
+    /// <see cref="Watch"/> refresh: <see cref="StageWatchFightReceipt"/> hand-injects an
+    /// already-resolved fight straight at <see cref="DayPhase.Camp"/>, so a real departure tick's
+    /// <c>PartyDeparted</c> event — the thing that normally seeds <c>MineWatch</c>'s tracked party
+    /// (and therefore its marching hero figures) — never fires. Seeding here is time-independent
+    /// (unlike the beat-reveal jump, which <c>shot_harness.gd</c> times deliberately LATE so the
+    /// proof flare's own fade window — <c>DelveStage.ProofFlareSeconds</c> — is still open at
+    /// capture; see <c>MineWatch.RevealDelveBeatsForReceipt</c>'s own doc), so it runs unconditionally
+    /// as soon as the fight is staged. Never called from production code.
+    /// </summary>
+    private void MaybeSeedWatchReceipt()
+    {
+        if (System.Environment.GetEnvironmentVariable("SHOT_WATCH_FIGHT") != "1"
+            || Adapter.CurrentState.PendingExpeditions.IsEmpty)
+        {
+            return;
+        }
+
+        var receiptResult = Adapter.CurrentState.PendingExpeditions[0];
+        Watch.SeedPartyForReceipt(receiptResult.Party);
+        Watch.Refresh(Adapter.CurrentState, Adapter.LastEvents); // re-render now the party is known
     }
 
     public override void _Ready()
@@ -525,6 +631,7 @@ public partial class MainUi : Control
         // straight to the forge, so the discoverable verb is one click, not "go find it yourself".
         Camp.OpenForgeRequested += () => OpenPanel("Forge");
         Watch.Refresh(Adapter.CurrentState, Adapter.LastEvents); // U9: not a SimPanel — no Bind() auto-refresh
+        MaybeSeedWatchReceipt();
         Mirror.Bind(Adapter);
         Pip.Refresh(Adapter.CurrentState, Adapter.LastEvents); // not a SimPanel — no Bind() auto-refresh
 
