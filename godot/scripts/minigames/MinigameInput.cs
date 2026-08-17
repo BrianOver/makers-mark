@@ -49,6 +49,14 @@ public static class MinigameInput
         AddActionIfMissing("scrape", Key.Space);
         AddActionIfMissing("crank_stroke", Key.Space);
         AddActionIfMissing("pull_part", Key.Backspace, Key.Delete);
+
+        // Register #160 (U-T2-4): the Docket's ("Tomorrow at the Counter" companion) toggle key.
+        // Lives here rather than in TownInput (deny-listed for this unit) — this is the one other
+        // guarded AddActionIfMissing registry a non-town, non-minigame binding can join. "C" is
+        // not read by any of the seven actions above, nor by move_up/down/left/right's WASD/
+        // arrows, so it can never race a minigame's own _GuiInput (see MainUi._UnhandledKeyInput's
+        // own doc for why that ordering matters).
+        AddActionIfMissing("docket_toggle", Key.C);
     }
 
     /// <summary>

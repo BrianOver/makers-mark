@@ -86,52 +86,21 @@ public partial class RaidForecastBoard : Control
     /// the SAME projection <see cref="Counter.CounterHandlers"/>'s ApplyOpen will build tomorrow
     /// (<see cref="CounterForecast.Queue"/>), surfaced here instead of thrown away at day-end like
     /// every other night's forecast used to be. Closes *"how does the player KNOW to make a
-    /// shield?"* Every entry reuses <see cref="CustomerVoice.WantLine"/> verbatim — the exact line
-    /// the counter itself will speak tomorrow (continuity of reference, §11.7.4) — and a hero whose
-    /// want names a slot gets a one-click "Forge one" button IFF a selected profession can actually
-    /// answer it (<see cref="HasAnsweringRecipe"/>): never a dead click (U1 test 6).
+    /// shield?"*
+    ///
+    /// <para>U-T2-4 (register #160): the actual rendering now lives in <see
+    /// cref="CounterSectionBuilder"/> — this modal and <see cref="CompanionDock"/> both call
+    /// it, so the "one screen the owner liked" can never render two different answers depending
+    /// on which host is showing it. This modal's own callback closes the board first (its
+    /// long-standing contract, unchanged); the dock's callback does not, since staying open
+    /// through the jump to the Forge is the entire reason it exists.</para>
     /// </summary>
-    private void RenderCounterSection(GameState state)
-    {
-        AddHeader(_body!, "TOMORROW AT THE COUNTER");
-
-        var queue = CounterForecast.Queue(state);
-        if (queue.IsEmpty)
+    private void RenderCounterSection(GameState state) =>
+        CounterSectionBuilder.Build(_body!, state, () =>
         {
-            AddLabel(_body!, "  No one is left to serve — the counter would open to an empty room.");
-            return;
-        }
-
-        foreach (var ask in queue)
-        {
-            if (!state.Heroes.TryGetValue(ask.Hero.Value, out var hero))
-            {
-                continue;
-            }
-
-            AddLabel(_body!, $"  {hero.Name}: {CustomerVoice.WantLine(hero, state)}");
-
-            if (ask.WantSlot is { } wantSlot && HasAnsweringRecipe(state, wantSlot))
-            {
-                AddButton(_body!, $"ForgeOne_{ask.Hero.Value}", "Forge one", () =>
-                {
-                    Close();
-                    ForgeOneRequested?.Invoke();
-                });
-            }
-        }
-    }
-
-    /// <summary>U1: the Forge-one button's sole gate — whether a profession the player has
-    /// actually selected (<see cref="PlayerState.SelectedProfessions"/>) carries at least one
-    /// recipe for <paramref name="slot"/>. Mirrors <see cref="ForgePanel"/>'s own profession/recipe
-    /// iteration (selected professions → <see cref="ProfessionRegistry.TryGet"/> →
-    /// <c>profession.Recipes.Values</c>) rather than inventing a second lookup — this only needs
-    /// existence, not the ForgePanel's own tier/material ordering.</summary>
-    private static bool HasAnsweringRecipe(GameState state, ItemSlot slot) =>
-        state.Player.SelectedProfessions.Any(professionId =>
-            ProfessionRegistry.TryGet(professionId, out var profession)
-            && profession!.Recipes.Values.Any(r => r.Slot == slot));
+            Close();
+            ForgeOneRequested?.Invoke();
+        });
 
     private void RenderParty(ForecastParty party, int ordinal)
     {
@@ -216,7 +185,11 @@ public partial class RaidForecastBoard : Control
         }
     }
 
-    private static Label AddLabel(Node parent, string text)
+    // internal (not private): U-T2-4's CounterSectionBuilder, below, reuses these three verbatim
+    // so the modal and the CompanionDock render from the identical widget helpers, never two
+    // hand-copied ones that could drift.
+
+    internal static Label AddLabel(Node parent, string text)
     {
         var label = new Label
         {
@@ -228,7 +201,7 @@ public partial class RaidForecastBoard : Control
         return label;
     }
 
-    private static Label AddHeader(Node parent, string text)
+    internal static Label AddHeader(Node parent, string text)
     {
         var label = AddLabel(parent, text);
         label.AddThemeColorOverride("font_color", GameTheme.HeaderColor);
@@ -236,11 +209,71 @@ public partial class RaidForecastBoard : Control
         return label;
     }
 
-    private static Button AddButton(Node parent, string name, string text, Action onPressed)
+    internal static Button AddButton(Node parent, string name, string text, Action onPressed)
     {
         var button = new Button { Name = name, Text = text };
         button.Pressed += onPressed;
         parent.AddChild(button);
         return button;
     }
+}
+
+/// <summary>
+/// U-T2-4 (register #160): the "TOMORROW AT THE COUNTER" section, extracted out of <see
+/// cref="RaidForecastBoard"/> so it and <see cref="CompanionDock"/> render from ONE builder —
+/// the fix for the owner's own complaint that this screen, his favorite, was the one furthest
+/// from a reference he could keep open. Every entry reuses <see cref="CustomerVoice.WantLine"/>
+/// verbatim — the exact line the counter itself will speak tomorrow (continuity of reference,
+/// §11.7.4) — and a hero whose want names a slot gets a one-click "Forge one" button IFF a
+/// selected profession can actually answer it (<see cref="HasAnsweringRecipe"/>): never a dead
+/// click (U1 test 6). Pure presentation over <see cref="CounterForecast.Queue"/> — show-only-
+/// sim-decided, no forecast of its own.
+/// </summary>
+public static class CounterSectionBuilder
+{
+    public const string HeaderText = "TOMORROW AT THE COUNTER";
+
+    /// <summary>Render one "TOMORROW AT THE COUNTER" section into <paramref name="parent"/>.
+    /// <paramref name="onForgeOneRequested"/> fires once per press of any rendered "Forge one"
+    /// button — what it does after that (close the host, or not) is entirely the CALLER's
+    /// decision, which is exactly why the modal and the dock can share this one method and still
+    /// behave differently on that one point.</summary>
+    public static void Build(Node parent, GameState state, Action? onForgeOneRequested)
+    {
+        RaidForecastBoard.AddHeader(parent, HeaderText);
+
+        var queue = CounterForecast.Queue(state);
+        if (queue.IsEmpty)
+        {
+            RaidForecastBoard.AddLabel(parent, "  No one is left to serve — the counter would open to an empty room.");
+            return;
+        }
+
+        foreach (var ask in queue)
+        {
+            if (!state.Heroes.TryGetValue(ask.Hero.Value, out var hero))
+            {
+                continue;
+            }
+
+            RaidForecastBoard.AddLabel(parent, $"  {hero.Name}: {CustomerVoice.WantLine(hero, state)}");
+
+            if (ask.WantSlot is { } wantSlot && HasAnsweringRecipe(state, wantSlot))
+            {
+                RaidForecastBoard.AddButton(parent, $"ForgeOne_{ask.Hero.Value}", "Forge one",
+                    () => onForgeOneRequested?.Invoke());
+            }
+        }
+    }
+
+    /// <summary>The Forge-one button's sole gate — whether a profession the player has actually
+    /// selected (<see cref="PlayerState.SelectedProfessions"/>) carries at least one recipe for
+    /// <paramref name="slot"/>. Mirrors <see cref="ForgePanel"/>'s own profession/recipe iteration
+    /// (selected professions → <see cref="ProfessionRegistry.TryGet"/> →
+    /// <c>profession.Recipes.Values</c>) rather than inventing a second lookup — this only needs
+    /// existence, not the ForgePanel's own tier/material ordering.</summary>
+    private static bool HasAnsweringRecipe(GameState state, ItemSlot slot) =>
+        state.Player.SelectedProfessions.Any(professionId =>
+            ProfessionRegistry.TryGet(professionId, out var profession)
+            && profession!.Recipes.Values.Any(r => r.Slot == slot));
 }

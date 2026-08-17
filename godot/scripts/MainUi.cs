@@ -214,6 +214,11 @@ public partial class MainUi : Control
     /// <summary>U10: the pre-sleep raid-forecast board (RaidForecast.ForTomorrow projection),
     /// chained after the day-end Ledger and re-openable from the HUD "Forecast" button.</summary>
     public RaidForecastBoard Forecast { get; private set; } = null!;
+    /// <summary>Register #160, U-T2-3/U-T2-4: the "Tomorrow at the Counter" companion — lives on
+    /// its own <c>CompanionLayer</c> <see cref="CanvasLayer"/> (deliberately NOT one of <see
+    /// cref="OverlaySurfaces"/>), so it can sit open beside a running craft without owning the
+    /// screen the way <see cref="Forecast"/>'s modal does.</summary>
+    public CompanionDock Docket { get; private set; } = null!;
     /// <summary>Gate-b flag 3: the Bestiary gallery (all venues' monsters, a 2D portrait where one
     /// exists), opened from the Tavern's "Bestiary" hotspot.</summary>
     public BestiaryPanel Bestiary { get; private set; } = null!;
@@ -1118,6 +1123,7 @@ public partial class MainUi : Control
         UpdateClockLabel(); // U3/U4: bell verb + player-phase banner are state-driven — refresh on every tick, not only per-frame _Process
         RefreshBellTray(); // U3 (KTD-B): keep the tray honest on every tick too, not only on submit
         RefreshSurfaceUnlocks(state); // U3 (tutorial-revamp plan): keep the seven gated tray books honest too
+        Docket.RefreshIfOpen(); // register #160: no-op while collapsed, never a timer on anything
     }
 
     /// <summary>U3 (tutorial-revamp plan, §11.13): the seven gated tray buttons, keyed by <see
@@ -2658,6 +2664,24 @@ public partial class MainUi : Control
         Watch.Clock = Clock;
         Depths.MountWatch(Watch);
 
+        // Register #160, U-T2-3 ("Tomorrow at the Counter" becomes openable while crafting): the
+        // Docket's own CanvasLayer, between DrawerHost above and TabFade below — layer 40 draws
+        // above every layer-0 sibling (the drawer's dim veil included) regardless of AddChild
+        // order, the same idiom TabFade (layer 100, just below) and BuildStamp (layer 5) already
+        // use. Deliberately NOT one of OverlaySurfaces: see CompanionDock's own class doc for why
+        // that single omission is the whole fix.
+        var companionLayer = new CanvasLayer { Name = "CompanionLayer", Layer = CompanionDock.CanvasLayerIndex };
+        AddChild(companionLayer);
+        Docket = new CompanionDock { Adapter = Adapter };
+        companionLayer.AddChild(Docket);
+        Docket.Build();
+        // Same bare event shape as Forecast.ForgeOneRequested — the dock never closes itself
+        // first (see its own doc): staying open through the jump to the Forge is the point.
+        Docket.ForgeOneRequested += () => OpenPanel("Forge");
+        // Third way in (U-T2-4): the Forge drawer's own "Tomorrow at the Counter" button, wired
+        // straight to the dock — never touches DrawerHost, so the craft in progress is untouched.
+        Forge.OpenDocketRequested += () => Docket.Toggle();
+
         // LW6: the drawer-swap fade veil (was the tab-switch veil pre-U21) — a purely additive
         // CanvasLayer-100 overlay, triggered from OpenPanel below, and from a click-out/Esc close
         // that bypasses OpenPanel entirely (Drawer.Closed).
@@ -3626,6 +3650,27 @@ public partial class MainUi : Control
 
         Town.ExitInterior();
         GetViewport()?.SetInputAsHandled();
+    }
+
+    /// <summary>
+    /// Register #160 (U-T2-4): the Docket's keyboard toggle — the <c>docket_toggle</c> InputMap
+    /// action (<see cref="Minigames.MinigameInput.RegisterActions"/>), "C" for "Counter".
+    /// Deliberately <c>_UnhandledKeyInput</c>, NOT <c>_Input</c>: the four minigames read Space/
+    /// Shift/Enter/KpEnter/Backspace/Delete/arrows in their own <c>_GuiInput</c>, which — per
+    /// Godot's own input-propagation order (<c>_input</c> → GUI's <c>_gui_input</c> →
+    /// <c>_unhandled_key_input</c>) — runs BEFORE this. Routing here means (a) this can never race
+    /// a minigame's own key (C is not one of theirs: move_up/down/left/right, forge_strike,
+    /// bellows, plunge, confirm, scrape, crank_stroke, pull_part), and (b) a focused text field (a
+    /// future rename box) naturally wins first — <c>_gui_input</c> already consumed the keystroke
+    /// as typed text, so this handler never double-fires alongside it.
+    /// </summary>
+    public override void _UnhandledKeyInput(InputEvent @event)
+    {
+        if (@event.IsActionPressed("docket_toggle"))
+        {
+            Docket.Toggle();
+            GetViewport()?.SetInputAsHandled();
+        }
     }
 
     /// <summary>Reading the Ledger pauses the town; closing it resumes if it was running.</summary>
