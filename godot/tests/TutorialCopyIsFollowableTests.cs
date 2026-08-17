@@ -95,7 +95,7 @@ public class TutorialCopyIsFollowableTests
     ];
 
     /// <summary>
-    /// U-T2-1 (owner ruling, §11.13): the chain now numbers WITHIN acts — "The Hand-Off · 2 of 4",
+    /// U-T2-1 (owner ruling, §11.13): the chain now numbers WITHIN acts — "The Hand-Off · 2/4",
     /// never "Tutorial 7/24" — because a countdown to ten was never going to survive becoming a
     /// countdown to twenty-four once the pointed chain outgrows day 3 (the owner's own ruling: the
     /// pointed chain now runs through day 7). <see cref="TutorialFlow.TotalSteps"/> still comes from
@@ -194,13 +194,13 @@ public class TutorialCopyIsFollowableTests
                         "space, and nothing else in the build reports it.")
                     .IsFalse();
 
-                // U-T2-1: the prefix is act-scoped now ("The Hand-Off · 2 of 4:"), not a global
+                // U-T2-1: the prefix is act-scoped now ("The Hand-Off · 2/4:"), not a global
                 // "N/10" denominator — check the join against TutorialFlow.ActPosition itself so
                 // this never has to re-derive the act's own display name.
                 var (position, total) = TutorialFlow.ActPosition(step);
                 AssertThat(copy)
                     .OverrideFailureMessage($"{step}'s line does not carry its own act-scoped position: \"{copy}\"")
-                    .Contains($"{position} of {total}:");
+                    .Contains($"{position}/{total}:");
 
                 foreach (var needle in MustName[step])
                 {

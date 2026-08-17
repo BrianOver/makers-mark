@@ -282,11 +282,14 @@ public class TutorialKeepsUpTests
             // rendering bug that isn't there — my first version of this test did exactly that. The counter is
             // the part the player actually uses to know whether they progressed.
             //
-            // U-T2-1: the counter is act-scoped now ("The Hand-Off · 2 of 4"), not a global
-            // "Tutorial N/Total" — matches the "· N of M" join every act's own prefix shares.
-            var counter = System.Text.RegularExpressions.Regex.Match(expected!, @"· \d+ of \d+");
+            // U-T2-1: the counter is act-scoped now ("The Hand-Off · 2/4"), not a global
+            // "Tutorial N/Total" — matches the "· N/M" join every act's own prefix shares. The
+            // slash form is not cosmetic: the prose form pushed a fresh Morning-1 objective card to
+            // 270px against its hard 260px pin, and unclamped copy grows the chip off screen rather
+            // than trimming.
+            var counter = System.Text.RegularExpressions.Regex.Match(expected!, @"· \d+/\d+");
             AssertThat(counter.Success)
-                .OverrideFailureMessage($"The tutorial line \"{expected}\" carries no \"Act · N of M\" counter.")
+                .OverrideFailureMessage($"The tutorial line \"{expected}\" carries no \"Act · N/M\" counter.")
                 .IsTrue();
 
             // Name the reason, not just the absence: "not on screen" has three causes with three fixes

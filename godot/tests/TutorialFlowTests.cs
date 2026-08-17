@@ -38,8 +38,8 @@ public class TutorialFlowTests
             // applies, so this cannot drift from what the player actually reads.
             AssertThat(ui.Objective.Reason.Text)
                 .IsEqual(ObjectiveTracker.Plain(ui.Tutorial.TopSlotText(ui.Adapter.CurrentState)!));
-            // U-T2-1: act-scoped numbering — "The Mark · 1 of 1", not "Tutorial 1/10".
-            AssertThat(ui.Objective.Reason.Text).StartsWith("The Mark · 1 of 1:");
+            // U-T2-1: act-scoped numbering — "The Mark · 1/1", not "Tutorial 1/10".
+            AssertThat(ui.Objective.Reason.Text).StartsWith("The Mark · 1/1:");
             AssertThat(ui.Objective.TutorialDismiss.Visible).IsTrue();
 
             AssertThat(ui.Tutorial.SecondProfessionButton.Visible).IsFalse();
@@ -85,19 +85,19 @@ public class TutorialFlowTests
         // player who satisfied both in one compound "get your first item made" beat watched the
         // counter jump two numbers at once — confusing even though the step machine itself was
         // correct. They now share display slot 1 (StepIndex) AND an act (TutorialAct.Mark), so the
-        // on-screen counter can only ever read the SAME "The Mark · 1 of 1", whatever combination
+        // on-screen counter can only ever read the SAME "The Mark · 1/1", whatever combination
         // of Buy/Craft the player actually did — the shared-slot guarantee this test exists to pin,
         // read through U-T2-1's act-scoped label instead of the old global "N/10" one.
         var ui = MountMainUi();
         try
         {
             AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.BuyMaterial);
-            AssertThat(ui.Tutorial.TopSlotText(ui.Adapter.CurrentState)!).StartsWith("The Mark · 1 of 1:");
+            AssertThat(ui.Tutorial.TopSlotText(ui.Adapter.CurrentState)!).StartsWith("The Mark · 1/1:");
 
             ui.Adapter.Queue(new BuyMaterialAction(ScriptedSession.CraftMaterial, ScriptedSession.CopperNeeded));
             AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.Craft); // internal step moved...
             AssertThat(ui.Tutorial.TopSlotText(ui.Adapter.CurrentState)!)
-                .StartsWith("The Mark · 1 of 1:"); // ...but the ON-SCREEN number did not (same display slot)
+                .StartsWith("The Mark · 1/1:"); // ...but the ON-SCREEN number did not (same display slot)
 
             ui.Adapter.Queue(new CraftAction(ScriptedSession.CraftRecipeId, ScriptedSession.CraftMaterial));
             AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.Shelve);
@@ -105,7 +105,7 @@ public class TutorialFlowTests
             // is the correct per-act behavior, not a skipped or repeated number within Mark's own
             // one-slot ladder.
             AssertThat(ui.Tutorial.TopSlotText(ui.Adapter.CurrentState)!)
-                .StartsWith("The Hand-Off · 1 of 4:");
+                .StartsWith("The Hand-Off · 1/4:");
         }
         finally
         {
@@ -540,7 +540,7 @@ public class TutorialFlowTests
 
             var copy = ui.Tutorial.TopSlotText(ui.Adapter.CurrentState)!;
             // U-T2-1: WatchDeparture is The Dark's 2nd of 3 beats (PostBounty, WatchDeparture, LookIn).
-            AssertThat(copy).StartsWith("The Dark · 2 of 3:");
+            AssertThat(copy).StartsWith("The Dark · 2/3:");
             AssertThat(copy)
                 .OverrideFailureMessage(
                     $"Step 4 must name the press, not only the sight — the owner's question was literally " +
@@ -616,7 +616,7 @@ public class TutorialFlowTests
                 .OverrideFailureMessage("The tutorial card rendered BLANK — the surface whose whole job is saying what to do.")
                 .IsFalse();
             // U-T2-1: LookIn is The Dark's 3rd (and last) of 3 beats.
-            AssertThat(copy).StartsWith("The Dark · 3 of 3:");
+            AssertThat(copy).StartsWith("The Dark · 3/3:");
             AssertThat(copy)
                 .OverrideFailureMessage($"The step is still naming the Watch control with nobody out. Copy was: \"{copy}\"")
                 .NotContains("👁 Watch");
@@ -1458,7 +1458,7 @@ public class TutorialFlowTests
         try
         {
             var text = ui.Tutorial.TopSlotText(ui.Adapter.CurrentState)!;
-            AssertThat(text).StartsWith("The Mark · 1 of 1:");
+            AssertThat(text).StartsWith("The Mark · 1/1:");
             AssertThat(text).Contains("Forge");
             AssertThat(text).Contains("WASD");
         }
@@ -1526,7 +1526,7 @@ public class TutorialFlowTests
             AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Expedition);
 
             var waitText = ui.Tutorial.TopSlotText(ui.Adapter.CurrentState)!;
-            AssertThat(waitText).StartsWith("The Mark · 1 of 1:");
+            AssertThat(waitText).StartsWith("The Mark · 1/1:");
             AssertThat(waitText).Contains("Morning");
             AssertThat(waitText).NotContains("Walk to"); // the raw actionable instruction must be gone
         }
@@ -1559,7 +1559,7 @@ public class TutorialFlowTests
             AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.PostBounty);
 
             var duringExpedition = ui.Tutorial.TopSlotText(ui.Adapter.CurrentState)!;
-            AssertThat(duringExpedition).StartsWith("The Dark · 1 of 3:");
+            AssertThat(duringExpedition).StartsWith("The Dark · 1/3:");
             AssertThat(duringExpedition).Contains("Morning or Evening");
             AssertThat(duringExpedition).NotContains("Walk to");
         }
@@ -1662,7 +1662,7 @@ public class TutorialFlowTests
                     .OverrideFailureMessage(
                         $"{professionId}: the tutorial's first step is not readable on screen in the ordinary " +
                         $"starting view. Rendered: \"{ui.Objective.Reason.Text}\"")
-                    .StartsWith("The Mark · 1 of 1:");
+                    .StartsWith("The Mark · 1/1:");
 
                 var tracker = ui.FindChild("ObjectiveTracker", recursive: true, owned: false) as Control;
                 AssertThat(tracker)
@@ -1722,7 +1722,7 @@ public class TutorialFlowTests
                     .IsFalse();
                 AssertThat(ui.Tutorial.Active).IsTrue();
                 AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.BuyMaterial);
-                AssertThat(ui.Objective.Reason.Text).StartsWith("The Mark · 1 of 1:");
+                AssertThat(ui.Objective.Reason.Text).StartsWith("The Mark · 1/1:");
             }
             finally
             {
