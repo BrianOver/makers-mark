@@ -39,6 +39,12 @@ namespace GodotClient.Tests;
 /// their siblings — those are the tests that actually mount a panel and press a button. Mistaking
 /// this census for coverage of "the button exists and works" is exactly the kind of overstated guard
 /// that lets the NEXT gap hide; do not let a future reader make that mistake.</para>
+///
+/// <para><b>A fourth, related question, deliberately NOT this file's job:</b> whether the player is
+/// ever TAUGHT a reachable action. <see cref="TeachingCoverageCensusTests"/> (U-T2 Wave F) asks that
+/// one, over the same real <see cref="PlayerAction"/> reflection plus panels and minigames — a
+/// button this file certifies reachable can still show up there as untaught, honestly, and that is
+/// not a contradiction between the two files.</para>
 /// </summary>
 [TestSuite]
 public class ActionReachabilityCensusTests

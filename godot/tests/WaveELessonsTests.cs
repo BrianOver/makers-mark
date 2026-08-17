@@ -140,6 +140,32 @@ public class WaveELessonsTests
         }
     }
 
+    /// <summary>Wave F's own coverage census caught this gap while classifying panels: the
+    /// read-only-surfaces lesson's copy already named "Heroes" among the boards it covers, but the
+    /// trigger only ever checked <c>id is "HeroCards" or "Depths"</c> — <c>HeroesPanel</c>'s own
+    /// drawer id is "Heroes", a DIFFERENT panel from HeroCards' <c>HeroPanel</c>, so the copy's own
+    /// promise was never kept for it. Fixed alongside the census, not deferred as a finding.</summary>
+    [TestCase]
+    public void OpeningHeroesForTheFirstTime_TeachesTheReadOnlySurfaceLesson()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.OpenPanel("Heroes");
+
+            AssertThat(ui.Mentor.Visible)
+                .OverrideFailureMessage("The read-only-surface lesson never showed on Heroes' first-ever open.")
+                .IsTrue();
+            var text = Find<Label>(ui.Mentor, "MentorBannerText").Text;
+            AssertThat(text).Contains(MentorVoice.Name);
+            AssertThat(text).Contains("sim");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
     /// <summary>Same lesson, other door: opening Bestiary first must ALSO teach it, and opening
     /// Depths right after must NOT show it a second time (<see
     /// cref="TutorialFlow.ConsumeFirstTouch"/>'s once-ever contract, shared across both open
