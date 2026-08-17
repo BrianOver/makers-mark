@@ -348,19 +348,92 @@ public class LayoutTests
     /// ForgeOpensFresh_PrimaryCraftVerb_IsOnScreenWithoutScrolling</c> forced (an engine run found
     /// the wrapped row burying the primary craft verb below the fold).</para>
     /// </summary>
+    /// <summary>
+    /// Every widget-name prefix this canary deliberately skips, each paired with the reason it is not
+    /// an R7 collapse. The prose above explains each one; this is the machine-readable form, and it
+    /// exists so the set can be PINNED.
+    ///
+    /// <para><b>Why it became a table.</b> These six lived as an inline <c>||</c> chain inside
+    /// <see cref="IsCompactKitWidgetLabel"/>. That made the list invisible in two ways at once: a
+    /// reader auditing this repo's exemption sets could grep for "exempt"/"allowlist"/"known" and
+    /// never see it (none of those words appeared anywhere near it), and nothing asserted how many
+    /// entries it had — so a seventh could be added silently, with or without a reason, and every test
+    /// would stay green. That is the same one-directional-guard shape that let twelve <c>.cs.uid</c>
+    /// sidecars go missing under a passing suite and a fixed <c>town-dusk</c> exemption sit stale: a
+    /// guard that fails when something is added to the GAME but never when something is added to the
+    /// guard's own escape hatch.</para>
+    ///
+    /// <para>Silencing a canary is a real decision and it should cost a reviewed diff, exactly as
+    /// <c>MixBudget.PendingExemptions</c> and <c>ConstitutionTests</c>' law exceptions already do
+    /// (<c>CLAUDE.md</c> rule 12: "exception counts are pinned, so every grant is a red-then-reviewed
+    /// diff in a compiled file").</para>
+    /// </summary>
+    private static readonly (string Prefix, string Reason)[] CompactKitWidgetPrefixes =
+    [
+        ("StatChip", "UiKit.StatChip — a price/atk/def pill rendering a short numeral at its own natural width."),
+        ("ArtRectFallback", "UiKit ArtRect fallback caption — a short art-miss note, never prose."),
+        ("PortraitFrame", "UiKit.PortraitFrame — fixed-size portrait furniture."),
+        ("ListRow", "UiKit.ListRow — the Forge vendor / Shop shelf fixed 64px 'Price' and 40px 'Owned' columns."),
+        ("IconChip", "UiKit.IconChip — a compact icon+value pill such as the Evening Ledger's gold readout."),
+        ("ModifierFamilyLabel", "ForgePanel modifier family label ('Oil:'/'Rune:'/'Fit:') — deliberately short and non-autowrapping so the modifier row costs zero extra lines; see register #149."),
+    ];
+
+    /// <summary>How many prefixes <see cref="CompactKitWidgetPrefixes"/> may carry. Bumping this is the
+    /// reviewed act of silencing this canary for one more widget shape.</summary>
+    private const int PinnedCompactKitWidgetPrefixCount = 6;
+
+    /// <summary>
+    /// The canary's own escape hatch, guarded. Fails in BOTH directions on purpose: adding a seventh
+    /// prefix without bumping the pin goes red, and bumping the pin without adding a prefix goes red
+    /// too — so the count can never quietly drift ahead of the list or behind it.
+    ///
+    /// <para>Also requires every entry to carry a real written reason. "Exempt" and "exempt, and here
+    /// is why" are different states, and only the second is safe to leave alone — the same rule
+    /// <c>TeachingCoverageCensusTests</c> applies to an untaught action.</para>
+    /// </summary>
+    [TestCase]
+    public void TheCompactKitExemptions_ArePinned_AndEachCarriesAWrittenReason()
+    {
+        AssertThat(CompactKitWidgetPrefixes.Length)
+            .OverrideFailureMessage(
+                $"CompactKitWidgetPrefixes has {CompactKitWidgetPrefixes.Length} entries; this test pins "
+                + $"{PinnedCompactKitWidgetPrefixCount}. Every entry SILENCES the R7 collapse canary for a "
+                + "widget shape, so adding one is a deliberate, reviewable act — bump the pin in the same "
+                + "diff and say in the entry's reason why that widget is legitimately narrow rather than "
+                + "collapsed.")
+            .IsEqual(PinnedCompactKitWidgetPrefixCount);
+
+        var unexplained = CompactKitWidgetPrefixes
+            .Where(e => string.IsNullOrWhiteSpace(e.Reason) || e.Reason.Trim().Length < 20)
+            .Select(e => e.Prefix)
+            .ToList();
+        AssertThat(unexplained.Count)
+            .OverrideFailureMessage(
+                "These exemptions carry no real written reason, so nobody can tell later whether they are "
+                + "still justified: " + string.Join(", ", unexplained))
+            .IsEqual(0);
+
+        var duplicates = CompactKitWidgetPrefixes
+            .GroupBy(e => e.Prefix, StringComparer.Ordinal)
+            .Where(g => g.Count() > 1)
+            .Select(g => g.Key)
+            .ToList();
+        AssertThat(duplicates.Count)
+            .OverrideFailureMessage("Duplicate exemption prefixes: " + string.Join(", ", duplicates))
+            .IsEqual(0);
+    }
+
     private static bool IsCompactKitWidgetLabel(Label label)
     {
         for (Node? node = label; node is not null; node = node.GetParent())
         {
             var name = node.Name.ToString();
-            if (name.StartsWith("StatChip", StringComparison.Ordinal)
-                || name.StartsWith("ArtRectFallback", StringComparison.Ordinal)
-                || name.StartsWith("PortraitFrame", StringComparison.Ordinal)
-                || name.StartsWith("ListRow", StringComparison.Ordinal)
-                || name.StartsWith("IconChip", StringComparison.Ordinal)
-                || name.StartsWith("ModifierFamilyLabel", StringComparison.Ordinal))
+            foreach (var (prefix, _) in CompactKitWidgetPrefixes)
             {
-                return true;
+                if (name.StartsWith(prefix, StringComparison.Ordinal))
+                {
+                    return true;
+                }
             }
         }
 
