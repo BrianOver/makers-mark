@@ -4,6 +4,7 @@ using System.Collections.Immutable;
 using System.Linq;
 using System.Text;
 using GameSim.Contracts;
+using GameSim.Venues;
 using Godot;
 
 namespace GodotClient.Panels;
@@ -45,14 +46,17 @@ namespace GodotClient.Panels;
 /// never dark-tinted by <c>MineAmbient</c>, so the floor chip, HP bar, pips, and damage numbers
 /// stay legible regardless of the mine's ambient mood.</para>
 ///
-/// <para><b>Monster HP bar model.</b> The sim exposes no monster max-HP anywhere in <see
-/// cref="DelveBeat"/> (only the per-round damage deltas <see cref="DelveBeats"/> already
-/// collapsed to ≤3 Exchange beats) — inventing one would be a presentation-side fabrication of a
-/// number the player never actually sees confirmed. Instead the bar depletes by a fixed
-/// <see cref="ExchangeHpStep"/> fraction per Exchange beat (so a 1-3 beat collapsed fight always
-/// reads as "wearing the monster down"), forced to empty on <see cref="DelveBeatKind.MonsterSlain"/>
-/// and left wherever it sat on <see cref="DelveBeatKind.HeroFled"/> (the monster survived) — never
-/// a re-simulation, purely a legible depletion cue.</para>
+/// <para><b>Monster HP bar model (law-breach fix, §11.14.7).</b> The bar used to deplete by a
+/// client-authored fixed ⅓ per Exchange beat — a drawn quantity no sim rule produced, a breach of
+/// "show only what the sim decided" that stood live under a green build because the law tripwire
+/// only scans for RNG/clock tokens. The claim that no honest number existed was false:
+/// <see cref="VenueDefinition.MonsterHp"/> is public, is the resolver's own seed for the floor's
+/// fight, and <c>BestiaryPanel</c> already renders it. <see cref="Venue"/> (kept in sync with the
+/// raided venue by <c>MineWatch.RefreshDelveBeats</c>) supplies that number at <see
+/// cref="DelveBeatKind.Engage"/>, and the bar depletes by the SAME <see cref="DelveBeat.DamageDealt"/>
+/// the Exchange beat already carries — a real running remainder against a real starting total, never
+/// a re-simulation, forced to empty on <see cref="DelveBeatKind.MonsterSlain"/> and left wherever it
+/// sat on <see cref="DelveBeatKind.HeroFled"/> (the monster survived).</para>
 ///
 /// <para><b>Death-clouding (constitutional, KTD5/R17/AE2).</b> <see
 /// cref="DelveBeatKind.SwallowedByDark"/> removes that hero's pip row entirely (<see
@@ -82,7 +86,6 @@ public sealed partial class DelveStage : Node2D
     private const float MonsterBreatheAmplitude = 0.05f;
     private const float HpBarWidth = 56f;
     private const float HpBarHeight = 6f;
-    private const float ExchangeHpStep = 1f / 3f;
     private const float HitFlashSeconds = 0.1f;
     private const float QuaffFlashSeconds = 0.25f;
     private const float CloudSeconds = 0.6f;
@@ -261,6 +264,29 @@ public sealed partial class DelveStage : Node2D
     /// <summary>The monster HP bar's current fill fraction, 0..1 (test hook).</summary>
     public float MonsterHpFraction { get; private set; } = 1f;
 
+    /// <summary>Which venue's monster-HP curve (<see cref="VenueDefinition.MonsterHp"/>) backs the
+    /// HP bar — <c>MineWatch.RefreshDelveBeats</c> keeps this pointed at whichever venue the tracked
+    /// party actually raided, the same source <c>ApplyVenueBackdrop</c> uses. Defaults to the Mine
+    /// so a standalone stage (every existing test, or a tick before any party is known) still shows
+    /// a real sim-decided number rather than an undefined one.</summary>
+    public VenueDefinition Venue { get; set; } = VenueRegistry.Mine;
+
+    /// <summary>The current floor's monster starting HP, resolved from <see cref="Venue"/> at the
+    /// most recent <see cref="DelveBeatKind.Engage"/> (test hook).</summary>
+    public int MonsterHpMax { get; private set; } = 1;
+
+    private int _monsterHpRemaining = 1;
+
+    /// <summary>Real starting HP for <paramref name="floor"/> off <see cref="Venue"/>, clamped into
+    /// the venue's own floor range rather than throwing — a defensive-only fallback (an
+    /// out-of-range floor is a data mismatch, never a reason to crash the watch), still the venue's
+    /// own honest number for the nearest valid floor.</summary>
+    private int ResolveMonsterMaxHp(int floor)
+    {
+        var clamped = Mathf.Clamp(floor, 1, Math.Max(1, Venue.FloorCount));
+        return Math.Max(1, Venue.MonsterHp(clamped));
+    }
+
     /// <summary>The monster sprite's current Scale (test/tuning hook, U6) — the read surface for
     /// the idle-breathe loop (<see cref="AdvanceMonsterBreath"/>): a pure multiplier of <see
     /// cref="_monsterBaseScale"/>, so this equals exactly <see cref="_monsterBaseScale"/> at rest
@@ -345,6 +371,8 @@ public sealed partial class DelveStage : Node2D
         CurrentFloor = 0;
         CurrentMonsterKind = string.Empty;
         MonsterHpFraction = 1f;
+        MonsterHpMax = 1;
+        _monsterHpRemaining = 1;
         ImpactPulse = 0f;
         LastKillCreditText = string.Empty; // a new party must not inherit the last one's credit
         _monsterShouldShow = false;
@@ -449,7 +477,8 @@ public sealed partial class DelveStage : Node2D
                     ApplyHeroHp(exchangeHero, beat, heroes);
                     if (beat.DamageDealt > 0)
                     {
-                        MonsterHpFraction = Mathf.Max(0f, MonsterHpFraction - ExchangeHpStep);
+                        _monsterHpRemaining = Mathf.Max(0, _monsterHpRemaining - beat.DamageDealt);
+                        MonsterHpFraction = Mathf.Clamp((float)_monsterHpRemaining / MonsterHpMax, 0f, 1f);
                         _monsterFlashRemaining = HitFlashSeconds;
                         _monsterKnockback = KnockbackPx;
                         SpawnDamageNumber(_monsterSprite.Position + new Vector2(-8, -46), beat.DamageDealt);
@@ -637,6 +666,8 @@ public sealed partial class DelveStage : Node2D
         _monsterBaseScale = ScaleFactorToWidth(_monsterSprite.Texture, MonsterWidth);
         _monsterSprite.Scale = _monsterBaseScale; // correct size immediately, even before the first Process() breath tick
         _monsterSprite.Modulate = _monsterBaseTint;
+        MonsterHpMax = ResolveMonsterMaxHp(floor);
+        _monsterHpRemaining = MonsterHpMax;
         MonsterHpFraction = 1f;
         _monsterShouldShow = true;
         _hpBack.Visible = true;

@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using GameSim.Contracts;
+using GameSim.Venues;
 using GdUnit4;
 using Godot;
 using GodotClient.Panels;
@@ -109,6 +110,75 @@ public class DelveStageTests
             stage.Free();
         }
     }
+
+    // ── U-T5-9 (law breach, §11.14.7): "the monster HP bar depletes by a client-authored fixed ⅓
+    // per beat" — a drawn quantity no sim rule produced. The fix reads GameSim.Venues.VenueDefinition
+    // .MonsterHp(floor), the resolver's own seed for the floor's fight, already public and already
+    // rendered by BestiaryPanel. The test below is the one the OLD code could never pass: it proves
+    // the SAME damage number depletes the bar by a DIFFERENT amount depending on the monster's real
+    // max HP — impossible under a fixed fraction, which drains every monster at the identical rate
+    // regardless of size. ──────────────────────────────────────────────────────────────────────────
+
+    [TestCase]
+    public void MonsterHpBar_DepletesByTheVenuesRealNumber_NotAFixedFraction()
+    {
+        var frailStage = new DelveStage { Venue = OneFloorVenue(monsterHp: 10) };
+        var toughStage = new DelveStage { Venue = OneFloorVenue(monsterHp: 100) };
+        try
+        {
+            frailStage.Build();
+            toughStage.Build();
+
+            frailStage.RenderBeat(Beat(DelveBeatKind.Engage, floor: 1, monsterKind: "cave-rat"), Heroes());
+            toughStage.RenderBeat(Beat(DelveBeatKind.Engage, floor: 1, monsterKind: "cave-rat"), Heroes());
+
+            AssertThat(frailStage.MonsterHpMax).IsEqual(10);
+            AssertThat(toughStage.MonsterHpMax).IsEqual(100);
+
+            // The identical 5-damage hit: a 10-HP monster should read as HALF dead; a 100-HP
+            // monster should barely be scratched. A fixed-fraction bug reports the SAME number for
+            // both (33% gone, regardless of what the sim actually seeded).
+            frailStage.RenderBeat(Beat(DelveBeatKind.Exchange, floor: 1, hero: 1, dealt: 5, taken: 0), Heroes());
+            toughStage.RenderBeat(Beat(DelveBeatKind.Exchange, floor: 1, hero: 1, dealt: 5, taken: 0), Heroes());
+
+            AssertThat(frailStage.MonsterHpFraction).IsEqualApprox(0.5f, 0.001f);
+            AssertThat(toughStage.MonsterHpFraction).IsEqualApprox(0.95f, 0.001f);
+            AssertThat(frailStage.MonsterHpFraction)
+                .OverrideFailureMessage(
+                    "A 10-HP monster and a 100-HP monster read the identical fraction after the same " +
+                    "5-damage hit -- the bar is still draining by a fixed step, not the venue's real number.")
+                .IsNotEqual(toughStage.MonsterHpFraction);
+        }
+        finally
+        {
+            frailStage.Free();
+            toughStage.Free();
+        }
+    }
+
+    [TestCase]
+    public void MonsterHpBar_UnknownVenueFloor_ClampsInsteadOfCrashing()
+    {
+        // A defensive-only guard: a floor number outside the venue's own range (a data mismatch,
+        // never expected from a real raid) must clamp to the nearest valid floor, never throw
+        // VenueDefinition.At's ArgumentOutOfRangeException and take the whole watch down with it.
+        var stage = new DelveStage { Venue = OneFloorVenue(monsterHp: 30) };
+        try
+        {
+            stage.Build();
+            stage.RenderBeat(Beat(DelveBeatKind.Engage, floor: 99, monsterKind: "cave-rat"), Heroes());
+
+            AssertThat(stage.MonsterHpMax).IsEqual(30);
+        }
+        finally
+        {
+            stage.Free();
+        }
+    }
+
+    private static VenueDefinition OneFloorVenue(int monsterHp) => new(
+        "test-venue", "Test Venue",
+        ImmutableArray.Create(new VenueFloor(1, 0, "cave-rat", monsterHp, 5, 2, 5, "test-ore")));
 
     [TestCase]
     public void Exchange_UpdatesHeroPips_FromHpAfter()
