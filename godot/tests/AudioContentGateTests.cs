@@ -266,13 +266,9 @@ public class AudioContentGateTests
     /// </summary>
     private static readonly HashSet<(string Track, Gate Gate)> PendingContentExemptions = new()
     {
-        ("Track.day-first-light", Gate.ImpulseTrainNoTone),
-        ("Track.town-dusk", Gate.MostlySilent),
-        ("Track.town-dusk", Gate.LoopSeamLevelLurch),
-        ("Track.town-dusk", Gate.IsolatedTransient),
     };
 
-    private const int PinnedContentExemptionCount = 4;
+    private const int PinnedContentExemptionCount = 0;
 
     [TestCase]
     public void ThePendingContentExemptionCount_IsThePinnedNumber()

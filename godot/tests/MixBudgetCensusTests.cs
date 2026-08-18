@@ -224,7 +224,7 @@ public class MixBudgetCensusTests
     /// ceiling) — see <see cref="MixBudget.PendingExemptions"/>'s own doc for the full measurement.
     /// </para>
     /// </summary>
-    private const int PinnedExemptionCount = 13;
+    private const int PinnedExemptionCount = 11;
 
     [TestCase]
     public void ThePendingExemptionCount_IsThePinnedNumber()
