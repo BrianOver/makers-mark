@@ -93,7 +93,7 @@ did not survive; five anchors named in the handoff are preserved (#151/#152 musi
 | 146 | Building interiors need to look better — **repeatedly raised** | "Not sure how many fucking times we have to talk about the insides of buildings. 1) need them to look better" |
 | 147 | Interior interactables must have distinct meaning and use — **repeatedly raised**. Named absurdity: the **furnace is where you buy resources** | "2) the items/things we click on need distincy meaning and use. why the fuck is the furance where we BUY resources" |
 | 148 | The watch-heroes scene must reach cutscene quality (in-engine rendered) | "the watch heroes visuals still fucking suck dude. this should be similar to a cutscene in quality (obv ingame rendered etc)" |
-| 149 | The legacy "jank" crafting menu is still reachable | "i somehow opened the legacy jank menu for crafting" — screenshot `jank_menu.jpg`: FORGE drawer with raw `(recipe default)` and three `(none)` dropdowns, a RECIPES list, and MORNING VENDOR (copper 4g / iron 7g / steel 10g, Buy buttons, qty spinners) grafted into the same scroll container |
+| 149 | The legacy "jank" crafting menu is still reachable. **Owner ruling 2026-08-18**, shown the rendered panel: *"Do the separate menus + maybe add a 'todo list' where we can record what needs bought, what needs crafted etc"* | "i somehow opened the legacy jank menu for crafting" — screenshot `jank_menu.jpg`: FORGE drawer with raw `(recipe default)` and three `(none)` dropdowns, a RECIPES list, and MORNING VENDOR (copper 4g / iron 7g / steel 10g, Buy buttons, qty spinners) grafted into the same scroll container |
 
 ### Audio
 
