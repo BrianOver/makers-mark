@@ -52,7 +52,7 @@ public class ActionReachabilityCensusTests
     /// <summary>
     /// The pinned total (U9's own tripwire, mirroring <c>ActionTimingConformanceTests</c>'
     /// "24 total" pin): a 25th concrete <see cref="PlayerAction"/> type changes this number, which
-    /// fails <see cref="ConcreteActionCount_IsExactly24"/> by count, and — if its author forgets to
+    /// fails <see cref="ConcreteActionCount_MatchesThePinnedExpectation"/> by count, and — if its author forgets to
     /// add a decision for it — <see cref="EveryConcretePlayerActionType_HasASurfaceOrAReasonedExclusion"/>
     /// fails BY NAME right alongside it.
     /// </summary>
@@ -183,7 +183,7 @@ public class ActionReachabilityCensusTests
     }
 
     [TestCase]
-    public void ConcreteActionCount_IsExactly24()
+    public void ConcreteActionCount_MatchesThePinnedExpectation()
     {
         var actual = ConcretePlayerActionTypesInAssembly().ToList();
         AssertThat(actual.Count)

@@ -9,7 +9,9 @@ namespace GodotClient.Tests;
 
 /// <summary>
 /// U6 (docs/plans/2026-08-02-002-feat-playtest-three-plan.md, R7): the permanent pin against the
-/// tower-regression this unit exists to fix. Hero bodies grew from 20x36 to 26x44 so
+/// tower-regression this unit exists to fix. Hero bodies grew (the 26x44 this paragraph used
+/// to quote was that pass's own target; the committed bodies today measure 20x32, with the
+/// player at 22x34 -- read the files, never this sentence) so
 /// sentinel/skirmisher/occultist could get real town art and the other three could carry more
 /// drawn detail — but a same-size repaint was invisible (measured 0.07%) and a naive 2x upscale
 /// would have made heroes TOWER over the player, which is the one outcome the plan bans outright

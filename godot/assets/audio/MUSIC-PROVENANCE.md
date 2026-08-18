@@ -10,12 +10,19 @@ false claim look documented.
 
 ## The beds
 
-| id | phase | length | origin | mastered |
-|---|---|---|---|---|
-| `day-first-light` | Morning | 54.0 s | **Generated 2026-08-17**, ACE-Step 1.5 turbo (local, ComfyUI) | fold + limiter, below |
-| `town-dusk` | Evening | 50.0 s | **Generated 2026-08-17**, ACE-Step 1.5 turbo (local, ComfyUI) | fold + limiter, below |
-| `night-still` | Camp | 51.5 s | earlier generation, repaired in place by U-T4-8 (trim + 4 s equal-power fold) | see U-T4-8 |
-| `quest-wait` | Expedition / ExpeditionDeep | 49.5 s | earlier generation, repaired in place by U-T4-8 (trim + 4 s equal-power fold) | see U-T4-8 |
+| id | phase (`DayPhase`) | **shown to the player as** | length | origin | mastered |
+|---|---|---|---|---|---|
+| `day-first-light` | Morning | **Dawn** | 54.0 s | **Generated 2026-08-17**, ACE-Step 1.5 turbo (local, ComfyUI) | fold + limiter, below |
+| `town-dusk` | Evening | **Night** | 50.0 s | **Generated 2026-08-17**, ACE-Step 1.5 turbo (local, ComfyUI) | fold + limiter, below |
+| `night-still` | Camp | **Vigil** | 51.5 s | earlier generation, repaired in place by U-T4-8 (trim + 4 s equal-power fold) | see U-T4-8 |
+| `quest-wait` | Expedition / ExpeditionDeep | **Quest / Deep Vigil** | 49.5 s | earlier generation, repaired in place by U-T4-8 (trim + 4 s equal-power fold) | see U-T4-8 |
+
+**Read the third column before acting on a bug report about "the night music".** The phase the game
+calls **Night** is `DayPhase.Evening`, whose bed is `town-dusk` — and the file *named* `night-still`
+is the **Vigil** (Camp) bed, which the player never hears called "night". The display names live in
+`godot/scripts/ui/PhaseVocab.cs` and nothing else on disk records the mapping, so a file-name-literal
+reading sends you to the wrong track. Register #152 ("Night music is fucked, grainy static") is about
+`town-dusk`. An audit of this register lost time to exactly this before checking `PhaseVocab`.
 
 All four are instrumental, locally generated, and carry no third-party sample content.
 

@@ -27,7 +27,7 @@ namespace GodotClient;
 /// not even go that far — it reads the action's own fields and nothing else).</para>
 ///
 /// <para><b>Coverage, not a hand-list.</b> There are 25 concrete <see cref="PlayerAction"/> types
-/// (<c>ActionReachabilityCensusTests.ConcreteActionCount_IsExactly24</c>, misleadingly named — the
+/// (<c>ActionReachabilityCensusTests.ConcreteActionCount_MatchesThePinnedExpectation</c> — the
 /// pinned constant is 25). The switch below has one arm per type. A 26th type that lands without an
 /// arm here falls to <see cref="NoCaseSentinel"/>, a value that starts with a bracketed tag no real
 /// subject line uses, so it is impossible to mistake for a filled-in reason either by eye in the log

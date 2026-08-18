@@ -322,6 +322,35 @@ public class TownPlacementTests
             .IsEqual(string.Join(", ", expected));
     }
 
+    /// <summary>
+    /// Register #144, the owner's whole complaint in three words: "too many lampposts". The 64x44
+    /// re-lay took them from eight to four, and nothing pins that.
+    ///
+    /// <para><b>Why the overlap census is not already this guard.</b> Every other test in this file
+    /// asks whether things COLLIDE. Four more lanterns placed somewhere clear of every sprite,
+    /// nameplate and door apron would collide with nothing, pass every assertion here, and reopen
+    /// the exact complaint the re-lay closed. "Too many" is a count, so a count is what has to be
+    /// pinned -- an upper bound, not an equality, so a future re-lay may still drop one without
+    /// having to argue with a test.</para>
+    ///
+    /// <para>Read from <see cref="TownLayout2D.Props"/> itself, which is the table
+    /// <c>Town2D</c> draws from and the same table <c>AmbientLife2D</c>'s flicker-glow filters --
+    /// there is no second lantern source that could sneak past this.</para>
+    /// </summary>
+    [TestCase]
+    public void TheTownCarries_NoMoreThanFourLampposts()
+    {
+        const int ceiling = 4;
+        var lanterns = TownLayout2D.Props.Count(p => p.SpriteId == "town2d-prop-lantern");
+
+        AssertThat(lanterns <= ceiling)
+            .OverrideFailureMessage(
+                $"The town places {lanterns} lampposts against a ceiling of {ceiling}. Register #144 "
+                + "is \"too many lampposts\" and the fix was eight down to four; adding more reopens "
+                + "it even if every one of them is clear of a collision.")
+            .IsTrue();
+    }
+
     /// <summary>No known exceptions: every placement in <see cref="TownLayout2D"/> already sits
     /// inside the <see cref="TownLayout2D.GridWidth"/>x<see cref="TownLayout2D.GridHeight"/>-tile
     /// grid <c>Town2D.Build</c> lays out. A hand-placed table drifting off the edge is exactly the
