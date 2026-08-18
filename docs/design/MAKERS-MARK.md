@@ -4918,15 +4918,15 @@ first half of the todo-list ask: *what needs bought* is exactly what a recipe's 
 |---|---|
 | U-T7-1 | `FocusSection` rebuilds the active section instead of toggling both views' `Visible`; the tab row (`ButtonGroup`, one pressed at a time) reaches all three. Bare open lands on `craft`. |
 | U-T7-2 | The craft section's per-recipe needs row, named `BuyMat_<key>`, buying through the same action the vendor row does. |
-| U-T7-1a | **The leak budget, found by a third attempt.** Building only the active section means
-`FocusSection` has to rebuild, and a rebuild per focus pushed `PanelRebuildDoesNotLeakNodesTests` to
-**477 orphan nodes against a budget of 200** — the guard whose own failure text explains that
-parentless subtrees survive into every later test, eventually kill the runtime with exit
-`-1073741819`, and then let a truncated run still report `Passed!` above the `ENGINE_MIN_PASSED`
-floor. So U-T7-1 is not a panel change alone: either the extra rebuilds go (rebuild on `Refresh`
-only, and have `FocusSection` toggle pre-built section rows) or `SimPanel.Clear`'s
-`PanelGraveyard.Bury` path has to hold under this new rebuild frequency. That is a lifecycle question,
-and it is why this unit is not a single sitting. |
+| U-T7-1a | **~~The leak budget~~ — retracted, and worth reading as a lesson rather than a constraint.** A
+third attempt reported `PanelRebuildDoesNotLeakNodesTests` at **477 orphan nodes against a budget of
+200**, and this row said that made the unit a lifecycle question. It did not. A fourth attempt found
+the cause: the compact needs row skipped the quantity stepper with a `continue` placed AFTER
+`new SpinBox`, so one `SpinBox` per needs row per refresh was constructed and never parented. **A Godot
+`Node` that is newed and never added to a tree is leaked outright, and `Clear` cannot bury what it was
+never handed.** Construct it on the only path that parents it and the leak test passes. The lesson is
+the general one: in this codebase an early `continue` between a `new Node` and its `AddChild` is a leak,
+and the guard that catches it is a node count nobody reads until it fails. |
 | U-T7-3 | Three tests change with the design, deliberately: `StationSplitTests`' bare-open pin (it asserted the merged view **on purpose**, against a real earlier bug — a bare open inheriting a stale narrowing — so the new pin must keep THAT property while asserting one section); `HumanPlaytestTests.ForgeRecipeBelowTheVendorList_IsReachableByScrollingTheWheel`, whose whole premise is the layout being removed; and `LayoutTests.ForgeBody_Labels_RenderAtReadableWidth`, which measures labels inside a now-hidden view and reads 1px — it must focus each section and measure per section. |
 | U-T7-4 | The todo list proper: what needs bought and what needs crafted, derived from the sim (`DepthStallEntry` for what heroes are stalled without, `CounterForecast.Queue` for what tomorrow's customers will ask for, recipe requirements against stock) rather than hand-entered, so it cannot go stale and needs no persistence. Sibling to the Docket, which is the screen he named as the one he liked. |
 
@@ -4943,12 +4943,38 @@ stepper. Scoping also matters: unfiltered, the block listed five materials on da
 Vendor again under a new heading — so it reads UNLOCKED recipes only (mirroring the tier gate the
 cards render) and caps at three rows.
 
-**Why this is booked rather than shipped.** Twelve failures across the panel's geometry pins, the
-qty-stepper tests, the pilot policy and the node-leak lifecycle is a wave, not a sitting — and the
-leak budget in particular is infrastructure this repo has already been bitten by. Each attempt bought
-a constraint rather than a fix, and the constraints above are worth more than a rushed panel would
-have been. The branch was reverted and deleted rather than parked — a branch with no open PR does not
-exist (rule 9), and a half-landed panel would have been worse than the jank it replaces.
+**The fourth attempt, and the eleven failures that remain.** With the leak fixed the panel builds,
+renders correctly, and the engine suite lands at **Failed: 11, Passed: 1437** — every one understood,
+and they divide into two kinds.
+
+*Mechanical (3).* `LayoutTests.ForgeBody_Labels_RenderAtReadableWidth` measures labels inside a
+now-hidden view and reads 1px, so it must focus each section and measure per section.
+`HudBoundsTests.ForgeOpensFresh_PrimaryCraftVerb_IsOnScreenWithoutScrolling` and its per-profession
+sibling report the craft verb still off screen with three needs rows above the recipes — cap the block
+at ONE row (the top unlocked recipe's own material, which is also the truest reading of "what this
+needs") and re-measure.
+
+*Judgement (8), and the reason this is not a sitting.* Reusing `BuyMat_<key>` for the needs row is what
+keeps the ten existing consumers working, and it is also what makes the craft section indistinguishable
+from the vendor to any test asserting the two are separate.
+`InteriorEntryExitTests.AnvilThenShelfPress_ActuallyScrollToDifferentVisibleContent` fails with *"Anvil
+press landed on craft — the vendor's Buy 1 buttons must have scrolled out of view"*: it is right that a
+vendor buy button is on the craft section, and wrong that this is the bug it was written to catch.
+`ForgeCraftTests.BuyMatQtyStepper_*`, `BuyingTenCopperInOneClick_*` and
+`BuyUpdatesTheCountImmediatelyTests` bare-open and drive the stepper the needs row deliberately omits.
+`AgentPlaytestBridgeTests.PressOnDisabledButton_*` burns the action budget down by pressing
+`BuyMat_copper` five times — and the needs row is need-based, so it *correctly* disappears once the
+requirement is met, at press #4. `MainUiTests.ForgePanel_CraftRoundTrip_*` wants copper from a fixture
+that already has some, so the block is empty. `DeepPilotPlayTests` needs the pilot policy to learn the
+Materials tab.
+
+Each of those eight is a pin being redefined, not a pin being satisfied — "the full vendor list is not
+dumped on the craft tab" instead of "no vendor button is on the craft tab", and "the stepper lives on
+the Materials tab" instead of "the stepper is on whatever opens". Every one is defensible and every one
+needs its own judgement about what the test was protecting. **Rewriting six pins in one sitting is
+exactly how a green test comes to sit over a real defect** — this program found two of those in a single
+night — so they are listed here to be done deliberately rather than at the end of the session that
+discovered them. The branch was reverted and deleted rather than parked (rule 9).
 
 ## §11.14.10 Process notes
 
