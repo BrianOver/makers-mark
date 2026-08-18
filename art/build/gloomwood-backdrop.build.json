@@ -1,20 +1,20 @@
 {
-  "Seed": 1385130325,
+  "Seed": 715020,
   "Model": "sd_xl_base_1.0.safetensors",
-  "Lora": null,
-  "Steps": 28,
-  "CfgMilli": 6500,
+  "Lora": "pixel-art-xl.safetensors",
+  "Steps": 30,
+  "CfgMilli": 7000,
   "SamplerResolved": "dpmpp_2m",
   "SchedulerResolved": "karras",
   "PaletteSha256": null,
-  "DiffuseSha256": "323a9b2e697fc60616d6ecf30f948fe14fd22c93117654e4d9edba64a0d490ee",
+  "DiffuseSha256": "e032951256a2679e774d34d988dec74bae4531bd99df5530ee0e98ae43bbaaad",
   "NormalSha256": null,
   "Uid": "uid://c38bcxbo56w3k",
   "HandFinished": false,
   "Status": "locked",
   "Provenance": {
-    "drafts": "4 candidates generated locally via ComfyUI MCP (single pass, no escalation needed); curated per art/pipeline/README.md",
-    "paintoverNote": "c1 (seed+1) -- moonlit path with layered depth (near mushrooms, mid path, far light-shaft trees), on-palette moss/verdigris, no legible text artifacts. c0 was a close-up prop-like mushroom cluster (insufficient depth for a wide backdrop); c2 read as a tiled/repeated mushroom pattern; c3 had garbled text-like marks baked into the paint -- all rejected.",
-    "aiDisclosure": "AI-generated (SDXL base 1.0) diffuse. Deviation from the standard chain: cutout.py's BiRefNet salient-object segmentation was NOT run -- verified empirically that it discards ~97% of a full-bleed atmospheric backdrop as 'background' (isolates only the single most-salient object), which breaks the AssetKind.Backdrop 'fills the plane' contract. Instead the raw 1024x1024 SDXL output was format-converted straight to a fully-opaque RGBA (no normalmap.py -- AssetSpec.NormalMap=false, flat far plane per GloomwoodSpecs.cs)."
+    "drafts": "Seed 715020, batch of 4. All four were usable; #4 has the most even tree distribution across the full width, which matters because the strip scrolls and a strong focal point becomes a visible repeat.",
+    "paintoverNote": "Winner taken as-is; no inpaint.",
+    "aiDisclosure": "AI-generated (SDXL base 1.0 + pixel-art-xl LoRA at 0.8/0.8) diffuse, one ComfyUI KSampler pass at 1536x640, seed 715020, dpmpp_2m/karras, 30 steps, cfg 7.0, batch of 4. IPAdapter (vit-h, style transfer, weight 0.85) referenced THIS venue's own previously committed backdrop, so each depth keeps its established palette and mood rather than converging on one look. Composed WIDE from the start rather than cropped from a square: the strip is 1024x260 and the defect being fixed was a 160x160 square stretched to fill it, so authoring at a square aspect and cropping would have reproduced the same loss from the other direction. Post: lanczos 1536x640 -> 1024x427 (aspect preserved, no horizontal squeeze), then a 1024x260 band taken at y=110 - low enough to keep the floor the figures stand on, high enough to keep the ceiling that gives each venue its identity - then eq=brightness=-0.10:saturation=0.75:contrast=0.9 so the backdrop recedes behind the hero and monster sprites drawn over it. No runtime scale: the committed PNG is exactly MineWatch.BackdropTileWidth x MineWatch.StripHeight, which BackdropArtContractTests.EveryVenueBackdrop_IsAuthoredAtTheSizeTheStripDrawsIt now pins. DEVIATION from cutout.py: none needed - a backdrop is opaque to its own edges and has no alpha to cut."
   }
 }

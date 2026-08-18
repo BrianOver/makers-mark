@@ -79,7 +79,11 @@ public partial class MineWatch : SubViewportContainer
 
     private const string MineVenueId = "mine";
     private static readonly Vector2I DesignSize = new(1024, 260);
-    private const float StripHeight = 260f;
+    /// <summary>Height of the watch strip in world/px units. Public because it is half of a
+    /// CONTRACT the art has to meet: together with <see cref="BackdropTileWidth"/> it is the size a
+    /// venue backdrop must be authored at, and <c>BackdropArtContractTests</c> reads both from here
+    /// rather than from a copied literal.</summary>
+    public const float StripHeight = 260f;
     private const float HeroTargetWidth = 64f;
     private const float FigureSpacing = 86f;
     private const float MonsterTargetWidth = 160f;

@@ -75,6 +75,34 @@ public class PaintedShellOwnershipTests
             + string.Join("\n  ", thin.Select(s => $"{s.Name} at {s.Density:F3} bytes/px")));
     }
 
+    /// <summary>
+    /// The venue backdrops, same measure and same reason. Register #148's remaining piece was that
+    /// all four shipped as 160×160 squares against a 1024×260 strip — an anisotropic 6.4×/1.625×
+    /// runtime stretch, the third appearance of the Scale-knob-instead-of-draw-size shape (#471,
+    /// #487). <c>BackdropArtContractTests</c> in the engine suite pins the SIZE against the strip's
+    /// own geometry; this pins that the re-authored art is real art and not a 1024×260 fill, in the
+    /// fast lane, where it fires on every push.
+    /// </summary>
+    [Fact]
+    public void EveryVenueBackdrop_CarriesRealPixelInformation()
+    {
+        var art = Path.Combine(RepoRoot(), "godot", "assets", "art");
+        const double floor = 0.30;
+
+        var thin = Directory
+            .EnumerateFiles(art, "*-backdrop.png", SearchOption.TopDirectoryOnly)
+            .Select(png => (Name: Path.GetFileName(png), Density: BytesPerPixel(png)))
+            .Where(b => b.Density < floor)
+            .OrderBy(b => b.Name, StringComparer.Ordinal)
+            .ToList();
+
+        Assert.True(
+            thin.Count == 0,
+            $"{thin.Count} venue backdrop(s) fell below {floor:F2} bytes/px, the density band that "
+            + "separates real art from a flat fill:\n  "
+            + string.Join("\n  ", thin.Select(b => $"{b.Name} at {b.Density:F3} bytes/px")));
+    }
+
     /// <summary>PNG dimensions straight from the IHDR, so this needs no image library in the fast
     /// lane. Bytes-per-pixel is a proxy for how much detail survived compression — crude, but it is
     /// the exact measure #146 was diagnosed and fixed against.</summary>

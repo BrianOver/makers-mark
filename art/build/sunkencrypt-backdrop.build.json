@@ -1,20 +1,20 @@
 {
-  "Seed": 1453651214,
+  "Seed": 715030,
   "Model": "sd_xl_base_1.0.safetensors",
-  "Lora": null,
-  "Steps": 28,
-  "CfgMilli": 6500,
+  "Lora": "pixel-art-xl.safetensors",
+  "Steps": 30,
+  "CfgMilli": 7000,
   "SamplerResolved": "dpmpp_2m",
   "SchedulerResolved": "karras",
   "PaletteSha256": null,
-  "DiffuseSha256": "061c4df76590d2c040543444ad5349c958cfa70102147e328b6336ba3566ed79",
+  "DiffuseSha256": "774241ee8df0cc3e049f29303e1bedb8f3f71747dc722c54707cf90f45d4eace",
   "NormalSha256": null,
   "Uid": "uid://ceudji1bw1dpd",
   "HandFinished": false,
   "Status": "locked",
   "Provenance": {
-    "drafts": "4 candidates generated locally via ComfyUI MCP (single pass, no escalation needed); curated per art/pipeline/README.md",
-    "paintoverNote": "c3 (seed+3) -- flooded colonnade with a centered altar cross + foreground skulls on the water, strongest atmospheric depth (near skulls, mid pillars, far lit apse) and the most distinctly funerary/crypt read of the batch. c0 was a multi-view concept sheet (not a single scene); c1/c2 were close variants of the same colonnade, both usable backups.",
-    "aiDisclosure": "AI-generated (SDXL base 1.0) diffuse. Same deviation as gloomwood-backdrop: cutout.py's BiRefNet segmentation was skipped (verified it would discard the majority of a full-bleed backdrop as 'background'); the raw 1024x1024 SDXL output was format-converted straight to a fully-opaque RGBA (no normalmap.py -- AssetSpec.NormalMap=false, flat far plane per SunkenCryptSpecs.cs). PaletteId fixed from the file's default ('house') to 'crypt' (art/specs/sunkencrypt/SunkenCryptSpecs.cs) for this asset and sunkencrypt-entrance ONLY, to match the module's own doc-comment ('All crypt palette family') and the plan's family-distinctness requirement -- the other 6 sunkencrypt specs (monsters/prop, deferred long tail) were left untouched."
+    "drafts": "Seed 715030, batch of 4. #3's ranked colonnade is the most even across the width and the water line sits where figures stand; #4 showed sky through the vault, which a sunken crypt should not.",
+    "paintoverNote": "Winner taken as-is; no inpaint.",
+    "aiDisclosure": "AI-generated (SDXL base 1.0 + pixel-art-xl LoRA at 0.8/0.8) diffuse, one ComfyUI KSampler pass at 1536x640, seed 715030, dpmpp_2m/karras, 30 steps, cfg 7.0, batch of 4. IPAdapter (vit-h, style transfer, weight 0.85) referenced THIS venue's own previously committed backdrop, so each depth keeps its established palette and mood rather than converging on one look. Composed WIDE from the start rather than cropped from a square: the strip is 1024x260 and the defect being fixed was a 160x160 square stretched to fill it, so authoring at a square aspect and cropping would have reproduced the same loss from the other direction. Post: lanczos 1536x640 -> 1024x427 (aspect preserved, no horizontal squeeze), then a 1024x260 band taken at y=110 - low enough to keep the floor the figures stand on, high enough to keep the ceiling that gives each venue its identity - then eq=brightness=-0.10:saturation=0.75:contrast=0.9 so the backdrop recedes behind the hero and monster sprites drawn over it. No runtime scale: the committed PNG is exactly MineWatch.BackdropTileWidth x MineWatch.StripHeight, which BackdropArtContractTests.EveryVenueBackdrop_IsAuthoredAtTheSizeTheStripDrawsIt now pins. DEVIATION from cutout.py: none needed - a backdrop is opaque to its own edges and has no alpha to cut."
   }
 }
