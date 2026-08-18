@@ -648,9 +648,40 @@ func _process(_delta: float) -> bool:
 		if open_ledger:
 			open_ledger.emit_signal("pressed")
 	if _frames >= _settle:
+		_warn_about_covering_overlays()
 		var img := root.get_texture().get_image()
 		var err := img.save_png(_out)
 		if err != OK:
 			push_error("shot_harness: save_png failed: %d" % err)
 		return true # quit the SceneTree main loop
 	return false
+
+
+## Name every full-screen overlay still visible at the moment of capture.
+##
+## Each state above suppresses the modals that were in its way ON THE DAY IT WAS WRITTEN, by name.
+## That list cannot know about a modal added later -- and one was: a Wave E first-touch lesson on
+## the read-only surfaces fires when Depths opens, so the Watch receipt quietly became a photograph
+## of a tutorial banner over an empty panel. Nothing failed. The PNG was produced, it was the right
+## size, and it was wrong.
+##
+## So this does not suppress anything (a blanket hide would be its own silent lie -- it could hide
+## the subject). It only says what is on top, loudly, on stderr. A receipt whose console output
+## names a banner is a receipt somebody can catch; a receipt that says nothing cannot be.
+func _warn_about_covering_overlays() -> void:
+	if _ui == null:
+		return
+	var covering: Array[String] = []
+	for node in _ui.find_children("*", "Control", true, false):
+		var control := node as Control
+		if control == null or not control.is_visible_in_tree():
+			continue
+		var n := String(control.name)
+		if not (n.ends_with("Modal") or n.ends_with("Banner") or n.ends_with("Overlay") or n.ends_with("Slate")):
+			continue
+		var r := control.get_global_rect()
+		if r.size.x >= 200.0 and r.size.y >= 60.0:
+			covering.append("%s (%dx%d)" % [n, int(r.size.x), int(r.size.y)])
+	if covering.size() > 0:
+		printerr("shot_harness: state '%s' captured with these overlays still on screen: %s"
+			% [_state, ", ".join(covering)])
