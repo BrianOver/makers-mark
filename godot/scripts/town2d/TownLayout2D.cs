@@ -370,7 +370,13 @@ public static class TownLayout2D
     /// </summary>
     public static readonly Vector2I[] HeroHomeTiles =
     {
-        new(21, 16), new(24, 18), new(27, 14), new(30, 16), new(33, 18), new(36, 14),
+        // U-T3-4b (R14.8 re-render): hero 1 moved (21,16) -> (21,13). The forge grew from 81px to
+        // 170px tall and its sprite draws UPWARD from its tile, so its new roof reached down over
+        // hero 1's home band — TownPlacementTests measured the collision at 17x10 px of sprite and
+        // 17x8 px of nameplate. Moving the hero NORTH rather than south keeps the change on the
+        // safe side of the constraint the paragraph above records: it shortens the walk from the
+        // gate (~48px), and HeroReturnCeremonyTests' ceiling is an upper bound on that walk.
+        new(21, 13), new(24, 18), new(27, 14), new(30, 16), new(33, 18), new(36, 14),
     };
 
     /// <summary>

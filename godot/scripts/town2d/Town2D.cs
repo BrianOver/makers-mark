@@ -1247,7 +1247,15 @@ public partial class Town2D : Control
 
         if (_buildingsByKey.TryGetValue("minegate", out var gate))
         {
-            FocusOn(gate.DoorAnchorGlobal, seconds);
+            // U-T3-4b (R14.8): look at the BUILDING, not at its doorstep. The sprite draws upward
+            // from its feet line, so centring the camera on DoorAnchorGlobal puts the whole gate
+            // ABOVE the centre of the visible strip — fine while the gate was 48px tall, and the
+            // return of the PT8 finding ("mine is off the screen at the top") the moment it grew to
+            // 121px. Lifting the target by half the sprite's height centres the building itself,
+            // and does so as a function of the art rather than a tuned constant, so the next size
+            // change cannot quietly reopen the same bug.
+            var lift = gate.Sprite.Texture is { } tex ? tex.GetHeight() * 0.5f : 0f;
+            FocusOn(gate.DoorAnchorGlobal - new Godot.Vector2(0f, lift), seconds);
         }
     }
 
