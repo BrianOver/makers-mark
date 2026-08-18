@@ -1,5 +1,5 @@
 {
-  "Seed": 700400,
+  "Seed": 714041,
   "Model": "sd_xl_base_1.0.safetensors",
   "Lora": "pixel-art-xl.safetensors",
   "Steps": 30,
@@ -7,14 +7,14 @@
   "SamplerResolved": "dpmpp_2m",
   "SchedulerResolved": "karras",
   "PaletteSha256": null,
-  "DiffuseSha256": "4973c02418821ee76bf2f31a1ae543f0031a4bdd338e6d2c9ef7b72a3a4f4e93",
+  "DiffuseSha256": "db9503a530f37ff2c9daa9b1db7b4ab82c98ef3fa4e51855c46336c2fb438a2c",
   "NormalSha256": null,
   "Uid": "uid://dgjyswgcnoid0",
   "HandFinished": false,
   "Status": "locked",
   "Provenance": {
-    "drafts": "Seed 700400 (denoise 0.8, IPAdapter on, 4 candidates) via ComfyUI MCP against the U3 Building clause: #2 grew an urn finial as roof clutter, #3's flat quarry-stone top read oddly, #4 had a mine cart landed on the roof. #1 (a timber-framed crystal arch standing on its own sand pad) was the clean read and the winner.",
-    "paintoverNote": "#1 taken as-is, no inpaint needed.",
-    "aiDisclosure": "AI-generated (SDXL base 1.0 + pixel-art-xl LoRA) diffuse, single ComfyUI KSampler pass (seed 700400, denoise 0.8) -- read directly from the PNG's own embedded ComfyUI workflow JSON, not quoted from memory. IPAdapterAdvanced (vit-h, style transfer, weight 0.9) referenced market.png so palette and lighting lock to the shipped Shop. DEVIATION from cutout.py: background removed via a deterministic flood-fill alpha matte (border-color median, border-seeded flood-fill of the core-background mask, then a fixed ~5px feather ring), not the BiRefNet model cutout.py wraps -- this render's backdrop measured near-uniform (border std < 1.1 per channel) so a segmentation-model pass bought nothing; cutout.py/BiRefNet remains the tool of record for gradient or busy backgrounds. Cropped to the alpha content box, then BOX-downsampled straight to 48x48 (no hard quantization) -- the same recipe market.png's own committed pixels were produced by. Replaces the prior unreproducible-legacy asset, which KTD-A's contract measured at 10 distinct opaque colours -- two orders of magnitude under the venue floor."
+    "drafts": "Two rounds. Seed 714040's batch produced the best-composed gates in the set, and every one of them was uncuttable: the purple-stone arch sat on a purple backdrop, and the cutout either kept the whole frame (95% fill - the shipped-looking gate WAS its own backdrop, caught in a render, not in a measurement) or ate the building (35% fill at tolerance 20). Re-rolled as seed 714041 asking for a chroma backdrop the subject never contains; #4's dark teal field cuts cleanly at any tolerance from 30 to 90, which is the actual test of a good backdrop.",
+    "paintoverNote": "Winner taken as-is; no inpaint.",
+    "aiDisclosure": "AI-generated (SDXL base 1.0 + pixel-art-xl LoRA at 0.9/0.9) diffuse, one ComfyUI KSampler pass at 896x1152, seed 714041, dpmpp_2m/karras, 30 steps, cfg 7.0, batch of 4. IPAdapter (vit-h, style transfer, weight 0.9) referenced market.png so palette and lighting lock to the Shop the owner named as art he likes -- the same chain this file recorded for the previous render, re-run rather than reinvented. Background removed by art/pipeline/gen-venues-r14.py's deterministic border-seeded flood fill against the border-median reference colour, then cropped to the alpha box, BOX-downsampled straight to the target height, and padded 1px of transparency on every side (VenueArtContractTests assertion 1). Sized to 121px = 3.56x the tallest resolved character body, ranked by role inside R14.8's 3.5-5.5x band rather than scaled uniformly: a uniform multiplier would have left the smaller buildings still undersized, which is the complaint (#142) still open. Replaces the render this file previously described, which measured 1.41-2.59x and is what made the heroes look too big for the town."
   }
 }

@@ -1,5 +1,5 @@
 {
-  "Seed": 700600,
+  "Seed": 714020,
   "Model": "sd_xl_base_1.0.safetensors",
   "Lora": "pixel-art-xl.safetensors",
   "Steps": 30,
@@ -7,14 +7,14 @@
   "SamplerResolved": "dpmpp_2m",
   "SchedulerResolved": "karras",
   "PaletteSha256": null,
-  "DiffuseSha256": "8a5bf7cf077a55a05f33f36dabcd592b48096bb8fbe16e228cf59374ae0b75a0",
+  "DiffuseSha256": "9a8099af32991d209c38521f876cdce7ba8f86dcb2cf9be6c383f24e7f586d50",
   "NormalSha256": null,
   "Uid": "uid://dyj8drl0lodm",
   "HandFinished": false,
   "Status": "locked",
   "Provenance": {
-    "drafts": "An A/B control ran first at seed 700100 (denoise 0.8) with IPAdapter OFF vs ON, 4 candidates each, to prove the adapter moves palette and not shape -- both sides missed structurally (a round hut, splitting into two huts, a giant pot eating the building) and were abandoned regardless of adapter state; this is the in-repo evidence sheet 'evidence - IPA on vs off, same seed - style moves to anchor, shape does not.png'. Seed 700600 (denoise 0.7, IPAdapter on, 4 candidates) against the U3 Building clause: #1 read as a house, not a tavern; #2's roof seam visually split the building's mass in two; #4 was clean but plain with a hanging sign. #3 (two-story inn massing, a sign band over the door, sitting naturally beside the Shop) was the clear winner.",
-    "paintoverNote": "#3 taken as-is, no inpaint needed -- the two-story silhouette, warm-lit windows and sign band already matched the Building clause and read well next to market.png's own massing.",
-    "aiDisclosure": "AI-generated (SDXL base 1.0 + pixel-art-xl LoRA) diffuse, single ComfyUI KSampler pass (seed 700600, denoise 0.7) -- read directly from the PNG's own embedded ComfyUI workflow JSON, not quoted from memory. IPAdapterAdvanced (vit-h, style transfer, weight 0.9) referenced market.png so palette and lighting lock to the shipped Shop. DEVIATION from cutout.py: background removed via a deterministic flood-fill alpha matte (border-color median, border-seeded flood-fill of the core-background mask, then a fixed ~5px feather ring), not the BiRefNet model cutout.py wraps -- this render's backdrop measured near-uniform (border std < 1.3 per channel) so a segmentation-model pass bought nothing; cutout.py/BiRefNet remains the tool of record for gradient or busy backgrounds. Cropped to the alpha content box, then BOX-downsampled straight to 84x88 (no hard quantization) -- the same recipe market.png's own committed pixels were produced by. Replaces the prior unreproducible-legacy asset, which KTD-A's contract measured as baked green hedges/a purple road/a cream path spilling past the building's own footprint on three sides."
+    "drafts": "Seed 714020, batch of 4 at 896x1152. #2 and #4 both generated a street scene rather than one building. #3 was a near tie with #1. #1 won on silhouette: the gable, chimney and hanging sign all separate against the backdrop, which is what survives a downsample to 187px.",
+    "paintoverNote": "Winner taken as-is; no inpaint.",
+    "aiDisclosure": "AI-generated (SDXL base 1.0 + pixel-art-xl LoRA at 0.9/0.9) diffuse, one ComfyUI KSampler pass at 896x1152, seed 714020, dpmpp_2m/karras, 30 steps, cfg 7.0, batch of 4. IPAdapter (vit-h, style transfer, weight 0.9) referenced market.png so palette and lighting lock to the Shop the owner named as art he likes -- the same chain this file recorded for the previous render, re-run rather than reinvented. Background removed by art/pipeline/gen-venues-r14.py's deterministic border-seeded flood fill against the border-median reference colour, then cropped to the alpha box, BOX-downsampled straight to the target height, and padded 1px of transparency on every side (VenueArtContractTests assertion 1). Sized to 187px = 5.50x the tallest resolved character body, ranked by role inside R14.8's 3.5-5.5x band rather than scaled uniformly: a uniform multiplier would have left the smaller buildings still undersized, which is the complaint (#142) still open. Replaces the render this file previously described, which measured 1.41-2.59x and is what made the heroes look too big for the town."
   }
 }

@@ -234,34 +234,30 @@ public class VenueArtContractTests
 
     private static readonly KnownFailure[] KnownVenuesFailingTheContract =
     [
-        // Assertion 1 — transparent margin >=1px on all four sides. ALL FIVE fail, and the reason is
-        // uniform: not one venue leaves a transparent column at its left or right edge. Measured:
-        // forge T6/B6/L0/R0, tavern T9/B8/L0/R0, minegate T1/B1/L0/R0, market T0/B0/L0/R0,
-        // noticeboard T0/B0/L1/R1. Three of them have generous top/bottom margins, which is what
-        // made this look like a two-venue problem — the horizontal edges were never measured.
-        new("forge", "transparent-margin"),
-        new("tavern", "transparent-margin"),
-        new("minegate", "transparent-margin"),
+        // Assertion 1 — transparent margin >=1px on all four sides. Four of the five rows are GONE:
+        // the re-render pads every cutout by exactly 1px on each edge, so forge/tavern/minegate/
+        // noticeboard all measure T1/B1/L1/R1. market keeps its row under R14.10 — the owner named
+        // that art as art he likes and there is no fallback copy on disk, so it is deliberately not
+        // re-rendered and stays at T0/B0/L0/R0.
         new("market", "transparent-margin"),
-        new("noticeboard", "transparent-margin"),
 
         // Assertion 3 — one connected opaque component (4-neighbour flood fill). market's
         // ground/shadow pixels fragment into 59 separate islands instead of one building silhouette.
+        // Unchanged by the re-render, and unchangeable while R14.10 holds.
         new("market", "connected-component"),
 
         // Assertion 5 — height >= 3.5x the tallest resolved character body (register #142's 3.5-
-        // 5.5x ruling). All five venues fail today (forge 81px, tavern 88px, market 62px,
-        // noticeboard 50px, mine-gate 48px, all well under 3.5 * 34px = 119px) — this row set IS the
-        // regression pin the re-render unit is measured against.
+        // 5.5x ruling). Four rows GONE: the re-render lands every venue inside the band, ranked by
+        // role rather than scaled uniformly (R14.8 — a uniform multiplier would have left the
+        // smaller buildings still undersized, i.e. the complaint still open):
+        //     tavern 187px 5.50x · forge 170px 5.00x · minegate 153px 4.50x · noticeboard 136px 4.00x
+        // market stays at 62px / 1.82x under R14.10, which that ruling names as its own accepted
+        // consequence: it becomes the smallest building in a town whose tavern is 5.5x.
         // NOTE the key: "minegate", the TownLayout2D.Venues key, not "mine-gate", which is its
         // sprite id. Both strings exist and they are not the same string — pinning the sprite id
         // here left the real key unpinned and the row inert, so this assertion reported a failure
         // it had supposedly already accounted for.
-        new("forge", "size-ratio"),
-        new("tavern", "size-ratio"),
         new("market", "size-ratio"),
-        new("noticeboard", "size-ratio"),
-        new("minegate", "size-ratio"),
     ];
 
     private static List<string> Expected(string assertion) =>

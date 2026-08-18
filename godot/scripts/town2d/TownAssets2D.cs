@@ -43,11 +43,13 @@ public static class TownAssets2D
         // sizes (e.g. tavern 56x72 when tavern.png is actually 84x88), harmless back then only
         // because ForVenue never fell through to this placeholder while the real PNG resolved.
         // Worth getting exactly right now that these ids are live again.
-        ["forge"] = (new Vector2(72, 81), new Color(0.45f, 0.27f, 0.16f)),
+        // Re-measured after the R14.8 re-render (register #142/#143): four of the five venues grew
+        // to the 3.5-5.5x band. market is unchanged under R14.10.
+        ["forge"] = (new Vector2(110, 170), new Color(0.45f, 0.27f, 0.16f)),
         ["market"] = (new Vector2(76, 62), new Color(0.30f, 0.42f, 0.38f)),
-        ["tavern"] = (new Vector2(84, 88), new Color(0.40f, 0.24f, 0.30f)),
-        ["mine-gate"] = (new Vector2(48, 48), new Color(0.18f, 0.16f, 0.22f)),
-        ["noticeboard"] = (new Vector2(44, 50), new Color(0.36f, 0.30f, 0.20f)),
+        ["tavern"] = (new Vector2(125, 187), new Color(0.40f, 0.24f, 0.30f)),
+        ["mine-gate"] = (new Vector2(95, 121), new Color(0.18f, 0.16f, 0.22f)),
+        ["noticeboard"] = (new Vector2(94, 136), new Color(0.36f, 0.30f, 0.20f)),
     };
 
     private static readonly Vector2 DefaultVenueSize = new(64, 64);
