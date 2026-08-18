@@ -4918,13 +4918,37 @@ first half of the todo-list ask: *what needs bought* is exactly what a recipe's 
 |---|---|
 | U-T7-1 | `FocusSection` rebuilds the active section instead of toggling both views' `Visible`; the tab row (`ButtonGroup`, one pressed at a time) reaches all three. Bare open lands on `craft`. |
 | U-T7-2 | The craft section's per-recipe needs row, named `BuyMat_<key>`, buying through the same action the vendor row does. |
+| U-T7-1a | **The leak budget, found by a third attempt.** Building only the active section means
+`FocusSection` has to rebuild, and a rebuild per focus pushed `PanelRebuildDoesNotLeakNodesTests` to
+**477 orphan nodes against a budget of 200** — the guard whose own failure text explains that
+parentless subtrees survive into every later test, eventually kill the runtime with exit
+`-1073741819`, and then let a truncated run still report `Passed!` above the `ENGINE_MIN_PASSED`
+floor. So U-T7-1 is not a panel change alone: either the extra rebuilds go (rebuild on `Refresh`
+only, and have `FocusSection` toggle pre-built section rows) or `SimPanel.Clear`'s
+`PanelGraveyard.Bury` path has to hold under this new rebuild frequency. That is a lifecycle question,
+and it is why this unit is not a single sitting. |
 | U-T7-3 | Three tests change with the design, deliberately: `StationSplitTests`' bare-open pin (it asserted the merged view **on purpose**, against a real earlier bug — a bare open inheriting a stale narrowing — so the new pin must keep THAT property while asserting one section); `HumanPlaytestTests.ForgeRecipeBelowTheVendorList_IsReachableByScrollingTheWheel`, whose whole premise is the layout being removed; and `LayoutTests.ForgeBody_Labels_RenderAtReadableWidth`, which measures labels inside a now-hidden view and reads 1px — it must focus each section and measure per section. |
 | U-T7-4 | The todo list proper: what needs bought and what needs crafted, derived from the sim (`DepthStallEntry` for what heroes are stalled without, `CounterForecast.Queue` for what tomorrow's customers will ask for, recipe requirements against stock) rather than hand-entered, so it cannot go stale and needs no persistence. Sibling to the Docket, which is the screen he named as the one he liked. |
 
-**Why this is booked rather than shipped.** The nine failures above are the unit's real specification
-and were worth the session that found them; finishing and verifying U-T7-1 through U-T7-4 well is
-more than remained. The branch was reverted and deleted rather than parked — a branch with no open PR
-does not exist (rule 9), and a half-landed panel would have been worse than the jank it replaced.
+**A third attempt, and what it proved.** With the four constraints above in hand the panel was built:
+tab row, bare open on `craft`, and the needs block rendered by the same vendor loop into a different
+parent. It renders correctly — the day-1 "Buy 2 copper" row lands at the top of the craft section with
+no dropdown or modifier row above it, which is exactly the ruling. It also finished at **twelve**
+failures, including the orphan-node budget above and two more real consequences worth writing down:
+the needs block deliberately drops the quantity stepper (three rows plus three steppers pushes the
+first recipe card's craft verb toward the fold `HudBoundsTests` measures), and
+`ForgeCraftTests.BuyMatQtyStepper_*` / `BuyUpdatesTheCountImmediatelyTests` bare-open and press
+`BuyMatQty_<key>`, so they must either reach the Materials tab first or the needs block must keep a
+stepper. Scoping also matters: unfiltered, the block listed five materials on day 1 — the Morning
+Vendor again under a new heading — so it reads UNLOCKED recipes only (mirroring the tier gate the
+cards render) and caps at three rows.
+
+**Why this is booked rather than shipped.** Twelve failures across the panel's geometry pins, the
+qty-stepper tests, the pilot policy and the node-leak lifecycle is a wave, not a sitting — and the
+leak budget in particular is infrastructure this repo has already been bitten by. Each attempt bought
+a constraint rather than a fix, and the constraints above are worth more than a rushed panel would
+have been. The branch was reverted and deleted rather than parked — a branch with no open PR does not
+exist (rule 9), and a half-landed panel would have been worse than the jank it replaces.
 
 ## §11.14.10 Process notes
 
