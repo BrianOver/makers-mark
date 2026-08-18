@@ -459,6 +459,16 @@ func _process(_delta: float) -> bool:
 			var watch_tutorial = _ui.find_child("TutorialOverlay", true, false)
 			if watch_tutorial:
 				watch_tutorial.visible = false
+			# Wave E's first-touch lesson on the read-only surfaces fires from the same
+			# OpenPanel("Depths") call above, and its banner covers the whole strip. It does not
+			# appear on every run -- two clean builds captured this state with the drawer visible
+			# and no banner at all -- so it is timing-dependent, which is worse than always: a
+			# receipt for the most important screen in the game that is right most of the time is
+			# a receipt nobody re-checks. Suppressed like the three above; the capture-time overlay
+			# census (added in #592) is what caught it.
+			var watch_mentor = _ui.find_child("MentorBanner", true, false)
+			if watch_mentor:
+				watch_mentor.visible = false
 			# The departure slate ("THE SEND-OFF") is real MineWatch content, but it reports on
 			# TODAY'S actual auto-formed party -- a different, unrelated departure from the
 			# hand-staged floor 1/2 fight this receipt exists to show -- and it visually sits on

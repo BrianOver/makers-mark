@@ -1,20 +1,20 @@
 {
-  "Seed": 103007492,
+  "Seed": 715040,
   "Model": "sd_xl_base_1.0.safetensors",
-  "Lora": null,
-  "Steps": 28,
-  "CfgMilli": 6500,
+  "Lora": "pixel-art-xl.safetensors",
+  "Steps": 30,
+  "CfgMilli": 7000,
   "SamplerResolved": "dpmpp_2m",
   "SchedulerResolved": "karras",
   "PaletteSha256": null,
-  "DiffuseSha256": "932b1bef52320d4bd0acd51331817ec93baf8c5252398bdd78d7169859d76446",
+  "DiffuseSha256": "f23c78e1a56dd5472f7a824b61ae29edaeabd611b3ae14e03669f27c2c0566fd",
   "NormalSha256": null,
   "Uid": "uid://dxdwijxiams33",
   "HandFinished": false,
   "Status": "locked",
   "Provenance": {
-    "drafts": "8 candidates generated locally via ComfyUI MCP across 2 rounds (4 + 4 escalation); curated per art/pipeline/README.md. Regenerates task #95's Emberfall venue set, replacing the hand-authored art/pipeline/gen_emberfall_venue.py pixel grid with the real SDXL chain, matching every other venue backdrop.",
-    "paintoverNote": "c7 (seed+7, round-2 escalation) -- a receding stone tunnel corridor with warm ember light at its far end, closely mirroring mine-backdrop's own tunnel-recession composition. Round 1 (c0-c3) universally drew single close-up archway/doorway props with no depth, or a multi-panel prop-sheet (c1); round 2 added explicit 'wide receding corridor perspective, deep multi-layered depth, distant vanishing point' positive language plus close-up/isolated-prop negatives -- c4 (isometric floating tile prop) and c6 (torch-lit archway gate, still shallow depth) were rejected as insufficiently deep, and c5 (canyon exterior with visible sky/birds) was rejected as an off-contract landscape scene, leaving c7's genuine tunnel recession as the clear winner.",
-    "aiDisclosure": "AI-generated (SDXL base 1.0) diffuse. Deviation from the standard chain, matching every sibling backdrop (gloomwood/sunkencrypt/mine): cutout.py's BiRefNet salient-object segmentation was NOT run (it discards a full-bleed atmospheric scene as background). Instead the raw 1024x1024 SDXL output was resized (PIL LANCZOS) to 160x160 to match mine-backdrop.png/gloomwood-backdrop.png/sunkencrypt-backdrop.png's identical committed footprint exactly, then format-converted to opaque RGB (no normalmap.py -- AssetSpec.NormalMap=false, flat far plane per EmberfallSpecs.cs). The exact 1024->160 downscale filter used by the original sibling sessions is not recorded in any prior build-half or seeds.generated.md entry; LANCZOS was chosen here as the standard high-quality filter for shrinking painterly/photographic content (as opposed to nearest-neighbour, which this repo reserves for pixel-art upscaling elsewhere)."
+    "drafts": "Seed 715040, batch of 4. #1 and #3 both built strong single-point perspective that reads as a repeat once tiled; #2 is side-on basalt with an even lava line along the bottom.",
+    "paintoverNote": "Winner taken as-is; no inpaint.",
+    "aiDisclosure": "AI-generated (SDXL base 1.0 + pixel-art-xl LoRA at 0.8/0.8) diffuse, one ComfyUI KSampler pass at 1536x640, seed 715040, dpmpp_2m/karras, 30 steps, cfg 7.0, batch of 4. IPAdapter (vit-h, style transfer, weight 0.85) referenced THIS venue's own previously committed backdrop, so each depth keeps its established palette and mood rather than converging on one look. Composed WIDE from the start rather than cropped from a square: the strip is 1024x260 and the defect being fixed was a 160x160 square stretched to fill it, so authoring at a square aspect and cropping would have reproduced the same loss from the other direction. Post: lanczos 1536x640 -> 1024x427 (aspect preserved, no horizontal squeeze), then a 1024x260 band taken at y=110 - low enough to keep the floor the figures stand on, high enough to keep the ceiling that gives each venue its identity - then eq=brightness=-0.10:saturation=0.75:contrast=0.9 so the backdrop recedes behind the hero and monster sprites drawn over it. No runtime scale: the committed PNG is exactly MineWatch.BackdropTileWidth x MineWatch.StripHeight, which BackdropArtContractTests.EveryVenueBackdrop_IsAuthoredAtTheSizeTheStripDrawsIt now pins. DEVIATION from cutout.py: none needed - a backdrop is opaque to its own edges and has no alpha to cut."
   }
 }

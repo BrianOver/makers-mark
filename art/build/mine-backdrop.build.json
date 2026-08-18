@@ -1,20 +1,20 @@
 {
-  "Seed": 864050719,
+  "Seed": 715010,
   "Model": "sd_xl_base_1.0.safetensors",
-  "Lora": null,
-  "Steps": 28,
-  "CfgMilli": 6500,
+  "Lora": "pixel-art-xl.safetensors",
+  "Steps": 30,
+  "CfgMilli": 7000,
   "SamplerResolved": "dpmpp_2m",
   "SchedulerResolved": "karras",
   "PaletteSha256": null,
-  "DiffuseSha256": "33300ffcf5796861f4f7968b1625e4adddac0ab283d987d03f677e64d00d7a3f",
+  "DiffuseSha256": "65e025bb7278f7de600a9b9e29db5e8d6a8c323847521c939c455e71e34f200c",
   "NormalSha256": null,
   "Uid": "uid://018kn48y17xx",
   "HandFinished": false,
   "Status": "locked",
   "Provenance": {
-    "drafts": "round 1: 4 candidates (seed+0..+3) -- c1 was a clean full-bleed torchlit tunnel scene but carried a small signature-like corner mark. round 2 escalation: 4 more candidates (seed+4..+7) with negative hardened against text/signature/corner-text/concept-sheet/grid-layout; curated per art/pipeline/README.md",
-    "paintoverNote": "round 1 c1 (seed+1) was viable but had a small signature-like mark in one corner; escalated for a mark-free alternative. round 2 c2 (seed+6, offset+2 within the round) -- full-bleed torchlit cave-tunnel interior, receding rock-wall depth with both ember-orange torchlight and arcane-violet glow (matches the house palette's dual-hue clause), no visible text/signature. round 1 c0/round 2 c0 were multi-panel concept grids; round 1 c3 was an explicitly tiled/seamless pattern.",
-    "aiDisclosure": "AI-generated (SDXL base 1.0) diffuse; cutout.py NOT run (AssetKind.Backdrop fills the whole plane -- BiRefNet's salient-object segmentation would discard ~97% of the scene as 'background', per the U6 precedent) -- format-converted straight to opaque RGBA; no normal map (flat far plane per AssetSpec.NormalMap=false)."
+    "drafts": "Seed 715010, batch of 4 at 1536x640 against the committed mine-backdrop as the IPAdapter style reference. #1's path curved away into perspective (wrong for a side-scrolling strip), #3 opened onto an outdoor sky, #4 centred a huge arch that would repeat on every tile. #2 - side-on tunnel, ore carts, an unbroken floor line for figures to stand on - won.",
+    "paintoverNote": "Winner taken as-is; no inpaint.",
+    "aiDisclosure": "AI-generated (SDXL base 1.0 + pixel-art-xl LoRA at 0.8/0.8) diffuse, one ComfyUI KSampler pass at 1536x640, seed 715010, dpmpp_2m/karras, 30 steps, cfg 7.0, batch of 4. IPAdapter (vit-h, style transfer, weight 0.85) referenced THIS venue's own previously committed backdrop, so each depth keeps its established palette and mood rather than converging on one look. Composed WIDE from the start rather than cropped from a square: the strip is 1024x260 and the defect being fixed was a 160x160 square stretched to fill it, so authoring at a square aspect and cropping would have reproduced the same loss from the other direction. Post: lanczos 1536x640 -> 1024x427 (aspect preserved, no horizontal squeeze), then a 1024x260 band taken at y=110 - low enough to keep the floor the figures stand on, high enough to keep the ceiling that gives each venue its identity - then eq=brightness=-0.10:saturation=0.75:contrast=0.9 so the backdrop recedes behind the hero and monster sprites drawn over it. No runtime scale: the committed PNG is exactly MineWatch.BackdropTileWidth x MineWatch.StripHeight, which BackdropArtContractTests.EveryVenueBackdrop_IsAuthoredAtTheSizeTheStripDrawsIt now pins. DEVIATION from cutout.py: none needed - a backdrop is opaque to its own edges and has no alpha to cut."
   }
 }
