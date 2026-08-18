@@ -250,9 +250,20 @@ public class VenueArtContractTests
         // 5.5x ruling). Four rows GONE: the re-render lands every venue inside the band, ranked by
         // role rather than scaled uniformly (R14.8 — a uniform multiplier would have left the
         // smaller buildings still undersized, i.e. the complaint still open):
-        //     tavern 187px 5.50x · forge 170px 5.00x · minegate 153px 4.50x · noticeboard 136px 4.00x
+        //     tavern 187px 5.50x · forge 170px 5.00x · noticeboard 136px 4.00x · minegate 121px 3.56x
         // market stays at 62px / 1.82x under R14.10, which that ruling names as its own accepted
-        // consequence: it becomes the smallest building in a town whose tavern is 5.5x.
+        // consequence: it becomes the smallest building in a town whose tavern is 5.5x. (R14.10's
+        // own text says 1.94x; both are right about different baselines — 62/32 against a hero body
+        // and 62/34 against the player's, and this contract measures the TALLEST of the two, which
+        // is the player. The ruling is unchanged; only the arithmetic differs.)
+        //
+        // The mine gate takes the FLOOR of the band, not the middle, and not for art reasons: it is
+        // pinned at the grid's north edge and its sprite draws upward from its feet line, so at
+        // 153px — the size this comment claimed until the render was measured — it reached y=-17 and
+        // TownPlacementTests failed the grid bound. 121px against a 119px floor is a 2px margin: any
+        // future cast repaint that makes the tallest body even slightly taller pushes this venue
+        // back into the exception list without anyone touching mine-gate.png. That is a real
+        // fragility, recorded here rather than discovered again.
         // NOTE the key: "minegate", the TownLayout2D.Venues key, not "mine-gate", which is its
         // sprite id. Both strings exist and they are not the same string — pinning the sprite id
         // here left the real key unpinned and the row inert, so this assertion reported a failure

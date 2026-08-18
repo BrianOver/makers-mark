@@ -222,11 +222,14 @@ public class DilemmaLessonsTests
         (3, "fill-the-empty-slot-or-upgrade-the-full-one",
             new DilemmaStatus(DilemmaOutcome.Taught, "the-muster-speaks")),
         (4, "spend-the-slot-or-bank-it",
-            new DilemmaStatus(DilemmaOutcome.Blocked,
-                "PR #549 is parked (inverts a hero-trait relationship: prepared heroes dying more than " +
-                "reckless ones); on main today ActionBudget.ConsumesSlot still excludes UnlockTalentAction, " +
-                "so the dilemma has no live mechanic to teach yet. Owner ruling, Wave D report: 'Dilemma " +
-                "#4's lesson is blocked on #549, not on you.'")),
+            new DilemmaStatus(DilemmaOutcome.Missing,
+                "The MECHANIC exists and the LESSON does not. This row previously read Blocked, citing " +
+                "PR #549 as parked and ActionBudget.ConsumesSlot as still excluding UnlockTalentAction -- " +
+                "both halves were false when they were written: #549 is merged (it is the recipe-gating " +
+                "unit, register #157, nothing to do with hero traits or death rates) and ConsumesSlot " +
+                "lists UnlockTalentAction explicitly. So spending a slot on a talent versus banking it " +
+                "is a live choice today with nothing teaching it. Dilemma4_IsNotBlockedWhileTheSlotCost" +
+                "Exists pins that, so this row cannot go back to Blocked while the mechanic ships.")),
         (5, "buy-the-ore-or-buy-the-goodwill",
             new DilemmaStatus(DilemmaOutcome.Missing,
                 "Issue #170 / docs/playtests/2026-08-16-owner-playtest-register.md: OreMarketHandlers " +
@@ -236,6 +239,40 @@ public class DilemmaLessonsTests
         (6, "send-the-runner-or-trust-their-judgment",
             new DilemmaStatus(DilemmaOutcome.TaughtByNumberedStep, "TutorialStep.Vigil", TutorialStep.Vigil)),
     ];
+
+    /// <summary>
+    /// The reason text in a Blocked row is prose, and <see cref="SixDilemmas_EachHasAPinnedStatus"/>
+    /// only checks that it is non-blank -- never that it is TRUE. Dilemma #4's row proved how much
+    /// that matters: it claimed PR #549 was parked and that <c>ActionBudget.ConsumesSlot</c> still
+    /// excluded <c>UnlockTalentAction</c>, and both halves were false at the moment they were
+    /// written. A green test carrying a false justification for a real gap is worse than no test,
+    /// because the next session reads the justification and moves on.
+    ///
+    /// <para>Prose cannot be verified in general. THIS claim can, so it is: the one fact the row
+    /// rested on is now asserted directly against the sim. If the slot cost exists, #4 is not
+    /// blocked on the slot cost — whatever else may be true of it.</para>
+    /// </summary>
+    [TestCase]
+    public void Dilemma4_IsNotBlockedWhileTheSlotCostExists()
+    {
+        var slotCostExists = ActionBudget.ConsumesSlot(new UnlockTalentAction("any", "blacksmith"));
+        var fourth = SixDilemmas.First(d => d.Number == 4).Status;
+
+        AssertThat(slotCostExists)
+            .OverrideFailureMessage(
+                "ActionBudget.ConsumesSlot no longer charges a slot for UnlockTalentAction. If that is "
+                + "deliberate, dilemma #4 (\"spend the slot or bank it\") genuinely has no mechanic "
+                + "again and this test should be inverted along with its status row -- but say so on "
+                + "purpose, in a diff, rather than leaving the corpus to guess.")
+            .IsTrue();
+
+        AssertThat(fourth.Outcome != DilemmaOutcome.Blocked)
+            .OverrideFailureMessage(
+                "Dilemma #4 is pinned Blocked while UnlockTalentAction demonstrably costs an action "
+                + "slot, so the mechanic the lesson would teach is live. Blocked means 'cannot be "
+                + "taught yet'; the honest status for 'could be taught, nobody wrote it' is Missing.")
+            .IsTrue();
+    }
 
     [TestCase]
     public void SixDilemmas_EachHasAPinnedStatus()

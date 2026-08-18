@@ -234,35 +234,24 @@ public class AudioContentGateTests
     /// <c>MixBudget.PendingExemptions</c> discipline applied to these five gates instead of the RMS
     /// budget. <see cref="ThePendingContentExemptionCount_IsThePinnedNumber"/> pins the count.
     ///
-    /// <para><b>day-first-light (Dawn) and town-dusk (Evening) are both unrepairable by trim+fold</b> —
-    /// U-T4-9 (regeneration, not this unit) is their only fix. Measured (this build's own numbers,
-    /// PCM decoded through the exact path the game plays through):</para>
-    /// <list type="bullet">
-    /// <item>day-first-light: 92.1% of its energy sits below 150Hz and 0.055% above 6kHz — an impulse
-    /// train of low thuds with no midrange tone at all. <see cref="Gate.ImpulseTrainNoTone"/>.</item>
-    /// <item>town-dusk: 96.8% of its 50ms windows sit ≥40dB under its own loudest window (58.1 of 60.0
-    /// seconds effectively silent) — <see cref="Gate.MostlySilent"/>. Its loop wrap jumps +34.5dB
-    /// (head 1s at -32.5dBFS, tail 1s at -67.0dBFS) — <see cref="Gate.LoopSeamLevelLurch"/> — but this
-    /// track is NOT a U-T4-8 repair target: with only ~7s of real content in 60s, trimming plus a 4s
-    /// fold would leave a ~2.5s loop, not a fix. It also carries a broadband click at t≈57.3s, 16.1dB
-    /// above its own local neighbourhood (3.7% of that transient's own energy sits above 6kHz, versus
-    /// 0.0–0.01% for every other track's loudest moment — a genuinely "full-bandwidth" click, not a
-    /// musical hit) — <see cref="Gate.IsolatedTransient"/>.</item>
-    /// </list>
+    /// <para><b>The exemption set is EMPTY, and reaching zero is what this paragraph records.</b> Two
+    /// tracks were the last entries in it. day-first-light failed <see cref="Gate.ImpulseTrainNoTone"/>
+    /// (92.1% of its energy below 150Hz, 0.055% above 6kHz — an impulse train of low thuds with no
+    /// midrange at all) and town-dusk failed three at once: <see cref="Gate.MostlySilent"/> (96.8% of
+    /// its 50ms windows ≥40dB under its own loudest, i.e. 58.1 of 60.0 seconds effectively silent),
+    /// <see cref="Gate.LoopSeamLevelLurch"/> (+34.5dB across the wrap) and
+    /// <see cref="Gate.IsolatedTransient"/> (a broadband click at t≈57.3s, 16.1dB over its own
+    /// neighbourhood). Neither was repairable by trim+fold — with ~7s of real content in 60s, trimming
+    /// plus a 4s fold leaves a ~2.5s loop, which is not a fix — so both were REGENERATED rather than
+    /// mastered, and both now pass every gate. The four earlier entries (night-still and quest-wait)
+    /// were genuine trim+fold repairs: 4s equal-power head-to-tail folds via <c>ffmpeg acrossfade</c>
+    /// with <c>qsin</c> curves, so sin²+cos²=1 holds constant power through the fold and the wrap is
+    /// level-continuous BY CONSTRUCTION rather than by inspection. Dead tails 8.8s and 10.5s went to
+    /// 0.0s; wrap lurches of +33.1dB and +23.1dB went to 3.4dB and 4.5dB.</para>
     ///
-    /// <para><b>night-still (Camp) and quest-wait (Expedition/ExpeditionDeep) WERE this program's
-    /// U-T4-8 repair targets, and are now fixed.</b> Both trimmed (51.5s and 49.5s respectively) with a
-    /// 4s equal-power (<c>ffmpeg acrossfade</c>, <c>qsin</c>/<c>qsin</c> curves — sin²+cos²=1, constant
-    /// power through the whole fold, never a linear fade's ~3dB mid-fade dip) head-to-tail fold, so the
-    /// wrap is level-continuous BY CONSTRUCTION rather than by inspection. Before repair: night-still's
-    /// last 8.8s sat ≥30dB under its own loudest 0.5s window (<see cref="Gate.DeadTail"/>) and its wrap
-    /// jumped +33.1dB (head -31.3dBFS, tail -64.4dBFS, <see cref="Gate.LoopSeamLevelLurch"/>); quest-
-    /// wait's last 10.5s were dead and its wrap jumped +23.1dB (head -41.7dBFS, tail -64.8dBFS) — note
-    /// 60.0 − 51.5 = 8.5s and 60.0 − 49.5 = 10.5s, both matching their own measured dead tail almost
-    /// exactly, which is exactly why those two trim points were chosen. After repair: night-still's
-    /// dead tail is 0.0s and its wrap lurch is 3.4dB; quest-wait's dead tail is 0.0s and its wrap lurch
-    /// is 4.5dB — both now comfortably inside every gate's ceiling, and their four exemption entries
-    /// are removed here, dropping the pinned count from 8 to 4.</para>
+    /// <para>Kept as history, not as a defect list: every track named above passes today. The numbers
+    /// are here because they are what calibrated each gate's ceiling — a bound set between a measured
+    /// clean value and a measured broken one, rather than a guess.</para>
     /// </summary>
     private static readonly HashSet<(string Track, Gate Gate)> PendingContentExemptions = new()
     {
