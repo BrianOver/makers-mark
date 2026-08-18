@@ -238,6 +238,88 @@ public class AgentPlaytestBridgeTests
         }
     }
 
+    /// <summary>
+    /// Register #168: the pilot needs a way to spend real frames without pressing anything, and
+    /// twice reached for a key it believed was inert instead. Act 2's version was live — it sent
+    /// <c>forge_strike</c> (Space) while <c>QuenchMinigame</c> read <c>plunge</c>, which also binds
+    /// Space, so every "waiting" turn plunged and the quench never once waited for its band.
+    ///
+    /// <para>This asserts the property that makes the fix safe rather than merely different: the
+    /// wait verb sends NO input event at all. A test that only checked "the quench did not plunge"
+    /// would pass just as well for the next key that happens to be unbound today.</para>
+    /// </summary>
+    [TestCase]
+    public async Task Wait_SpendsFramesAndSendsNoInputEvent()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            var bridge = new AgentPlaytestBridge(ui);
+
+            var pressedDuringWait = new List<string>();
+            foreach (var action in new[] { "forge_strike", "plunge", "bellows", "confirm", "cancel" })
+            {
+                if (InputMap.HasAction(action) && Godot.Input.IsActionPressed(action))
+                {
+                    pressedDuringWait.Add($"{action} (already pressed BEFORE the wait — fixture)");
+                }
+            }
+
+            var outcome = await bridge.Apply(ui, new AgentCommand("wait", Frames: 8));
+
+            foreach (var action in new[] { "forge_strike", "plunge", "bellows", "confirm", "cancel" })
+            {
+                if (InputMap.HasAction(action) && Godot.Input.IsActionPressed(action))
+                {
+                    pressedDuringWait.Add(action);
+                }
+            }
+
+            AssertThat(outcome)
+                .OverrideFailureMessage($"Expected the wait verb to report the frames it spent, got '{outcome}'.")
+                .Contains("waited 8 frame");
+
+            AssertThat(string.Join(", ", pressedDuringWait))
+                .OverrideFailureMessage(
+                    "The wait verb left an input action pressed: " + string.Join(", ", pressedDuringWait)
+                    + ". A wait that presses anything is the bug it exists to remove.")
+                .IsEqual(string.Empty);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>
+    /// The binding collision itself, pinned as a fact rather than as a comment. <c>forge_strike</c>
+    /// and <c>plunge</c> share Space, so "QuenchMinigame does not read forge_strike" was never the
+    /// same claim as "sending forge_strike does nothing to QuenchMinigame" — and it was the wrong
+    /// one. If a future binding change separates them, this fails and the two paragraphs of pilot
+    /// comment explaining the collision can go with it.
+    /// </summary>
+    [TestCase]
+    public void ForgeStrikeAndPlunge_ShareAPhysicalKey_WhichIsWhyTheWaitVerbExists()
+    {
+        MinigameInput.RegisterActions();
+
+        var strikeKeys = PhysicalKeys("forge_strike");
+        var plungeKeys = PhysicalKeys("plunge");
+
+        AssertThat(strikeKeys.Intersect(plungeKeys).Any())
+            .OverrideFailureMessage(
+                $"forge_strike binds [{string.Join(", ", strikeKeys)}] and plunge binds "
+                + $"[{string.Join(", ", plungeKeys)}]. They no longer collide, so the pilot comments "
+                + "about that collision are now false — delete them, and this test with them.")
+            .IsTrue();
+    }
+
+    private static List<Key> PhysicalKeys(string action) => InputMap
+        .ActionGetEvents(action)
+        .OfType<InputEventKey>()
+        .Select(k => k.PhysicalKeycode != Key.None ? k.PhysicalKeycode : k.Keycode)
+        .ToList();
+
     [TestCase]
     public async Task MoveInsideARoom_ChangesThePlayersPosition()
     {

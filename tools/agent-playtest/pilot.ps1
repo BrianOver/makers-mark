@@ -317,6 +317,11 @@ function Build-PilotCommandJson {
         $obj.dir = $Dir
         $obj.frames = $Frames
     }
+    elseif ($Action -eq 'wait' -and $Frames -gt 0) {
+        # 'wait' carries a frame count with no direction -- the bridge's ApplyWait spends them and
+        # presses nothing. See its doc for why every "harmless key" this replaced turned out live.
+        $obj.frames = $Frames
+    }
     $obj.why = $Why
     return (([pscustomobject]$obj) | ConvertTo-Json -Compress)
 }
@@ -745,26 +750,20 @@ function Get-PilotForgeMinigameCommand {
             if ($heat -ge $pumpUntil) {
                 return (Build-PilotCommandJson -Action 'key' -Target 'bellows' -Why ('pilot: forge heat ' + $heat + ' is hot enough, stop pumping'))
             }
-            # fix/u-t1-anvil-can-be-finished: this used to send 'forge_strike' here, relying on it
-            # being a real no-op while pumping (ForgeMinigame.ForgeStrike() early-returned on
-            # IsPumping). The owner ruled STRIKE IMPLIES RELEASE and that early-return is gone -- a
-            # 'forge_strike' sent here now stops the pump and lands a strike against a lukewarm
-            # billet every single turn, which would quietly report a worse grade distribution as a
-            # "balance finding" instead of a pilot-policy bug.
-            #
-            # 'plunge' looks like Act 2's own "unbound harmless key" trick (below) but is NOT safe
-            # here: MinigameInput.RegisterActions (godot/scripts/minigames/MinigameInput.cs:45,47)
-            # binds BOTH 'forge_strike' and 'plunge' to the SAME physical key (Space -- plunge's
-            # bound set is Space/Enter/KpEnter, forge_strike's is Space alone), and Godot's
-            # IsActionPressed matches an incoming event against an action's own bound keys
-            # regardless of which action name the caller resolved the key from. Sending 'plunge'
-            # would still synthesize a physical Space press, which ForgeMinigame._GuiInput reads as
-            # 'forge_strike' -- reintroducing the exact bug this comment describes.
-            #
-            # 'confirm' (Enter/KpEnter) shares no physical key with 'forge_strike' (Space) or
-            # 'bellows' (Shift), and ForgeMinigame._GuiInput never queries the 'confirm' action at
-            # all -- a genuinely inert key here, still via the existing 'key' bridge verb.
-            return (Build-PilotCommandJson -Action 'key' -Target 'confirm' -Why ('pilot: forge still pumping, waiting out heat ' + $heat))
+            # Waiting here is a WAIT, not a key. Two earlier versions of this line each sent a key
+            # believed to be inert and each was wrong:
+            #   'forge_strike' -- was a real no-op while pumping, until the owner ruled STRIKE
+            #     IMPLIES RELEASE and the early-return went away. It then stopped the pump and
+            #     landed a strike on a lukewarm billet every turn, which reads as a balance finding
+            #     rather than a driver bug.
+            #   'plunge' -- shares its physical key with 'forge_strike' (both bind Space;
+            #     MinigameInput.cs:45,47), and IsActionPressed matches the KEY, not the action name
+            #     the sender resolved it from.
+            # 'confirm' was correct at the time, by the coincidence that it shares no key with
+            # forge_strike or bellows -- a property of the current binding table, not of the intent,
+            # and revoked silently by the next binding change. The bridge's 'wait' verb presses
+            # nothing at all, so it cannot be wrong about what a key does.
+            return (Build-PilotCommandJson -Action 'wait' -Frames 6 -Why ('pilot: forge still pumping, waiting out heat ' + $heat))
         }
         if ($heat -lt $strikeAbove) {
             return (Build-PilotCommandJson -Action 'key' -Target 'bellows' -Why ('pilot: forge heat ' + $heat + ' too low, start pumping'))
@@ -777,11 +776,15 @@ function Get-PilotForgeMinigameCommand {
         if ($screen.Contains('PLUNGE NOW')) {
             return (Build-PilotCommandJson -Action 'key' -Target 'plunge' -Why 'pilot: quench reads PLUNGE NOW')
         }
-        # QuenchMinigame does not bind forge_strike at all (its _GuiInput only checks plunge/Escape),
-        # so this is a harmless real key-press that spends a few real frames while the quench's own
-        # real-time heat-fall clock keeps running between file-channel turns -- never "cancel", which
-        # would forfeit the whole craft (Act 2's own Cancel()).
-        return (Build-PilotCommandJson -Action 'key' -Target 'forge_strike' -Why 'pilot: quench not in band yet, waiting')
+        # Register #168, and it was NOT harmless. This sent 'forge_strike' on the reasoning that
+        # QuenchMinigame._GuiInput only reads 'plunge' -- true, and irrelevant: 'plunge' binds
+        # Space/Enter/KpEnter, 'forge_strike' binds Space, and IsActionPressed matches the incoming
+        # KEY against the action's own bound set. Every "waiting" turn was therefore a plunge, and
+        # the quench never once waited for its band -- so Act 2's whole recorded grade distribution
+        # was the distribution of plunging immediately. The 'wait' verb spends the same real frames
+        # against the quench's real-time heat-fall clock and presses nothing. Never 'cancel', which
+        # would forfeit the craft (Act 2's own Cancel()).
+        return (Build-PilotCommandJson -Action 'wait' -Frames 6 -Why 'pilot: quench not in band yet, waiting')
     }
 
     return $null

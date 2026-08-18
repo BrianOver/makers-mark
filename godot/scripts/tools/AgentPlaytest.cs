@@ -366,8 +366,9 @@ public sealed class AgentPlaytestBridge
             "key" => await ApplyKey(ui, command),
             "set" => await ApplySet(ui, command),
             "advance" => ApplyAdvance(ui),
+            "wait" => await ApplyWait(command),
             "stop" => "stopped",
-            _ => $"refused: unknown action '{command.Action}' (expected press/move/key/set/advance/stop)",
+            _ => $"refused: unknown action '{command.Action}' (expected press/move/key/set/wait/advance/stop)",
         };
     }
 
@@ -587,6 +588,33 @@ public sealed class AgentPlaytestBridge
         Godot.Input.ParseInputEvent(new InputEventKey { PhysicalKeycode = key.Value, Keycode = key.Value, Pressed = false });
         await Settle(3);
         return $"tapped key '{command.Target}'";
+    }
+
+    /// <summary>
+    /// Spend real frames and press NOTHING — the verb the pilot actually wanted both times it
+    /// reached for a key it believed was inert.
+    ///
+    /// <para><b>Why this exists.</b> A minigame that runs on a real-time clock needs the driver to
+    /// be able to do nothing for a moment: the forge's heat rises while the bellows pump, the
+    /// quench's heat falls on its own. With no way to say "wait", the pilot sent a key it reasoned
+    /// was harmless, and reasoned wrong twice. Act 1 sent <c>forge_strike</c>, which the strike-
+    /// implies-release ruling turned into a real strike on a lukewarm billet. Act 2 then sent
+    /// <c>forge_strike</c> again on the grounds that <c>QuenchMinigame._GuiInput</c> only reads
+    /// <c>plunge</c> — but <c>plunge</c> is bound to Space, Enter AND KpEnter, <c>forge_strike</c>
+    /// is bound to Space, and <c>InputEvent.IsActionPressed</c> matches an incoming event against an
+    /// action's own bound keys without caring which action name the sender resolved that key from.
+    /// So every "waiting" turn in Act 2 was a plunge, and the quench never once waited for its
+    /// band.</para>
+    ///
+    /// <para>The lesson generalises past these two keys: with a shared physical keyboard, "this
+    /// action is not read here" is not the same as "this key does nothing here", and only the
+    /// second one makes a safe wait. A verb that presses nothing cannot be wrong about it.</para>
+    /// </summary>
+    private async Task<string> ApplyWait(AgentCommand command)
+    {
+        var frames = Math.Clamp(command.Frames ?? 6, 1, 240);
+        await Settle(frames);
+        return $"waited {frames} frame(s), pressed nothing";
     }
 
     /// <summary>The first physical key <paramref name="action"/> is bound to, or null for an action

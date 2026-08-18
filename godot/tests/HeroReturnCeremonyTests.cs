@@ -268,9 +268,13 @@ public class HeroReturnCeremonyTests
             town.OnPhaseCompleted(DayPhase.Morning); // schedules the real march-out for all three
 
             var player = new HumanPlayer(town);
+            // Seconds as well as frames (register #169): the march-out is a walk at
+            // HeroActor2D.WalkSpeed, i.e. an animation timed in SECONDS. A frame budget alone buys
+            // a different duration on every machine, and buys least on the runner where rendering
+            // is disabled.
             var marchedOut = await player.WaitUntil(
                 () => partyIds.All(id => town.FindHeroActor(id.Value)?.State == HeroActor2D.HeroTownState.Away),
-                maxFrames: 900);
+                maxFrames: 900, maxSeconds: 15.0);
 
             AssertThat(marchedOut)
                 .OverrideFailureMessage("Setup: the party never finished marching out to Away.")
@@ -319,9 +323,14 @@ public class HeroReturnCeremonyTests
             // test) was wrong about the design, not a regression in it. Bounded well under a
             // second show-floor wait, so a regression that gated the REST behind another
             // MinDelveShowSeconds would still be caught here.
+            // Register #169, the observed flake: this is FileExitStaggerSeconds x3 plus a walk,
+            // about two wall-clock seconds, and 300 frames is five of them locally but under two on
+            // a runner. Six seconds keeps the discriminating power the paragraph above describes -
+            // it is still well under MinDelveShowSeconds (8f), so a regression that gated the rest
+            // of the file behind a second show-floor wait still fails here.
             var allHome = await player.WaitUntil(
                 () => partyIds.All(id => town.FindHeroActor(id.Value)?.State == HeroActor2D.HeroTownState.Wandering),
-                maxFrames: 300);
+                maxFrames: 300, maxSeconds: 6.0);
 
             AssertThat(allHome)
                 .OverrideFailureMessage("Survivors never completed their staggered walk-in back to Wandering.")

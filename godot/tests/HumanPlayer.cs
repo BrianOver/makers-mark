@@ -728,9 +728,12 @@ public sealed class HumanPlayer
     /// <para>So: wait on the condition you are testing. A fixed <c>Frames(n)</c> before an assertion is
     /// the same bug wearing a smaller number.</para>
     /// </summary>
-    public async Task<bool> WaitUntil(Func<bool> condition, int maxFrames = 240)
+    public async Task<bool> WaitUntil(Func<bool> condition, int maxFrames = 240, double maxSeconds = 0)
     {
-        for (var frame = 0; frame < maxFrames; frame++)
+        var startedMsec = Time.GetTicksMsec();
+        var frame = 0;
+
+        while (frame < maxFrames || WithinSecondsBudget(startedMsec, maxSeconds))
         {
             if (condition())
             {
@@ -738,10 +741,34 @@ public sealed class HumanPlayer
             }
 
             await Frames(1);
+            frame++;
         }
 
         return condition();
     }
+
+    /// <summary>
+    /// <c>maxSeconds</c>' half of <see cref="WaitUntil"/>'s budget: keep waiting while wall-clock
+    /// time remains, even after the frame budget is spent. Zero (the default) disables it, leaving
+    /// the frame count as the sole guard.
+    ///
+    /// <para><b>Why a second budget rather than a bigger frame count.</b> A frame count is not a
+    /// duration. CI runs with rendering disabled, so it is SLOWER in wall-clock per test and much
+    /// FASTER per frame — a budget of 300 frames buys about five seconds on a developer machine and
+    /// can buy under two on a runner. An animation timed in seconds (<c>Town2D</c>'s file-out
+    /// stagger, a walk at <c>HeroActor2D.WalkSpeed</c>) therefore fails on CI with no regression
+    /// anywhere: <c>HeroReturnCeremonyTests.StagedReturn_AlreadyPastTheShowFloor_
+    /// EmergesWithNoExtraDelay</c> was observed failing on a DOCS-ONLY PR and passing elsewhere on
+    /// the same base, which is the signature.</para>
+    ///
+    /// <para>The two budgets are a UNION, not a minimum: whichever is more generous on this machine
+    /// wins, so passing <c>maxSeconds</c> can only make a wait more patient, never less. That
+    /// matters for the opposite failure — a very slow runner delivering few frames per second — and
+    /// it means a caller whose frame cap IS the assertion (\"this must clear within a handful of
+    /// frames, not another 8-second wait\") must simply not pass one.</para>
+    /// </summary>
+    private static bool WithinSecondsBudget(ulong startedMsec, double maxSeconds) =>
+        maxSeconds > 0 && (Time.GetTicksMsec() - startedMsec) < (ulong)(maxSeconds * 1000);
 
     /// <summary>
     /// <see cref="WaitUntil"/> specialised to on-screen text: wait until the player could actually read
