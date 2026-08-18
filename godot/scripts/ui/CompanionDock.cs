@@ -90,6 +90,15 @@ public partial class CompanionDock : Control
     /// entire point of a companion.</summary>
     public event Action? ForgeOneRequested;
 
+    /// <summary>
+    /// Raised every time the card expands. <c>MainUi</c> uses it to fire the docket's first-touch
+    /// lesson (register #160, "part of the tutorial then become the player's job to reference") —
+    /// the once-ever contract lives in <see cref="TutorialFlow.ConsumeFirstTouch"/>, not here, so
+    /// this event stays a plain "it opened" fact and any number of listeners can read it without
+    /// racing each other for a one-shot.
+    /// </summary>
+    public event Action? Opened;
+
     /// <summary>True while the card is showing (the chip toggles this; test hook).</summary>
     public bool IsExpanded => _card is { Visible: true };
 
@@ -177,6 +186,7 @@ public partial class CompanionDock : Control
         if (expanded)
         {
             RefreshBody();
+            Opened?.Invoke();
         }
     }
 

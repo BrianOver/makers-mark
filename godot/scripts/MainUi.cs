@@ -2347,6 +2347,26 @@ public partial class MainUi : Control
                 "Nothing on this board is a button — it only shows you what has already happened. "
                 + "Heroes, depths, and the bestiary are the sim's own record, not a place to act.")));
 
+    /// <summary>
+    /// Register #160: <i>"Tomorrow at the counter is good but needs integration into the game
+    /// better - part of the tutortial then become the player's job to reference/utilize."</i> The
+    /// screen the owner named as the one he liked was the one nothing ever explained.
+    ///
+    /// <para>Deliberately a first-touch lesson rather than an eleventh numbered step. The chain's
+    /// ten milestones are things the player DOES once to learn a verb; the docket is a reference
+    /// the player returns to, and the ask was for it to become their own habit rather than another
+    /// instruction to complete. Naming it in the counter step's own TeachNote (see
+    /// <see cref="TutorialFlow"/>'s OpenCounter row) ties the tool to the beat it serves without
+    /// making the beat depend on it.</para>
+    /// </summary>
+    private void ShowDocketLesson() =>
+        Mentor.ShowFirstTouch(Tutorial.ConsumeFirstTouch(
+            "tomorrow-at-the-counter",
+            MentorVoice.Speak(
+                "That is tomorrow's counter, read from what the town has already decided — who is "
+                + "coming, and what they will be asking for. It stays open while you work, so keep "
+                + "it up while you craft and make what somebody actually wants.")));
+
     /// <summary>U-T2 Wave E ("the HUD chips including quick travel, which unlocks silently today",
     /// the long tail): <see cref="TutorialFlow.QuickTravelRow"/> just starts rendering the day the
     /// tutorial chain completes (<see cref="TutorialFlow.QuickTravelUnlocked"/> is exactly
@@ -2941,6 +2961,12 @@ public partial class MainUi : Control
         // Same bare event shape as Forecast.ForgeOneRequested — the dock never closes itself
         // first (see its own doc): staying open through the jump to the Forge is the point.
         Docket.ForgeOneRequested += () => OpenPanel("Forge");
+        // Register #160's third ask. The docket was reachable, and openable mid-craft, and taught
+        // nowhere: TutorialFlow's registry has no row naming it and no TeachNote mentions it. A
+        // numbered milestone would be the wrong instrument — the owner asked for it to "become the
+        // player's job to reference/utilize", which is a tool, not a beat — so it is taught the way
+        // every other always-available surface is, by first touch, once ever.
+        Docket.Opened += ShowDocketLesson;
         // Third way in (U-T2-4): the Forge drawer's own "Tomorrow at the Counter" button, wired
         // straight to the dock — never touches DrawerHost, so the craft in progress is untouched.
         Forge.OpenDocketRequested += () => Docket.Toggle();

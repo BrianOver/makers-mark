@@ -503,10 +503,17 @@ public sealed partial class TutorialFlow : PanelContainer
             // book) — the card itself keeps one sentence (its own StepText case). SuggestItemAction
             // is named explicitly: CounterAnsweredAtLeastOnce accepts it and, before this, no line
             // of copy anywhere ever mentioned it.
+            // Register #160: the docket ("Tomorrow at the Counter") is named HERE, in the step
+            // about the counter, because that is what it is for -- who is coming tomorrow and
+            // what they will ask for. Its own lesson fires on first touch (MainUi
+            // .ShowDocketLesson); this line is the tie between the tool and the beat it serves,
+            // so the step never DEPENDS on the docket having been opened.
             TeachNote: "The counter is a live haggle. **Present** a shelved item, or **Suggest** one first to "
                        + "raise their interest for a stronger opening offer. Once they've named a price, "
                        + "**Accept** it, **Hold Firm** and wait them out, or name your own with **Counter**. "
-                       + "Walking away empty — theirs or yours — is a real answer too, not a mistake.",
+                       + "Walking away empty — theirs or yours — is a real answer too, not a mistake. "
+                       + "**Tomorrow at the Counter**, bottom-left, lists who is coming next — keep it open "
+                       + "while you craft.",
             // U1 (§11.13): re-gated off what the PLAYER did, not what the customer (ShoppingAi)
             // decided — see CounterAnsweredAtLeastOnce's own doc for why the old CounterSaleClosed-
             // only predicate could stall forever on a perfectly legal walk-away. Verified reachable:
