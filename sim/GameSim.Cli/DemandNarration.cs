@@ -133,7 +133,9 @@ public static class DemandNarration
             foreach (var stall in snapshot.DepthStalls)
             {
                 var blocked = stall.BlockingSlot is { } slot ? $"blocked on {slot}" : QualityGap(stall);
-                lines.Add($"    {stall.Hero} {stall.HeroName}: floor {stall.DeepestFloorReached} -> target {stall.TargetFloor}, {blocked}");
+                // #166's family, CLI side: DeepestFloorReached == 0 means "never delved", which every
+                // hero carries on day 1. Printing it verbatim names a floor that does not exist.
+                lines.Add($"    {stall.Hero} {stall.HeroName}: {DepthCopy.Deepest(stall.DeepestFloorReached)} -> target {stall.TargetFloor}, {blocked}");
             }
         }
 
@@ -175,7 +177,10 @@ public static class DemandNarration
             ? $"nobody carries a {slot}"
             : QualityGap(lead);
         var extra = stalls.Count > 1 ? $" (+{stalls.Count - 1} more stalled)" : string.Empty;
-        return $"stalled: {lead.HeroName} stuck at floor {lead.DeepestFloorReached} (target {lead.TargetFloor}) — {gap}{extra}";
+        // Phrased around DepthCopy rather than interpolating the raw int: "stuck at floor 0" was the
+        // same fabricated floor #166 removed from the ledger, and "stuck at not yet" is not English,
+        // so the sentence carries the depth as its own clause instead.
+        return $"stalled: {lead.HeroName} — deepest {DepthCopy.Deepest(lead.DeepestFloorReached)}, target floor {lead.TargetFloor} — {gap}{extra}";
     }
 
     /// <summary>N1: when no gear slot is empty, the gate is gear QUALITY — name it (grade carried vs
