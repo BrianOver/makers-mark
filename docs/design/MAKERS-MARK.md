@@ -4871,6 +4871,61 @@ Every register item, and the unit that closes it. A blank here is a failure of t
 | 167 | 8g in the sentence, 11g on the chip | U-T5-3 |
 | — | "Returned safely" after a rout (found, unreported) | U-T5-4 |
 
+## §11.14.11 T7 — The forge stops being one long menu (owner ruling, 2026-08-18)
+
+Closes the structural half of **#149**, and takes up the owner's own addition to it.
+
+**The ruling.** Shown the rendered panel and asked what a Forge opened from a BUTTON should show,
+he answered: *"Do the separate menus + maybe add a 'todo list' where we can record what needs
+bought, what needs crafted etc"*.
+
+**What ships today.** `ForgePanel` already has the machinery — `FocusSection` narrows to exactly one
+of `craft` / `materials` / `foundry`, and a station press uses it. What no path used was a bare open:
+`ResetFocus` made all three visible at once, and that state is the panel in his `jank_menu.jpg` — a
+material dropdown and three modifier selects for a recipe nobody has chosen, then the recipe list,
+then the Morning Vendor's buy rows and quantity spinners in the same scroll. Three live buttons open
+it that way: Camp's *"Forge something for them"*, the Forecast board's *"Forge one"*, and the
+Docket's. `StationSplitTests.BareOpenPanelForge_AfterAStationNarrowedIt_ShowsTheFullPanelAgain` pins
+the merged view as required, so it changes as part of the fix, not after it.
+
+**The constraints are measured, not guessed.** A first attempt — bare open lands on `craft`, plus a
+three-button tab row so the other sections stay reachable without walking to a station — went green
+on `StationSplitTests` and broke **six** other tests. Every one was the same real consequence: day
+1's first tutorial instruction is *"Buy 2 copper"*, the vendor had moved behind a tab, and the
+tutorial was telling the player to do something the screen it opened no longer offered. Making the
+bare open follow the tutorial's own step instead traded those for **nine**, because
+`HudBoundsTests.ForgeOpensFresh_PrimaryCraftVerb_IsOnScreenWithoutScrolling` (and its
+per-profession sibling) require the craft verb on a fresh open. Both pins are correct. They are the
+design:
+
+1. A bare open lands on **one** section, and it is `craft` — that is what all three buttons mean.
+2. The craft section alone must be enough to follow day 1: the player must be able to buy what the
+   recipe in front of them needs, without leaving it.
+3. `materials` and `foundry` stay reachable without walking to a station, or the ruling costs two
+   verbs on every button path.
+4. `BuyMat_<key>` is load-bearing in **ten** test files and the pilot policy. Two nodes with that
+   name in the tree at once reintroduces the "no visible control named" shadowing failure, so the
+   vendor rows must exist in exactly one place at a time — which means `FocusSection` rebuilds the
+   active section rather than toggling `Visible` on both.
+
+**The unit that satisfies all four.** The craft section carries a per-recipe *needs* row — "copper
+2x (have 0) · Buy" — built with the same `BuyMat_<key>` name the vendor list uses, and only the
+active section's children exist, so there is never a duplicate. The Materials tab keeps the full
+19-material list. That makes constraint 2 and constraint 4 the same mechanism, and it is also the
+first half of the todo-list ask: *what needs bought* is exactly what a recipe's unmet requirement is.
+
+| Unit | What |
+|---|---|
+| U-T7-1 | `FocusSection` rebuilds the active section instead of toggling both views' `Visible`; the tab row (`ButtonGroup`, one pressed at a time) reaches all three. Bare open lands on `craft`. |
+| U-T7-2 | The craft section's per-recipe needs row, named `BuyMat_<key>`, buying through the same action the vendor row does. |
+| U-T7-3 | Three tests change with the design, deliberately: `StationSplitTests`' bare-open pin (it asserted the merged view **on purpose**, against a real earlier bug — a bare open inheriting a stale narrowing — so the new pin must keep THAT property while asserting one section); `HumanPlaytestTests.ForgeRecipeBelowTheVendorList_IsReachableByScrollingTheWheel`, whose whole premise is the layout being removed; and `LayoutTests.ForgeBody_Labels_RenderAtReadableWidth`, which measures labels inside a now-hidden view and reads 1px — it must focus each section and measure per section. |
+| U-T7-4 | The todo list proper: what needs bought and what needs crafted, derived from the sim (`DepthStallEntry` for what heroes are stalled without, `CounterForecast.Queue` for what tomorrow's customers will ask for, recipe requirements against stock) rather than hand-entered, so it cannot go stale and needs no persistence. Sibling to the Docket, which is the screen he named as the one he liked. |
+
+**Why this is booked rather than shipped.** The nine failures above are the unit's real specification
+and were worth the session that found them; finishing and verifying U-T7-1 through U-T7-4 well is
+more than remained. The branch was reverted and deleted rather than parked — a branch with no open PR
+does not exist (rule 9), and a half-landed panel would have been worse than the jank it replaced.
+
 ## §11.14.10 Process notes
 
 - **Both `docs/plans/` slots are occupied**, so under §11.6 rule 4 this program lands here as a §11
