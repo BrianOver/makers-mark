@@ -2,7 +2,7 @@
 type: playtest-register
 title: "Owner playtest register — 2026-08-16"
 date: 2026-08-16
-status: open register — items close only by merged PR, and only the owner closes by re-testing
+status: this file records what was asked, never what is done — see "Where status lives"
 ---
 
 # Owner playtest register — 2026-08-16
@@ -29,15 +29,41 @@ list was reconstructed from the owner's raw notes and screenshots.
 received. Never in a session-local todo list.** A session-local list is not a
 record; it is a promise that expires.
 
+## Where status lives
+
+**This file carries no status column, and never will again.** It records what was
+asked and the evidence for it. Whether an item has shipped lives in `git log` and
+in the PR list — CLAUDE.md rule 8, because git outranks every doc.
+
+This is not a stylistic preference. It was earned on 2026-08-17: this register
+still said `open` against three items that had merged to `main` the day before,
+a worker lane was dispatched against those rows, and it spent its budget proving
+the work already existed. **A stale doc is not clutter; it is an instruction the
+next session obeys.** A status column on a file that is edited less often than the
+code it describes will always eventually lie, so the column is gone rather than
+corrected.
+
+To find whether an item shipped, ask git:
+
+```bash
+git log origin/main --oneline --grep="register #147"
+gh pr list --repo BrianOver/makers-mark --state merged --search "register #147" --limit 20
+```
+
+Every PR body carries a `Serves:` line and register-item PRs name the item number,
+so one grep answers it against the only record that cannot drift.
+
 ## How an item closes
 
-An item closes when a merged PR on `main` addresses it AND the owner confirms it
-in a later playtest. Three items on this register were previously marked fixed
-and are reopened because the owner's screenshots disprove the fix (#155, #151/#152,
-#153). Self-certification does not close an item.
+An item closes when a merged PR on `main` addresses it **and the owner confirms it
+in a later playtest**. Self-certification does not close an item — this register has
+already seen items marked fixed that the owner's next screenshots disproved
+(#151/#152 music, #153 bellows, #155 anvil). A merged PR is evidence that work
+happened, not evidence that the complaint is answered.
 
-Do not delete a closed item — strike it and keep the line. The register is the
-audit trail that the forgetting stopped.
+Do not delete an item once addressed. The register is the audit trail that the
+forgetting stopped, and an item the owner rejects a second time needs its history
+visible.
 
 ---
 
@@ -50,65 +76,65 @@ did not survive; five anchors named in the handoff are preserved (#151/#152 musi
 
 ### Visuals — the town
 
-| # | Item | Owner's words / evidence | Status |
-|---|---|---|---|
-| 141 | Character legs clip with the grass and read as sunk into it | "The character's legs 'clip' with the grass and look odd" | open |
-| 142 | Hero-to-building scale is wrong. **Make the buildings bigger — do not shrink the characters** (explicit owner direction) | "heroes are too big compared to the buildings; make the buildings bigger" | open |
-| 143 | The bounties building's art is poor | "bounties building isn't great, improve" | open |
-| 144 | Too many lampposts | "too many lampposts" | open |
-| 145 | Scatter props clip into each other and into actors — named example a carriage/cart | "The random 'extra' things are clipping like this carrage(?) thing" | open |
-| 150 | Heroes and NPCs have no walking animation. Only townsfolk do | "WHERE ARE THE HERO/NPC walking animations? only the townsfolk have them" | open |
-| 163 | The world is too small and must be expanded | "need to expand the size of the world" | open |
+| # | Item | Owner's words / evidence |
+|---|---|---|
+| 141 | Character legs clip with the grass and read as sunk into it | "The character's legs 'clip' with the grass and look odd" |
+| 142 | Hero-to-building scale is wrong. **Make the buildings bigger — do not shrink the characters** (explicit owner direction) | "heroes are too big compared to the buildings; make the buildings bigger" |
+| 143 | The bounties building's art is poor | "bounties building isn't great, improve" |
+| 144 | Too many lampposts | "too many lampposts" |
+| 145 | Scatter props clip into each other and into actors — named example a carriage/cart | "The random 'extra' things are clipping like this carrage(?) thing" |
+| 150 | Heroes and NPCs have no walking animation. Only townsfolk do | "WHERE ARE THE HERO/NPC walking animations? only the townsfolk have them" |
+| 163 | The world is too small and must be expanded | "need to expand the size of the world" |
 
 ### Visuals — interiors and menus
 
-| # | Item | Owner's words / evidence | Status |
-|---|---|---|---|
-| 146 | Building interiors need to look better | "Not sure how many fucking times we have to talk about the insides of buildings. 1) need them to look better" | open — **repeatedly raised** |
-| 147 | Interior interactables must have distinct meaning and use. Named absurdity: the **furnace is where you buy resources** | "2) the items/things we click on need distincy meaning and use. why the fuck is the furance where we BUY resources" | open — **repeatedly raised** |
-| 148 | The watch-heroes scene must reach cutscene quality (in-engine rendered) | "the watch heroes visuals still fucking suck dude. this should be similar to a cutscene in quality (obv ingame rendered etc)" | open |
-| 149 | The legacy "jank" crafting menu is still reachable | "i somehow opened the legacy jank menu for crafting" — screenshot `jank_menu.jpg`: FORGE drawer with raw `(recipe default)` and three `(none)` dropdowns, a RECIPES list, and MORNING VENDOR (copper 4g / iron 7g / steel 10g, Buy buttons, qty spinners) grafted into the same scroll container | open |
+| # | Item | Owner's words / evidence |
+|---|---|---|
+| 146 | Building interiors need to look better — **repeatedly raised** | "Not sure how many fucking times we have to talk about the insides of buildings. 1) need them to look better" |
+| 147 | Interior interactables must have distinct meaning and use — **repeatedly raised**. Named absurdity: the **furnace is where you buy resources** | "2) the items/things we click on need distincy meaning and use. why the fuck is the furance where we BUY resources" |
+| 148 | The watch-heroes scene must reach cutscene quality (in-engine rendered) | "the watch heroes visuals still fucking suck dude. this should be similar to a cutscene in quality (obv ingame rendered etc)" |
+| 149 | The legacy "jank" crafting menu is still reachable | "i somehow opened the legacy jank menu for crafting" — screenshot `jank_menu.jpg`: FORGE drawer with raw `(recipe default)` and three `(none)` dropdowns, a RECIPES list, and MORNING VENDOR (copper 4g / iron 7g / steel 10g, Buy buttons, qty spinners) grafted into the same scroll container |
 
 ### Audio
 
-| # | Item | Owner's words / evidence | Status |
-|---|---|---|---|
-| 151 | Dawn bed is grainy. Measured: peak **+1.63 dBFS**, **11,133 clipped samples** — literal digital clipping, not a container problem | "Dawn music has some rough graininess" | **reopened** — MP3→OGG "fix" did not address it |
-| 152 | Night bed is grainy static. Measured: hiss-heavy master, **34.7 % of energy in the high band** on a quiet ambient bed | "Night music is fucked, grainy static" | **reopened** — same failed fix |
-| 153 | Bellows sound too loud | "bellows sound is too loud" | **reopened** — lowering Normalise 0.15→0.12 did not fix it |
-| 154 | Bells/chimes too loud | "bells/chimes are too loud" | open |
-| 165 | Structural: everything mixes on the default Master bus with **no limiter** (`AudioDirector` sets no `.Bus` anywhere) while Night stacks bed + narrator + death toll + UI cues. Likely the common cause of the whole too-loud family | derived, not owner-reported | open — fix as **one measured pass**, not four constant nudges |
+| # | Item | Owner's words / evidence |
+|---|---|---|
+| 151 | Dawn bed is grainy. Measured: peak **+1.63 dBFS**, **11,133 clipped samples** — literal digital clipping, not a container problem. An MP3→OGG re-container did not address it | "Dawn music has some rough graininess" |
+| 152 | Night bed is grainy static. Measured: hiss-heavy master, **34.7 % of energy in the high band** on a quiet ambient bed. Same failed re-container fix | "Night music is fucked, grainy static" |
+| 153 | Bellows sound too loud. Lowering Normalise 0.15→0.12 did not fix it | "bellows sound is too loud" |
+| 154 | Bells/chimes too loud | "bells/chimes are too loud" |
+| 165 | Structural: everything mixes on the default Master bus with **no limiter** (`AudioDirector` sets no `.Bus` anywhere) while Night stacks bed + narrator + death toll + UI cues. Likely the common cause of the whole too-loud family. Fix as **one measured pass**, not four constant nudges | derived, not owner-reported |
 
 ### Gameplay — the forge
 
-| # | Item | Owner's words / evidence | Status |
-|---|---|---|---|
-| 155 | **The anvil minigame cannot be completed.** Screenshot status line: `Strike 24/21 — Heat 1000 — pumping — the billet is yielding, keep going`. Strikes are past target, heat is pinned at max, it never ends | "ANVIL minigame is STILL fucking not working dude - HOW THE FUCK is it possible we cannot complte despite me telling you and you somehow playtesting???" | **reopened — highest priority in the project** |
-| 156 | The anvil/forge drawer opens scrolled to the bottom; should open at the top | "Clicking on the anvil auto has the scroll bar at the bottom, should start at the top" | open |
-| 157 | Too many recipes/options are unlocked from the start; they belong behind progression | "Why are there so many crafting recipes/things unlocked - should be part of the progression systems" | open |
+| # | Item | Owner's words / evidence |
+|---|---|---|
+| 155 | **The anvil minigame cannot be completed.** Screenshot status line: `Strike 24/21 — Heat 1000 — pumping — the billet is yielding, keep going`. Strikes are past target, heat is pinned at max, it never ends | "ANVIL minigame is STILL fucking not working dude - HOW THE FUCK is it possible we cannot complte despite me telling you and you somehow playtesting???" |
+| 156 | The anvil/forge drawer opens scrolled to the bottom; should open at the top | "Clicking on the anvil auto has the scroll bar at the bottom, should start at the top" |
+| 157 | Too many recipes/options are unlocked from the start; they belong behind progression | "Why are there so many crafting recipes/things unlocked - should be part of the progression systems" |
 
 ### Gameplay — the tutorial
 
-| # | Item | Owner's words / evidence | Status |
-|---|---|---|---|
-| 158 | **Full guided tutorial rework.** The single loudest, most-repeated ask. The recent revamp is "nowhere NEAR the scope" | "dude just FUCKING ACTUALLY LISTEN, we need a FULL rework on the tutorital" | open — **the headline item** |
-| 161 | Tutorial ordering: should the player sell before the first send-off? Owner is asking, not asserting — he floats the alternative that sending unequipped is the lesson | "With the tutorial - shouldn't we sell before sending them the first time??? or are you sending without so we can learn that they need the things we craft???" | open — **owner decision needed** |
-| 162 | Tutorial step 6 is weak | "Tutortial 6 sucks" | open |
-| 160 | "Tomorrow at the Counter" is good but needs integrating: taught in the tutorial, then the player's own reference tool, and **openable while crafting** | "Tomorrow at the counter is good but needs integration into the game better - part of the tutortial then become the player's job to reference/utilize. Should be able to open this WHILE doing the crafting" | open — **the one screen he praised** |
+| # | Item | Owner's words / evidence |
+|---|---|---|
+| 158 | **Full guided tutorial rework** — the single loudest, most-repeated ask. The revamp before this register is "nowhere NEAR the scope" | "dude just FUCKING ACTUALLY LISTEN, we need a FULL rework on the tutorital" |
+| 161 | Tutorial ordering: should the player sell before the first send-off? The owner is asking, not asserting — he floats the alternative that sending unequipped is the lesson. **Owner decision needed** | "With the tutorial - shouldn't we sell before sending them the first time??? or are you sending without so we can learn that they need the things we craft???" |
+| 162 | Tutorial step 6 is weak | "Tutortial 6 sucks" |
+| 160 | "Tomorrow at the Counter" — **the one screen he praised** — needs integrating: taught in the tutorial, then the player's own reference tool, and **openable while crafting** | "Tomorrow at the counter is good but needs integration into the game better - part of the tutortial then become the player's job to reference/utilize. Should be able to open this WHILE doing the crafting" |
 
 ### Gameplay — the night
 
-| # | Item | Owner's words / evidence | Status |
-|---|---|---|---|
-| 159 | Evening ledger is tiny and unreadable, needs expanding — **and the narration is supposed to be used here for effect** | "Evening ledger sucks - needs expanded to be actually readable (its tiny) and the narriation is SUPPOSED to be used here for affect" | open |
-| 166 | BUG: the ledger says `Brunhilde came back from floor 0`. **Floor 0 does not exist** | screenshot `Screenshot 2026-08-16 151211.jpg` | open — found, not reported |
-| 167 | BUG: the same card reads `8g` in the sentence and `11g` on the reward chip | same screenshot | open — found, not reported |
+| # | Item | Owner's words / evidence |
+|---|---|---|
+| 159 | Evening ledger is tiny and unreadable, needs expanding — **and the narration is supposed to be used here for effect** | "Evening ledger sucks - needs expanded to be actually readable (its tiny) and the narriation is SUPPOSED to be used here for affect" |
+| 166 | BUG (found by us, not reported): the ledger says `Brunhilde came back from floor 0`. **Floor 0 does not exist** | screenshot `Screenshot 2026-08-16 151211.jpg` |
+| 167 | BUG (found by us, not reported): the same card reads `8g` in the sentence and `11g` on the reward chip | same screenshot |
 
 ### Substrate
 
-| # | Item | Owner's words / evidence | Status |
-|---|---|---|---|
-| 164 | Logging must improve every pass. **Every action and the REASON behind it** must be logged so it can be checked later | "Make sure we are improving our logging each time. Ideally all actions and REASON behind them is logged so you can check later" | open — standing instruction, not a one-off |
+| # | Item | Owner's words / evidence |
+|---|---|---|
+| 164 | Logging must improve every pass. **Every action and the REASON behind it** must be logged so it can be checked later. A standing instruction, not a one-off | "Make sure we are improving our logging each time. Ideally all actions and REASON behind them is logged so you can check later" |
 
 ---
 
@@ -140,22 +166,22 @@ Do not re-litigate these:
 
 ---
 
-## Found while fixing the above — booked, not yet done
+## Found while fixing the above — not owner-reported
 
 These were discovered by the work on this register rather than reported by the owner.
 They go here for the same reason everything else does: a finding that lives only in a
 session transcript is a finding that is already lost.
 
-| # | Item | Evidence | Status |
-|---|---|---|---|
-| 168 | The AI pilot's Act 2 "wait" turn may be inert for the same reason Act 1's was. `tools/agent-playtest/pilot.ps1:761-765` sends `forge_strike` as a deliberate no-op to wait out a timer; `forge_strike` and `plunge` **share physical Space** (`MinigameInput.cs:45,47`), so the trick that worked in Act 1 by accident may be pressing a live key in Act 2. Act 1's version was corrected during #155 by switching to `confirm` (Enter), which shares no key with either. | found while fixing #155 | open |
-| 169 | `HeroReturnCeremonyTests.StagedReturn_AlreadyPastTheShowFloor_EmergesWithNoExtraDelay` waits on a **frame budget** (`HumanPlayer.WaitUntil(condition, maxFrames)`) for an animation timed in **seconds**. CI runs faster per frame with rendering disabled, so a slow runner exhausts the budget before the wall-clock stagger completes and the test fails without a regression. Observed failing on a docs-only PR, passing elsewhere on the same base. Waits must be on the condition, never on a frame count. | found while diagnosing the merge queue | open |
-| 170 | **One of the six dilemmas has no mechanism behind it.** Dilemma #5 is "buy the ore or buy the goodwill," and `THE-GAME.md` describes it as "you pay the hero directly and may pay well." `OreMarketHandlers` does not do that: the hero always receives the base ask, and when the player pays MORE the surplus is a **faction sink**, not a payment to the hero. The surcharge branch is commented as unreachable/dormant in the current discount-only core. So paying generously buys the player nothing from the hero, and the goodwill half of the dilemma does not exist. Found while building Wave D's teaching for it — and correctly **not** taught, because a lesson explaining a mechanic that does not exist makes the game lie to the player. Needs a real unit: either implement the goodwill payment, or amend `THE-GAME.md` and the six-dilemma list to match what the game is. This is a design decision, not an implementation detail, so it is the owner's call which way it resolves. | traced through `OreMarketHandlers` while building §11.14.4 Wave D | open, **owner decision needed** |
-| 171 | `MineWatch.BarkFor` discarded `AttributionBeatEvent.Detail` — the sim's own already-composed sentence, e.g. "Emberbite landed the killing blow on the cave-rat" — and rebuilt a phrase naming the hero and the action but never the ITEM. On the one screen where the player watches the fight, the proof could not name what earned it. Fixed in the Wave D PR; recorded here because it is the same one-reader-field shape as `KillingItem` and `Hero.Pack`, and because a bark that outranks it (a new depth record) still wins the slot in some states. | found while building §11.14.4 Wave D | fixed; bark priority still open |
+| # | Item | Evidence |
+|---|---|---|
+| 168 | The AI pilot's Act 2 "wait" turn may be inert for the same reason Act 1's was. `tools/agent-playtest/pilot.ps1:761-765` sends `forge_strike` as a deliberate no-op to wait out a timer; `forge_strike` and `plunge` **share physical Space** (`MinigameInput.cs:45,47`), so the trick that worked in Act 1 by accident may be pressing a live key in Act 2. Act 1's version was corrected during #155 by switching to `confirm` (Enter), which shares no key with either. | found while fixing #155 |
+| 169 | `HeroReturnCeremonyTests.StagedReturn_AlreadyPastTheShowFloor_EmergesWithNoExtraDelay` waits on a **frame budget** (`HumanPlayer.WaitUntil(condition, maxFrames)`) for an animation timed in **seconds**. CI runs faster per frame with rendering disabled, so a slow runner exhausts the budget before the wall-clock stagger completes and the test fails without a regression. Observed failing on a docs-only PR, passing elsewhere on the same base. Waits must be on the condition, never on a frame count. | found while diagnosing the merge queue |
+| 170 | **One of the six dilemmas has no mechanism behind it.** Dilemma #5 is "buy the ore or buy the goodwill," and `THE-GAME.md` describes it as "you pay the hero directly and may pay well." `OreMarketHandlers` does not do that: the hero always receives the base ask, and when the player pays MORE the surplus is a **faction sink**, not a payment to the hero. The surcharge branch is commented as unreachable/dormant in the current discount-only core. So paying generously buys the player nothing from the hero, and the goodwill half of the dilemma does not exist. Found while building Wave D's teaching for it — and correctly **not** taught, because a lesson explaining a mechanic that does not exist makes the game lie to the player. Needs a real unit: either implement the goodwill payment, or amend `THE-GAME.md` and the six-dilemma list to match what the game is. This is a design decision, so it is **the owner's call** which way it resolves. | traced through `OreMarketHandlers` while building §11.14.4 Wave D |
+| 171 | `MineWatch.BarkFor` discarded `AttributionBeatEvent.Detail` — the sim's own already-composed sentence, e.g. "Emberbite landed the killing blow on the cave-rat" — and rebuilt a phrase naming the hero and the action but never the ITEM. On the one screen where the player watches the fight, the proof could not name what earned it. Recorded here because it is the same one-reader-field shape as `KillingItem` and `Hero.Pack`, and because a bark that outranks it (a new depth record) can still win the slot. | found while building §11.14.4 Wave D |
 
-## Two structural facts this session established
+## Three structural facts this session established
 
-Neither is a defect; both change how the next session should plan.
+None is a defect; all three change how the next session should plan.
 
 **Subagents cannot see the client.** The engine suite serializes globally, so workers are
 banned from running it. Any *new* engine test a worker writes is therefore first executed
@@ -170,3 +196,10 @@ the ruleset requires branch-up-to-date and GitHub does not auto-update, so a bat
 green PRs sits BLOCKED indefinitely until someone pushes branch updates. On a night with
 ten PRs this is a material throughput tax, and it is what the CI sharding change (owner-
 authored, `.github/` is deny-listed) would relieve.
+
+**A worker lane inherits whatever the doc says, including the parts that are wrong.**
+The status column removed above sent a lane after three items that had already merged.
+The lane did the right thing — it checked git before building, found the work, and
+reported instead of reimplementing — but the budget was spent. Prompts should name the
+symbol the work builds on and require the worker to grep for it first, which is already
+CLAUDE.md rule 9; the deeper fix is not to let the doc make the claim at all.
