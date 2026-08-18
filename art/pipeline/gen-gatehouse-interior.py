@@ -177,85 +177,15 @@ TILE = 16
 WALL_BAND_H = 3 * TILE  # 48px -- the north (stone) wall band
 
 
-def render_shell() -> Image.Image:
-    """A stone gatehouse guardroom: flagstone wall AND floor throughout (this room is ALL stone --
-    the plan's own composition brief -- unlike the forge's plank-floor smithy or the tavern's
-    timber warmth), two hanging iron chains (the brief's "chain, tackle" motif, painted straight
-    into the shell so it reads even before the winch station is placed), and a wood-planked door
-    threshold identical in spirit to the forge's own door treatment.
+# The room SHELL is no longer generated here. Register #146 replaced all four painted-plate
+# backdrops with rendered art (PRs #587/#588): the six-to-eight-colour town2d idiom is correct
+# for a 20x36 sprite and wrong for a room the camera fills, which is what made these shells
+# measure 0.020-0.033 bytes/px against 1.688 for the forge exterior. This module keeps the
+# STATION props -- they are sprite-scale and the idiom still holds for them. Leaving render_shell
+# here would have been a loaded gun: running this script, or its own --check drift guard, would
+# have silently reverted the shipped plate or reported drift against art that is deliberately
+# no longer its output.
 
-    Composition brief (plan U4): the room's stations sit against the walls; the middle stays open
-    floor. The overlook/muster/bounty/winch STATION sprites (not this shell) carry the window,
-    board, ledger, and drum -- this shell is deliberately bare behind them (they fully occlude
-    whatever's painted here at their tile position, exactly like the forge idiom).
-    """
-    im = Image.new("RGBA", (SHELL_W, SHELL_H), FLAG)
-    px = im.load()
-    w, h = SHELL_W, SHELL_H
-
-    # ---- stone wall band (north wall, top 3 tiles = 48px) ----------------------------------
-    for y in range(7, WALL_BAND_H, 8):
-        rect(px, 0, y, w - 1, y, FLAG_DARK, w, h)
-    for i, x in enumerate(range(0, w, 24)):
-        offset = 12 if (i % 2) else 0
-        for jx in range(x + offset, w, 24):
-            rect(px, jx, 0, jx, WALL_BAND_H - 1, FLAG_DARK, w, h)
-    rect(px, 0, 0, w - 1, 1, BONE, w, h)  # single bright rim, light from above (forge idiom)
-    for fx, fy in ((14, 18), (70, 30), (140, 10), (210, 26), (260, 16), (96, 40)):
-        px[fx, fy] = FLAG_LIT
-
-    rect(px, 0, WALL_BAND_H - 1, w - 1, WALL_BAND_H - 1, VOID, w, h)  # crisp wall/floor seam
-
-    # ---- floor: flagstone throughout, mortar grid ------------------------------------------
-    rect(px, 0, WALL_BAND_H, w - 1, h - 1, FLAG, w, h)
-    for x in range(0, w, 16):
-        rect(px, x + 15, WALL_BAND_H, x + 15, h - 1, FLAG_DARK, w, h)  # joints every tile
-    for y in range(WALL_BAND_H, h, 32):
-        rect(px, 0, y + 15, w - 1, y + 15, FLAG_DARK, w, h)  # cross-joints (2-tile flags)
-    for fx, fy in ((30, 140), (250, 90), (104, 160)):
-        px[fx, fy] = FLAG_LIT
-
-    # ---- door gap: 4 tiles wide, centred on the bottom edge (forge's own convention) -------
-    door_w = 4 * TILE
-    door_x0 = (w - door_w) // 2
-    door_x1 = door_x0 + door_w - 1
-    rect(px, door_x0, WALL_BAND_H, door_x1, h - 1, PLANK, w, h)  # wood threshold ramp
-    for x in range(door_x0, door_x1 + 1, 16):
-        rect(px, x + 15, WALL_BAND_H, x + 15, h - 1, PLANK_DARK, w, h)
-    # warm glow spilling in from the town outside, brightest at the very bottom edge
-    for i, y in enumerate(range(h - 24, h)):
-        t = i / 23
-        rect(px, door_x0, y, door_x1, y, (
-            int(PLANK[0] * (1 - t * 0.6) + EMBER[0] * t * 0.6),
-            int(PLANK[1] * (1 - t * 0.6) + EMBER[1] * t * 0.6),
-            int(PLANK[2] * (1 - t * 0.6) + EMBER[2] * t * 0.6),
-            255,
-        ), w, h)
-    # timber jamb posts flanking the gap, rising partway into the wall band (forge's own look,
-    # re-proportioned: this wall band is shorter, so the jamb starts at its midpoint, not its top)
-    jamb_top = WALL_BAND_H // 2
-    for jx in (door_x0 - 8, door_x1 + 1):
-        rect(px, jx, jamb_top, jx + 7, h - 1, WOOD, w, h)
-        outline(px, jx, jamb_top, jx + 7, h - 1, w, h)
-        rect(px, jx + 1, jamb_top + 1, jx + 2, h - 2, IRON_DEEP, w, h)  # grain shadow
-    rect(px, door_x0 - 8, jamb_top, door_x1 + 8, jamb_top, VOID, w, h)  # threshold seam
-
-    # ---- two hanging iron chains (composition brief: "chain, tackle") ----------------------
-    # Ceiling-mounted, dangling past the wall/floor seam onto the open floor -- drawn LAST so
-    # they overlay both the wall band and the floor cleanly. Positioned clear of the door gap
-    # and the window/station zone so they never compete with a station's own silhouette.
-    for cx in (40, w - 40):
-        for i, y in enumerate(range(6, 70, 4)):
-            tone = IRON_DEEP if i % 2 == 0 else IRON
-            rect(px, cx, y, cx + 1, y + 2, tone, w, h)
-        px[cx, 8] = BONE  # glint on the topmost link
-        rect(px, cx - 2, 70, cx + 3, 73, IRON, w, h)  # hoisting hook at the chain's end
-        outline(px, cx - 2, 70, cx + 3, 73, w, h)
-
-    return im
-
-
-# ── stations ───────────────────────────────────────────────────────────────────────────────────
 def render_overlook() -> Image.Image:
     """40x20 (NOT 40x32 -- see the size note below). The Overlook: a barred stone slit-window
     into the mine shaft -- the diegetic home of the watch (PR #355 re-hosts the animated delve
@@ -394,7 +324,6 @@ def render_winch() -> Image.Image:
 
 
 SPRITES = {
-    "town2d-gatehouse-interior-shell": render_shell,
     "town2d-station-gate-overlook": render_overlook,
     "town2d-station-gate-muster": render_muster,
     "town2d-station-gate-bounty": render_bounty,

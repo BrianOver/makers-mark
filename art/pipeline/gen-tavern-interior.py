@@ -138,77 +138,15 @@ SHELL_W, SHELL_H = 352, 208
 TILE = 16
 
 
-def render_shell() -> Image.Image:
-    """Hearth-lit, dark half-timbered tavern floor: a 3-tile wood-and-beam wall band across the
-    back (top, no baked-in braziers -- the hearth station alone carries the light), a baseboard
-    shadow transition, a dark plank work-floor bordered by a darker flagstone apron, with a
-    4-tile door gap centred on the bottom edge (TavernDoorTile) framed by timber jamb posts and a
-    warm glow bleeding up from the exterior -- same structural grammar as the forge shell, but
-    every dominant tone swapped for the darker anchor in its own family (WOOD not PLANK, FLAG_DARK
-    not FLAG) so the room reads measurably dimmer overall (see PR body luminance comparison).
-    """
-    im = Image.new("RGBA", (SHELL_W, SHELL_H), IRON_DEEP)
-    px = im.load()
-    w, h = SHELL_W, SHELL_H
+# The room SHELL is no longer generated here. Register #146 replaced all four painted-plate
+# backdrops with rendered art (PRs #587/#588): the six-to-eight-colour town2d idiom is correct
+# for a 20x36 sprite and wrong for a room the camera fills, which is what made these shells
+# measure 0.020-0.033 bytes/px against 1.688 for the forge exterior. This module keeps the
+# STATION props -- they are sprite-scale and the idiom still holds for them. Leaving render_shell
+# here would have been a loaded gun: running this script, or its own --check drift guard, would
+# have silently reverted the shipped plate or reported drift against art that is deliberately
+# no longer its output.
 
-    # ---- back wall: dark half-timbered wood, top 3 tiles = 48px --------------------------
-    rect(px, 0, 0, w - 1, 47, IRON_DEEP, w, h)
-    for x in range(4, w, 32):
-        rect(px, x, 0, x + 3, 47, WOOD, w, h)
-    rect(px, 0, 0, w - 1, 1, BONE, w, h)  # single bright rim, light from above
-    # sparse nail-head/knot flecks in the timber -- texture, never a stripe
-    for fx, fy in ((30, 20), (94, 30), (158, 14), (222, 26), (286, 18), (60, 40), (320, 34)):
-        px[fx, fy] = BONE
-    rect(px, 0, 47, w - 1, 47, VOID, w, h)  # crisp wall/baseboard seam
-
-    # ---- baseboard shadow (transition band, 8px) ------------------------------------------
-    for i, y in enumerate(range(48, 56)):
-        t = i / 7
-        blend = tuple(int(IRON_DEEP[c] * (1 - t) + WOOD[c] * t) for c in range(3)) + (255,)
-        rect(px, 0, y, w - 1, y, blend, w, h)
-
-    # ---- floor: dark wood work floor, dark flagstone apron border -------------------------
-    rect(px, 0, 56, w - 1, h - 1, WOOD, w, h)
-    for x in range(0, w, 16):
-        rect(px, x + 15, 56, x + 15, h - 1, IRON_DEEP, w, h)  # board seams every tile
-    for y in range(56, h, 32):
-        rect(px, 0, y + 15, w - 1, y + 15, IRON_DEEP, w, h)  # cross-seams (2-tile planks)
-
-    apron = TILE  # 1 tile
-    rect(px, 0, 56, apron - 1, h - 1, FLAG_DARK, w, h)          # left apron
-    rect(px, w - apron, 56, w - 1, h - 1, FLAG_DARK, w, h)      # right apron
-    rect(px, 0, h - apron, w - 1, h - 1, FLAG_DARK, w, h)       # bottom apron
-    for x in (apron - 1, w - apron):
-        rect(px, x, 56, x, h - 1, VOID, w, h)
-    rect(px, 0, h - apron, w - 1, h - apron, VOID, w, h)
-
-    # ---- door gap: 4 tiles wide, centred on the bottom edge --------------------------------
-    door_w = 4 * TILE
-    door_x0 = (w - door_w) // 2
-    door_x1 = door_x0 + door_w - 1
-    rect(px, door_x0, 56, door_x1, h - 1, WOOD, w, h)
-    for x in range(door_x0, door_x1 + 1, 16):
-        rect(px, x + 15, 56, x + 15, h - 1, IRON_DEEP, w, h)
-    # warm glow spilling in from the town outside, brightest at the very bottom edge
-    for i, y in enumerate(range(h - 24, h)):
-        t = i / 23
-        rect(px, door_x0, y, door_x1, y, (
-            int(WOOD[0] * (1 - t * 0.6) + EMBER[0] * t * 0.6),
-            int(WOOD[1] * (1 - t * 0.6) + EMBER[1] * t * 0.6),
-            int(WOOD[2] * (1 - t * 0.6) + EMBER[2] * t * 0.6),
-            255,
-        ), w, h)
-    # timber jamb posts flanking the gap
-    for jx in (door_x0 - 8, door_x1 + 1):
-        rect(px, jx, 32, jx + 7, h - 1, WOOD, w, h)
-        outline(px, jx, 32, jx + 7, h - 1, w, h)
-        rect(px, jx + 1, 33, jx + 2, h - 2, IRON_DEEP, w, h)  # grain shadow
-    rect(px, door_x0 - 8, 32, door_x1 + 8, 32, VOID, w, h)  # threshold seam
-
-    return im
-
-
-# ── stations ────────────────────────────────────────────────────────────────────────────────────
 def render_hearth() -> Image.Image:
     """40x32. Chimney-breast hearth built into the back wall -- the room's ONE deliberate light
     source (composition brief: "the hearth carries the light"). Anchored at tile (11, 2); bottom
@@ -309,7 +247,6 @@ def render_table() -> Image.Image:
 
 
 SPRITES = {
-    "town2d-tavern-interior-shell": render_shell,
     "town2d-station-tavern-hearth": render_hearth,
     "town2d-station-tavern-bar": render_bar,
     "town2d-station-tavern-storywall": render_storywall,
