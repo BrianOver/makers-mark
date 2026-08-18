@@ -146,99 +146,15 @@ SHELL_W, SHELL_H = 320, 192
 TILE = 16
 
 
-def render_shell() -> Image.Image:
-    """Timber-panelled general-store floor: a 3-tile WOOD wall band across the back (top) with two
-    daylight windows and a small hanging parchment sign (echoing the exterior sign), a solid
-    baseboard trim, then a plank work-floor bordered by a flagstone apron along the left/right/
-    bottom edges, with a 4-tile door gap centred on the bottom edge (KTD-1's island door tile)
-    framed by timber jamb posts and a pale daylight glow bleeding in from the exterior.
+# The room SHELL is no longer generated here. Register #146 replaced all four painted-plate
+# backdrops with rendered art (PRs #587/#588): the six-to-eight-colour town2d idiom is correct
+# for a 20x36 sprite and wrong for a room the camera fills, which is what made these shells
+# measure 0.020-0.033 bytes/px against 1.688 for the forge exterior. This module keeps the
+# STATION props -- they are sprite-scale and the idiom still holds for them. Leaving render_shell
+# here would have been a loaded gun: running this script, or its own --check drift guard, would
+# have silently reverted the shipped plate or reported drift against art that is deliberately
+# no longer its output.
 
-    Composition brief (plan U2): readable OPEN floor for U5's customer walkways -- everything from
-    roughly x=32..287, y=64..175 is bare plank with nothing painted on it, so the four stations
-    (U1's placed tile positions: counter dead ahead of the door, two shelves against the back wall,
-    ledger and crates along the side walls) never crowd the walkable middle or the door-to-shelf
-    lanes either side of the counter.
-    """
-    im = Image.new("RGBA", (SHELL_W, SHELL_H), WOOD)
-    px = im.load()
-    w, h = SHELL_W, SHELL_H
-
-    # ---- timber wall band (back wall, top 3 tiles = 48px) ---------------------------------
-    rect(px, 0, 0, w - 1, 47, WOOD, w, h)
-    rect(px, 0, 0, w - 1, 0, BONE, w, h)  # single bright rim, light from above (town2d idiom)
-    # vertical plank seams, one tile apart
-    for x in range(0, w, 16):
-        rect(px, x + 15, 0, x + 15, 47, IRON_DEEP, w, h)
-    # a horizontal seam row breaking the panel into upper/lower boards
-    rect(px, 0, 23, w - 1, 23, IRON_DEEP, w, h)
-
-    # small hanging sign, centred -- the market building's own exterior sign, echoed inside
-    rect(px, 136, 2, 183, 13, PARCHMENT, w, h)
-    outline(px, 136, 2, 183, 13, w, h)
-    rect(px, 140, 4, 179, 5, IRON_DEEP, w, h)   # two ruled lines = illegible "text" at this scale
-    rect(px, 140, 8, 171, 9, IRON_DEEP, w, h)
-    rect(px, 157, 14, 162, 17, WOOD, w, h)      # the post it hangs from
-    px[157, 14] = IRON_DEEP
-    px[162, 14] = IRON_DEEP
-
-    # two daylight windows, symmetric, clear of the sign and the doorway below
-    for wx in (48, w - 48 - 32):
-        rect(px, wx, 26, wx + 31, 45, IRON_DEEP, w, h)
-        outline(px, wx - 1, 25, wx + 32, 46, w, h, BONE)
-        rect(px, wx + 2, 27, wx + 29, 44, BONE, w, h)          # pane: daylight, not ember
-        rect(px, wx + 14, 27, wx + 17, 44, IRON_DEEP, w, h)     # vertical mullion
-        rect(px, wx + 2, 34, wx + 29, 35, IRON_DEEP, w, h)      # horizontal mullion
-
-    rect(px, 0, 47, w - 1, 47, VOID, w, h)  # crisp wall/floor seam
-
-    # ---- baseboard trim (8px skirting, flat -- same material family as the wall) -----------
-    rect(px, 0, 48, w - 1, 55, IRON_DEEP, w, h)
-    rect(px, 0, 48, w - 1, 48, BONE, w, h)
-
-    # ---- floor: plank work floor, flagstone apron border -----------------------------------
-    rect(px, 0, 56, w - 1, h - 1, PLANK, w, h)
-    for x in range(0, w, 16):
-        rect(px, x + 15, 56, x + 15, h - 1, PLANK_DARK, w, h)   # board seams every tile
-    for y in range(56, h, 32):
-        rect(px, 0, y + 15, w - 1, y + 15, PLANK_DARK, w, h)    # cross-seams (2-tile planks)
-
-    apron = TILE  # 1 tile
-    rect(px, 0, 56, apron - 1, h - 1, FLAG, w, h)          # left apron
-    rect(px, w - apron, 56, w - 1, h - 1, FLAG, w, h)      # right apron
-    rect(px, 0, h - apron, w - 1, h - 1, FLAG, w, h)       # bottom apron
-    for x in (apron - 1, w - apron):
-        rect(px, x, 56, x, h - 1, FLAG_DARK, w, h)
-    rect(px, 0, h - apron, w - 1, h - apron, FLAG_DARK, w, h)
-
-    # ---- door gap: 4 tiles wide, centred on the bottom edge (world centre x=160, matches
-    #      InteriorLayout2D.MarketDoorTile) -------------------------------------------------
-    door_w = 4 * TILE
-    door_x0 = (w - door_w) // 2
-    door_x1 = door_x0 + door_w - 1
-    rect(px, door_x0, 56, door_x1, h - 1, PLANK, w, h)
-    for x in range(door_x0, door_x1 + 1, 16):
-        rect(px, x + 15, 56, x + 15, h - 1, PLANK_DARK, w, h)
-    # pale daylight glow spilling in from the town outside -- the market's own signature warmth
-    # is parchment/daylight, not the forge's ember, so the door reads as an open shopfront
-    for i, y in enumerate(range(h - 24, h)):
-        t = i / 23
-        rect(px, door_x0, y, door_x1, y, (
-            int(PLANK[0] * (1 - t * 0.6) + PARCHMENT[0] * t * 0.6),
-            int(PLANK[1] * (1 - t * 0.6) + PARCHMENT[1] * t * 0.6),
-            int(PLANK[2] * (1 - t * 0.6) + PARCHMENT[2] * t * 0.6),
-            255,
-        ), w, h)
-    # timber jamb posts flanking the gap, reaching up into the wall band
-    for jx in (door_x0 - 8, door_x1 + 1):
-        rect(px, jx, 24, jx + 7, h - 1, WOOD, w, h)
-        outline(px, jx, 24, jx + 7, h - 1, w, h)
-        rect(px, jx + 1, 25, jx + 2, h - 2, IRON_DEEP, w, h)  # grain shadow
-    rect(px, door_x0 - 8, 24, door_x1 + 8, 24, VOID, w, h)  # threshold seam under the wall band
-
-    return im
-
-
-# ── stations ────────────────────────────────────────────────────────────────────────────────────
 def render_counter() -> Image.Image:
     """40x24. Sales counter -- deliberately echoes town2d-market.png's own exterior counter
     (rune-stamped back panel, coolant trace under the slab's lip, crate goods on top) so the room
@@ -359,7 +275,6 @@ def render_crates() -> Image.Image:
 
 
 SPRITES = {
-    "town2d-market-interior-shell": render_shell,
     "town2d-station-market-counter": render_counter,
     "town2d-station-market-shelf": render_shelf,
     "town2d-station-market-ledger": render_ledger,

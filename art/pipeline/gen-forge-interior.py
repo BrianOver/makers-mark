@@ -142,98 +142,15 @@ SHELL_W, SHELL_H = 384, 224
 TILE = 16
 
 
-def render_shell() -> Image.Image:
-    """Ember-lit stone-and-timber smithy floor: a 4-tile stone wall band across the back (top),
-    a baseboard-shadow transition, then a plank work-floor bordered by a flagstone apron along the
-    left/right/bottom edges, with a 4-tile door gap centred on the bottom edge (KTD-1's island
-    door tile) framed by two timber jamb posts and a warm glow bleeding up from the exterior.
+# The room SHELL is no longer generated here. Register #146 replaced all four painted-plate
+# backdrops with rendered art (PRs #587/#588): the six-to-eight-colour town2d idiom is correct
+# for a 20x36 sprite and wrong for a room the camera fills, which is what made these shells
+# measure 0.020-0.033 bytes/px against 1.688 for the forge exterior. This module keeps the
+# STATION props -- they are sprite-scale and the idiom still holds for them. Leaving render_shell
+# here would have been a loaded gun: running this script, or its own --check drift guard, would
+# have silently reverted the shipped plate or reported drift against art that is deliberately
+# no longer its output.
 
-    Composition brief (plan U2): readable OPEN floor -- everything from x=32..351, y=88..191 is
-    bare plank with nothing painted on it, so six stations placed against the walls (U1's job)
-    never crowd the walkable middle.
-    """
-    im = Image.new("RGBA", (SHELL_W, SHELL_H), FLAG)
-    px = im.load()
-    w, h = SHELL_W, SHELL_H
-
-    # ---- stone wall band (back wall, top 4 tiles = 64px) ----------------------------------
-    rect(px, 0, 0, w - 1, 63, FLAG, w, h)
-    # coursing: horizontal mortar joints every 8px, offset brick pattern via alternating FLAG_DARK
-    # vertical joints so the band doesn't read as one flat slab
-    for y in range(7, 64, 8):
-        rect(px, 0, y, w - 1, y, FLAG_DARK, w, h)
-    for i, x in enumerate(range(0, w, 24)):
-        offset = 12 if (i % 2) else 0
-        for jx in range(x + offset, w, 24):
-            rect(px, jx, 0, jx, 63, FLAG_DARK, w, h)
-    rect(px, 0, 0, w - 1, 1, BONE, w, h)  # single bright rim, light from above (gen-market idiom)
-    # a scatter of lit flecks in the stonework -- sparse, never a stripe
-    for fx, fy in ((18, 22), (94, 40), (170, 14), (246, 34), (322, 20), (60, 50), (300, 52)):
-        px[fx, fy] = FLAG_LIT
-
-    # two wall braziers (ember-lit openings), symmetric, clear of the room's centre where a
-    # future flue/chimney prop could sit
-    for bx in (72, w - 72 - 16):
-        rect(px, bx, 20, bx + 15, 39, IRON_DEEP, w, h)
-        outline(px, bx - 1, 19, bx + 16, 40, w, h, BONE)
-        rect(px, bx + 2, 23, bx + 13, 36, EMBER, w, h)
-        rect(px, bx + 1, 22, bx + 14, 37, EMBER_GLOW, w, h)
-        rect(px, bx + 2, 23, bx + 13, 36, EMBER, w, h)  # solid core redrawn over the glow haze
-
-    rect(px, 0, 63, w - 1, 63, VOID, w, h)  # crisp wall/floor seam
-
-    # ---- baseboard shadow (transition band, 8px) ------------------------------------------
-    for i, y in enumerate(range(64, 72)):
-        # blend FLAG_DARK -> PLANK across 8 rows so the seam reads as ambient occlusion, not a
-        # hard second wall
-        t = i / 7
-        blend = tuple(int(FLAG_DARK[c] * (1 - t) + PLANK[c] * t) for c in range(3)) + (255,)
-        rect(px, 0, y, w - 1, y, blend, w, h)
-
-    # ---- floor: plank work floor, flagstone apron border -----------------------------------
-    rect(px, 0, 72, w - 1, h - 1, PLANK, w, h)
-    for x in range(0, w, 16):
-        rect(px, x + 15, 72, x + 15, h - 1, PLANK_DARK, w, h)  # board seams every tile
-    for y in range(72, h, 32):
-        rect(px, 0, y + 15, w - 1, y + 15, PLANK_DARK, w, h)  # cross-seams (2-tile planks)
-
-    apron = TILE  # 1 tile
-    rect(px, 0, 72, apron - 1, h - 1, FLAG, w, h)          # left apron
-    rect(px, w - apron, 72, w - 1, h - 1, FLAG, w, h)      # right apron
-    rect(px, 0, h - apron, w - 1, h - 1, FLAG, w, h)       # bottom apron
-    for x in (apron - 1, w - apron):
-        rect(px, x, 72, x, h - 1, FLAG_DARK, w, h)
-    rect(px, 0, h - apron, w - 1, h - apron, FLAG_DARK, w, h)
-
-    # ---- door gap: 4 tiles wide, centred on the bottom edge --------------------------------
-    door_w = 4 * TILE
-    door_x0 = (w - door_w) // 2
-    door_x1 = door_x0 + door_w - 1
-    # open the gap: plank continues straight to the bottom edge (no flagstone apron across it)
-    rect(px, door_x0, 72, door_x1, h - 1, PLANK, w, h)
-    for x in range(door_x0, door_x1 + 1, 16):
-        rect(px, x + 15, 72, x + 15, h - 1, PLANK_DARK, w, h)
-    # warm glow spilling in from the town outside, brightest at the very bottom edge
-    for i, y in enumerate(range(h - 24, h)):
-        t = i / 23
-        rect(px, door_x0, y, door_x1, y, (
-            int(PLANK[0] * (1 - t * 0.6) + EMBER[0] * t * 0.6),
-            int(PLANK[1] * (1 - t * 0.6) + EMBER[1] * t * 0.6),
-            int(PLANK[2] * (1 - t * 0.6) + EMBER[2] * t * 0.6),
-            255,
-        ), w, h)
-    # timber jamb posts flanking the gap
-    for jx in (door_x0 - 8, door_x1 + 1):
-        rect(px, jx, 40, jx + 7, h - 1, WOOD, w, h)
-        outline(px, jx, 40, jx + 7, h - 1, w, h)
-        rect(px, jx + 1, 41, jx + 2, h - 2, IRON_DEEP, w, h)  # grain shadow
-    # threshold seam where jambs meet the wall band above
-    rect(px, door_x0 - 8, 40, door_x1 + 8, 40, VOID, w, h)
-
-    return im
-
-
-# ── stations ────────────────────────────────────────────────────────────────────────────────────
 def render_anvil() -> Image.Image:
     """24x20. Working face left-lit (IRON_LIT), horn tapering left, wood stump base."""
     w, h = 24, 20
@@ -408,7 +325,6 @@ def render_rack() -> Image.Image:
 
 
 SPRITES = {
-    "town2d-forge-interior-shell": render_shell,
     "town2d-station-anvil": render_anvil,
     "town2d-station-furnace": render_furnace,
     "town2d-station-bellows": render_bellows,
