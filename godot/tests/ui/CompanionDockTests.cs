@@ -226,6 +226,51 @@ public class CompanionDockTests
         }
     }
 
+    /// <summary>
+    /// Register #160's third ask: the docket had to be TAUGHT, not merely reachable. It is taught
+    /// on first touch rather than as an eleventh numbered milestone, because the owner asked for it
+    /// to "become the player's job to reference/utilize" — a habit, not a beat to complete.
+    ///
+    /// <para>Asserts the lesson reaches the SCREEN, not that a method was called: the mentor banner
+    /// has to carry text a player could read. A test that only checked the first-touch id was
+    /// consumed would pass just as well for a lesson that renders nothing.</para>
+    /// </summary>
+    [TestCase]
+    public void OpeningTheDocket_TeachesItOnce_AndNeverNags()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.Town.WorldViewport.RenderTargetUpdateMode = SubViewport.UpdateMode.Disabled;
+
+            ui.Docket.Open();
+
+            var banner = Find<Label>(ui, "MentorBannerText");
+            AssertThat(banner.Text)
+                .OverrideFailureMessage(
+                    "Opening 'Tomorrow at the Counter' for the first time taught the player nothing. "
+                    + $"The mentor banner reads '{banner.Text}'.")
+                .Contains("tomorrow's counter");
+
+            // Second open: the once-ever contract lives in TutorialFlow.ConsumeFirstTouch, and this
+            // is the half that matters for a screen the player is supposed to keep coming back to —
+            // a reference tool that lectures every time is a reference tool nobody opens.
+            ui.Docket.Close();
+            var before = banner.Text;
+            ui.Docket.Open();
+
+            AssertThat(banner.Text)
+                .OverrideFailureMessage(
+                    "The docket re-taught itself on a second open. A tool the player is meant to "
+                    + "consult all day must say its piece once.")
+                .IsEqual(before);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
     // ── fixtures ─────────────────────────────────────────────────────────────────────────────
 
     private static string RowText(Control c) => c switch
