@@ -135,8 +135,8 @@ public sealed partial class AudioDirector : Node
     /// </summary>
     private static readonly Dictionary<DayPhase, ComposedTrack> ComposedTracks = new()
     {
-        [DayPhase.Morning] = new ComposedTrack("day-first-light", "res://assets/audio/day-first-light.ogg", TrimDb: -6.9f),
-        [DayPhase.Evening] = new ComposedTrack("town-dusk", "res://assets/audio/town-dusk.ogg", TrimDb: -3.8f),
+        [DayPhase.Morning] = new ComposedTrack("day-first-light", "res://assets/audio/day-first-light.ogg", TrimDb: 0f),
+        [DayPhase.Evening] = new ComposedTrack("town-dusk", "res://assets/audio/town-dusk.ogg", TrimDb: 0f),
         [DayPhase.Camp] = new ComposedTrack("night-still", "res://assets/audio/night-still.ogg", TrimDb: 0f),
         [DayPhase.Expedition] = new ComposedTrack("quest-wait", "res://assets/audio/quest-wait.ogg", TrimDb: -7.5f),
         [DayPhase.ExpeditionDeep] = new ComposedTrack("quest-wait", "res://assets/audio/quest-wait.ogg", TrimDb: -7.5f),

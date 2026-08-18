@@ -296,8 +296,6 @@ public static class MixBudget
         //      active-window RMS, its ComposedTrack.TrimDb, and the new AudioBuses.MusicBusDb
         //      (−20 dB) are added together — the exact stacking nobody had computed end-to-end
         //      before U-T4-2. See that unit's PR body for the full per-track arithmetic. ----
-        "Track.day-first-light", // −41.64 dBFS effective
-        "Track.town-dusk",       // −61.41 dBFS effective — the Evening dead-air bed
         "Track.night-still",     // −45.84 dBFS effective
         "Track.quest-wait",      // −45.99 dBFS effective
 
