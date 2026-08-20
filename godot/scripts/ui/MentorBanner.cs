@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Godot;
 
 namespace GodotClient.Ui;
@@ -72,25 +73,61 @@ public partial class MentorBanner : PanelContainer
     /// Shows <paramref name="fired"/> (already-wrapped in Bryn's own voice, already-gated through
     /// <see cref="TutorialFlow.ConsumeFirstTouch"/> by the caller) — or does nothing when
     /// <paramref name="fired"/> is <see langword="null"/> (the lesson did not fire this call, per
-    /// that engine's own once-ever contract). Mirrors <c>ForgePanel.ShowMentorFirstTouch</c>'s own
-    /// busy-guard: refuses to overwrite an already-showing, un-dismissed lesson so a second
-    /// first-touch reached before the player dismisses the first is never silently consumed and
-    /// lost — it simply waits for a later call once the banner is free again.
+    /// that engine's own once-ever contract).
+    ///
+    /// <para><b>The busy-guard used to DROP the second lesson, and this doc used to claim it
+    /// "waits for a later call once the banner is free again". That was false, and the correction is
+    /// the reason this method now holds a queue.</b> <see cref="TutorialFlow.ConsumeFirstTouch"/>
+    /// marks an id fired and persists that BEFORE handing the copy here, so there is no later call:
+    /// the id never fires again. What actually happened was that the second lesson lost its
+    /// teachable moment — the one where the player has just done the thing it explains. (It was not
+    /// lost from the game: <c>LessonsPanel</c> renders every id <c>FirstTouch.Fired</c> holds,
+    /// forever. A lesson buried in a book the player has to go and open is worth a fraction of the
+    /// same words arriving the instant they press the button, which is the whole premise of the
+    /// first-touch tier existing at all.) Measured when this was found: of TWELVE call sites in
+    /// <c>godot/scripts</c>, zero passed <paramref name="preempt"/>, and <c>ForgeMentorLessonsTests</c>
+    /// carried a workaround comment for it ("free the banner slot for the mark-read lesson").</para>
+    ///
+    /// <para>So a lesson that arrives while the banner is busy is now QUEUED, and
+    /// <see cref="Dismiss"/> drains it: the player's own "Got it" advances to the next one. Still no
+    /// timer anywhere (law) — nothing appears or disappears except on a press.</para>
     ///
     /// <para><paramref name="preempt"/> (Wave D, generalized from the same insight ForgePanel's
     /// mark-read lesson needed in Wave B): lifts the busy-guard for a lesson whose own value
     /// outranks whatever generic orientation note happens to still be on screen. A currently-
     /// showing banner is ALWAYS an already-consumed lesson by construction — preempting it costs
-    /// nothing the Lessons book has not already recorded permanently, it only ends that lesson's
-    /// screen time a little early. Use for a SPECIFIC, actionable lesson (e.g. a live dilemma)
-    /// that can collide with a more generic "here is what this screen is" lesson fired moments
-    /// earlier in the same caller — not a default, and not something every call site needs.</para>
+    /// nothing the Lessons book has not already recorded permanently, it only reorders which of two
+    /// lessons gets the screen first. Use for a SPECIFIC, actionable lesson (e.g. a live dilemma, or
+    /// the lesson belonging to an act the player just performed) that can collide with a more
+    /// generic "here is what this screen is" note fired moments earlier — not a default. With the
+    /// queue in place the displaced note is not discarded either: it goes to the FRONT of the queue
+    /// and is the next thing "Got it" shows.</para>
+    ///
+    /// <para>Returns whether <paramref name="fired"/> went on screen right now. A <see
+    /// langword="false"/> return with a non-null <paramref name="fired"/> means queued, not dropped —
+    /// callers that branch on it (<c>ForgePanel</c>'s material-ceiling/mark-read pair) still read
+    /// correctly, since "did this one get the screen" is exactly the question they ask.</para>
     /// </summary>
     public bool ShowFirstTouch(string? fired, bool preempt = false)
     {
-        if (fired is null || (!preempt && Visible))
+        if (fired is null)
         {
             return false;
+        }
+
+        if (Visible && !preempt)
+        {
+            Enqueue(fired);
+            return false;
+        }
+
+        if (Visible)
+        {
+            // Preempting: the note being displaced has already been consumed and would otherwise be
+            // dropped, so it takes the front of the queue rather than the bin. Front, not back: it
+            // was fired first and it is the more general of the two, so it reads better after the
+            // specific one than buried behind whatever arrives later.
+            Enqueue(_label.Text, front: true);
         }
 
         _label.Text = fired;
@@ -99,8 +136,46 @@ public partial class MentorBanner : PanelContainer
     }
 
     /// <summary>The banner's own "Got it" — never a timer, always the player's own press (law: no
-    /// timers on decisions).</summary>
-    public void Dismiss() => Visible = false;
+    /// timers on decisions). Drains one queued lesson if any is waiting, so the press advances
+    /// through the backlog instead of discarding it; only an empty queue closes the banner.</summary>
+    public void Dismiss()
+    {
+        if (_pending.Count > 0)
+        {
+            _label.Text = _pending[0];
+            _pending.RemoveAt(0);
+            return;
+        }
+
+        Visible = false;
+    }
+
+    /// <summary>How many consumed-but-not-yet-shown lessons are waiting behind the current one.
+    /// Test/inspection surface, the same idiom as <c>ForgePanel.LastFocusedSection</c>.</summary>
+    public int PendingLessonCount => _pending.Count;
+
+    /// <summary>Lessons consumed while the banner was busy, in the order they will be shown.</summary>
+    private readonly List<string> _pending = new();
+
+    /// <summary>Ceiling on the backlog. Four is a deliberate, low number: a player facing a fifth
+    /// stacked lesson is being lectured, not taught, and every one of them is still readable in the
+    /// Lessons book — so past this point dropping is the kinder failure. It has never been reached
+    /// in a real session; a run that reaches it is a signal that some caller is firing lessons in a
+    /// batch, which is its own bug to fix rather than a queue to lengthen.</summary>
+    private const int MaxPendingLessons = 4;
+
+    private void Enqueue(string lesson, bool front = false)
+    {
+        // Same text twice would read as a stutter on consecutive presses. Cannot normally happen
+        // (ConsumeFirstTouch is once-ever per id) but the queue should not be the thing that makes
+        // it possible if two ids ever share copy.
+        if (_pending.Contains(lesson) || lesson == string.Empty || _pending.Count >= MaxPendingLessons)
+        {
+            return;
+        }
+
+        _pending.Insert(front ? 0 : _pending.Count, lesson);
+    }
 
     /// <summary>Same small local widget-builders every other code-built panel on this project
     /// carries (<c>SimPanel</c>/<c>BestiaryPanel</c>/<c>CommissionBoard</c> precedent) — this class
