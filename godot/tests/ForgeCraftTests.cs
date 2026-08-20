@@ -543,6 +543,10 @@ public class ForgeCraftTests
         try
         {
             ui.OpenPanel("Forge");
+            // U-T7-1 (register #149): a bare open lands on the CRAFT section now, not the merged
+            // panel — the vendor's nineteen priced rows and their steppers live behind the Materials
+            // tab. This test is about the vendor row itself, so it presses the tab a player would.
+            Press(ui.Forge, "ForgeTab_materials");
             var startingSlots = ui.Adapter.CurrentState.ActionSlotsRemaining;
 
             var qty = Find<SpinBox>(ui.Forge, $"BuyMatQty_{MaterialRegistry.Copper}");
@@ -602,6 +606,10 @@ public class ForgeCraftTests
         try
         {
             ui.OpenPanel("Forge");
+            // U-T7-1 (register #149): a bare open lands on the CRAFT section now, not the merged
+            // panel — the vendor's nineteen priced rows and their steppers live behind the Materials
+            // tab. This test is about the vendor row itself, so it presses the tab a player would.
+            Press(ui.Forge, "ForgeTab_materials");
 
             var buy = Find<Button>(ui.Forge, $"BuyMat_{MaterialRegistry.Copper}");
             AssertThat(buy.Text).IsEqual("Buy 1");

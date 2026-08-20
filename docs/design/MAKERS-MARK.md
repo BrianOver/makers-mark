@@ -4905,43 +4905,58 @@ design:
    verbs on every button path.
 4. `BuyMat_<key>` is load-bearing in **ten** test files and the pilot policy. Two nodes with that
    name in the tree at once reintroduces the "no visible control named" shadowing failure, so the
-   vendor rows must exist in exactly one place at a time — which means `FocusSection` rebuilds the
-   active section rather than toggling `Visible` on both.
+   vendor rows must exist in exactly one place at a time.
 
-**The unit that satisfies all four.** The craft section carries a per-recipe *needs* row — "copper
-2x (have 0) · Buy" — built with the same `BuyMat_<key>` name the vendor list uses, and only the
-active section's children exist, so there is never a duplicate. The Materials tab keeps the full
-19-material list. That makes constraint 2 and constraint 4 the same mechanism, and it is also the
-first half of the todo-list ask: *what needs bought* is exactly what a recipe's unmet requirement is.
+**The unit that satisfies all four.** The craft section carries a *needs* row — "copper — Buckler
+needs 2 · 0/2 · Buy 1" — under the same `BuyMat_<key>` name the vendor list uses. Constraint 4 is
+then a matter of which loop runs, not of any rebuild machinery: `Refresh` already clears and rebuilds
+both row containers on every call, so it emits the vendor list **or** the needs row, chosen by the
+focused section, and no name is ever carried by two nodes. (An earlier attempt read constraint 4 as
+requiring `FocusSection` to rebuild the active section; it does not, and the cheaper reading is also
+the one that cannot leak.) The Materials tab keeps the full 19-material list. That makes constraint 2
+and constraint 4 the same mechanism, and it is also the first half of the todo-list ask: *what needs
+bought* is exactly what a recipe's unmet requirement is.
 
-| Unit | What |
+| Unit | What shipped |
 |---|---|
-| U-T7-1 | `FocusSection` rebuilds the active section instead of toggling both views' `Visible`; the tab row (`ButtonGroup`, one pressed at a time) reaches all three. Bare open lands on `craft`. |
-| U-T7-2 | The craft section's per-recipe needs row, named `BuyMat_<key>`, buying through the same action the vendor row does. |
-| U-T7-1a | **~~The leak budget~~ — retracted, and worth reading as a lesson rather than a constraint.** A
-third attempt reported `PanelRebuildDoesNotLeakNodesTests` at **477 orphan nodes against a budget of
-200**, and this row said that made the unit a lifecycle question. It did not. A fourth attempt found
-the cause: the compact needs row skipped the quantity stepper with a `continue` placed AFTER
-`new SpinBox`, so one `SpinBox` per needs row per refresh was constructed and never parented. **A Godot
-`Node` that is newed and never added to a tree is leaked outright, and `Clear` cannot bury what it was
-never handed.** Construct it on the only path that parents it and the leak test passes. The lesson is
-the general one: in this codebase an early `continue` between a `new Node` and its `AddChild` is a leak,
-and the guard that catches it is a node count nobody reads until it fails. |
-| U-T7-3 | Three tests change with the design, deliberately: `StationSplitTests`' bare-open pin (it asserted the merged view **on purpose**, against a real earlier bug — a bare open inheriting a stale narrowing — so the new pin must keep THAT property while asserting one section); `HumanPlaytestTests.ForgeRecipeBelowTheVendorList_IsReachableByScrollingTheWheel`, whose whole premise is the layout being removed; and `LayoutTests.ForgeBody_Labels_RenderAtReadableWidth`, which measures labels inside a now-hidden view and reads 1px — it must focus each section and measure per section. |
-| U-T7-4 | The todo list proper: what needs bought and what needs crafted, derived from the sim (`DepthStallEntry` for what heroes are stalled without, `CounterForecast.Queue` for what tomorrow's customers will ask for, recipe requirements against stock) rather than hand-entered, so it cannot go stale and needs no persistence. Sibling to the Docket, which is the screen he named as the one he liked. |
+| U-T7-1 | A bare open lands on `craft` — `ResetFocus` now means "land on the default section", not "show all three". A three-button `ForgeTabs` row above both scrolls (`ForgeTab_craft`/`_materials`/`_foundry`) reaches every section without walking to a station, and a station press across the room moves the tab row with it, so no tab ever labels a page other than the one under it. No `ButtonGroup`: there are zero uses of it in `godot/scripts`, and `ScryingMirror.Render`'s party tabs are the house idiom (`ToggleMode` plus the panel's own state), so the tab row follows the convention that already exists rather than adding a second one. |
+| U-T7-2 | The craft section's own needs row, named `BuyMat_<key>` and priced through the SAME `MaterialGate` the vendor row uses — hoisted out of the vendor loop rather than copied, since a second copy of a pricing rule is a defect this repo keeps paying for. Exactly ONE row, and it renders FIRST in the craft section, above the modifier selects. Constraint 4 is satisfied structurally rather than by a rebuild: `Refresh` emits the vendor list or the needs row, never both, chosen by the focused section. |
+| U-T7-1a | **~~The leak budget~~ — retracted, and worth reading as a lesson rather than a constraint.** A third attempt reported `PanelRebuildDoesNotLeakNodesTests` at **477 orphan nodes against a budget of 200**, and this row said that made the unit a lifecycle question. It did not. A fourth attempt found the cause: the compact needs row skipped the quantity stepper with a `continue` placed AFTER `new SpinBox`, so one `SpinBox` per needs row per refresh was constructed and never parented. **A Godot `Node` that is newed and never added to a tree is leaked outright, and `Clear` cannot bury what it was never handed.** Construct it on the only path that parents it and the leak test passes. The lesson is the general one: in this codebase an early `continue` between a `new Node` and its `AddChild` is a leak, and the guard that catches it is a node count nobody reads until it fails. |
+| U-T7-3 | Four tests changed with the design; one of them gained coverage. `StationSplitTests`' bare-open pin now asserts the property it always existed for — a bare open never inherits a station's narrowing, landing on the same section every time — which is strictly stronger than the "shows everything" it used to assert, since "everything" was reachable from a stale state by accident. `LayoutTests.ForgeBody_Labels_RenderAtReadableWidth` focuses each section and measures it while it is the visible one (a hidden `ScrollContainer` is never laid out, so it read exactly the collapsed 1px a real R7 bug produces, for a control no player could see) — and it now covers the Foundry's labels, which it never measured at all. `InteriorEntryExitTests`' anvil/shelf pin counts the `BuyMat_*` rows the player can actually see instead of matching the string "Buy 1", which stopped being vendor-only. `PlayableLoopTests`, `MainUiTests` (×2) and `ForgeCraftTests` (×2) press the Materials tab where their subject is the vendor row itself. |
+| U-T7-4 | `TodoSectionBuilder`, sibling to `CounterSectionBuilder` in the same file and rendered by the same host pair (the Companion Dock and the forecast modal, so the two can never disagree about what needs doing). What needs crafting is `DemandBoard`'s depth stalls unioned with `CounterForecast.Queue`, deduplicated by hero, stalls first because a hero stuck on a floor is the sharper need than one who merely wants to shop; what needs buying is those crafts' materials aggregated across the list and measured against stock, with the material-efficiency talent applied exactly as `CraftingHandlers.ApplyCraft` applies it. Nothing is hand-entered and nothing persists: the owner asked to "record" it, and a recorded list in a game where heroes die permanently is stale within a phase tick. |
 
-**A third attempt, and what it proved.** With the four constraints above in hand the panel was built:
-tab row, bare open on `craft`, and the needs block rendered by the same vendor loop into a different
-parent. It renders correctly — the day-1 "Buy 2 copper" row lands at the top of the craft section with
-no dropdown or modifier row above it, which is exactly the ruling. It also finished at **twelve**
-failures, including the orphan-node budget above and two more real consequences worth writing down:
-the needs block deliberately drops the quantity stepper (three rows plus three steppers pushes the
-first recipe card's craft verb toward the fold `HudBoundsTests` measures), and
-`ForgeCraftTests.BuyMatQtyStepper_*` / `BuyUpdatesTheCountImmediatelyTests` bare-open and press
-`BuyMatQty_<key>`, so they must either reach the Materials tab first or the needs block must keep a
-stepper. Scoping also matters: unfiltered, the block listed five materials on day 1 — the Morning
-Vendor again under a new heading — so it reads UNLOCKED recipes only (mirroring the tier gate the
-cards render) and caps at three rows.
+**Two more the rendered frames bought, which no test would have asked for.** The list was appended
+AFTER the counter section in the Companion Dock, and a capture showed the consequence at once: six
+queued heroes filled the dock's short card and pushed the list's own header off it, so a brand new
+surface was reachable only by scrolling a card most players never scroll. It renders first now — in
+both hosts, because `CompanionDockTests.Docket_AndModalBoard_RenderIdenticalRows_FromOneBuilder`
+walks the dock's rows against the modal's leading rows one for one, and calling the same builders in
+a different ORDER is exactly how two screens start disagreeing. The list also renders **what needs
+bought before what needs crafted**, which is the owner's own phrasing and the right order on merit:
+the buy block is one short total covering every craft below it, and it expires when the Morning
+vendor closes.
+
+**And the capture tool itself was lying.** `receipt.ps1 -State Docket` photographed the plain town,
+wrote the file, and reported success, because an unrecognised `SHOT_STATE` had always fallen through
+to the default — so a finished surface would have read as looked-at while nobody had seen it. That is
+the same failure shape as a null-tolerant asset lookup. `shot_harness.gd` now carries a
+`KNOWN_STATES` census asserted against `SHOT_STATE` at startup and refuses an unknown one, and it
+gained the `Docket` state this unit needed.
+
+**Three measurements the four attempts bought.** First: **the needs row must render ABOVE the modifier
+selects**, and this is the fact the first three attempts did not have. Built below them, a single
+purchase — which makes the feedback line visible and so adds a row above everything — pushed the needs
+row past `CraftScroll`'s fold, and `TutorialKeepsUpTests` reported the consequence exactly:
+`On screen: [Craft | Materials | Foundry]`, the tab row as the only enabled control left in the panel.
+It also belongs first on merit, since the buy day 1 demands outranks three optional selects for a
+recipe nobody has chosen — which is what the owner's `jank_menu.jpg` was complaining about.
+Second: **one needs row, not a block.** An unfiltered block listed five materials on day 1 (the Morning
+Vendor again under a new heading) and its steppers pushed the first recipe card's craft verb toward the
+fold `HudBoundsTests` measures. One row, naming the material the first rendered recipe card consumes
+and following the material dropdown, costs nothing and answers the tutorial.
+Third: **a fresh worktree's `.godot` must be imported** (`--headless --import`) before its first engine
+run, or the rebuild step faults with `-1073741819` and the suite reports a green **163** — the same lie
+`.runsettings` documents at length, arriving through a fourth door it does not yet name.
 
 **The fourth attempt, and the eleven failures that remain.** With the leak fixed the panel builds,
 renders correctly, and the engine suite lands at **Failed: 11, Passed: 1437** — every one understood,

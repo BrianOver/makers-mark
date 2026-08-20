@@ -99,12 +99,31 @@ var _quiet := false
 var _ambient_suppressed := false
 var _settle := 90
 
+# Every state this harness actually implements a branch for, "" (plain town) and the Phase* family
+# aside. Kept beside the branches it names, and asserted against SHOT_STATE at startup -- see
+# _initialize.
+const KNOWN_STATES := [
+	"BellTray", "Bestiary", "Camp", "Counter", "Demand", "DepthsPanel", "Docket", "ForgeAnvil",
+	"ForgeExit", "ForgeFlavor", "ForgeLadder", "ForgePanel", "ForgeShelf", "GateNight",
+	"HeroCandidateOpen", "HeroCards", "HeroErrand", "Ledger", "Lessons", "MineGateFocus", "Mirror",
+	"OccupancyCorner", "ReturnAtNight", "ReturnEmerge", "ReturnQuestEmpty", "SendOff", "ShopPanel",
+	"SystemMenu", "TavernPanel", "TownOverview", "TutorialLookIn", "Watch",
+]
+
 func _initialize() -> void:
 	_out = OS.get_environment("SHOT_OUT")
 	_state = OS.get_environment("SHOT_STATE")
 	_quiet = OS.get_environment("SHOT_QUIET") == "1"
 	if _out == "":
 		push_error("shot_harness: SHOT_OUT not set")
+		quit(1)
+		return
+	# U-T7-4: refuse an unrecognised state instead of photographing the plain town under its name.
+	# Measured: `receipt.ps1 -State Docket` captured the town, wrote the file, and reported success --
+	# so a brand new surface read as "looked at" while nobody had seen it. Phase* is a family
+	# (Phase1..Phase5) and "" is the deliberate plain-town default, so both are allowed through.
+	if _state != "" and not _state.begins_with("Phase") and not KNOWN_STATES.has(_state):
+		push_error("shot_harness: SHOT_STATE='%s' is not a known state. Known: %s" % [_state, ", ".join(KNOWN_STATES)])
 		quit(1)
 		return
 	# Entering an interior needs extra frames for the camera push-in ease to settle. Phase
@@ -377,6 +396,22 @@ func _process(_delta: float) -> bool:
 			if bell:
 				for _i in range(presses):
 					bell.emit_signal("pressed")
+		elif _state == "Docket":
+			# U-T7-4 (register #149): the Companion Dock, expanded -- the screen the owner named as
+			# the one he liked, and the host of the todo list. Opened through the dock's own public
+			# Open() rather than a tray click, because the dock is not a drawer panel and has no
+			# OpenPanel id; CompanionDockTests drives it the same way.
+			# find_child, not _ui.get("Docket"): a C# public PROPERTY is not in the Godot property
+			# list unless exported, so get() returns null here. The node's own name is stable
+			# ("CompanionDock", set in its _Ready) and is what CompanionDockTests resolves too.
+			var dock = _ui.find_child("CompanionDock", true, false)
+			if dock and dock.has_method("Open"):
+				dock.call("Open")
+			else:
+				push_error("[shot] SHOT_STATE=Docket could not reach the CompanionDock node -- a "
+					+ "capture of the plain town under this name would read as a look nobody took.")
+				quit(1)
+				return false
 		elif _state == "Counter":
 			# BP-BUG-3: the counter panel was reported clipped on BOTH edges, and the clip fix
 			# could never be photographed because no shot state reached an OPEN counter --

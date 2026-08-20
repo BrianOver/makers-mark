@@ -308,11 +308,17 @@ public class InteriorEntryExitTests
                     + $"(RecipeCard_{firstRecipe.RecipeId}) must have non-zero visible area, not merely "
                     + "SOME recipe card (the list's own LAST card also says \"Work the forge\").")
                 .IsTrue();
-            AssertThat(player.Sees("Buy 1"))
+            // U-T7-2 (register #149): "Buy 1" stopped being a vendor-only string when the craft
+            // section gained its own single needs row — the buy that makes day 1's "Buy 2 copper"
+            // answerable without leaving the craft screen. A bare Sees("Buy 1") can no longer tell
+            // the vendor's nineteen rows from that one row, which is the same class of false-green
+            // this test's own register #156 note warns about. So count them: craft focus may show at
+            // most the ONE needs row, and the shelf press below proves the full list is still there.
+            AssertThat(VisibleBuyRowCount(ui.Forge))
                 .OverrideFailureMessage(
-                    "Anvil press landed on craft — the vendor's \"Buy 1\" buttons must have scrolled "
-                    + "out of view, not still be sitting on screen from the panel's default open position.")
-                .IsFalse();
+                    "Anvil press landed on craft — the vendor's nineteen \"Buy 1\" rows must be off "
+                    + "screen. Only the craft section's own single needs row may remain.")
+                .IsLessEqual(1);
 
             room.Stations[4].RaisePick(); // shelf -> materials (same open panel, re-focused)
             var firstVendorRow = Find<Control>(ui.Forge, $"BuyMat_{firstMaterial}");
@@ -326,8 +332,40 @@ public class InteriorEntryExitTests
             AssertThat(player.Sees("Work the forge"))
                 .OverrideFailureMessage("Shelf press landed on materials — the recipe cards must have scrolled back out of view.")
                 .IsFalse();
+            AssertThat(VisibleBuyRowCount(ui.Forge))
+                .OverrideFailureMessage(
+                    "Shelf press landed on materials — the WHOLE priced pool must be reachable there, "
+                    + "not a one-row summary of it. Hiding the vendor behind a tab is only acceptable "
+                    + "while the tab still holds everything it held.")
+                .IsGreater(1);
         }
         finally { Unmount(ui); }
+    }
+
+    /// <summary>How many <c>BuyMat_*</c> rows the player can actually see right now. Counts nodes by
+    /// name rather than matching the "Buy 1" caption, because the caption is shared by the vendor's
+    /// rows and the craft section's needs row (U-T7-2) and the whole point here is telling those
+    /// apart.</summary>
+    private static int VisibleBuyRowCount(Node root)
+    {
+        var count = 0;
+        Walk(root);
+        return count;
+
+        void Walk(Node node)
+        {
+            if (node is Button button
+                && button.Name.ToString().StartsWith("BuyMat_")
+                && button.IsVisibleInTree())
+            {
+                count++;
+            }
+
+            foreach (var child in node.GetChildren())
+            {
+                Walk(child);
+            }
+        }
     }
 
     /// <summary>
