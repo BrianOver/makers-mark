@@ -168,8 +168,12 @@ public class CompanionDockTests
                 .OverrideFailureMessage("The Docket rendered zero rows for a fixture with a real counter queue.")
                 .IsGreater(0);
 
-            // The modal's body renders the counter section FIRST, then its own party rows — so the
-            // Docket's rows (counter section ONLY) must match the modal's own leading rows one for one.
+            // The modal's body renders the shared sections FIRST — U-T7-4's todo list, then the
+            // counter section — and only then its own party rows, so the Docket's rows (those same
+            // two shared sections, nothing else) must match the modal's leading rows one for one.
+            // Both hosts calling the same builders is not enough on its own: calling them in a
+            // different ORDER is exactly how the two screens would start disagreeing, and this loop
+            // is what catches that.
             AssertThat(modalRows.Count)
                 .OverrideFailureMessage("setup check: the modal must render at least as many rows as the Docket.")
                 .IsGreaterEqual(docketRows.Count);

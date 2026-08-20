@@ -242,6 +242,10 @@ public class MainUiTests
             AssertThat(RenderedText(ui.Shop)).Contains("Dagger");
             var copperLeft = state.Player.Materials.TryGetValue("copper", out var stock) ? stock : 0;
             ui.OpenPanel("Forge");
+            // U-T7-1 (register #149): a bare open lands on the CRAFT section now, not the merged
+            // panel — the vendor's nineteen priced rows and their steppers live behind the Materials
+            // tab. This test is about the vendor row itself, so it presses the tab a player would.
+            Press(ui.Forge, "ForgeTab_materials");
             // UI-5: the copper count now reads off the vendor ListRow's own "owned" column
             // (BuyMat_copper's row), not a standalone "MATERIALS: ..." prose line.
             AssertThat(VendorOwnedText(ui.Forge, "copper")).IsEqual($"×{copperLeft}");
@@ -749,6 +753,12 @@ public class MainUiTests
         try
         {
             var key = GameSim.Materials.MaterialRegistry.PricedPool[0];
+            // U-T7-1: this test's whole subject is the vendor row's owned column, read on both sides
+            // of an OpenPanel. The vendor lives behind the Materials tab now, so it has to be the
+            // focused section for the "stale" read as well as the caught-up one — otherwise the two
+            // sides would be comparing a row that exists against one that does not, and the gating
+            // claim would be proven by an artefact of this unit instead of by the gating.
+            ui.Forge.FocusSection("materials");
             var stale = RenderedText(ui.Forge); // fresh campaign: "MATERIALS: none — ..." (Bind's own boot Refresh)
             // UI-5: the per-material count now reads off the vendor ListRow's own "owned" column.
             var staleOwned = VendorOwnedText(ui.Forge, key);
@@ -766,6 +776,7 @@ public class MainUiTests
             AssertThat(VendorOwnedText(ui.Forge, key)).IsNotEqual($"×{after}");
 
             ui.OpenPanel("Forge"); // opening it is what catches it up
+            Press(ui.Forge, "ForgeTab_materials");
             AssertThat(VendorOwnedText(ui.Forge, key)).IsEqual($"×{after}");
             AssertThat(RenderedText(ui.Forge)).IsNotEqual(stale);
         }

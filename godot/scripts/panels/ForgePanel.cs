@@ -113,6 +113,40 @@ public partial class ForgePanel : SimPanel
     // visible one still gets the full body height, same as before this split existed.
     private ScrollContainer? _materialsScroll;
     private ScrollContainer? _craftScroll;
+    // U-T7-1 (register #149): the tab row. Constraint 3 of the owner ruling -- "materials" and
+    // "foundry" must stay reachable without walking to a station, or landing a bare open on ONE
+    // section costs two verbs (leave the drawer, cross the room, press a station) on every one of
+    // the three buttons that open this panel bare. Godot has no ButtonGroup precedent anywhere in
+    // this project's UI (measured: zero uses in godot/scripts); ScryingMirror.Render's party tabs
+    // are the house idiom -- ToggleMode buttons whose exclusivity is the panel's own state plus a
+    // redraw -- so this follows that rather than introducing a second convention.
+    private readonly Dictionary<string, Button> _tabButtons = new();
+
+    // U-T7-2 (register #149, constraint 2): the craft section's own needs row. Landing a bare open
+    // on "craft" alone broke day 1 outright in the first attempt at this unit -- the tutorial's
+    // first instruction is "Buy 2 copper", the vendor had moved behind a tab, and the tutorial was
+    // telling the player to do something the screen it had just opened no longer offered (six tests
+    // named it). So the craft section carries the ONE buy the recipe in front of the player needs.
+    // Exactly one row, not a block: the fold budget here is measured and tight (see EnsureBuilt's
+    // own history -- a few px has buried "Work the forge" before), and the full picture of what
+    // needs buying is the Materials tab's nineteen rows and the todo list, not this.
+    private Control? _needsSectionRoot;
+    private VBoxContainer? _needsRows;
+
+    /// <summary>The section a bare (non-station) open lands on -- see <see cref="ResetFocus"/>.
+    /// "craft" because all three bare-open callers say so in their own copy: Camp's "Forge
+    /// something for them", the Forecast board's "Forge one", and the Docket's.</summary>
+    private const string DefaultSection = "craft";
+
+    /// <summary>Which of the three sections <see cref="Refresh"/> last built its rows for. The
+    /// vendor list and the craft section's needs row both emit <c>BuyMat_&lt;key&gt;</c> buttons
+    /// (constraint 4: that name is load-bearing in ten test files and the pilot policy, and two
+    /// nodes carrying it at once is the "no visible control named" shadowing failure), so
+    /// <see cref="Refresh"/> emits exactly ONE of the two per build, chosen by the focused section.
+    /// This field is what lets <see cref="FocusSection"/> know a rebuild is actually required rather
+    /// than rebuilding the whole panel on every focus call.</summary>
+    private string? _rowsBuiltForSection;
+
     private Control? _focusFlashTarget;
     private double _focusFlashRemaining = -1;
     private const float FocusFlashSeconds = 0.6f;
@@ -139,6 +173,13 @@ public partial class ForgePanel : SimPanel
     /// crafting content is currently on screen. False the instant a materials-focused station
     /// narrows the panel.</summary>
     public bool CraftViewVisible => _craftViewRoot?.Visible ?? true;
+
+    /// <summary>Test/inspection surface (U-T7-2): whether the craft section is currently carrying
+    /// its own needs row -- the one buy affordance that makes the craft section alone enough to
+    /// follow day 1's "Buy 2 copper" without leaving it (constraint 2 of the owner ruling). Mutually
+    /// exclusive with the Morning Vendor's full list by construction; see
+    /// <see cref="_rowsBuiltForSection"/>.</summary>
+    public bool CraftNeedsRowShowing => _rowsBuiltForSection == "craft";
 
     /// <summary>
     /// U-T2 Wave B (§11.14.4, Act I): the live tutorial chain, wired by <c>MainUi</c> right after
@@ -355,7 +396,15 @@ public partial class ForgePanel : SimPanel
     /// <c>KnownFocusValues</c> check — this method does not need to re-fail loudly for a case that
     /// table validation already caught before the game ever ran).</para>
     /// </summary>
-    public void FocusSection(string section)
+    public void FocusSection(string section) => FocusSection(section, landOnViewTop: false);
+
+    /// <param name="landOnViewTop">Where the deferred scroll lands. A station press wants that
+    /// station's own header (<c>false</c>, the long-standing behaviour and the whole point of
+    /// register #156's fix). A bare open wants the TOP of the focused view (<c>true</c>): the craft
+    /// section's first row is its needs row, and scrolling past it to the Recipes header hides the
+    /// one purchase day 1's tutorial instructs the player to make — measured as the tab row being
+    /// the only reachable control in the whole panel.</param>
+    private void FocusSection(string section, bool landOnViewTop)
     {
         EnsureBuilt();
         LastFocusedSection = section;
@@ -392,7 +441,29 @@ public partial class ForgePanel : SimPanel
             _foundrySectionRoot!.Visible = section == "foundry";
         }
 
-        DeferEnsureVisible(isMaterialsView ? _materialsScroll : _craftScroll, target);
+        // U-T7-1: the tab row mirrors whatever narrowed the panel, whether that was a tab press or
+        // a station across the room. A station press that left the tabs reading the previous section
+        // would be a label lying about the page under it.
+        foreach (var pair in _tabButtons)
+        {
+            pair.Value.SetPressedNoSignal(pair.Key == section);
+        }
+
+        // U-T7-2: the vendor list and the craft needs row share the BuyMat_<key> name, so exactly
+        // one of them may exist at a time (constraint 4). Refresh is what chooses; re-run it here
+        // when -- and only when -- the focused section actually changed, so a focus call costs a
+        // rebuild only when a rebuild is what the change means. MainUi.OpenPanel calls ResetFocus
+        // then Refresh, so a fresh open still builds exactly once.
+        if (_rowsBuiltForSection is not null && _rowsBuiltForSection != section && Adapter is not null)
+        {
+            Refresh();
+        }
+
+        var scroll = isMaterialsView ? _materialsScroll : _craftScroll;
+        var landing = landOnViewTop
+            ? (Control)(isMaterialsView ? _materialsViewRoot! : _craftViewRoot!)
+            : target;
+        DeferEnsureVisible(scroll, landing);
         _focusFlashTarget = target;
         _focusFlashRemaining = FocusFlashSeconds;
     }
@@ -410,17 +481,18 @@ public partial class ForgePanel : SimPanel
     /// without a reset they would inherit whatever a PREVIOUS room visit last narrowed the panel
     /// to, instead of the full panel those non-station callers have always shown.</para>
     /// </summary>
+    /// <para><b>U-T7-1 (register #149, owner ruling 2026-08-18).</b> This used to mean "show all
+    /// three sections at once", and that state was the panel in the owner's own <c>jank_menu.jpg</c>:
+    /// a material dropdown and three modifier selects for a recipe nobody had chosen, then the
+    /// recipe list, then the Morning Vendor's nineteen buy rows and their quantity steppers, in one
+    /// scroll. Asked what a Forge opened from a BUTTON should show, he answered "do the separate
+    /// menus". So a bare open now lands on exactly <see cref="DefaultSection"/> -- and the property
+    /// this method has always existed for is unchanged, and is why it is still called on every open:
+    /// a bare open never inherits a PREVIOUS room visit's narrowing. It lands on the same section
+    /// every time, whatever a station last did.</para>
     public void ResetFocus()
     {
-        EnsureBuilt();
-        LastFocusedSection = null;
-        _materialsViewRoot!.Visible = true;
-        _craftViewRoot!.Visible = true;
-        _materialsScroll!.Visible = true;
-        _craftScroll!.Visible = true;
-        // U-T1: undo the vendor/Foundry narrowing too, same bare-open contract as the outer split.
-        _vendorSectionRoot!.Visible = true;
-        _foundrySectionRoot!.Visible = true;
+        FocusSection(DefaultSection, landOnViewTop: true);
     }
 
     /// <summary>Safety ceiling for <see cref="DeferEnsureVisible"/>'s settle-poll — 240 frames (4s
@@ -525,37 +597,49 @@ public partial class ForgePanel : SimPanel
         // still defaults to buying 1 with nothing touched (byte-identical initial gate/price to
         // before this unit), so every existing "press BuyMat_x N times" test still buys 1 per
         // press; the stepper only ADDS the option to dial in a bigger single purchase.
+        // U-T7-2 (constraint 4): the craft section's needs row below carries the same
+        // BuyMat_<key> name these vendor rows do, so exactly one of the two may be in the tree at
+        // any moment -- a second node with that name reintroduces the "no visible control named"
+        // shadowing failure that ten test files and the pilot policy resolve by name. The focused
+        // section decides which, and _rowsBuiltForSection records the choice for FocusSection.
+        _rowsBuiltForSection = LastFocusedSection ?? DefaultSection;
+        var craftSectionShowing = _rowsBuiltForSection == "craft";
+
+        // U6 gate, mirroring MaterialVendorHandlers: Morning-only CanHandle + the gold check.
+        // Landing phase = the CURRENT phase (GameKernel.Tick applies the queued batch against
+        // state.Phase before advancing), so the buy is legal exactly while the sim still sits
+        // AT Morning. ListRow inlines the exact GateButton contract (Disabled + player-phrased
+        // tooltip) itself.
+        // The action budget belongs in this gate too. It was missing, and the omission was
+        // reachable by a human: in Morning with enough gold but zero slots left, the row stayed
+        // enabled, the click queued an action the handler then rejected, and the feedback line
+        // still said "Queued -- resolves when Morning ticks". A dead click that confirms itself
+        // is worse than a disabled one. BountyPanel already gates on slots; this now matches it,
+        // including its phase -> gold -> slots reason precedence.
+        //
+        // MaterialVendorHandlers.QuoteCost is the ONE pricing formula (its own class doc) --
+        // this used to hand-inline the same ceilDiv, now parameterized on quantity so the
+        // gate below can be re-run for whatever quantity the stepper holds.
+        //
+        // U-T7-2 hoisted this out of the vendor loop: the craft section's needs row is the same
+        // purchase through the same handler, so it must be the same gate and the same reason
+        // strings. A second copy of a pricing rule is the defect this repo keeps paying for.
+        (int Quote, bool Legal, string WhyNot) MaterialGate(string key, int qty)
+        {
+            var q = MaterialVendorHandlers.QuoteCost(key, qty);
+            var ok = state.Phase == DayPhase.Morning && q <= state.Player.Gold && state.ActionSlotsRemaining > 0;
+            var reason = state.Phase != DayPhase.Morning
+                ? "The vendor sells in the Morning."
+                : q > state.Player.Gold
+                    ? "You can't afford that yet."
+                    : $"No action slots left today (0/{ActionBudget.SlotsPerDay}) — 'next' to advance.";
+            return (q, ok, reason);
+        }
+
         Clear(_vendorRows!);
-        foreach (var key in MaterialRegistry.PricedPool)
+        foreach (var key in craftSectionShowing ? Enumerable.Empty<string>() : MaterialRegistry.PricedPool)
         {
             var have = state.Player.Materials.TryGetValue(key, out var owned) ? owned : 0;
-
-            // U6 gate, mirroring MaterialVendorHandlers: Morning-only CanHandle + the gold check.
-            // Landing phase = the CURRENT phase (GameKernel.Tick applies the queued batch against
-            // state.Phase before advancing), so the buy is legal exactly while the sim still sits
-            // AT Morning. ListRow inlines the exact GateButton contract (Disabled + player-phrased
-            // tooltip) itself.
-            // The action budget belongs in this gate too. It was missing, and the omission was
-            // reachable by a human: in Morning with enough gold but zero slots left, the row stayed
-            // enabled, the click queued an action the handler then rejected, and the feedback line
-            // still said "Queued — resolves when Morning ticks". A dead click that confirms itself
-            // is worse than a disabled one. BountyPanel already gates on slots; this now matches it,
-            // including its phase -> gold -> slots reason precedence.
-            //
-            // MaterialVendorHandlers.QuoteCost is the ONE pricing formula (its own class doc) —
-            // this used to hand-inline the same ceilDiv, now parameterized on quantity so the
-            // gate below can be re-run for whatever quantity the stepper holds.
-            (int Quote, bool Legal, string WhyNot) Gate(int qty)
-            {
-                var q = MaterialVendorHandlers.QuoteCost(key, qty);
-                var ok = state.Phase == DayPhase.Morning && q <= state.Player.Gold && state.ActionSlotsRemaining > 0;
-                var reason = state.Phase != DayPhase.Morning
-                    ? "The vendor sells in the Morning."
-                    : q > state.Player.Gold
-                        ? "You can't afford that yet."
-                        : $"No action slots left today (0/{ActionBudget.SlotsPerDay}) — 'next' to advance.";
-                return (q, ok, reason);
-            }
 
             var qtySpin = new SpinBox
             {
@@ -569,7 +653,7 @@ public partial class ForgePanel : SimPanel
             var buy = new Button { Name = $"BuyMat_{key}", Text = "Buy 1" };
             buy.Pressed += () => OnBuyMaterialPressed(key, (int)qtySpin.Value);
 
-            var initial = Gate(1);
+            var initial = MaterialGate(key, 1);
             _vendorRows!.AddChild(ListRow(IconRegistry.Ore(key), key, $"{initial.Quote}g", have.ToString(), buy, initial.Legal, initial.WhyNot));
 
             // The stepper itself — a thin row right under the ListRow (ShopPanel's priceSpin
@@ -581,7 +665,7 @@ public partial class ForgePanel : SimPanel
             qtySpin.ValueChanged += value =>
             {
                 var qty = (int)value;
-                var gate = Gate(qty);
+                var gate = MaterialGate(key, qty);
                 buy.Text = $"Buy {qty}";
                 buy.Disabled = !gate.Legal;
                 buy.TooltipText = gate.Legal ? string.Empty : gate.WhyNot;
@@ -669,6 +753,15 @@ public partial class ForgePanel : SimPanel
 
         Clear(_recipeRows!);
         Clear(_talentRows!);
+        Clear(_needsRows!);
+        // U-T7-2: the needs row names the material the FIRST rendered, tier-unlocked recipe card
+        // consumes -- the same recipe/material pair the card right below it shows, resolved through
+        // SelectedMaterialOr so the material dropdown moves the needs row with it. Captured inside
+        // the loop rather than re-derived, so the ordering rule (tier, then RecipeId) can never
+        // drift between the card list and the row that claims to describe its top entry.
+        string? needsKey = null;
+        var needsQuantity = 0;
+        var needsRecipeName = string.Empty;
         foreach (var professionId in state.Player.SelectedProfessions)
         {
             if (!ProfessionRegistry.TryGet(professionId, out var profession))
@@ -726,6 +819,13 @@ public partial class ForgePanel : SimPanel
                         whyNot: $"Requires '{gateName}' — unlock it in the Talents section below.");
                     _recipeRows!.AddChild(lockedRow);
                     continue;
+                }
+
+                if (needsKey is null)
+                {
+                    needsKey = material;
+                    needsQuantity = needed;
+                    needsRecipeName = recipe.Name;
                 }
 
                 var card = Card($"RecipeCard_{recipe.RecipeId}");
@@ -951,6 +1051,31 @@ public partial class ForgePanel : SimPanel
                     GateButton(button, unlockLegal, unlockWhyNot);
                 }
             }
+        }
+
+        // U-T7-2: the craft section's needs row. One row, naming the material the first recipe card
+        // below it consumes, with the SAME BuyMat_<key> button name and the SAME MaterialGate the
+        // Morning Vendor's own row uses — the two are the identical purchase through the identical
+        // handler, so a player following day 1's "Buy 2 copper" can do it from the screen the
+        // tutorial opened, and every existing "press BuyMat_<key>" test path still resolves to a
+        // real, visible, enabled-for-the-real-reason button. Emitted only when the craft section is
+        // the built one, which is exactly when the vendor list is NOT (constraint 4).
+        _needsSectionRoot!.Visible = craftSectionShowing && needsKey is not null;
+        if (craftSectionShowing && needsKey is not null)
+        {
+            var needsHave = state.Player.Materials.TryGetValue(needsKey, out var needsStock) ? needsStock : 0;
+            var needsGate = MaterialGate(needsKey, 1);
+            var needsBuy = new Button { Name = $"BuyMat_{needsKey}", Text = "Buy 1" };
+            var needsMaterial = needsKey;
+            needsBuy.Pressed += () => OnBuyMaterialPressed(needsMaterial, 1);
+            _needsRows!.AddChild(ListRow(
+                IconRegistry.Ore(needsKey),
+                $"{needsKey} — {needsRecipeName} needs {needsQuantity}",
+                $"{needsGate.Quote}g",
+                $"{needsHave}/{needsQuantity}",
+                needsBuy,
+                needsGate.Legal,
+                needsGate.WhyNot));
         }
     }
 
@@ -1805,6 +1930,33 @@ public partial class ForgePanel : SimPanel
         // this label's Text ever changes) reclaims that space until there is something to say.
         _feedback.Visible = false;
 
+        // U-T7-1: the tab row -- three ToggleMode buttons above both scrolls, always visible, so
+        // narrowing to one section never costs the other two. Built BEFORE the scrolls so it is the
+        // row the player reads first, and it is a fixed-height row (no ExpandFill), so the height it
+        // costs is repaid many times over by the section it lets us hide: MaterialsScroll alone was
+        // 2/5 of the body (see the ratios below).
+        var tabRow = AddRow(root);
+        tabRow.Name = "ForgeTabs";
+        foreach (var tabSpec in new[]
+                 {
+                     ("craft", "Craft"),
+                     ("materials", "Materials"),
+                     ("foundry", "Foundry"),
+                 })
+        {
+            var section = tabSpec.Item1;
+            var tab = new Button
+            {
+                Name = $"ForgeTab_{section}",
+                Text = tabSpec.Item2,
+                ToggleMode = true,
+                SizeFlagsHorizontal = SizeFlags.ExpandFill,
+            };
+            tab.Pressed += () => FocusSection(section);
+            tabRow.AddChild(tab);
+            _tabButtons[section] = tab;
+        }
+
         _craftScroll = new ScrollContainer
         {
             Name = "CraftScroll",
@@ -1840,6 +1992,21 @@ public partial class ForgePanel : SimPanel
 
         _materialSelect.ItemSelected += _ => Refresh();
         selectRow.AddChild(_materialSelect);
+
+        // U-T7-2: FIRST in the craft section, above the modifier selects, and the ordering is
+        // measured rather than chosen. Built below Modifiers, the needs row sat far enough down
+        // CraftScroll that a single purchase — which makes the feedback line visible and so adds a
+        // row above everything — pushed it past the fold, leaving the tab row as the ONLY enabled
+        // control a player could reach (TutorialKeepsUpTests reported exactly that: "On screen:
+        // [Craft | Materials | Foundry]"). It also belongs here on merit: the buy the tutorial's own
+        // day-1 instruction demands outranks three optional selects for a recipe nobody has chosen
+        // yet, which is the arrangement the owner's jank_menu.jpg was complaining about.
+        var needsSection = Section("What This Needs");
+        needsSection.Root.Name = "NeedsSection";
+        _craftViewRoot.AddChild(needsSection.Root);
+        _needsSectionRoot = needsSection.Root;
+        _needsRows = new VBoxContainer { Name = "NeedsRows" };
+        needsSection.Body.AddChild(_needsRows);
 
         // Phase C U-C1 slice 2: modifier composition — one selector per family, each populated with
         // "(none)" plus the registered modifiers of that family. Read in OnCraftPressed.

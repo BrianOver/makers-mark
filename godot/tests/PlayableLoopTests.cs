@@ -293,6 +293,12 @@ public class PlayableLoopTests
         AssertThat(ui.Adapter.LastEvents.OfType<MaterialPurchased>().Count()).IsEqual(2);
         // U21: RefreshAll is visibility-gated — open Forge for a fresh read/Disabled state.
         ui.OpenPanel("Forge");
+        // U-T7-1 (register #149): a bare open lands on the craft section now. The two buys above go
+        // through the craft section's own needs row (that is the point of it — the tutorial's day-1
+        // instruction has to be answerable where the tutorial sends you), but the assertion below
+        // wants the VENDOR row's owned column, whose "x2" is a running stock total; the needs row's
+        // own column deliberately reads "have/need" instead. So press the tab a player would.
+        PressEnabled(ui.Forge, "ForgeTab_materials");
         // UI-5: the copper count now reads off the vendor ListRow's "owned" column
         // (BuyMat_copper's row), not a standalone "MATERIALS: copper x2" prose line.
         var copperRow = Find<Godot.Button>(ui.Forge, $"BuyMat_{ScriptedSession.CraftMaterial}");

@@ -154,25 +154,47 @@ public class StationSplitTests
     /// right after a station visit narrowed it. Without <c>ForgePanel.ResetFocus</c> (wired into
     /// <c>MainUi.OpenPanel</c>) this would silently inherit whichever half the last room visit left
     /// it on, breaking every existing test/tool that opens "Forge" directly and expects the whole
-    /// panel (vendor rows AND recipe cards) to be there.</summary>
+    /// panel (vendor rows AND recipe cards) to be there.
+    ///
+    /// <para><b>U-T7-1 (register #149, owner ruling 2026-08-18) rewrote what this asserts, and it is
+    /// worth being explicit about what did and did not change.</b> This test used to require the bare
+    /// open to show the FULL merged panel — every section at once — and that was correct against the
+    /// bug it was written for. But the merged panel is the state in the owner's own
+    /// <c>jank_menu.jpg</c>, and asked what a Forge opened from a button should show he answered "do
+    /// the separate menus". So the bare open now lands on ONE section. The property this test exists
+    /// to protect is untouched and is still the only thing it checks: a bare open never inherits a
+    /// previous room visit's narrowing. It lands on the SAME section every time, whichever station
+    /// was last pressed — which is a strictly stronger statement than "shows everything", since
+    /// "everything" was reachable from a stale state by accident. <c>ForgeMenuSplitTests</c> owns
+    /// which section that is.</para>
+    /// </summary>
     [TestCase]
-    public void BareOpenPanelForge_AfterAStationNarrowedIt_ShowsTheFullPanelAgain()
+    public void BareOpenPanelForge_AfterAStationNarrowedIt_NeverInheritsTheStationsNarrowing()
     {
         var ui = MountMainUi();
         try
         {
             var room = EnterWorkbenchHall(ui);
+
+            ui.OpenPanel("Forge"); // the non-station, direct-open path, from a clean slate
+            var bareOpenSection = ui.Forge.LastFocusedSection;
+            AssertThat(bareOpenSection)
+                .OverrideFailureMessage("A bare open must land on a NAMED section, never the merged view.")
+                .IsNotNull();
+
             room.Stations.First(s => s.Key == "gear-rack").RaisePick();
-            AssertThat(ui.Forge.CraftViewVisible).IsFalse(); // setup check: narrowed by the station
+            AssertThat(ui.Forge.LastFocusedSection)
+                .OverrideFailureMessage("Setup check: the Gear Rack must have narrowed the panel to its own job.")
+                .IsEqual("materials");
 
-            ui.OpenPanel("Forge"); // the non-station, direct-open path
+            ui.OpenPanel("Forge"); // the same bare open again, now with a station's narrowing behind it
 
-            AssertThat(ui.Forge.MaterialsViewVisible)
-                .OverrideFailureMessage("A bare open must show the full panel, not stay narrowed from the last room visit.")
-                .IsTrue();
-            AssertThat(ui.Forge.CraftViewVisible)
-                .OverrideFailureMessage("A bare open must show the full panel, not stay narrowed from the last room visit.")
-                .IsTrue();
+            AssertThat(ui.Forge.LastFocusedSection)
+                .OverrideFailureMessage(
+                    "A bare open must land on the same section every time. Inheriting whatever the last "
+                    + "room visit narrowed the panel to is the bug this test was written for, and it is "
+                    + "unchanged by the sections becoming separate menus.")
+                .IsEqual(bareOpenSection);
         }
         finally { Unmount(ui); }
     }

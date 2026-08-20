@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using GameSim.Contracts;
+using GameSim.Crafting;
 using GameSim.Drama;
 using GameSim.Heroes;
 using GameSim.Professions;
@@ -108,12 +110,25 @@ public partial class RaidForecastBoard : Control
     /// long-standing contract, unchanged); the dock's callback does not, since staying open
     /// through the jump to the Forge is the entire reason it exists.</para>
     /// </summary>
-    private void RenderCounterSection(GameState state) =>
+    private void RenderCounterSection(GameState state)
+    {
+        // U-T7-4: the todo list first, then the counter forecast — the SAME order
+        // <see cref="CompanionDock"/> uses, and that identical order is a pinned property, not a
+        // coincidence: CompanionDockTests.Docket_AndModalBoard_RenderIdenticalRows_FromOneBuilder
+        // walks the dock's rows against this body's leading rows one for one, which is how the two
+        // hosts are kept from ever disagreeing about what needs doing.
+        TodoSectionBuilder.Build(_body!, state, () =>
+        {
+            Close();
+            ForgeOneRequested?.Invoke();
+        });
+
         CounterSectionBuilder.Build(_body!, state, () =>
         {
             Close();
             ForgeOneRequested?.Invoke();
         });
+    }
 
     private void RenderParty(ForecastParty party, int ordinal)
     {
@@ -331,4 +346,211 @@ public static class CounterSectionBuilder
         state.Player.SelectedProfessions.Any(professionId =>
             ProfessionRegistry.TryGet(professionId, out var profession)
             && profession!.Recipes.Values.Any(r => r.Slot == slot));
+}
+
+/// <summary>
+/// U-T7-4 (register #149, owner ruling 2026-08-18): the todo list. Asked what a Forge opened from
+/// a button should show, the owner answered "do the separate menus + maybe add a 'todo list' where
+/// we can record what needs bought, what needs crafted etc". The word "record" is the one thing
+/// this deliberately does NOT do: nothing here is hand-entered and nothing persists, because a
+/// hand-kept list in this game would be stale within one phase tick — a hero the player wrote down
+/// dies permanently, another stalls two floors deeper, the counter queue reorders overnight. So
+/// every line is DERIVED, each build, from what the sim already decided:
+///
+/// <list type="bullet">
+/// <item>what needs crafting — <see cref="DemandBoard"/>'s depth stalls (a hero held out of the
+/// dark by a slot they cannot fill) unioned with <see cref="CounterForecast.Queue"/> (who walks up
+/// to the counter tomorrow and what they will ask for), deduplicated by hero, stalls first because
+/// a hero stuck on a floor is the sharper need than one who merely wants to shop;</item>
+/// <item>what needs buying — the material each of those crafts consumes, aggregated across the
+/// list and measured against what the player actually holds, with the material-efficiency talent
+/// applied exactly as <c>ForgePanel</c> applies it (the same <c>Math.Max(1, quantity - efficiency)</c>
+/// the kernel's own <c>CraftingHandlers.ApplyCraft</c> step 5 uses), so the number here can never
+/// disagree with the number the craft will really take.</item>
+/// </list>
+///
+/// <para>Sibling to <see cref="CounterSectionBuilder"/> in every way that matters: same helper
+/// widgets, same host pair (this modal and <see cref="CompanionDock"/>), same show-only-sim-decided
+/// rule, and the same never-a-dead-click gate — a "Forge one" button appears only when a profession
+/// the player has actually selected carries a recipe for the slot in question.</para>
+/// </summary>
+public static class TodoSectionBuilder
+{
+    public const string HeaderText = "THE LIST";
+
+    /// <summary>Render the todo list into <paramref name="parent"/>.
+    /// <paramref name="onForgeRequested"/> fires once per press of any rendered "Forge one" button;
+    /// what the host does next (close itself or stay open) is the host's own call, exactly as with
+    /// <see cref="CounterSectionBuilder.Build"/>.</summary>
+    public static void Build(Node parent, GameState state, Action? onForgeRequested)
+    {
+        RaidForecastBoard.AddHeader(parent, HeaderText);
+
+        // What needs crafting. Stalls first, then tomorrow's counter, deduplicated by hero: a hero
+        // who is BOTH stalled and queued at the counter is one job, not two, and the stall line is
+        // the one that names why it matters.
+        var wanted = new List<(string HeroName, ItemSlot Slot, string Why)>();
+        var claimed = new HashSet<string>();
+
+        foreach (var stall in DemandBoard.Snapshot(state).DepthStalls)
+        {
+            if (stall.BlockingSlot is not { } slot)
+            {
+                // A stall with no blocking slot is a QUALITY gap, not a missing item — the hero's
+                // gear is full and the next floor wants better. That is still a craft, and naming
+                // the grade is the whole point (a "make them something" line with no target is the
+                // non-answer DemandPanel's own N1 note calls out), but there is no empty slot to
+                // point at, so it is reported without one.
+                if (stall is { CarriedQuality: { } carried, RequiredQuality: { } required })
+                {
+                    RaidForecastBoard.AddLabel(
+                        parent,
+                        $"  {stall.HeroName} carries {carried} gear — floor {stall.DeepestFloorReached + 1} wants {required}+.");
+                }
+
+                continue;
+            }
+
+            claimed.Add(stall.HeroName);
+            wanted.Add((
+                stall.HeroName,
+                slot,
+                $"stalled at {DepthCopy.Deepest(stall.DeepestFloorReached)}, aiming for {stall.TargetFloor}"));
+        }
+
+        foreach (var ask in CounterForecast.Queue(state))
+        {
+            if (ask.WantSlot is not { } slot
+                || !state.Heroes.TryGetValue(ask.Hero.Value, out var hero)
+                || !claimed.Add(hero.Name))
+            {
+                continue;
+            }
+
+            wanted.Add((hero.Name, slot, $"counter tomorrow, {ask.Gold}g"));
+        }
+
+        // Resolve every wanted slot to the craft that answers it BEFORE rendering anything, because
+        // the owner's own phrasing is the render order: "what needs bought, what needs crafted".
+        // The buy total cannot be known until every craft on the list has been costed, so the two
+        // passes are gather-then-render rather than one loop that prints as it goes.
+        var jobs = new List<(string HeroName, ItemSlot Slot, string Why, Recipe Recipe, int Needed)>();
+        var unanswered = new List<string>();
+        var totals = new Dictionary<string, int>();
+        var forWhom = new Dictionary<string, int>();
+
+        foreach (var (heroName, slot, why) in wanted)
+        {
+            var answer = AnsweringRecipe(state, slot);
+            if (answer is null)
+            {
+                unanswered.Add($"  {heroName} needs a {slot} — {why} — and nothing you make answers it.");
+                continue;
+            }
+
+            var (professionId, profession, recipe) = answer.Value;
+            var needed = MaterialNeeded(state, professionId, profession, recipe);
+            jobs.Add((heroName, slot, why, recipe, needed));
+            totals[recipe.MaterialKey] = (totals.TryGetValue(recipe.MaterialKey, out var running) ? running : 0) + needed;
+            forWhom[recipe.MaterialKey] = (forWhom.TryGetValue(recipe.MaterialKey, out var count) ? count : 0) + 1;
+        }
+
+        // TO BUY first: it is the shortest block, the one purchase total covers every craft below
+        // it, and it is the half of the list that expires — the vendor only sells in the Morning.
+        RaidForecastBoard.AddLabel(parent, "TO BUY");
+        var anythingShort = false;
+        // Ordinal by key so the list reads the same on every build for the same state — a list that
+        // reshuffles between two identical refreshes is a list nobody can use as a reference.
+        foreach (var key in totals.Keys.OrderBy(k => k, StringComparer.Ordinal))
+        {
+            var have = state.Player.Materials.TryGetValue(key, out var stock) ? stock : 0;
+            var owed = totals[key] - have;
+            if (owed <= 0)
+            {
+                continue;
+            }
+
+            anythingShort = true;
+            RaidForecastBoard.AddLabel(
+                parent,
+                $"  {owed} {key} — {forWhom[key]} item(s) below need {totals[key]}, you hold {have}.");
+        }
+
+        if (!anythingShort)
+        {
+            RaidForecastBoard.AddLabel(
+                parent,
+                totals.Count == 0
+                    ? "  Nothing — there is nothing on the list to buy for."
+                    : "  Nothing — you already hold what everything below needs.");
+        }
+
+        RaidForecastBoard.AddLabel(parent, "TO CRAFT");
+        if (jobs.Count == 0 && unanswered.Count == 0)
+        {
+            RaidForecastBoard.AddLabel(parent, "  Nothing — no hero is short a slot and no one is queued at the counter.");
+        }
+
+        foreach (var (heroName, slot, why, recipe, needed) in jobs)
+        {
+            // Kept to one short line: this renders into the Companion Dock's narrow card, where a
+            // three-line entry means two entries fill the whole thing.
+            RaidForecastBoard.AddLabel(parent, $"  {recipe.Name} ({slot}) for {heroName} — {why}; {needed} {recipe.MaterialKey}.");
+            RaidForecastBoard.AddButton(parent, $"TodoForge_{heroName}", "Forge one",
+                () => onForgeRequested?.Invoke());
+        }
+
+        foreach (var line in unanswered)
+        {
+            RaidForecastBoard.AddLabel(parent, line);
+        }
+    }
+
+    /// <summary>The lowest-tier recipe a SELECTED profession carries for <paramref name="slot"/>,
+    /// or null when none does. Lowest tier because that is the one the player can most likely make
+    /// today, and because it is what <c>ForgePanel</c>'s own recipe list renders first (ordered by
+    /// tier, then <c>RecipeId</c>) — the list must name the same craft the Forge will offer.
+    /// Mirrors <see cref="CounterSectionBuilder"/>'s own existence check rather than inventing a
+    /// second lookup; this one just needs the recipe itself, not merely whether one exists.</summary>
+    private static (string ProfessionId, ProfessionDefinition Profession, Recipe Recipe)? AnsweringRecipe(GameState state, ItemSlot slot)
+    {
+        (string ProfessionId, ProfessionDefinition Profession, Recipe Recipe)? best = null;
+        foreach (var professionId in state.Player.SelectedProfessions)
+        {
+            if (!ProfessionRegistry.TryGet(professionId, out var profession))
+            {
+                continue;
+            }
+
+            foreach (var recipe in profession!.Recipes.Values)
+            {
+                if (recipe.Slot != slot)
+                {
+                    continue;
+                }
+
+                if (best is null
+                    || recipe.Tier < best.Value.Recipe.Tier
+                    || (recipe.Tier == best.Value.Recipe.Tier
+                        && StringComparer.Ordinal.Compare(recipe.RecipeId, best.Value.Recipe.RecipeId) < 0))
+                {
+                    best = (professionId, profession!, recipe);
+                }
+            }
+        }
+
+        return best;
+    }
+
+    /// <summary>How much material the craft will REALLY consume — the recipe's quantity less the
+    /// material-efficiency talent when the player has unlocked it, floored at 1. This is the
+    /// kernel's own arithmetic (<c>CraftingHandlers.ApplyCraft</c> step 5) and <c>ForgePanel</c>
+    /// renders it the same way; a todo list quoting the raw recipe number would over-state the
+    /// buy by one for every efficient craft the player has earned.</summary>
+    private static int MaterialNeeded(GameState state, string professionId, ProfessionDefinition profession, Recipe recipe)
+    {
+        var unlocked = state.Player.TalentsFor(professionId);
+        var efficiency = profession.MaterialEfficiencyNode is { } node && unlocked.Contains(node) ? 1 : 0;
+        return Math.Max(1, recipe.MaterialQuantity - efficiency);
+    }
 }

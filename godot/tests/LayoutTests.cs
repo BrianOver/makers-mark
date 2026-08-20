@@ -198,8 +198,29 @@ public class LayoutTests
             // AlchemyBrewPuzzle, etc. — added directly under the panel, not under either scroll) —
             // never laid out while invisible, so their labels false-flag at the collapsed 1px a
             // REAL R7 bug produces, for a control a player can never actually see.
-            AssertLabelsReadable(Find<ScrollContainer>(ui.Forge, "CraftScroll"));
-            AssertLabelsReadable(Find<ScrollContainer>(ui.Forge, "MaterialsScroll"));
+            // U-T7-1/U-T7-3 (register #149): the two scrolls are no longer both on screen at once —
+            // a bare open lands on ONE section and the others live behind the tab row. A hidden
+            // ScrollContainer is never laid out by Godot, so measuring MaterialsScroll on a
+            // craft-focused open reads exactly the collapsed 1px a REAL R7 bug produces, for a
+            // control no player could be looking at. So focus each section and measure it while it
+            // IS the visible one. This is strictly more coverage than before, not less: the Foundry
+            // section's labels were never measured by this test at all.
+            // The MEASURED subtree is the focused section's own root, not the ScrollContainer that
+            // holds it: "materials" and "foundry" share MaterialsScroll, so measuring the whole
+            // scroll while one of them is hidden reads that one's labels at the collapsed 1px — the
+            // same false positive one level down. Craft measures its scroll because everything in
+            // CraftScroll is visible together when craft is focused.
+            foreach (var (section, subtree) in new[]
+                     {
+                         ("craft", "CraftScroll"),
+                         ("materials", "VendorSection"),
+                         ("foundry", "FoundrySection"),
+                     })
+            {
+                ui.Forge.FocusSection(section);
+                await SettleLayout(ui);
+                AssertLabelsReadable(Find<Control>(ui.Forge, subtree));
+            }
         }
         finally
         {

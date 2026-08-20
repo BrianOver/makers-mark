@@ -203,6 +203,16 @@ public partial class CompanionDock : Control
             child.Free();
         }
 
+        // U-T7-4 (register #149): the todo list, FIRST, then the counter forecast it was built
+        // beside. The order was measured, not chosen: this dock's card is short and already
+        // scrolls, and with the list appended after the counter section six queued heroes pushed
+        // its header out of view entirely — a new surface reachable only by scrolling a card most
+        // players will never scroll. The list is also the actionable half (what to craft, what to
+        // buy, and for whom) while the counter section is one of its two inputs, so first is where
+        // it belongs on merit too. The counter section itself is untouched and still immediately
+        // below: it is the screen the owner named as the one he liked, rendered by the same shared
+        // builder it always was.
+        TodoSectionBuilder.Build(_body, Adapter.CurrentState, () => ForgeOneRequested?.Invoke());
         CounterSectionBuilder.Build(_body, Adapter.CurrentState, () => ForgeOneRequested?.Invoke());
     }
 }
