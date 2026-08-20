@@ -400,6 +400,102 @@ public class LegendsWallTests
         }
     }
 
+    /// <summary>Link 5's own verb, taught at last. Honor predated the T2 teaching waves and was
+    /// carried as a NAMED exemption in <c>TeachingCoverageCensusTests.ActionUntaught</c> until this
+    /// unit: the one action this whole panel exists to offer was the only untaught one on it, and it
+    /// resolved with a sound cue and a row that re-read "— honored" on the next refresh. Same
+    /// fixture and wiring as <see cref="HonorButton_QueuesHonorMemorialAction"/>.</summary>
+    [TestCase]
+    public void FirstHonorPress_TeachesTheRite()
+    {
+        var world = WorldWithFallenHero();
+        var ui = MountMainUi(new SimAdapter(world));
+        try
+        {
+            ui.Legends.ShowWall(world);
+
+            // Deliberately NOT dismissed first: the wall's own orientation lesson is up right now,
+            // and the rite's lesson has to replace it. ConsumeFirstTouch marks an id fired before
+            // the banner decides whether to show it, so a lesson that yields to a standing banner is
+            // consumed and lost for the whole campaign — which makes preempt the only correct
+            // setting for an ACT's lesson, and makes this the assertion that proves it.
+            AssertThat(ui.Mentor.Visible)
+                .OverrideFailureMessage("setup check: the wall's own lesson should be holding the banner here.")
+                .IsTrue();
+
+            PressEnabled(ui.Legends, $"Honor_{FallenHeroId.Value}");
+
+            AssertThat(ui.Mentor.Visible)
+                .OverrideFailureMessage("The farewell rite showed nothing on the campaign's first-ever Honor press.")
+                .IsTrue();
+            var text = Find<Label>(ui.Mentor, "MentorBannerText").Text;
+            AssertThat(text).Contains(MentorVoice.Name);
+            AssertThat(text)
+                .OverrideFailureMessage(
+                    "The rite's lesson has to name the two things a player cannot discover by pressing "
+                    + "it: that it is once only, and that it is the last thing anyone does for them.")
+                .Contains("cannot be repeated");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>The wall's own first-open orientation note, the counterpart to the forecast board's
+    /// <c>forecast-board-taught</c>. Before this unit a visit that neither honored nor reforged
+    /// anything taught nothing at all — on the one screen where link 5 pays out.</summary>
+    [TestCase]
+    public void OpeningAPopulatedWall_TeachesWhatTheWallIs_WithoutPressingAnything()
+    {
+        var world = WorldWithFallenHero();
+        var ui = MountMainUi(new SimAdapter(world));
+        try
+        {
+            ui.Legends.ShowWall(world);
+
+            AssertThat(ui.Mentor.Visible)
+                .OverrideFailureMessage("A populated wall taught nothing on a first-ever visit.")
+                .IsTrue();
+            AssertThat(Find<Label>(ui.Mentor, "MentorBannerText").Text)
+                .OverrideFailureMessage("The wall's lesson has to name the one property that makes it matter: it is permanent.")
+                .Contains("permanent");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>The empty wall deliberately teaches NOTHING: <c>ConsumeFirstTouch</c> is once-ever,
+    /// so spending the firing on a wall with nothing on it would mean the real wall — the one with a
+    /// name and a depth record on it — is never introduced at all.</summary>
+    [TestCase]
+    public void AnEmptyWall_SpendsNoLesson_SoThePopulatedWallStillTeaches()
+    {
+        var empty = GameFactory.NewGame(6002); // the same empty fixture EmptyCampaign_... uses
+        var ui = MountMainUi(new SimAdapter(empty));
+        try
+        {
+            ui.Legends.ShowWall(empty);
+            AssertThat(ui.Legends.ShowedEmptyState)
+                .OverrideFailureMessage("setup check: this fixture must render the invitational empty state.")
+                .IsTrue();
+            AssertThat(ui.Mentor.Visible)
+                .OverrideFailureMessage("An empty wall has nothing to orient a player to, and must not burn the once-ever firing.")
+                .IsFalse();
+
+            ui.Legends.ShowWall(WorldWithFallenHero());
+            AssertThat(ui.Mentor.Visible)
+                .OverrideFailureMessage("The populated wall must still teach after an empty visit — the firing was not spent.")
+                .IsTrue();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
     /// <summary>U-T2 Wave E ("reforge", the long tail): the first-ever Reforge press teaches what
     /// the mechanic is — same fixture/wiring as
     /// <see cref="ReforgeButton_DefaultPickers_ReforgesTheSourceItemsOwnRecipe_MintsTheHeirloom"/>.</summary>
