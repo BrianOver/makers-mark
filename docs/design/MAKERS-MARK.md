@@ -4892,20 +4892,35 @@ behaviour including the empty-wall case.
 
 **A sharp edge in the shared teaching contract, found here and worth its own unit.**
 `TutorialFlow.ConsumeFirstTouch` marks an id fired and returns its copy; `MentorBanner.ShowFirstTouch`
-then checks `!preempt && Visible` and **discards** that copy if a banner is already up. So a lesson
-that yields is not deferred — it is consumed and never shown again for the whole campaign. Measured:
-of **twelve** `ShowFirstTouch` call sites in `godot/scripts`, **zero** passed `preempt` before this
-unit, so every one of them silently loses its lesson to any banner that happens to be standing; and
-`ForgeMentorLessonsTests` already works around it in a test comment
-("free the banner slot for the mark-read lesson"). Adding the wall's orientation note made this
-reachable immediately, and `FirstReforgePress_TeachesTheReforgeLesson` caught it — the reforge lesson
-was being eaten by the note. Fixed HERE only for the two acts on this panel, which now preempt: an
-act's lesson replaces a generic orientation note, and the note is the thing that yields.
+then checked `!preempt && Visible` and **discarded** that copy if a banner was already up — while
+the method's own doc claimed the opposite, that the lesson "simply waits for a later call once the
+banner is free again". There is no later call: the id never fires again.
 
-**Booked, not built: `MentorBanner` should QUEUE a yielded lesson rather than drop it**, draining on
-the player's own "Got it" press (never a timer). That makes `preempt` a question of ordering instead
-of survival and fixes the class rather than two instances. It changes `Dismiss` semantics for all
-twelve sites, so it wants its own unit and its own measurement rather than a ride on this one.
+**Corrected, because the first write-up of this overstated it.** The lesson was not lost from the
+game. `LessonsPanel` renders every id `FirstTouch.Fired` holds, forever, so the words survived in the
+Lessons book. What was lost was the **teachable moment** — the one where the player has just done the
+thing the lesson explains. That is still a real defect, and it is the whole reason the first-touch
+tier exists separately from the book, but "never shown again for the whole campaign" was wrong.
+
+Measured: of **twelve** `ShowFirstTouch` call sites in `godot/scripts`, **zero** passed `preempt`, so
+every one of them silently lost its moment to any banner that happened to be standing; and
+`ForgeMentorLessonsTests` already worked around it in a test comment ("free the banner slot for the
+mark-read lesson"). Adding the wall's orientation note made it reachable immediately, and
+`FirstReforgePress_TeachesTheReforgeLesson` caught it — the reforge lesson was being eaten by the note.
+
+**Fixed for the class, not the instance.** `MentorBanner` now QUEUES a lesson that arrives while it is
+busy, and "Got it" drains one per press: the player advances through the backlog, and only an empty
+queue closes the banner. Still no timer anywhere (law) — nothing appears or disappears except on a
+press. `preempt` is now a question of ORDER rather than survival: an urgent lesson takes the screen
+and the displaced note goes to the front of the queue, so it is the next thing shown. The backlog is
+capped at four, deliberately low: a player facing a fifth stacked lesson is being lectured rather than
+taught, every one is still in the Lessons book, and a run that reaches the cap means some caller is
+firing in a batch — which is its own bug rather than a queue to lengthen.
+
+**Still outstanding, named rather than assumed done:** `ForgePanel` keeps its own Wave-B-era private
+copy of this banner (its own class doc says so and calls de-duplicating it a follow-up), so the queue
+does not reach that one path. It has its own ad-hoc handling — `if (!ShowMaterialCeilingLesson())
+ShowMarkReadLesson();` — which is why it never lost a lesson the way the shared banner did.
 
 ## §11.14.11 T7 — The forge stops being one long menu (owner ruling, 2026-08-18)
 
