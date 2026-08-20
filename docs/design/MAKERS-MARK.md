@@ -4871,6 +4871,42 @@ Every register item, and the unit that closes it. A blank here is a failure of t
 | 167 | 8g in the sentence, 11g on the chip | U-T5-3 |
 | — | "Returned safely" after a rout (found, unreported) | U-T5-4 |
 
+## §11.14.12 T8 — Link 5's own verb was the untaught one (2026-08-19)
+
+`LegendsWall` is the screen link 5 pays out on: the fallen, the deepest floors anyone reached, and
+the pieces that got them there with the player's mark still on them. Two teaching gaps sat on it,
+both carried as NAMED exemptions rather than papered over, and both are now closed:
+
+- **`HonorMemorialAction` had no first-touch lesson at all.** The farewell rite — the one action the
+  whole panel exists to offer — resolved with a sound cue and a row that re-read "— honored" on the
+  next refresh. Nothing ever said what the rite was for, that it is once per hero forever, or that
+  it costs nothing. It predated the T2 waves and `TeachingCoverageCensusTests.ActionUntaught` said so
+  in as many words.
+- **The wall itself had no first-open orientation note** the way `RaidForecastBoard` has
+  `forecast-board-taught`, so a visit that neither honored nor reforged anything taught nothing.
+  Deliberately fired AFTER the empty-state early return: `ConsumeFirstTouch` is once-ever, and
+  spending the firing on an empty wall would mean the real wall is never introduced.
+
+Both exemption rows are deleted, both ids are registered in the census maps, and three tests pin the
+behaviour including the empty-wall case.
+
+**A sharp edge in the shared teaching contract, found here and worth its own unit.**
+`TutorialFlow.ConsumeFirstTouch` marks an id fired and returns its copy; `MentorBanner.ShowFirstTouch`
+then checks `!preempt && Visible` and **discards** that copy if a banner is already up. So a lesson
+that yields is not deferred — it is consumed and never shown again for the whole campaign. Measured:
+of **twelve** `ShowFirstTouch` call sites in `godot/scripts`, **zero** passed `preempt` before this
+unit, so every one of them silently loses its lesson to any banner that happens to be standing; and
+`ForgeMentorLessonsTests` already works around it in a test comment
+("free the banner slot for the mark-read lesson"). Adding the wall's orientation note made this
+reachable immediately, and `FirstReforgePress_TeachesTheReforgeLesson` caught it — the reforge lesson
+was being eaten by the note. Fixed HERE only for the two acts on this panel, which now preempt: an
+act's lesson replaces a generic orientation note, and the note is the thing that yields.
+
+**Booked, not built: `MentorBanner` should QUEUE a yielded lesson rather than drop it**, draining on
+the player's own "Got it" press (never a timer). That makes `preempt` a question of ordering instead
+of survival and fixes the class rather than two instances. It changes `Dismiss` semantics for all
+twelve sites, so it wants its own unit and its own measurement rather than a ride on this one.
+
 ## §11.14.11 T7 — The forge stops being one long menu (owner ruling, 2026-08-18)
 
 Closes the structural half of **#149**, and takes up the owner's own addition to it.

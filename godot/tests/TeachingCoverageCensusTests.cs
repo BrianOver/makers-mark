@@ -243,6 +243,10 @@ public class TeachingCoverageCensusTests
         [typeof(UnlockTalentAction)] = "first-talent-unlock",
         [typeof(SetProfessionsAction)] = "second-profession-picked",
         [typeof(ReforgeHeirloomAction)] = "reforge-heirloom",
+        // Link 5's own verb, taught at last. It predated the T2 waves and was carried as a named
+        // exemption in ActionUntaught until this unit -- the ONE action LegendsWall exists to offer
+        // was the only untaught one on it.
+        [typeof(HonorMemorialAction)] = "honor-memorial",
         [typeof(UpgradeForgeAction)] = "foundry-four-verbs",
         [typeof(BuyForgeSupplyAction)] = "foundry-four-verbs",
         [typeof(MasterworkAttemptAction)] = "foundry-four-verbs",
@@ -279,9 +283,6 @@ public class TeachingCoverageCensusTests
             "CounterAnsweredAtLeastOnce (TutorialFlow.cs) recognizes CloseCounterAction as an optional " +
             "fast-path AFTER an answer, but never REQUIRES it -- a player can finish the OpenCounter " +
             "step via Present/Suggest/Haggle alone. No copy anywhere names Close specifically.",
-        [typeof(HonorMemorialAction)] =
-            "Predates T2 (Wave 4c/U18). Link 5's memorial mechanic has no first-touch lesson and sits " +
-            "outside every Wave A-F unit in §11.14.4 -- flagged for a future wave, not silently assumed taught.",
         [typeof(ConcludeApprenticeshipAction)] =
             "The tutorial's own dismiss/graduation action. The chain that would teach it is the chain " +
             "it ends -- the confirm row's own copy ('End it') is self-explanatory UI chrome, not a " +
@@ -370,6 +371,10 @@ public class TeachingCoverageCensusTests
         [typeof(ProgressionPanel)] = "second-profession-picked",
         [typeof(CommissionBoard)] = "hold-or-sell",
         [typeof(RaidForecastBoard)] = "forecast-board-taught",
+        // The wall's own first-open orientation note, the counterpart to the forecast board's. It
+        // was carried as a named exemption in PanelUntaught until this unit, on the honest grounds
+        // that a visit which neither honored nor reforged anything saw nothing taught.
+        [typeof(LegendsWall)] = "legends-wall-taught",
     };
 
     /// <summary>Six panels taught by the numbered chain opening a real submit site inside them.</summary>
@@ -397,11 +402,6 @@ public class TeachingCoverageCensusTests
             "F's own 'show me that lesson again' unit -- already shipped in Wave A, LessonsPanel.cs' " +
             "own FirstTouch.Fired loop). It re-displays past teaching; it does not teach a new " +
             "mechanic on open.",
-        [typeof(LegendsWall)] =
-            "Reforge is taught ('reforge-heirloom') and Honor has no lesson at all (see " +
-            "HonorMemorialAction's own exclusion above), but the WALL ITSELF has no first-open " +
-            "orientation lesson the way RaidForecastBoard has ('forecast-board-taught') -- a visit " +
-            "that neither honors nor reforges anything sees nothing taught. Flagged, not papered over.",
     };
 
     [TestCase]

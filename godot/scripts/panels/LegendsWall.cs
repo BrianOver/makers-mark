@@ -94,6 +94,15 @@ public partial class LegendsWall : Control
             return;
         }
 
+        // The wall's own orientation lesson, fired here rather than in either row builder: a visit
+        // that neither honors nor reforges anything used to see nothing taught at all, so the one
+        // screen where link 5 pays out ("the outcome becomes the town's memory, with your name in
+        // it") explained itself only to a player who already pressed something on it. Same shape and
+        // same call as RaidForecastBoard.ShowForecastBoardLesson, and deliberately after the empty
+        // state's early return above: there is nothing to orient a player to on an empty wall, and
+        // spending the once-ever firing there would mean the real wall is never introduced.
+        ShowWallLesson();
+
         RenderMemorials(state);
         RenderDepthsRecords(state);
         RenderLegendItems(state, legendItems);
@@ -150,6 +159,7 @@ public partial class LegendsWall : Control
                 var honor = new Button { Name = $"Honor_{hero.Value}", Text = "Honor" };
                 honor.Pressed += () =>
                 {
+                    ShowHonorLesson();
                     Adapter?.Queue(new HonorMemorialAction(hero));
                     // U-audio-3 (verbs that resolved silently): the farewell rite — the one action
                     // this whole panel exists to offer — had no acknowledgement of any kind beyond
@@ -262,9 +272,55 @@ public partial class LegendsWall : Control
         }
     }
 
+    /// <summary>
+    /// Fires the first time the player ever sees a wall with anything on it. Link 5 is the chain's
+    /// last link — the outcome becoming the town's memory with the player's name in it — and this is
+    /// the screen it pays out on, so it explains what the three blocks below are and that they are
+    /// permanent. Not <c>preempt</c>: it is the generic orientation note, so it yields to
+    /// <see cref="ShowHonorLesson"/> if a player's first-ever visit is also their first-ever Honor.
+    /// </summary>
+    private void ShowWallLesson() =>
+        Mentor?.ShowFirstTouch(
+            Tutorial?.ConsumeFirstTouch(
+                "legends-wall-taught",
+                MentorVoice.Speak(
+                    "This is the town's memory, and it is the only permanent thing here — the fallen, "
+                    + "the deepest floors anyone reached, and the pieces that got them there with your "
+                    + "mark still on them. Nobody comes back off this wall.")));
+
+    /// <summary>
+    /// Fires the first time the player ever performs the farewell rite. Honor is link 5's own verb
+    /// and predates the T2 teaching waves, so until now the ONE action this panel exists to offer
+    /// was the only untaught one on it — the rite resolved with a sound cue and a row that re-read
+    /// "— honored" on the next refresh, and nothing ever said what it was for or that it is once per
+    /// hero, forever. Fired on the press, before the queue, so the lesson lands with the act rather
+    /// than a phase tick later.
+    /// </summary>
+    private void ShowHonorLesson() =>
+        Mentor?.ShowFirstTouch(
+            Tutorial?.ConsumeFirstTouch(
+                "honor-memorial",
+                MentorVoice.Speak(
+                    "The rite is for you, not for them — you say the name out loud once, in the "
+                    + "evening, and the town keeps it. It costs nothing and it cannot be repeated, "
+                    + "and it is the last thing anyone will do for them.")),
+            preempt: true);
+
     /// <summary>U-T2 Wave E ("reforge", the long tail): fires the first time the player ever
     /// presses a Reforge button — a fallen hero's worn heirloom, remade in a recipe/material the
-    /// player now chooses, same forge and same mark as any other craft.</summary>
+    /// player now chooses, same forge and same mark as any other craft.
+    ///
+    /// <para><b>Gained <c>preempt: true</c> when <see cref="ShowWallLesson"/> was added, and the
+    /// reason is a sharp edge in the shared contract worth naming here.</b>
+    /// <c>TutorialFlow.ConsumeFirstTouch</c> marks an id fired and returns its copy; the banner's
+    /// own <c>!preempt &amp;&amp; Visible</c> check then DISCARDS that copy if a banner is already
+    /// up. So a yielded lesson is not deferred — it is consumed and never shown again, for the whole
+    /// campaign. Before the wall's orientation note existed nothing was ever up when this fired, so
+    /// the default was harmless; with it, the first-ever Reforge press in the same visit as the
+    /// first-ever wall open would have silently eaten this lesson (caught by
+    /// <c>FirstReforgePress_TeachesTheReforgeLesson</c>, which is exactly what that test is for).
+    /// An ACT's lesson preempts the generic orientation note; the note is the thing that yields.</para>
+    /// </summary>
     private void ShowReforgeLesson() =>
         Mentor?.ShowFirstTouch(
             Tutorial?.ConsumeFirstTouch(
@@ -272,7 +328,8 @@ public partial class LegendsWall : Control
                 MentorVoice.Speak(
                     "A fallen hero's gear can be reforged into something new — pick the recipe and "
                     + "the material, and the piece they carried becomes a fresh mark instead of "
-                    + "staying a memorial.")));
+                    + "staying a memorial.")),
+            preempt: true);
 
     /// <summary>Mirrors <c>HeirloomHandlers.Apply</c>'s guards 4-9 (the SAME recipe/profession/
     /// material/tier/quantity/action-budget chain <c>CraftingHandlers</c> uses) for a candidate
