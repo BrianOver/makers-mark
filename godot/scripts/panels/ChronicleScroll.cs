@@ -1,4 +1,5 @@
 using GameSim.Contracts;
+using GameSim.Drama;
 using Godot;
 using GodotClient.Ui;
 
@@ -106,7 +107,13 @@ public partial class ChronicleScroll : SimPanel
         // Each line is one thing the campaign actually produced. Zeroes are rendered, not hidden:
         // "no hero was lost" is a real and earned outcome, and a chronicle that silently omits its
         // empty rows would read as if those systems had never existed.
-        AddChronicleLine(_lines, "The deepest floor reached", $"{e.DeepestFloorReached}");
+        // #166's family, found by census rather than by report: this line renders zeroes on
+        // purpose (see the note just above), and a campaign where nobody ever delved renders the
+        // zero as "0" under the label "The deepest floor reached" -- a floor that does not exist,
+        // in the closing scroll, which is the last thing the player reads. DepthCopy is the one
+        // place that turns the raw int into prose, and "not yet" is the honest reading of a
+        // never-delved campaign.
+        AddChronicleLine(_lines, "The deepest floor reached", DepthCopy.Deepest(e.DeepestFloorReached));
         AddChronicleLine(
             _lines,
             "Heroes who did not come back",

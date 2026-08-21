@@ -1735,6 +1735,14 @@ public partial class MainUi : Control
                                "Your talents and recipes stay with you.";
                     break;
                 case ClimaxReached e:
+                    // Deliberately NOT routed through DepthCopy, and this is the one exemption in
+                    // the family. ArcDirectorSystem emits ClimaxReached only when
+                    // `maxRank >= ClimaxRank` -- the terminal venue's own bottom floor has fallen --
+                    // so the value here is provably far above 0 and can never be the "floor 0" #166
+                    // was about. Substituting DepthCopy would read "Your heroes have reached not yet"
+                    // in the impossible case, which is worse prose than the raw int in every case.
+                    // ChronicleFloorCopyTests pins that guarantee so this stays true by construction
+                    // rather than by luck.
                     climax = $"Your heroes have reached floor {e.DeepestFloorReached}. Whatever is down there knows it.";
                     break;
                 case HeroConsideringLeaving e:
