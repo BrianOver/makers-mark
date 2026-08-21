@@ -4930,27 +4930,120 @@ Every T9 beat is built to that shape. The measurement above says they will fire 
 every player; the shape says nothing breaks for the one who they do not fire for. Both halves are
 required: a beat that assumes its fact is a beat that lies on the unlucky seed.
 
-### The units
+### Scope, revised on owner direction 2026-08-21: "this tutorial re work shouldn't be small"
+
+The eight units first booked here were sized for a chain extension. They were too small, in two
+specific, measured ways.
+
+**First: `PanelControl` is blind to every surface the payoff happens on.** Ten panels are
+drawer-registered — Forge, Shop, Heroes, Tavern, Depths, Bounties, Demand, HeroCards, Progress,
+Lessons. The **Ledger, Commissions, Legends, Camp and Forecast are not**; they are modal siblings.
+`TutorialOverlay` resolves a `PanelControl` anchor through `DrawerHost.PanelContent`, so the anchor
+kind built to point at controls inside panels cannot reach the proof card, the rite, accept/decline,
+or the vigil card. It has **one caller and zero registry rows** today, and "wire four rows" was
+under-scoped twice over: the resolver needs a modal scope, and the targets need stable names —
+today's verb buttons are per-entity (`CommissionAccept_{hero}`, `Honor_{hero}`, `Stock_{item}`), so
+a step must anchor to the **container**, not the button, and most of those containers are unnamed.
+
+Twenty-five concrete player actions exist and the numbered chain requires about seven. Nearly every
+one of the rest is a control inside a panel or a modal. So for a full guided course `PanelControl`
+is not a nice-to-have for four steps — it is the **default** anchor kind, and it does not work yet.
+
+**Second, and this one is a design constraint rather than a bug: day 4 is a pile-up.** The same
+measurement that justifies the course convicts a naive build of it. Counting first-occurrence course
+voices per seed per day over the same twelve chronicles, plus the warrant-end beat at day 4's dawn:
+
+| Worst day's voice count | Seeds |
+|---|---|
+| 4 voices (act II + proof + commission-fulfilled + warrant dawn) | 8 of 12 |
+| 5 voices (the above **plus the first hero death**) | 4 of 12 |
+
+Every seed's worst day is day 4. `MentorBanner`'s queue caps at **four**, and its own doc says a run
+that reaches the cap means "some caller is firing in a batch — which is its own bug." So on a third
+of seeds the pile-up fills or overflows the queue, and Bryn's proof line — the most important
+sentence in the game — arrives third or fourth on the night a hero also died.
+
+This repo's history says stacked voices is the house failure mode: the 1287× memorial nag, and T8's
+finding that twelve `ShowFirstTouch` sites silently lost their moment to a standing banner. So the
+voice budget is **U-T9-0 and it ships before any beat**, because it shapes every beat and is
+expensive to retrofit.
+
+### The course: seven days, five acts, thirteen rows
+
+Three lanes, which is what the code already is and has never been named:
+
+1. **The numbered course** — steps the player *causes*, days 1–3. Deterministic. Today's chain, minus
+   one move.
+2. **Dormant acts** — armed on a sim fact, silent until it exists, bounded window, `Done`/`Skipped`,
+   honest retire. `LossActRow` is the shipped template. **Days 4–7 are dormant acts entirely, with
+   zero deterministic steps**, because everything the course must teach after day 3 is a fact the
+   player cannot schedule. That is not a compromise; it is the only shape that does not lie on the
+   unlucky seed.
+3. **First-touch** — tools and references, once-ever, unchanged. The discipline that keeps the course
+   from becoming a chore: the numbered lane only ever holds beats on the sentence itself. The
+   mark-read, the Docket, the forecast board and every Wave-E tool stay first-touch.
+
+**Four acts become five.** `TutorialAct` folds links 3 and 4 into one "Dark", and its own doc concedes
+the Memory act is "minus the fifth link's own beats (not yet in the registry)". Split it: **Mark,
+Hand-Off, Dark, Proof, Memory** — five acts for five links. The proof is the one thing no other game
+has; it earns its own chapter heading, and act-scoped numbering absorbs the change without touching
+any global count.
+
+**Graduation is event-shaped, not date-shaped.** On the median seed the sentence completes day 4–6.
+`Complete()` fires when the Memory act's last row resolves, with day 8's existing backstop unchanged.
+
+**Day 7 is the honest ceiling and the loss act is why.** Death median is 6, range 4–9, so a chain
+"through day 6" misses the loss for nearly half of players. `ConsumeFirstLossBlock` checks only
+`Dismissed`, never `Completed` — the one beat that can outlive graduation is already built to.
+
+### The named-hero spine: adoption, not selection
+
+The course cannot choose the hero. Who buys, who carries, who earns the beat and who dies are all sim
+decisions, and a course that promises one hero's story lies on the seed where that hero never shops.
+So: **`ThreadHero(state)`** — one pure derivation, no new state, no persistence — is the first hero,
+in event order, to receive the player's work (`ItemSold` with `FromPlayerShop`, else the first
+accepted commission's hero, else the first `SupplyDelivered`). Day 1's send-off beat already names
+buyer, item and price, so the adoption moment ships; Bryn adds one line to it: *"Remember the name."*
+
+**The hard rule: `ThreadHero` may choose which name a row's copy prints. It may never appear in any
+`IsDone` predicate.** Completion stays player-caused or honestly `Skipped`. When the beat lands on
+someone else the course follows the beat, not the protagonist — Bryn's proof copy is written about the
+mechanism and never asserts which hero; the card asserts the hero. When the two coincide, which is the
+common case since the buyer is usually the carrier, it lands harder for free. If the thread hero dies
+early that *is* the loss act, landing on someone the player was told to remember.
+
+### The units, revised
 
 | Unit | What |
 |---|---|
-| U-T9-1 | **The proof, day 4.** A numbered beat armed on the first `AttributionBeatEvent`, walking the player to where the beat is readable and naming what a counterfactual replay *is* — that the sim re-ran the fight with the player's craft removed and it went differently, and that only something they forged can ever earn one. Replaces the current first-touch-only `the-proof-taught`, which fires wherever the player happens to be standing. Link 4 stops being an accident. |
-| U-T9-2 | **The loss gets a voice and a row.** The dormant loss act already exists, is anchored, bounded and honest — and is voiced by nobody. Bryn speaks it, and it becomes a numbered row in the chain rather than a Ledger interjection. Median day 6, every seed. |
-| U-T9-3 | **The memory, days 6–7.** The wall and the rite (taught by T8) and the chronicle enter the numbered chain, so link 5 is walked rather than stumbled into. The Docket pattern is the template: teach once at first open, then leave it as the player's own reference. |
-| U-T9-4 | **Graduation.** `Complete()` currently sets a flag and saves. Bryn says goodbye — the one line the apprenticeship owes — and the quick-travel banner stops being the only voice at the end of the course. |
-| U-T9-5 | **The anchors reach the door and then through it.** Steps 1, 2 and 7 tell the player to walk to a building while pulsing a station *inside* it (`Town2D.FindStation` resolves through `FindInteriorRoom`) — so the player's first two actions in the game have their only visual guidance behind a wall. `NotifyEnteredBuilding` already knows a Station anchor's `Key` **is** the venue key; pulse the building until arrival, hand off to the station on entry. One anchor, two phases. |
-| U-T9-6 | **The highlight stops quitting at panel edges.** `TutorialAnchor.ForPanelControl` was built to point at controls inside a panel, is tested end-to-end, throws on a miss — and has **one caller and zero registry rows**. Four steps end with "press a button the highlight cannot reach": Stock (step 3), Post (step 4), the Ledger's Buy (step 9), Accept/Decline (step 11). Wire those four. |
-| U-T9-7 | **Bryn stops speaking like an engineer, and stops lying about what she offers.** She says **"the sim"** in two player-facing lines, one of them link 4's own proof lesson — the most important sentence in the game. Her greeting promises *"Ask me anything"* and pressing E routes to `ShowBellToast`, the same transient banner used for **action rejections**, so her teaching gets four seconds while the identical words in `MentorBanner` wait for the player's own "Got it". Purge the engineering register; give her the untimed banner she already owns. |
-| U-T9-8 | **Three render defects on the teaching surfaces.** Completed steps render a glyph and **no label** (`ObjectiveTracker` builds a text label from a non-empty `ShortLabel` and only the glyph arrives — cause not yet identified, so this unit starts with a measuring test, not a fix). The Lessons book renders `**bold**` markers **literally** — 19 copy lines carry them, `ObjectiveTracker.Plain` strips them for the card, and `LessonsPanel` never calls it. That book also titles entries with raw slugs (`◆ the-mark-read`). |
+| U-T9-0 | **The voice budget.** A priority rule — on a night with a death the death speaks and the proof arms for tomorrow (the dormant window already supports a deferred start); a first-touch never queues ahead of a numbered dormant row — plus a fast-lane census over the batch chronicles asserting no seed, no night, exceeds the budget. Ships before any beat. |
+| U-T9-6 | **The anchor reaches everywhere** (widened). Register the five modals in the same content-root table the drawer uses, with the same throw-on-miss contract; give the payoff containers stable names so a step anchors to the section rather than a per-entity button; and extend the journey anchor shipped in U-T9-5 to panels — approach via the venue building or the `Open{PanelId}` tray button, hand off to the control once the panel is open. Without this every in-panel beat highlights nothing, which is the station-behind-a-wall defect through a second door. |
+| U-T9-8 | **Three render defects on the teaching surfaces**, unchanged and still early: completed steps render a glyph and no label; the Lessons book renders `**bold**` literally (19 copy lines carry it, `ObjectiveTracker.Plain` strips it for the card and `LessonsPanel` never calls it); that book titles entries with raw slugs. A course written onto a surface that cannot render its own copy is wasted copy. |
+| U-T9-9 | **Five acts.** Split Dark into Dark and Proof. |
+| U-T9-10 | **`ThreadHero`**, with its hard rule pinned by a test: no `IsDone` predicate may read it. |
+| U-T9-1 | **The proof** — the Proof act's dormant row, armed on the first `AttributionBeatEvent`, anchored into the Ledger's beat card, voiced by Bryn. Replaces the `the-proof-taught` first-touch, which fires wherever the player happens to be standing. |
+| U-T9-2 | **The loss gets a voice and a row** — the dormant act exists, is anchored, bounded and honest, and is voiced by nobody. |
+| U-T9-3 | **The memory** — ONE row, not a wall-and-chronicle-and-rite trio; T8's shipped first-touches carry the detail. |
+| U-T9-4 | **Graduation** — Bryn's goodbye, fired on the Memory act resolving rather than only at the backstop. |
+| U-T9-7 | **Bryn's arc** (widened): five new lines — introduction, proof, first death, promise-kept, graduation — plus purging "the sim" from her two player-facing lines, plus the E-press routing fix (her station currently answers through `ShowBellToast`, the four-second **rejection** banner, while the untimed `MentorBanner` she already owns waits for the player's own press; her greeting promises "Ask me anything," which a four-second toast cannot keep). |
+
+### What the course cuts, so it does not only add
+
+1. **PostBounty moves from day 1 to day 3.** On day 1 it competes for scarce gold and slots against the
+   buy-craft-shelve spine, and teaches an aiming lever before the player has met anyone to aim at.
+   Named knock-on: `SecondProfessionMilestoneReached` is the first paid bounty, so the second-profession
+   affordance arrives around day 4–5 instead of day 2–3 — mid-course, which is arguably its better moment.
+2. **The doubled warrant reminder collapses to one.** MeetHeroes and Commission both end with it; with
+   the loss act voiced, the second copy is redundant.
+3. **The mark-read stays a first-touch.** So do the Docket and the forecast board. Resist numbering them.
 
 ### Ordering
 
-U-T9-5 and U-T9-6 first: they are cheap, they are pure plumbing on a shipped and tested mechanism,
-and every beat added afterwards inherits working highlighting instead of needing it retrofitted.
-U-T9-8 rides alongside them — a teaching surface that cannot render its own copy undermines whatever
-is written for it. Then the beats in day order: U-T9-1, U-T9-2, U-T9-3, U-T9-4. U-T9-7 is copy and
-can land with any of them, but not after U-T9-1, since U-T9-1 rewrites the very line that contains
-the worst instance.
+U-T9-0 first — it is a constraint, not a feature, and every beat inherits it. Then U-T9-6 and U-T9-8
+together: the anchor has to reach a surface before a beat can point at one, and the surface has to
+render its own copy. Then U-T9-9 and U-T9-10, both small and both prerequisites for the beats' copy.
+Then the beats in day order: U-T9-1, U-T9-2, U-T9-3, U-T9-4. U-T9-7 lands with or before U-T9-1,
+never after — U-T9-1 rewrites the line that contains the worst "the sim" instance.
 
 ### What must survive, named so a rework cannot quietly discard it
 
