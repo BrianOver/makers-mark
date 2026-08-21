@@ -4615,6 +4615,16 @@ watching a hero decide, seeing the mark on anything, or seeing a counterfactual 
 all five craft minigames are untaught, and of the six dilemmas the game is made of, **pricing and
 the slot budget are never taught at all**.
 
+**Both of those two are taught now, and the census that tracks them is `DilemmaLessonsTests`, not
+this paragraph** (which is preserved as the finding that set T2's scope, not as a status line).
+Pricing landed as `pricing-as-a-decision`. The slot budget was subtler: a lesson for its mechanic
+already existed and had gone FALSE — `first-talent-unlock` said "Unlocking one costs you nothing"
+after U-T1-9 made the unlock spend a day action slot — so the one place the trade-off lives was
+denying there was one. Naming the cost honestly is what taught it. Five of six are taught today; #5
+("buy the ore or buy the goodwill") is the one honest gap, because no goodwill mechanism exists —
+register #170, and an owner decision, since teaching it would make the game lie about its own
+choices.
+
 The rework is four acts on the five-link spine — The Mark, The Hand-Off, The Dark, The Memory —
 plus a **first-touch** tier so the long tail teaches itself once, the moment it becomes reachable,
 and then lives in the Lessons book. That two-tier split is what makes 25 actions tractable without

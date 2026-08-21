@@ -221,15 +221,16 @@ public class DilemmaLessonsTests
             new DilemmaStatus(DilemmaOutcome.Taught, "pricing-as-a-decision")),
         (3, "fill-the-empty-slot-or-upgrade-the-full-one",
             new DilemmaStatus(DilemmaOutcome.Taught, "the-muster-speaks")),
+        // Taught at last, and the history is worth keeping because this row has been wrong twice.
+        // It first read Blocked on two citations that were both false the day they were written
+        // (Dilemma4_IsNotBlockedWhileTheSlotCostExists exists to stop that recurring). It then read
+        // Missing, which was true of the DILEMMA but missed the sharper fact: a lesson for this
+        // mechanic already existed and was actively denying the cost -- "Unlocking one costs you
+        // nothing" -- having been written before U-T1-9 charged a slot for it. Naming the cost
+        // honestly is what teaches the dilemma; Dilemma4_LessonNamesTheSlotCost_NeverDeniesIt pins
+        // the copy against drifting back.
         (4, "spend-the-slot-or-bank-it",
-            new DilemmaStatus(DilemmaOutcome.Missing,
-                "The MECHANIC exists and the LESSON does not. This row previously read Blocked, citing " +
-                "PR #549 as parked and ActionBudget.ConsumesSlot as still excluding UnlockTalentAction -- " +
-                "both halves were false when they were written: #549 is merged (it is the recipe-gating " +
-                "unit, register #157, nothing to do with hero traits or death rates) and ConsumesSlot " +
-                "lists UnlockTalentAction explicitly. So spending a slot on a talent versus banking it " +
-                "is a live choice today with nothing teaching it. Dilemma4_IsNotBlockedWhileTheSlotCost" +
-                "Exists pins that, so this row cannot go back to Blocked while the mechanic ships.")),
+            new DilemmaStatus(DilemmaOutcome.Taught, "first-talent-unlock")),
         (5, "buy-the-ore-or-buy-the-goodwill",
             new DilemmaStatus(DilemmaOutcome.Missing,
                 "Issue #170 / docs/playtests/2026-08-16-owner-playtest-register.md: OreMarketHandlers " +
@@ -252,6 +253,51 @@ public class DilemmaLessonsTests
     /// rested on is now asserted directly against the sim. If the slot cost exists, #4 is not
     /// blocked on the slot cost — whatever else may be true of it.</para>
     /// </summary>
+    /// <summary>
+    /// Dilemma #4's copy, pinned against the exact drift that made it wrong. The lesson for this
+    /// mechanic already existed and said "Unlocking one costs you nothing" — true when written, then
+    /// falsified by U-T1-9 charging a day action slot for <c>UnlockTalentAction</c>. A lesson that
+    /// denies a cost is worse than an absent one: the player has been told there is no trade-off to
+    /// weigh, in the one place the trade-off lives.
+    ///
+    /// <para>So this asserts the two halves TOGETHER — the sim charges the slot, and the copy the
+    /// player actually reads says so — because either one alone can go green while the pair lies.
+    /// Driven through a real unlock press, reading the banner a person would read.</para>
+    /// </summary>
+    [TestCase]
+    public void Dilemma4_LessonNamesTheSlotCost_NeverDeniesIt()
+    {
+        AssertThat(ActionBudget.ConsumesSlot(new UnlockTalentAction("keen-eye", "blacksmith")))
+            .OverrideFailureMessage(
+                "The mechanic half is gone: unlocking a talent no longer spends a slot. Then this "
+                + "lesson's copy is wrong in the other direction and dilemma #4 has no mechanic — "
+                + "invert both on purpose, in a diff.")
+            .IsTrue();
+
+        var ui = MountMainUi();
+        try
+        {
+            ui.OpenPanel("Forge");
+            PressEnabled(ui.Forge, "Unlock_keen-eye");
+
+            var text = Find<Label>(ui.Forge, "ForgeMentorText").Text;
+            AssertThat(Find<PanelContainer>(ui.Forge, "ForgeMentorBanner").Visible)
+                .OverrideFailureMessage("The talents lesson never showed on the campaign's first-ever unlock press.")
+                .IsTrue();
+            AssertThat(text).Contains(MentorVoice.Name); // attributed to Bryn, never an anonymous tooltip
+            AssertThat(text)
+                .OverrideFailureMessage(
+                    $"The talents lesson does not name the action slot the unlock spends. Copy: \"{text}\"")
+                .Contains("action slot");
+            AssertThat(text.Contains("costs you nothing"))
+                .OverrideFailureMessage(
+                    "The talents lesson is back to denying the cost — the exact sentence U-T1-9 "
+                    + $"falsified. Copy: \"{text}\"")
+                .IsFalse();
+        }
+        finally { Unmount(ui); }
+    }
+
     [TestCase]
     public void Dilemma4_IsNotBlockedWhileTheSlotCostExists()
     {
@@ -302,17 +348,20 @@ public class DilemmaLessonsTests
             .OverrideFailureMessage(string.Join("\n", problems))
             .IsEqual(0);
 
-        // Two of six are honestly not-yet-taught -- if that count ever drops to zero this test
-        // itself should be revisited (the corpus stops needing an "honest gap" branch at all), but a
-        // COUNT INCREASE (a third dilemma silently regresses to blocked/missing) is exactly the
-        // erosion this pin exists to catch.
+        // ONE of six is honestly not-yet-taught. Was two until #4 ("spend the slot or bank it") was
+        // taught by fixing the lesson that already existed for its mechanic and had gone false --
+        // see that row's own note and Dilemma4_LessonNamesTheSlotCost_NeverDeniesIt. If this count
+        // ever drops to zero this test itself should be revisited (the corpus stops needing an
+        // "honest gap" branch at all), but a COUNT INCREASE -- a dilemma silently regressing to
+        // blocked/missing -- is exactly the erosion this pin exists to catch.
         var untaught = SixDilemmas.Count(d => d.Status.Outcome is DilemmaOutcome.Blocked or DilemmaOutcome.Missing);
         AssertThat(untaught)
             .OverrideFailureMessage(
-                $"Expected exactly 2 of the six dilemmas (#4 slot budget, #5 ore gift) to be honestly " +
-                $"blocked/missing today; found {untaught}. If this grew, a dilemma silently lost its " +
-                "teaching without a citation; if it shrank, update this pin to match the fix that landed.")
-            .IsEqual(2);
+                $"Expected exactly 1 of the six dilemmas (#5, the ore gift -- register #170, no " +
+                $"mechanism behind the goodwill half) to be honestly blocked/missing today; found " +
+                $"{untaught}. If this grew, a dilemma silently lost its teaching without a citation; " +
+                "if it shrank, update this pin to match the fix that landed.")
+            .IsEqual(1);
     }
 }
 #endif
