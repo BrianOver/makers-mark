@@ -4881,6 +4881,95 @@ Every register item, and the unit that closes it. A blank here is a failure of t
 | 167 | 8g in the sentence, 11g on the chip | U-T5-3 |
 | — | "Returned safely" after a rout (found, unreported) | U-T5-4 |
 
+## §11.14.13 T9 — The course reaches the sentence (owner ruling, 2026-08-21)
+
+Completes T2 (§11.14.4) rather than replacing it. T2 built a correct, honest, well-tested teaching
+**machine**; what the owner has asked for three times is the **course**, and the course stops three
+days and two links short of the sentence this game exists to produce.
+
+**The ruling.** Shown the tutorial deep dive, asked which half to take first, he chose the day 4–7
+chain: *"a full walk-through, with highlighting, and the adviser as a real character."*
+
+### The finding that sets the scope, and it is a measurement
+
+`R14.6` ruled that the pointed chain runs through day 7. `TutorialFlow.cs` **cites that ruling four
+times** to justify its constants, and `ChainBackstopDay` moved to 8. No registry row ever followed:
+nine steps sit at `MinDay: 1`, two at `MinDay: 3`, and **nothing above 3**. The constant moved; the
+content did not.
+
+What that costs is not a matter of taste. Measured 2026-08-21, `batch --seeds 12 --days 10` under
+`BaselinePlayer`, first occurrence per seed:
+
+| Fact | First day | Seeds |
+|---|---|---|
+| `attributionBeat` — the counterfactual proof, link 4 | **day 4** | 12 of 12 |
+| `commissionFulfilled` | **day 4** | 12 of 12 |
+| `actAdvanced` — Act II | **day 4** | 12 of 12 |
+| `heroDied` — permadeath arrives | day 4–9, median **6** | 12 of 12 |
+| `floorRecord`, `commissionPosted`, `itemSold` | day 1 | 12 of 12 |
+| `heroRankUp` | day 3 | 12 of 12 |
+
+**The tutorial stops the day before the game starts proving itself.** Every fact links 4 and 5 are
+made of begins on day 4, unanimously across every seed measured; the chain's last step is gated at
+day 3. A player who completes all ten steps has provably seen links 1–3 and has never once watched
+the sentence happen. Link 4 fires today only if a beat happens to land while they happen to be
+looking; link 5's wall lesson fires only if they happen to open a panel no step points at.
+
+This also means the day 4–7 window needs no invented content. The beats are already there and
+already unanimous — the chain simply has nothing to say on the days that matter most.
+
+### The pattern every new beat uses, and why it is not negotiable
+
+The **dormant loss act** (`TutorialFlow.ConsumeFirstLossBlock`) is the proven template and the only
+honest one: **armed and silent** until the sim produces the fact, **visible for a bounded window**
+(one night, one day), **`Done` when the player acts, `Skipped` when they do not**, then an **honest
+retire** into the Lessons book. It never fabricates and it never nags — the 1287× memorial-nag
+finding is why the retire is a hard rule rather than a preference.
+
+Every T9 beat is built to that shape. The measurement above says they will fire for effectively
+every player; the shape says nothing breaks for the one who they do not fire for. Both halves are
+required: a beat that assumes its fact is a beat that lies on the unlucky seed.
+
+### The units
+
+| Unit | What |
+|---|---|
+| U-T9-1 | **The proof, day 4.** A numbered beat armed on the first `AttributionBeatEvent`, walking the player to where the beat is readable and naming what a counterfactual replay *is* — that the sim re-ran the fight with the player's craft removed and it went differently, and that only something they forged can ever earn one. Replaces the current first-touch-only `the-proof-taught`, which fires wherever the player happens to be standing. Link 4 stops being an accident. |
+| U-T9-2 | **The loss gets a voice and a row.** The dormant loss act already exists, is anchored, bounded and honest — and is voiced by nobody. Bryn speaks it, and it becomes a numbered row in the chain rather than a Ledger interjection. Median day 6, every seed. |
+| U-T9-3 | **The memory, days 6–7.** The wall and the rite (taught by T8) and the chronicle enter the numbered chain, so link 5 is walked rather than stumbled into. The Docket pattern is the template: teach once at first open, then leave it as the player's own reference. |
+| U-T9-4 | **Graduation.** `Complete()` currently sets a flag and saves. Bryn says goodbye — the one line the apprenticeship owes — and the quick-travel banner stops being the only voice at the end of the course. |
+| U-T9-5 | **The anchors reach the door and then through it.** Steps 1, 2 and 7 tell the player to walk to a building while pulsing a station *inside* it (`Town2D.FindStation` resolves through `FindInteriorRoom`) — so the player's first two actions in the game have their only visual guidance behind a wall. `NotifyEnteredBuilding` already knows a Station anchor's `Key` **is** the venue key; pulse the building until arrival, hand off to the station on entry. One anchor, two phases. |
+| U-T9-6 | **The highlight stops quitting at panel edges.** `TutorialAnchor.ForPanelControl` was built to point at controls inside a panel, is tested end-to-end, throws on a miss — and has **one caller and zero registry rows**. Four steps end with "press a button the highlight cannot reach": Stock (step 3), Post (step 4), the Ledger's Buy (step 9), Accept/Decline (step 11). Wire those four. |
+| U-T9-7 | **Bryn stops speaking like an engineer, and stops lying about what she offers.** She says **"the sim"** in two player-facing lines, one of them link 4's own proof lesson — the most important sentence in the game. Her greeting promises *"Ask me anything"* and pressing E routes to `ShowBellToast`, the same transient banner used for **action rejections**, so her teaching gets four seconds while the identical words in `MentorBanner` wait for the player's own "Got it". Purge the engineering register; give her the untimed banner she already owns. |
+| U-T9-8 | **Three render defects on the teaching surfaces.** Completed steps render a glyph and **no label** (`ObjectiveTracker` builds a text label from a non-empty `ShortLabel` and only the glyph arrives — cause not yet identified, so this unit starts with a measuring test, not a fix). The Lessons book renders `**bold**` markers **literally** — 19 copy lines carry them, `ObjectiveTracker.Plain` strips them for the card, and `LessonsPanel` never calls it. That book also titles entries with raw slugs (`◆ the-mark-read`). |
+
+### Ordering
+
+U-T9-5 and U-T9-6 first: they are cheap, they are pure plumbing on a shipped and tested mechanism,
+and every beat added afterwards inherits working highlighting instead of needing it retrofitted.
+U-T9-8 rides alongside them — a teaching surface that cannot render its own copy undermines whatever
+is written for it. Then the beats in day order: U-T9-1, U-T9-2, U-T9-3, U-T9-4. U-T9-7 is copy and
+can land with any of them, but not after U-T9-1, since U-T9-1 rewrites the very line that contains
+the worst instance.
+
+### What must survive, named so a rework cannot quietly discard it
+
+The honesty machinery is the best tutorial engineering in this repo and none of it is to be rebuilt:
+the `Skipped` third state (a checkmark would claim the player answered something they never saw);
+gating notes that tell the truth instead of naming a day; phase-honest wait copy; the
+throw-on-unresolvable-anchor contract; the day holding open for `LookIn`; the empty-shelf trap named
+*before* it bites; `ResetForNewGame`; the once-ever persisted first-touch engine with its anti-nag
+proof; and the queue-not-drop banner drained by the player's own press. `TutorialCopyIsFollowableTests`
+— copy that quotes the live control's own label and goes red on a rename — must keep passing.
+
+### One thing this program does not touch, and why
+
+Dilemma #5, "buy the ore or buy the goodwill", stays untaught. No goodwill mechanism exists: the hero
+always receives the base ask, the tariff only discounts what the player pays, and a surcharge would
+feed a faction sink rather than the hero (register #170). Teaching it would make the game lie about
+its own choices. It is an owner decision — build the mechanism or amend `THE-GAME.md` — and until it
+is ruled, `DilemmaLessonsTests` carries it as the one honest gap with its reason written out.
+
 ## §11.14.12 T8 — Link 5's own verb was the untaught one (2026-08-19)
 
 `LegendsWall` is the screen link 5 pays out on: the fallen, the deepest floors anyone reached, and
