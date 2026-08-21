@@ -1669,17 +1669,34 @@ public partial class ForgePanel : SimPanel
 
     /// <summary>
     /// U-T2 Wave E (§11.14.4, "talents and the second profession", the long tail): fires the first
-    /// time the player EVER unlocks a talent node — before this unit, nothing explained what a
-    /// talent unlock actually costs or how the tree connects. Reads no sim number here beyond what
-    /// <see cref="GameSim.Crafting.CraftingHandlers"/>'s own <c>ApplyUnlock</c> already decided (v1:
-    /// no gold, no action slot — see that method's own doc); the lesson describes the mechanism,
-    /// never a restated cost that could silently drift from the sim's own truth.
+    /// time the player EVER unlocks a talent node — before that unit, nothing explained what a
+    /// talent unlock costs or how the tree connects.
+    ///
+    /// <para><b>This copy told the player the unlock was free, and it had stopped being true.</b> The
+    /// old line — "Unlocking one costs you nothing but the choice of which path you follow" — was
+    /// correct the day it shipped, and this doc even warned against "a restated cost that could
+    /// silently drift from the sim's own truth" before restating one anyway. U-T1-9 (register #157)
+    /// then made <c>UnlockTalentAction</c> spend a day action slot
+    /// (<c>ActionBudget.ConsumesSlot</c>; <c>CraftingHandlers.ApplyUnlock</c> decrements
+    /// <c>ActionSlotsRemaining</c>) and gated the two deep smithing nodes behind
+    /// <c>TalentTree.ForgeTierRequirement</c>. So the one lesson that touches this mechanic was
+    /// denying a cost in the exact place the cost lives — worse than saying nothing, because a
+    /// player who reads it has been told there is no trade-off to weigh.</para>
+    ///
+    /// <para>Which is also why the sixth dilemma the game is made of — "spend the slot or bank it" —
+    /// read as untaught in <c>DilemmaLessonsTests</c>' census while its mechanic shipped. Naming the
+    /// cost honestly IS teaching that dilemma. The line names the trade-off and stops: it does not
+    /// tell the player which side to take (law: influence never orders), and it still restates no
+    /// number, so <c>ActionBudget.SlotsPerDay</c> can change without making this prose false.</para>
     /// </summary>
     private void ShowTalentsLesson() =>
         ShowMentorFirstTouch(
             "first-talent-unlock",
             "Talent nodes build on each other — a later one needs its own prerequisite unlocked "
-            + "first. Unlocking one costs you nothing but the choice of which path you follow.");
+            + "first. Unlocking one spends a day action slot, the same one a craft or a purchase "
+            + "would have taken, and the deeper smithing nodes want the workshop at a matching "
+            + "Forge Tier as well. Nothing on the tree expires, so banking the slot for today's "
+            + "work and unlocking tomorrow is a real choice, not a delay.");
 
     /// <summary>Queues a vendor buy (Morning-only in the sim; the U6 gate disables the row
     /// off-Morning, and a rejection that still surfaces becomes MainUi's toast). Fixed to
