@@ -245,13 +245,22 @@ public class TutorialRegistryConformanceTests
         var ui = MountMainUi();
         try
         {
-            // Day 1, BuyMaterial: U2 (tutorial-revamp plan, §11.13) re-pointed this at
-            // Station("forge", "shelf") — blacksmith's own materials station — rather than the
-            // whole Forge building, so the overlay pulses the shelf itself.
+            // Day 1, BuyMaterial. U2 (§11.13) re-pointed this step at Station("forge","shelf") —
+            // blacksmith's own materials station — and this test then pinned "the shelf pulses on a
+            // FRESH MOUNT". U-T9-5 (§11.14.13) changed that on purpose, because a fresh mount is the
+            // player standing out in the town: Town2D.FindStation resolves inside
+            // FindInteriorRoom("forge"), so the only pulse in the game was on a node behind a wall
+            // the player had not walked through — on the very first instruction of the game, which
+            // reads "Walk to the Forge". The step's DECLARED anchor is unchanged and still the
+            // shelf; what changed is the aim while outside. So this now pins the property the test
+            // has always been for — exactly one thing pulses, and it is the right thing — with the
+            // outside phase named explicitly. StationAnchorHandoffTests owns the handoff itself.
             AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.BuyMaterial);
             AssertThat(ui.Overlay.PulsingBuildingKey)
-                .OverrideFailureMessage("BuyMaterial's own Station anchor (the shelf) is not pulsing on a fresh mount.")
-                .IsEqual("shelf");
+                .OverrideFailureMessage(
+                    "On a fresh mount the player is outside, so BuyMaterial must pulse the FORGE "
+                    + "BUILDING. A pulse on the shelf here is a highlight behind a wall.")
+                .IsEqual("forge");
             AssertThat(ui.Overlay.PulsingHudControlName).IsNull();
 
             // Drive to Shelve: Building("market") — the pulse must move OFF the shelf onto market.

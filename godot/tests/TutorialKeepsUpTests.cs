@@ -110,11 +110,16 @@ public class TutorialKeepsUpTests
             var player = new HumanPlayer(ui);
             await player.Frames(4);
 
-            // U2 (tutorial-revamp plan, §11.13): BuyMaterial points at the Station("forge","shelf")
-            // now, not the whole Forge building — blacksmith's own materials station.
+            // U-T9-5 (§11.14.13): BuyMaterial still DECLARES Station("forge","shelf"), but a fresh
+            // mount is the player out in the town, and a station pulse resolves inside the interior
+            // room — invisible from out here. Outside, the aim is the forge building; the shelf takes
+            // over on entry. This test's own subject (does the pulse MOVE off the forge and onto the
+            // market when the step advances) is untouched by that.
             AssertThat(ui.Overlay.PulsingBuildingKey)
-                .OverrideFailureMessage("BuyMaterial's own Station anchor (the shelf) is not pulsing on a fresh mount.")
-                .IsEqual("shelf");
+                .OverrideFailureMessage(
+                    "On a fresh mount the player is outside the forge, so the pulse must be on the "
+                    + "forge building itself.")
+                .IsEqual("forge");
 
             ui.OpenPanel("Forge");
             await player.WaitForLayout(ui.Drawer.CurrentContent!);

@@ -1211,7 +1211,10 @@ public partial class MainUi : Control
             // dropdown) outranks the chain's own anchor while her banner is up — the player is
             // mid-lesson, not mid-chain-step, so the pulse must follow HER, not the chain.
             Forge.MentorSpotlight is { } mentorSpotlight ? mentorSpotlight
-            : Tutorial.Active ? Tutorial.CurrentAnchor
+            // U-T9-5: AnchorFor, not CurrentAnchor — a Station anchor points at the town building
+            // until the player is actually inside the venue, then hands off to the station. See its
+            // own doc for why the un-aimed version left steps 1/2/7 pulsing behind a wall.
+            : Tutorial.Active ? Tutorial.AnchorFor(locationId)
             : lossRow is not null ? TutorialAnchor.ForHud("OpenLegends")
             : TutorialAnchor.None,
             Town, Drawer, this);

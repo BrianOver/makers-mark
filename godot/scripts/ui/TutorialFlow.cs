@@ -649,6 +649,46 @@ public sealed partial class TutorialFlow : PanelContainer
     /// cref="TopSlotText"/>).</summary>
     public TutorialAnchor CurrentAnchor => ResolveAnchor(ByStep[Step].Anchor, Step);
 
+    /// <summary>
+    /// U-T9-5 (§11.14.13): the same anchor, aimed at the half of the journey the player is actually
+    /// on. A Station anchor resolves through <c>Town2D.FindStation</c>, which looks inside
+    /// <c>FindInteriorRoom(venueKey)</c> — so while the player is still out in the town, the only
+    /// pulse in the game is on a node behind a wall they have not walked through. Steps 1, 2 and 7
+    /// all say "Walk to the {building}, then press E" and all three anchor to a station INSIDE it,
+    /// which meant the player's first two actions in the whole game had their visual guidance
+    /// hidden. Steps 3/4/5 use Building anchors and have always worked — the mechanism was right
+    /// and the aim was wrong.
+    ///
+    /// <para>No new data was needed: a Station anchor's own <see cref="TutorialAnchor.Key"/> IS the
+    /// venue key (that is how <see cref="NotifyEnteredBuilding"/>'s "✓ Arrived" ratchet already
+    /// works), so the town building is already named. Outside, point at the building; on arrival,
+    /// hand off to the station. One anchor, two phases.</para>
+    ///
+    /// <para><paramref name="openPanelId"/> is the player's live location in panel-id vocabulary
+    /// (<c>MainUi.CurrentLocationPanelId</c>) — the same value <see cref="IsAtAnchor"/> reads, so
+    /// the pulse and the card's own "You're at the ..." acknowledgement can never disagree about
+    /// where the player is standing.</para>
+    /// </summary>
+    public TutorialAnchor AnchorFor(string? openPanelId) => AimAnchor(CurrentAnchor, openPanelId);
+
+    /// <summary>
+    /// U-T9-5: the aiming rule itself, pure and static so it can be tested against EVERY registry
+    /// row rather than only the steps a test can reach by playing. There is deliberately no
+    /// force-the-step hook in this class — tests drive the chain with real actions — so a rule that
+    /// lived only inside the instance method could be proven for step 1 and assumed for the rest.
+    /// This defect reached three steps precisely because nothing covered the family.
+    /// </summary>
+    public static TutorialAnchor AimAnchor(TutorialAnchor anchor, string? openPanelId)
+    {
+        if (anchor.Kind != TutorialAnchorKind.Station)
+        {
+            return anchor;
+        }
+
+        var inside = openPanelId is not null && openPanelId == PanelIdForVenue(anchor.Key!);
+        return inside ? anchor : TutorialAnchor.ForBuilding(anchor.Key!);
+    }
+
     /// <summary>U2 (tutorial-revamp plan, §11.13): substitutes the LIVE primary profession's own
     /// station id into BuyMaterial/Craft's Station anchor — the registry's own declared
     /// <see cref="TutorialAnchor.StationId"/> is a static blacksmith default ("shelf"/"anvil"),
@@ -971,7 +1011,10 @@ public sealed partial class TutorialFlow : PanelContainer
     /// panelId switch, mirrored here) — needed because a walked arrival is observed through
     /// <paramref name="openPanelId"/>-shaped values in that vocabulary, not the venue-key
     /// vocabulary the anchor itself uses.</summary>
-    private static string? PanelIdForVenue(string venueKey) => venueKey switch
+    /// <summary>The one venue-key-to-panel-id mapping the whole class reads (<see cref="IsAtAnchor"/>,
+    /// <see cref="AimAnchor"/>, the card's own "You're at the ..." branch). Public so a test can
+    /// speak the same vocabulary rather than hardcoding a second copy of it.</summary>
+    public static string? PanelIdForVenue(string venueKey) => venueKey switch
     {
         "forge" => "Forge",
         "market" => "Shop",
