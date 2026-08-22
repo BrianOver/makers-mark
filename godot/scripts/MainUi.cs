@@ -1214,7 +1214,10 @@ public partial class MainUi : Control
             // U-T9-5: AnchorFor, not CurrentAnchor — a Station anchor points at the town building
             // until the player is actually inside the venue, then hands off to the station. See its
             // own doc for why the un-aimed version left steps 1/2/7 pulsing behind a wall.
-            : Tutorial.Active ? Tutorial.AnchorFor(locationId)
+            // U-T9-6: the open-surface id, not the location id — a visible modal is where the
+            // player is looking, so an anchor pointing into it aims at the control instead of
+            // the way in. See CurrentOpenSurfaceId's own doc.
+            : Tutorial.Active ? Tutorial.AnchorFor(CurrentOpenSurfaceId())
             : lossRow is not null ? TutorialAnchor.ForHud("OpenLegends")
             : TutorialAnchor.None,
             Town, Drawer, this);
@@ -1235,6 +1238,47 @@ public partial class MainUi : Control
     /// (mapped through the same vocabulary) fixes it without adding a second parameter everywhere
     /// this value is threaded through.</para>
     /// </summary>
+    /// <summary>
+    /// U-T9-6: the five modal surfaces a tutorial <c>PanelControl</c> anchor may point into, in the
+    /// same id vocabulary <c>DrawerHost.Register</c> uses for its ten. These are mounted directly on
+    /// this node rather than registered with the drawer, and every one of them hosts a beat the T9
+    /// course has to be able to point at. Returns null for an unknown id so <c>TutorialOverlay</c>
+    /// keeps throwing rather than silently pointing nowhere.
+    /// </summary>
+    public Control? ModalContent(string id) => id switch
+    {
+        "Ledger" => Ledger,
+        "Commissions" => Commissions,
+        "Legends" => Legends,
+        "Camp" => Camp,
+        "Forecast" => Forecast,
+        _ => null,
+    };
+
+    /// <summary>
+    /// U-T9-6: where the player is, for anchor-aiming purposes — which is not the question
+    /// <see cref="CurrentLocationPanelId"/> answers. A modal is not a location in the town and opens
+    /// no drawer, but if the Ledger is filling the screen then the Ledger IS the surface the player
+    /// is looking at, and an anchor pointing into it should aim at the control rather than at the
+    /// tray button that would have opened it. Checked before the location, so a modal opened over a
+    /// walkable interior reads as the modal.
+    /// </summary>
+    private string? CurrentOpenSurfaceId()
+    {
+        foreach (var id in ModalAnchorSurfaces)
+        {
+            if (ModalContent(id) is { Visible: true })
+            {
+                return id;
+            }
+        }
+
+        return CurrentLocationPanelId();
+    }
+
+    /// <summary>The ids <see cref="ModalContent"/> answers, kept beside it so the two cannot drift.</summary>
+    private static readonly string[] ModalAnchorSurfaces = ["Ledger", "Commissions", "Legends", "Camp", "Forecast"];
+
     private string? CurrentLocationPanelId() =>
         Drawer.CurrentPanelId ?? (Town.InteriorActive ? PanelIdForVenue(Town.InteriorVenueKey!) : null);
 

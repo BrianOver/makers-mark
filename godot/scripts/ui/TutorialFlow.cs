@@ -680,14 +680,44 @@ public sealed partial class TutorialFlow : PanelContainer
     /// </summary>
     public static TutorialAnchor AimAnchor(TutorialAnchor anchor, string? openPanelId)
     {
-        if (anchor.Kind != TutorialAnchorKind.Station)
+        switch (anchor.Kind)
         {
-            return anchor;
-        }
+            case TutorialAnchorKind.Station:
+            {
+                var inside = openPanelId is not null && openPanelId == PanelIdForVenue(anchor.Key!);
+                return inside ? anchor : TutorialAnchor.ForBuilding(anchor.Key!);
+            }
 
-        var inside = openPanelId is not null && openPanelId == PanelIdForVenue(anchor.Key!);
-        return inside ? anchor : TutorialAnchor.ForBuilding(anchor.Key!);
+            // U-T9-6: the same two phases, one level further in. A PanelControl target that is not on
+            // screen draws NOTHING — TutorialOverlay.Tick hides the outline for a target that is not
+            // visible in tree, which is correct, and is also silence. So a beat pointing at a button
+            // inside a closed panel highlights nothing at all: the station-behind-a-wall defect
+            // through a second door, and in a full course it would hit nearly every beat, since the
+            // player has not opened the panel yet. That is exactly what a guided tutorial exists to
+            // prevent. So point at the way IN until the player is in.
+            case TutorialAnchorKind.PanelControl when openPanelId != anchor.Key:
+                return VenueForPanel(anchor.Key!) is { } venue
+                    ? TutorialAnchor.ForBuilding(venue)
+                    : TutorialAnchor.ForHud($"Open{anchor.Key}");
+
+            default:
+                return anchor;
+        }
     }
+
+    /// <summary>The inverse of <see cref="PanelIdForVenue"/> — which surfaces are reached by walking
+    /// to a building, and which are only reached from the tray. Everything not named here is opened by
+    /// a tray button called <c>Open{id}</c>, the convention <c>MainUi.RegisterGatedTrayButton</c>
+    /// already established, so <see cref="AimAnchor"/> needs no new data to find the way in.</summary>
+    public static string? VenueForPanel(string panelId) => panelId switch
+    {
+        "Forge" => "forge",
+        "Shop" => "market",
+        "Tavern" => "tavern",
+        "Depths" => "minegate",
+        "Bounties" => "noticeboard",
+        _ => null,
+    };
 
     /// <summary>U2 (tutorial-revamp plan, §11.13): substitutes the LIVE primary profession's own
     /// station id into BuyMaterial/Craft's Station anchor — the registry's own declared
