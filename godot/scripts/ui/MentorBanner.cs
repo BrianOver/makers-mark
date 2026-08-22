@@ -65,13 +65,30 @@ public partial class MentorBanner : PanelContainer
         Visible = false;
         MouseFilter = MouseFilterEnum.Ignore;
         SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-        AddThemeStyleboxOverride("panel", GameTheme.PanelStyleWood());
+        // This class IS a PanelContainer, so dropping the wood override alone is not enough — it
+        // would simply fall back to the theme's own panel style, which is opaque too. Measured by
+        // capturing a frame with a lesson up: the world was still a flat sheet. An explicit empty box
+        // is the only thing that makes a FullRect PanelContainer draw nothing.
+        AddThemeStyleboxOverride("panel", new StyleBoxEmpty());
 
         var center = new CenterContainer { Name = "MentorBannerCenter", MouseFilter = MouseFilterEnum.Ignore };
         center.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         AddChild(center);
 
+        // U-T9-12 (§11.14.13): the wood frame belongs on the CARD, not on this FullRect root.
+        //
+        // It used to be an override on the root itself, and `ui-frame-wood.png` is fully opaque at its
+        // centre — measured (42, 36, 54, 255) — so every single lesson Bryn has ever spoken covered
+        // the whole screen with a solid sheet until the player pressed "Got it". The docket lesson,
+        // the pricing lesson, hold-or-sell, read-only-surfaces, quick-travel, the craft lessons — and
+        // worst of all the PROOF, where the line explaining "that flash" hid the flash it was
+        // explaining. A teacher who blanks the thing she is pointing at is not teaching.
+        //
+        // The root stays FullRect (the CenterContainer needs it to centre against the window) and
+        // stays MouseFilter.Ignore, which was always the intent and is only now honest: a transparent
+        // root means the controls a click passes through to are controls the player can actually see.
         var card = UiKit.Card("MentorBannerCard");
+        card.AddThemeStyleboxOverride("panel", GameTheme.PanelStyleWood());
         center.AddChild(card);
 
         // U-T2 Wave D fix (WholeGameSweepTests): an unconstrained Label under a CenterContainer
