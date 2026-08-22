@@ -164,13 +164,22 @@ public sealed partial class TutorialOverlay : Control
                 // the right thing with no changes there — it naturally hides the outline while a
                 // DIFFERENT panel is open (this one's Visible chain is false) and shows it once the
                 // named panel is actually the one on screen.
-                var panelRoot = drawer.PanelContent(anchor.Key!);
+                // U-T9-6 (§11.14.13): the drawer's ten registered panels are not the whole UI. The
+                // Ledger, Commissions, Legends, Camp and Forecast are MODAL siblings mounted straight
+                // onto MainUi, and they are exactly the surfaces the course's payoff happens on — the
+                // proof card, the rite, accept/decline, the vigil card. So this kind, built to point at
+                // a control inside a panel, could not reach a single one of them, and T9's beats all
+                // live there. Modals resolve through MainUi's own scoped lookup rather than a recursive
+                // search of the whole mounted tree, so the scoping this kind exists for still holds.
+                var panelRoot = drawer.PanelContent(anchor.Key!)
+                    ?? (hudRoot as GodotClient.MainUi)?.ModalContent(anchor.Key!);
                 if (panelRoot is null)
                 {
                     throw new InvalidOperationException(
-                        $"Tutorial PanelControl anchor names panel \"{anchor.Key}\", which is not a " +
-                        "registered DrawerHost panel — a tutorial step must never point at nothing " +
-                        "(house rule). Fix the registry row in TutorialFlow.Registry.");
+                        $"Tutorial PanelControl anchor names surface \"{anchor.Key}\", which is neither " +
+                        "a registered DrawerHost panel nor a known modal — a tutorial step must never " +
+                        "point at nothing (house rule). Fix the registry row in TutorialFlow.Registry, " +
+                        "or add the modal to MainUi.ModalContent.");
                 }
 
                 _hudTarget = panelRoot.FindChild(anchor.ControlName!, recursive: true, owned: false) as Control;
