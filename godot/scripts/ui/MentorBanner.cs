@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Godot;
 
 namespace GodotClient.Ui;
@@ -22,6 +23,31 @@ namespace GodotClient.Ui;
 /// stay <see cref="Control.MouseFilterEnum.Ignore"/> (never blocks a click meant for whatever is
 /// underneath); only the dismiss button itself accepts input — a toast, never a gating modal.</para>
 /// </summary>
+/// <summary>
+/// U-T9-0 (§11.14.13): how much a line's moment is worth, so a loud night drops the right one.
+///
+/// <para>Measured over twelve seeds and ten days of <c>BaselinePlayer</c>: <b>day 4 lands four
+/// course voices on eight of twelve seeds and five on the other four</b> — Act II, the first
+/// attribution beat, the first fulfilled commission, the warrant ending at dawn, and on a third of
+/// seeds the first hero death too. The banner's backlog caps at four. Before this rank existed the
+/// queue dropped whatever arrived LAST, which on that night is most likely the proof — the one
+/// sentence the whole course exists to deliver.</para>
+///
+/// <para>Two values, deliberately. A finer scale invites arguing about the middle; the only
+/// distinction that has ever mattered here is "a tool explained itself" versus "the game just did
+/// the thing it is about".</para>
+/// </summary>
+public enum MentorVoiceRank
+{
+    /// <summary>A tool, surface or mechanic explaining itself once — the first-touch tier. Valuable,
+    /// re-readable in the Lessons book forever, and the right thing to lose on a crowded night.</summary>
+    Lesson = 0,
+
+    /// <summary>A beat on the sentence itself: the proof fired, a promise was kept, somebody died.
+    /// These are the course, not its footnotes, and they outrank a tool tip for the screen.</summary>
+    Act = 1,
+}
+
 public partial class MentorBanner : PanelContainer
 {
     private Label _label = null!;
@@ -108,7 +134,7 @@ public partial class MentorBanner : PanelContainer
     /// callers that branch on it (<c>ForgePanel</c>'s material-ceiling/mark-read pair) still read
     /// correctly, since "did this one get the screen" is exactly the question they ask.</para>
     /// </summary>
-    public bool ShowFirstTouch(string? fired, bool preempt = false)
+    public bool ShowFirstTouch(string? fired, bool preempt = false, MentorVoiceRank rank = MentorVoiceRank.Lesson)
     {
         if (fired is null)
         {
@@ -117,20 +143,21 @@ public partial class MentorBanner : PanelContainer
 
         if (Visible && !preempt)
         {
-            Enqueue(fired);
+            Enqueue(fired, rank);
             return false;
         }
 
         if (Visible)
         {
             // Preempting: the note being displaced has already been consumed and would otherwise be
-            // dropped, so it takes the front of the queue rather than the bin. Front, not back: it
-            // was fired first and it is the more general of the two, so it reads better after the
-            // specific one than buried behind whatever arrives later.
-            Enqueue(_label.Text, front: true);
+            // dropped, so it takes the front of its own rank band rather than the bin. Front, not
+            // back: it was fired first and it is the more general of the two, so it reads better
+            // after the specific one than buried behind whatever arrives later.
+            Enqueue(_label.Text, _currentRank, front: true);
         }
 
         _label.Text = fired;
+        _currentRank = rank;
         Visible = true;
         return true;
     }
@@ -142,7 +169,7 @@ public partial class MentorBanner : PanelContainer
     {
         if (_pending.Count > 0)
         {
-            _label.Text = _pending[0];
+            (_label.Text, _currentRank) = _pending[0];
             _pending.RemoveAt(0);
             return;
         }
@@ -154,27 +181,82 @@ public partial class MentorBanner : PanelContainer
     /// Test/inspection surface, the same idiom as <c>ForgePanel.LastFocusedSection</c>.</summary>
     public int PendingLessonCount => _pending.Count;
 
-    /// <summary>Lessons consumed while the banner was busy, in the order they will be shown.</summary>
-    private readonly List<string> _pending = new();
+    /// <summary>Lessons consumed while the banner was busy, in the order they will be shown —
+    /// highest <see cref="MentorVoiceRank"/> first, insertion order within a rank.</summary>
+    private readonly List<(string Text, MentorVoiceRank Rank)> _pending = new();
+
+    /// <summary>The rank of whatever is on screen right now, so a preempted line re-enters the queue
+    /// at its own rank rather than being demoted by the act of being displaced.</summary>
+    private MentorVoiceRank _currentRank = MentorVoiceRank.Lesson;
 
     /// <summary>Ceiling on the backlog. Four is a deliberate, low number: a player facing a fifth
     /// stacked lesson is being lectured, not taught, and every one of them is still readable in the
-    /// Lessons book — so past this point dropping is the kinder failure. It has never been reached
-    /// in a real session; a run that reaches it is a signal that some caller is firing lessons in a
-    /// batch, which is its own bug to fix rather than a queue to lengthen.</summary>
+    /// Lessons book — so past this point dropping is the kinder failure. What CHANGED in U-T9-0 is
+    /// not the number but which line gets dropped when it is reached (see <see cref="Enqueue"/>).
+    ///
+    /// <para><b>The cap is reachable, and that is measured, not theoretical.</b> A twelve-seed,
+    /// ten-day <c>BaselinePlayer</c> census counted the course voices that land on the same in-game
+    /// day: <b>day 4 carries four on eight of twelve seeds and five on the other four</b> — Act II,
+    /// the first attribution beat, the first fulfilled commission, the warrant's end at dawn, and on
+    /// a third of seeds the first hero death as well. So the T9 course cannot treat the cap as an
+    /// impossible edge, and a caller firing "in a batch" is not always a bug: sometimes the day
+    /// genuinely is that loud. The other half of the answer belongs to the acts themselves — a beat
+    /// whose night is already full arms for tomorrow instead of queueing (§11.14.13's priority rule,
+    /// landing with U-T9-1) — because the honest fix for a loud night is fewer voices, not a longer
+    /// queue.</para></summary>
     private const int MaxPendingLessons = 4;
 
-    private void Enqueue(string lesson, bool front = false)
+    private void Enqueue(string lesson, MentorVoiceRank rank, bool front = false)
     {
         // Same text twice would read as a stutter on consecutive presses. Cannot normally happen
         // (ConsumeFirstTouch is once-ever per id) but the queue should not be the thing that makes
         // it possible if two ids ever share copy.
-        if (_pending.Contains(lesson) || lesson == string.Empty || _pending.Count >= MaxPendingLessons)
+        if (lesson == string.Empty || _pending.Any(p => p.Text == lesson))
         {
             return;
         }
 
-        _pending.Insert(front ? 0 : _pending.Count, lesson);
+        // U-T9-0: at the cap, drop the LOWEST-RANKED waiting line rather than refusing the newest
+        // arrival. Before this, a full queue silently dropped whatever came last — so on the
+        // measured five-voice day 4 the line most likely to be lost was the one that arrived last,
+        // and the course's most important sentence (the proof) is a late-evening beat. Refusing the
+        // incoming line is only correct when the incoming line IS the least important one.
+        if (_pending.Count >= MaxPendingLessons)
+        {
+            var weakest = _pending.Count - 1;
+            for (var i = _pending.Count - 1; i >= 0; i--)
+            {
+                if (_pending[i].Rank <= _pending[weakest].Rank)
+                {
+                    weakest = i;
+                }
+            }
+
+            if (_pending[weakest].Rank >= rank)
+            {
+                return; // nothing waiting is weaker than what just arrived — the arrival yields
+            }
+
+            _pending.RemoveAt(weakest);
+        }
+
+        // Ordered by rank, insertion order preserved inside a rank. `front` means the front of this
+        // line's OWN band, never ahead of a higher-ranked one waiting behind it.
+        var at = 0;
+        while (at < _pending.Count && _pending[at].Rank > rank)
+        {
+            at++;
+        }
+
+        if (!front)
+        {
+            while (at < _pending.Count && _pending[at].Rank == rank)
+            {
+                at++;
+            }
+        }
+
+        _pending.Insert(at, (lesson, rank));
     }
 
     /// <summary>Same small local widget-builders every other code-built panel on this project
