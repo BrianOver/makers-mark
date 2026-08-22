@@ -173,6 +173,123 @@ public class MentorBannerQueueTests
         finally { banner.Free(); }
     }
 
+    /// <summary>
+    /// U-T9-0: the measured reason rank exists. Twelve seeds, ten days, <c>BaselinePlayer</c>: day 4
+    /// lands FOUR course voices on eight seeds and FIVE on the other four (Act II, the first
+    /// attribution beat, the first fulfilled commission, the warrant's dawn, and on a third of seeds
+    /// the first hero death). The backlog caps at four. Before rank, a full queue refused whatever
+    /// arrived LAST — and the proof is a late-evening beat, so the line most likely to be lost was
+    /// the one sentence the course exists to deliver.
+    /// </summary>
+    [TestCase]
+    public void OnAFullNight_TheLessonIsDropped_NeverTheAct()
+    {
+        var banner = Built();
+        try
+        {
+            banner.ShowFirstTouch("on screen");
+            for (var i = 0; i < 4; i++)
+            {
+                banner.ShowFirstTouch($"tool tip {i}", rank: MentorVoiceRank.Lesson);
+            }
+
+            AssertThat(banner.PendingLessonCount)
+                .OverrideFailureMessage("Fixture guard: the backlog should be at its cap before the act arrives.")
+                .IsEqual(4);
+
+            banner.ShowFirstTouch("the proof fired", rank: MentorVoiceRank.Act);
+
+            AssertThat(banner.PendingLessonCount)
+                .OverrideFailureMessage("The cap must hold — an act displaces a lesson, it does not lengthen the queue.")
+                .IsEqual(4);
+
+            banner.Dismiss();
+            AssertThat(BannerText(banner))
+                .OverrideFailureMessage(
+                    "The act arrived at a full queue and was refused, so the most important sentence "
+                    + "in the game was lost to a tool tip. An act outranks a lesson for the screen.")
+                .IsEqual("the proof fired");
+        }
+        finally { banner.Free(); }
+    }
+
+    /// <summary>Rank orders the backlog; it does not reorder within a rank. Two acts on one night
+    /// still arrive in the order the sim produced them.</summary>
+    [TestCase]
+    public void ActsComeFirst_AndKeepTheirOwnOrderAmongThemselves()
+    {
+        var banner = Built();
+        try
+        {
+            banner.ShowFirstTouch("on screen");
+            banner.ShowFirstTouch("a tool explained itself", rank: MentorVoiceRank.Lesson);
+            banner.ShowFirstTouch("somebody died", rank: MentorVoiceRank.Act);
+            banner.ShowFirstTouch("the proof fired", rank: MentorVoiceRank.Act);
+
+            banner.Dismiss();
+            AssertThat(BannerText(banner)).IsEqual("somebody died");
+            banner.Dismiss();
+            AssertThat(BannerText(banner)).IsEqual("the proof fired");
+            banner.Dismiss();
+            AssertThat(BannerText(banner))
+                .OverrideFailureMessage("The tool tip is last, not lost — the Lessons book is not its only home tonight.")
+                .IsEqual("a tool explained itself");
+        }
+        finally { banner.Free(); }
+    }
+
+    /// <summary>A lesson arriving at a queue full of acts yields, rather than evicting one. The drop
+    /// rule picks the weakest waiting line; when the arrival IS the weakest, the arrival is it.</summary>
+    [TestCase]
+    public void ALessonArrivingAtAQueueOfActs_YieldsInsteadOfEvictingOne()
+    {
+        var banner = Built();
+        try
+        {
+            banner.ShowFirstTouch("on screen");
+            for (var i = 0; i < 4; i++)
+            {
+                banner.ShowFirstTouch($"act {i}", rank: MentorVoiceRank.Act);
+            }
+
+            banner.ShowFirstTouch("a tool tip", rank: MentorVoiceRank.Lesson);
+
+            AssertThat(banner.PendingLessonCount).IsEqual(4);
+            for (var i = 0; i < 4; i++)
+            {
+                banner.Dismiss();
+                AssertThat(BannerText(banner))
+                    .OverrideFailureMessage("A lesson evicted an act. Nothing weaker than the arrival was waiting, so the arrival had to yield.")
+                    .IsEqual($"act {i}");
+            }
+        }
+        finally { banner.Free(); }
+    }
+
+    /// <summary>Preempting must not demote the line it displaces. An act pushed off the screen by a
+    /// more urgent act re-enters as an act, ahead of any lesson already waiting.</summary>
+    [TestCase]
+    public void APreemptedAct_ReentersAsAnAct_NotAsALesson()
+    {
+        var banner = Built();
+        try
+        {
+            banner.ShowFirstTouch("somebody died", rank: MentorVoiceRank.Act);
+            banner.ShowFirstTouch("a tool explained itself", rank: MentorVoiceRank.Lesson);
+            banner.ShowFirstTouch("the proof fired", preempt: true, rank: MentorVoiceRank.Act);
+
+            AssertThat(BannerText(banner)).IsEqual("the proof fired");
+
+            banner.Dismiss();
+            AssertThat(BannerText(banner))
+                .OverrideFailureMessage(
+                    "The displaced act fell behind a tool tip. Being preempted is not a demotion — it "
+                    + "re-enters at its own rank.")
+                .IsEqual("somebody died");
+        }
+        finally { banner.Free(); }
+    }
+
     private static string BannerText(MentorBanner banner) =>
         banner.FindChild("MentorBannerText", true, false) is Label label ? label.Text : string.Empty;
 }
