@@ -1147,6 +1147,9 @@ public sealed partial class TutorialFlow : PanelContainer
         return def.Step switch
         {
             TutorialStep.BuyMaterial => state.Phase == DayPhase.Morning && state.ActionSlotsRemaining > 0,
+            // U-T9-11: crafting is legal in every phase (the forge never closes) but it still spends
+            // a slot, so the slot is the whole of its availability.
+            TutorialStep.Craft => state.ActionSlotsRemaining > 0,
             TutorialStep.PostBounty => (state.Phase is DayPhase.Morning or DayPhase.Evening) && state.ActionSlotsRemaining > 0,
             TutorialStep.OpenCounter => state.Phase == DayPhase.Morning,
             TutorialStep.LookIn => WatchWindowOpen(state),
@@ -1279,9 +1282,16 @@ public sealed partial class TutorialFlow : PanelContainer
         // asked of EVERY unavailable step, and every other one fell through to `string.Empty`: a
         // blank tutorial card, on the surface whose entire job is telling the player what to do.
         // OpenCounter could already reach it (its own gate is phase-only, no slot check) and LookIn
-        // now can too, so the guard is narrowed to the steps it is actually about — the same
-        // narrowing GatingNote below has always had.
-        if (state.ActionSlotsRemaining <= 0 && def.Step is TutorialStep.BuyMaterial or TutorialStep.PostBounty)
+        // now can too, so the guard is narrowed to the steps it is actually about.
+        //
+        // U-T9-11: Craft was missing from that narrowing, and the old comment here called these "the
+        // two that spend a slot", which was simply false — ActionBudget.ConsumesSlot lists CraftAction
+        // and CraftingHandlers.ApplyCraft decrements ActionSlotsRemaining. A player who spends the
+        // day's slots buying material (a 100g purse and five slots make that reachable without doing
+        // anything strange) then reads "You're at the anvil — craft", presses, and bounces off a gate
+        // the card never mentioned. A course that keeps asking for the impossible is worse than one
+        // that admits it.
+        if (state.ActionSlotsRemaining <= 0 && def.Step is TutorialStep.BuyMaterial or TutorialStep.PostBounty or TutorialStep.Craft)
         {
             return def.Step switch
             {
@@ -1337,7 +1347,7 @@ public sealed partial class TutorialFlow : PanelContainer
             return $"Comes on Day {def.MinDay} — nothing to do here yet.";
         }
 
-        if (state.ActionSlotsRemaining <= 0 && def.Step is TutorialStep.BuyMaterial or TutorialStep.PostBounty)
+        if (state.ActionSlotsRemaining <= 0 && def.Step is TutorialStep.BuyMaterial or TutorialStep.PostBounty or TutorialStep.Craft)
         {
             return "No action slots left today — try again tomorrow.";
         }
@@ -1356,6 +1366,16 @@ public sealed partial class TutorialFlow : PanelContainer
                 "Nothing on the shelf yet — stock a craft first, or there's nothing to show them.",
             TutorialStep.PostBounty when state.Phase is not (DayPhase.Morning or DayPhase.Evening) =>
                 "Morning or Evening — the board reopens then.",
+            // U-T9-11: the course's LAST step had no gating case at all — no phase note, no
+            // empty-board note — while being the one that hands the player the keys. Commissions are
+            // answered in the Morning (ActionLegality's Accept/Decline gate) and the board is
+            // gap-driven, capped at three, and posts only when a mustering hero actually has a hole
+            // in their kit — so "no one is asking today" is an ordinary day, not an edge case. Both
+            // silences ended here.
+            TutorialStep.Commission when state.Phase != DayPhase.Morning =>
+                "Commissions are answered in the Morning — the board keeps until then.",
+            TutorialStep.Commission when state.Commissions.IsEmpty =>
+                "No one is asking today. Heroes post at dawn, and only when their kit has a gap.",
             TutorialStep.LookIn when !WatchWindowOpen(state) =>
                 "Only while a party is out — ring Send them off.",
             // U2 (tutorial-revamp plan, §11.13): the conditional-not-day-based gating note —
@@ -1411,7 +1431,7 @@ public sealed partial class TutorialFlow : PanelContainer
             // sweep (EveningClose's own AdvanceFrom now includes Vigil) on a day nobody ever camps
             // — genuinely past, but never actually answered. See ChecklistRow.Skipped's own doc for
             // why that is a THIRD state, not a done/upcoming reuse.
-            var skipped = isPast && def.Step == TutorialStep.Vigil && !VigilAnswered(state);
+            var skipped = isPast && !AnsweredForReal(def, state);
             var done = isPast && !skipped;
             var current = def.DisplayIndex == currentIndex;
             var visited = current && def.Anchor.Kind is TutorialAnchorKind.Building or TutorialAnchorKind.Station
@@ -1629,6 +1649,41 @@ public sealed partial class TutorialFlow : PanelContainer
             _visitedAnchorForStep.Add(def.DisplayIndex);
         }
     }
+
+    /// <summary>
+    /// U-T9-11: whether a step the chain has already carried the player past was actually ANSWERED,
+    /// as opposed to merely left behind. The anti-stranding sweeps (<c>AdvanceFrom</c>) deliberately
+    /// carry the chain forward on a bell press so a player can never be stuck — but the checklist
+    /// then rendered every swept row as <b>✓ Done</b>, which is the false checkmark
+    /// <see cref="ChecklistRow.Skipped"/>'s own doc forbids: it claims the player answered something
+    /// they never saw. Until this, only Vigil could read Skipped, so Shelve, PostBounty and any other
+    /// swept row silently claimed credit.
+    ///
+    /// <para><b>Why this is a named set rather than simply <c>def.IsDone(state)</c>.</b> Two steps'
+    /// completion is a UI notification rather than a fact in the sim — <see cref="TutorialStep.LookIn"/>
+    /// is advanced by <c>NotifyMirrorOpened</c> and <see cref="TutorialStep.MeetHeroes"/>'s own
+    /// predicate is literally <c>_ =&gt; false</c>, advanced by <c>NotifyPanelOpened</c>. Asking
+    /// <c>IsDone</c> about those would mark them Skipped forever, which is a false DASH in place of a
+    /// false tick — no better. <see cref="TutorialStep.EveningClose"/> is excluded for the same class
+    /// of reason: its predicate is "day 3 arrived", which is true of every past day and answers
+    /// nothing about the player. So this asks only the steps whose <c>IsDone</c> is a durable fact
+    /// about what the player did, and every exclusion above is a gap named on purpose rather than a
+    /// silence.</para>
+    /// </summary>
+    /// <summary>Test seam for <c>GatingNote</c> — the note itself is only ever populated for the
+    /// CURRENT checklist row, and a test cannot force the chain onto a late step (there is no
+    /// force-the-step hook here, by design: tests drive the chain with real actions). Same naming
+    /// idiom as <see cref="DeleteForTests"/>.</summary>
+    public string? GatingNoteForTests(TutorialStepDef def, GameState state) => GatingNote(state, def);
+
+    private bool AnsweredForReal(TutorialStepDef def, GameState state) =>
+        def.Step switch
+        {
+            TutorialStep.Vigil => VigilAnswered(state),
+            TutorialStep.Shelve or TutorialStep.PostBounty or TutorialStep.BuyMaterial
+                or TutorialStep.Craft or TutorialStep.OpenCounter or TutorialStep.Commission => def.IsDone(state),
+            _ => true,
+        };
 
     /// <summary>Whether the player has walked into the CURRENT step's own anchored building at
     /// least once (checklist sub-tick) — always false for a non-Building anchor.</summary>
