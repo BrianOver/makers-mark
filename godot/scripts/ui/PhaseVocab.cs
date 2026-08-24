@@ -58,7 +58,7 @@ public static class PhaseVocab
     /// <summary>
     /// U3 (moved verbatim from <c>MainUi.BellVerb</c>), U1 (plan 2026-08-03-001, KTD-A "the two-bell
     /// day"): the contextual bell label — what pressing the HUD's one advance control does from the
-    /// current phase, state-aware rather than phase-only.
+    /// given phase.
     ///
     /// <para><b>Only Morning and Evening keep a real bell.</b> Expedition/Camp/ExpeditionDeep are the
     /// <see cref="RaidConductor"/>'s span now — the player has no phase-specific verb in any of the
@@ -71,11 +71,21 @@ public static class PhaseVocab
     /// player-cranked bell over a span with nothing to decide), not any one label's wording — U1
     /// retires the structure, so no replacement label is owed for any of the three.</para>
     /// </summary>
-    public static string BellVerb(GameState state) => state.Phase switch
+    public static string BellVerb(DayPhase phase) => phase switch
     {
         DayPhase.Morning => "Send them off",
         DayPhase.Expedition or DayPhase.Camp or DayPhase.ExpeditionDeep => "Hurry the day along",
         DayPhase.Evening => "Snuff the lanterns",
         _ => "Advance",
     };
+
+    /// <summary>
+    /// State-aware overload: reads <paramref name="state"/>'s live phase. Every caller with a real
+    /// <see cref="GameState"/> in hand goes through here (<c>MainUi</c>, <c>TutorialFlow</c>); the
+    /// phase-only overload above exists for callers with no live state to ask — U2 (§11.14.14)
+    /// added it so the pre-campaign "your first day" primer (<c>NewGameSelect</c>) can quote the
+    /// SAME bell words the HUD will actually print, without fabricating a <see cref="GameState"/>
+    /// just to read one field off it.
+    /// </summary>
+    public static string BellVerb(GameState state) => BellVerb(state.Phase);
 }

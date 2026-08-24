@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Globalization;
 using GameSim;
+using GameSim.Contracts;
 using GameSim.Kernel;
 using GameSim.Professions;
 using Godot;
@@ -75,14 +76,25 @@ public partial class NewGameSelect : Control
         }.ToImmutableSortedDictionary(StringComparer.Ordinal);
 
     /// <summary>
-    /// The living-day clock explainer (World Rework KTD3): auto-flow, engaged-latch boundary
-    /// wait, and Advance-as-skip, in plain language — no timer numbers (those are tuning knobs,
-    /// not player-facing promises).
+    /// The living-day clock explainer. U2 (§11.14.14): the OLD copy above (kept here as the fix's
+    /// receipt) said phases "advance automatically" and told the player to press a control called
+    /// "Advance" — this repo's most-litigated first-screen copy defect, and BOTH halves were false.
+    /// Auto-advance defaults OFF (<see cref="PhaseClock.AutoAdvance"/>'s own field default is
+    /// "player-decided" — <c>MainUi</c>'s boot sequence only ever flips it on from a PERSISTED
+    /// opt-in, never as a fresh-install default): the day waits for the player. And no control
+    /// anywhere is labelled "Advance" — the HUD's one bell relabels itself per phase (<see
+    /// cref="PhaseVocab.BellVerb"/>), so this note reads its two real words (Morning/Evening — the
+    /// only two phases that carry a bell at all; Quest/Vigil/Deep Vigil are the raid span and play
+    /// themselves, per <c>GameKernel.Advance</c>'s own transition table) FROM
+    /// <see cref="PhaseVocab"/> instead of retyping them — the same join <see cref="TutorialFlow"/>
+    /// already uses for its own copy (<c>MorningBell</c>/<c>EveningBell</c>), so a reworded bell
+    /// turns this line red instead of quietly becoming the next copy of this exact defect. No timer
+    /// numbers (those are tuning knobs, not player-facing promises).
     /// </summary>
-    private const string ClockNote =
-        "The day flows on its own — phases advance automatically. A phase boundary waits while " +
-        "you're working in a panel, so no queued action is ever lost to time. Advance skips " +
-        "straight to the next phase whenever you're ready.";
+    private static string ClockNote =>
+        $"The day waits for you — nothing moves until you say so. Press \"{PhaseVocab.BellVerb(DayPhase.Morning)}\" " +
+        $"when you're ready to end the morning, and \"{PhaseVocab.BellVerb(DayPhase.Evening)}\" to close out the " +
+        "night; whatever happens in between plays itself.";
 
     /// <summary>
     /// U7 (opener fantasy line): the one sentence this whole game is about — everything else on

@@ -38,6 +38,15 @@ namespace GodotClient.Tests;
 /// <para>Every case reads copy through <see cref="TutorialFlow.CopyFor"/> against a projected
 /// state, never by driving a campaign — deliberately, so this suite has no dependency whatsoever on
 /// the phase/beat advance machinery it would otherwise have to walk three in-game days of.</para>
+///
+/// <para><b>U2 (§11.14.14) widens jurisdiction to the primer.</b> This whole class of defect —
+/// copy naming a control the screen does not have — is not unique to the in-course tutorial: the
+/// FIRST screen a new player reads, <c>NewGameSelect</c>'s "your first day" primer, carried the
+/// exact same shape ("phases advance automatically", "press Advance") one scene BEFORE the course
+/// even starts, where none of the cases above could ever see it. The primer cases below
+/// (<c>ThePrimersClockNote_...</c>) apply this suite's own method — read a control's real printed
+/// label through <see cref="PhaseVocab"/> rather than retyping it — to that scene too, so a
+/// reworded bell or a flipped auto-advance default goes red there as well as in the course.</para>
 /// </summary>
 [TestSuite]
 [RequireGodotRuntime]
@@ -369,6 +378,95 @@ public class TutorialCopyIsFollowableTests
         }
     }
 
+    /// <summary>
+    /// U2 (§11.14.14): the primer's own clock note (<c>NewGameSelect.ClockNote</c>) is built EAGERLY
+    /// at <c>_Ready</c>/<c>BuildUi</c> regardless of which of the four views is visible — same
+    /// eager-build discipline the class doc on <c>NewGameSelect</c> already relies on for the
+    /// FullPlaytest picker shortcut — so a bare mount is enough to read it; no NewGame/Pick press
+    /// needed first.
+    /// </summary>
+    [TestCase]
+    public void ThePrimersClockNote_QuotesTheSameBellLabels_AndTheControlBehindThemReallyExists()
+    {
+        // The exact join TheDepartureAndCloseSteps_... above pins for the course, applied one
+        // scene earlier: read the words from PhaseVocab (the button's own source of truth) rather
+        // than retyping them, so a reworded bell turns the primer's copy red too, not just the
+        // tutorial's.
+        var morningBell = PhaseVocab.BellVerb(DayPhase.Morning);
+        var eveningBell = PhaseVocab.BellVerb(DayPhase.Evening);
+
+        var primer = MountNewGameSelect();
+        try
+        {
+            var clockNote = Find<Label>(primer, "ClockNote").Text;
+            AssertThat(clockNote)
+                .OverrideFailureMessage(
+                    $"The primer's clock note never names the morning bell's real label (\"{morningBell}\"), " +
+                    $"so a brand-new player is told to look for a press that prints something else:\n  \"{clockNote}\"")
+                .Contains(morningBell);
+            AssertThat(clockNote)
+                .OverrideFailureMessage(
+                    $"The primer's clock note never names the evening bell's real label (\"{eveningBell}\"):\n  \"{clockNote}\"")
+                .Contains(eveningBell);
+        }
+        finally
+        {
+            UnmountNewGameSelect(primer);
+        }
+
+        // And the control those two words describe is really there, under the name both this suite
+        // and TheDepartureAndCloseSteps_... above already pin.
+        var ui = MountMainUi();
+        try
+        {
+            AssertThat(ui.FindChild("AdvancePhase", recursive: true, owned: false) as Button)
+                .OverrideFailureMessage(
+                    "The primer's clock note describes a bell that does not exist in the live game.")
+                .IsNotNull();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>
+    /// The OLD defect's other half, pinned against the fact rather than the wording: the primer
+    /// said "phases advance automatically" while <see cref="PhaseClock.AutoAdvance"/>'s own field
+    /// default is OFF (player-decided — <c>MainUi</c>'s boot sequence only ever flips it on from a
+    /// PERSISTED opt-in, never a fresh install). Reading the real default off a freshly constructed
+    /// <see cref="PhaseClock"/>, rather than assuming it, means a future default flip (back to
+    /// timed, or to some third mode) turns this red instead of leaving the primer's copy to drift
+    /// silently the way it did the first time.
+    /// </summary>
+    [TestCase]
+    public void ThePrimersClockNote_MatchesPhaseClocksActualAutoAdvanceDefault()
+    {
+        var manualByDefault = !new PhaseClock(new SimAdapter(GameComposition.NewCampaign(1))).AutoAdvance;
+
+        var primer = MountNewGameSelect();
+        try
+        {
+            var clockNote = Find<Label>(primer, "ClockNote").Text;
+
+            AssertThat(clockNote.Contains("automatically", StringComparison.OrdinalIgnoreCase))
+                .OverrideFailureMessage(
+                    $"The primer claims phases \"advance automatically\" while PhaseClock's actual default is " +
+                    $"{(manualByDefault ? "manual" : "automatic")}:\n  \"{clockNote}\"")
+                .IsEqual(!manualByDefault);
+
+            AssertThat(clockNote.Contains("waits for you", StringComparison.OrdinalIgnoreCase))
+                .OverrideFailureMessage(
+                    $"The primer never says the day waits for the player, though PhaseClock's actual default " +
+                    $"is {(manualByDefault ? "manual" : "automatic")}:\n  \"{clockNote}\"")
+                .IsEqual(manualByDefault);
+        }
+        finally
+        {
+            UnmountNewGameSelect(primer);
+        }
+    }
+
     [TestCase]
     public void TheTraySteps_QuoteTheTooltipsTheTrayButtonsActuallyCarry_NotTheirPanelTitles()
     {
@@ -588,5 +686,25 @@ public class TutorialCopyIsFollowableTests
     /// panel strips the emphasis markers before rendering (<see cref="ObjectiveTracker.Plain"/>).
     /// Asserting on the raw string would let a needle "match" across a marker the player never sees.</summary>
     private static string Plain(string copy) => ObjectiveTracker.Plain(copy);
+
+    // ── U2 (§11.14.14) primer helpers: NewGameSelectTests.cs's own Mount/Unmount, duplicated here
+    // rather than shared — that suite's doc comment states the repo convention outright ("small
+    // test helpers are cheap to keep self-contained per suite"). MountMainUi/Unmount above stay
+    // untouched; this scene is a different root entirely.
+
+    private static NewGameSelect MountNewGameSelect()
+    {
+        var tree = (SceneTree)Engine.GetMainLoop();
+        var screen = GD.Load<PackedScene>("res://scenes/new_game_select.tscn").Instantiate<NewGameSelect>();
+        tree.Root.AddChild(screen);
+        return screen;
+    }
+
+    private static void UnmountNewGameSelect(NewGameSelect screen)
+    {
+        MainUi.AdapterOverride = null; // never leak a picked campaign into a later suite
+        screen.GetParent()?.RemoveChild(screen);
+        screen.Free();
+    }
 }
 #endif
