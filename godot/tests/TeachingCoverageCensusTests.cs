@@ -64,6 +64,19 @@ namespace GodotClient.Tests;
 /// <c>WaveELessonsTests</c>/<c>ForgeMentorLessonsTests</c>/<c>LegendsWallTests</c>, not here). Mistaking
 /// this census for proof that a lesson actually renders on screen is exactly the overstated-guard
 /// mistake <see cref="ActionReachabilityCensusTests"/>' own doc warns against.</para>
+///
+/// <para><b>U6 correction (§11.14.14): coverage is not discovery, and no census in this file measures
+/// discovery.</b> A first-touch claim proves an id string sits at a live call site — it says nothing
+/// about WHEN that call site fires relative to the player finding the verb. Every first-touch lesson
+/// wired in this repo today fires reactively: AFTER the player has already located and pressed the
+/// button it explains, never before. The clearest example is <c>ForgePanel.OnUnlockPressed</c>, which
+/// queues <see cref="UnlockTalentAction"/> — spending the action slot — and only THEN calls
+/// <c>ShowTalentsLesson</c>, whose copy tells the player "banking the slot ... is a real choice" one
+/// press after the slot they might have banked is already gone. Counting "10 of 25 actions have a
+/// first-touch decision" answers "was a decision recorded here," which is what this file is built to
+/// check; it is not evidence that any player was ever LED to a verb before choosing it, because
+/// nothing that fires after a press can cause the discovery that press already represents. Read every
+/// count in this file as coverage, never as proof of discovery.</para>
 /// </summary>
 [TestSuite]
 [RequireGodotRuntime]
@@ -273,12 +286,33 @@ public class TeachingCoverageCensusTests
         [typeof(DeclineCommissionAction)] = TutorialStep.Commission,
     };
 
+    /// <summary>U6 (§11.14.14) RE-RULING of <see cref="UnstockAction"/>. The prior verdict here read
+    /// "a deliberate, low-stakes gap, not an oversight" — measurement contradicts that on two counts,
+    /// so it is corrected rather than kept (rule 8: a doc caught asserting what evidence contradicts
+    /// is corrected, or deleted, not preserved).
+    ///
+    /// <para><b>It is the executing verb behind the first of the six dilemmas CLAUDE.md's own header
+    /// names</b> — "sell the good one or hold it for the hero who needs it." Reconsidering a shelf
+    /// choice IS taking the item back off the shelf; there is no other verb that does it.</para>
+    ///
+    /// <para><b>It is also a hard precondition for the vigil.</b> <c>ActionLegality.SendSupplyLegal</c>
+    /// (sim/GameSim/Advisor/ActionLegality.cs, ~line 595) rejects <see cref="SendSupplyAction"/>
+    /// outright while the item still sits on <c>state.Player.Shelf</c>. A player who shelved
+    /// everything has no legal supply to send, and nothing anywhere tells them Unstock is the way
+    /// out of that trap.</para>
+    ///
+    /// <para>So this is re-ruled OWED, not excused — it stays in this bucket, not first-touch or a
+    /// numbered step, because building the lesson is explicitly NOT this unit's job; a later unit
+    /// teaches it. What changed is the verdict, not the code.</para>
+    /// </summary>
     private static readonly Dictionary<Type, string> ActionUntaught = new()
     {
         [typeof(UnstockAction)] =
-            "The inverse of Stock: taking an item back off the shelf. No first-touch lesson and no " +
-            "numbered step (the chain only ever asks the player to shelve, never to reconsider a " +
-            "shelf choice) — a deliberate, low-stakes gap, not an oversight.",
+            "OWED, not deliberate (U6 re-ruling, see doc comment above ActionUntaught): Unstock is " +
+            "the executing verb behind dilemma 1 (sell the good one or hold it for the hero who " +
+            "needs it) AND a precondition for SendSupplyLegal -- a shelved item cannot be sent on " +
+            "vigil, so a player with a full shelf and no Unstock lesson has no legal supply and no " +
+            "idea why. No first-touch lesson and no numbered step exist yet; a later unit builds one.",
         [typeof(CloseCounterAction)] =
             "CounterAnsweredAtLeastOnce (TutorialFlow.cs) recognizes CloseCounterAction as an optional " +
             "fast-path AFTER an answer, but never REQUIRES it -- a player can finish the OpenCounter " +
