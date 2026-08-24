@@ -4881,7 +4881,872 @@ Every register item, and the unit that closes it. A blank here is a failure of t
 | 167 | 8g in the sentence, 11g on the chip | U-T5-3 |
 | — | "Returned safely" after a rout (found, unreported) | U-T5-4 |
 
+## §11.14.14 T10 — The guided course (owner ruling, 2026-08-24)
+
+**Supersedes §11.14.13's unit table and ordering; its measurements stand and are cited below.** T9 was
+sized as a chain extension and the owner rejected that sizing three times: *"this tutorial re work
+shouldn't be small"*, *"full guided with highlights etc"*, *"full guided with text, highlights,
+everything"*. Asked who the course is for, he answered: **anyone new — players, testers.** So nothing
+is cut on the assumption the player already knows the town.
+
+T9's eight owed units (U-T9-1/2/3/4/7/8/9/10) are absorbed here with their content intact. Six
+measurement sweeps over the current tree found roughly fifty distinct capabilities this course needs;
+T9 covered about a fifth of them. This is a program, not a wave.
+
+### What the sweeps found, and it changed the scope
+
+Four findings reset the size. Each was verified against `61893df0` by reading, not inferred.
+
+**The course teaches a falsehood about its own economy.** `pricing-as-a-decision` says a fair price
+"earns goodwill that compounds". It fires on a **shelf** reprice, and the shelf has no fairness
+memory: `ShoppingAi.EvaluateItem` has no price-fairness gate and `HeroShoppingSystem` never touches
+mood. The compounding machinery is the **counter's** — a pin is +60 persistent mood, a fleece is −80
+mood and −120 session goodwill feeding future offer bands and gossip. Two mechanisms with different
+stakes, taught as one sentence. That is law 4 — show only what the sim decided — breached in shipped
+copy, and two independent sweeps convicted it separately.
+
+**Every first-touch lesson fires after the player already found the verb.** `TeachingCoverageCensusTests`
+records a decision for all 25 player actions, but a first-touch claim proves an id string sits near a
+call site, not that anyone was ever led there. The talent lesson says "banking the slot is a real
+choice" from inside `OnUnlockPressed` — one press after the slot is spent. Reactive teaching cannot
+cause discovery, so ten "covered" verbs are undiscovered.
+
+**There is no commission fulfil verb.** An accepted commission is fulfilled by crafting the named slot
+at quality and **stocking it on the shelf** — `CommissionHandlers.TryFulfillFromShelf` runs ahead of
+ordinary shopping. Nothing in the game says the shelf is the delivery channel. Breaking an accepted
+promise is −100 mood; declining costs nothing. The harshest outcome in the channel is the one a
+confused player walks into, and the chain ends at Accept — the day before the mechanism it promised.
+
+**Nothing owns the first sixty seconds, and law 1 is taught nowhere.** *Influence never orders* is the
+law most likely to collide with what a new player expects from a fantasy game, and no surface states
+it. The inversion — you are the smith, you never go down, you cannot give orders — rests on one primer
+line that implies half of it. That same primer names a control called "Advance" that exists on no
+screen and promises a day that flows on its own while `PhaseClock` defaults auto-advance **off**. The
+course fixed that exact defect twice internally, with tests pinning the fix; the followability suite's
+jurisdiction ends one scene before the game begins.
+
+### The clock, corrected
+
+§11.14.13 and every prior plan reasoned about a player belling through phases. Verified in
+`GameKernel.Advance`: day order is **Dawn → Quest → Vigil → Deep Vigil → Night**, not enum order, and
+**only Dawn and Night carry a bell** ("Send them off", "Snuff the lanterns"). The raid span is a
+conducted show that plays itself regardless of the auto-advance toggle, and its timers stop dead while
+the player owes an answer. An open counter session holds the day at Dawn; zero living heroes collapses
+Dawn straight to Night. A real day is two presses.
+
+Slots are five per day, reset only when `Day` increments, and persist across all five phases. Exactly
+ten action types spend one. Everything at the shelf, the **entire** counter session, accepting or
+declining a commission, sending or recalling at camp, and honoring the memorial are **free** — and a
+new player has no way to learn that the counter, the richest surface in the game, costs nothing to
+open.
+
+One new measurement: the first vigil camp stop lands **day 2 on 12 of 12 seeds** — but that depends on
+`BaselinePlayer` posting a bounty. Moving the bounty lesson to day 3 raises the risk that days 2–3
+have no vigil to teach. That cost was not named when the move was booked; U28 names it.
+
+### The three lanes, unchanged, plus the rule that keeps day 4–7 honest
+
+Lanes stay as T9 ruled: the **numbered course** the player causes, **dormant acts** armed on a sim fact
+with a bounded window and an honest `Skipped`, and once-ever **first-touch** lessons. The dormant loss
+act remains the only proven template, and the 1287× memorial-nag finding is why the honest retire is a
+hard rule.
+
+**Days 4–7 still contain zero numbered steps.** Commission delivery is player-causable and was proposed
+as a day-4 numbered step; it is booked as a dormant act instead (U24), because whether a commission was
+ever accepted is a sim fact and a numbered row would strand the player who declined. The rule holds
+without exception.
+
+---
+
+### Requirements
+
+**Honesty of shipped copy**
+
+R1. No lesson describes a mechanism the sim does not implement at the surface where the lesson fires.
+R2. No player-facing line says "the sim", "button", "click", or "HUD".
+R3. The primer describes the clock the game actually runs and names only controls that exist.
+R4. A pinned ruling that measurement contradicts is corrected in the same PR that finds it.
+R5. Every teaching surface renders the markup its own copy carries.
+
+**The pointer**
+
+R6. A step or beat can point at any control on any surface the game has, including modals.
+R7. A pointer whose target the sim has not yet produced points at the way in, never at nothing.
+R8. A target off camera, scrolled out of view, or inside a closed panel still shows the player where to go.
+R9. The tutorial's pointer is distinguishable from ordinary affordance glow without a hue judgment.
+R10. A beat's line and its pointer arrive and leave together.
+R11. Legality shown to the player derives from the sim's own verdict, not a mirror of it.
+R12. A pointer, and any beat not yet displayed, survives a quit and reload.
+R13. The interact verb has an on-screen affordance.
+
+**What the course teaches**
+
+R14. The course spans seven days and reaches the counterfactual proof and the town's memory.
+R15. Five of the six decisions are presented as forks with both arms' costs named before the choice.
+R16. A player learns that the shelf is public: what sits on it anyone may buy, and it cannot be sent or held.
+R17. A player learns how an accepted commission is delivered, and what breaking one costs.
+R18. A player learns that a counter always closes the sale, and that a fleece is remembered.
+R19. A player learns where the game publishes what the town wants.
+R20. A player learns which actions spend the day's budget and which are free.
+R21. No night delivers more than two act-voices; a beat whose fact lands on a full night arms for the next morning at full window.
+R22. Deferral is by arming date only — never a countdown, never a timer on a decision.
+
+**The adviser**
+
+R23. Pressing E at her station opens her own untimed surface and she answers.
+R24. She speaks on each of the five moments that carry the sentence, ranked above ordinary lessons.
+R25. She describes events the sim logged about this player, and never an invented observation.
+R26. She leaves at graduation and returns exactly once.
+R27. She is visually distinct from every wandering townsperson.
+R28. Her whole corpus lives in one table and every line in it is checked for command register.
+
+**The first minute and the doors**
+
+R29. The game states the inversion and law 1 before the first instruction.
+R30. A player who has kept a shop before can skip the course without forfeiting the warrant.
+R31. A tester can reach day 4 without hand-playing three days.
+R32. A player who is stuck, idle, or repeatedly refused is offered help once, without a nag.
+R33. A player is taught to leave a room, and can ask where to go at any time.
+
+**Proof it keeps working**
+
+R34. An automated run takes the course: reads each instruction, obeys it, and asserts a pointer drew on screen.
+R35. Copy naming a control goes red when that control is renamed, including the primer and the adviser's corpus.
+R36. A tester's session records which step they were on.
+
+---
+
+### Key technical decisions
+
+KTD1. **The anchor vocabulary goes total before any beat is written.** Conditional anchors, container
+anchors, one surface roster, and beats-carry-pointers together make every later beat one registry row
+instead of a mechanism. Building beats first means retrofitting each one.
+
+KTD2. **Days 4–7 carry no numbered steps.** Everything left to teach there is a fact the player cannot
+schedule. Commission delivery is a dormant act armed on an accepted commission, not a numbered row.
+
+KTD3. **Deferral is by arming date, never a countdown.** A beat that cannot speak tonight arms for the
+next morning with its full window. Nothing appears or disappears except on a press or a phase boundary.
+
+KTD4. **The observation engine reads only the event log.** `Observe(GameState)` is a pure total function
+over logged facts with an authored template table and a deterministic pick. A test pins that every
+template's facts come from the log, so she can never invent what she saw.
+
+KTD5. **`ThreadHero` chooses which name copy prints and never appears in an `IsDone` predicate.** Carried
+verbatim from §11.14.13; completion stays player-caused or honestly `Skipped`.
+
+KTD6. **Wall-clock stays in `godot/`.** The stuck-player detector reads elapsed time, which KTD2 forbids
+in the sim and permits in the adapter. A timer on *offering help* decides nothing for the player, so
+law 2 is untouched — but it must use the once-ever anti-nag shape the first-touch engine already has.
+
+KTD7. **The off-camera pointer points and never orders.** A screen-edge marker plus a camera peek is one
+step from a quest compass. The peek is player-triggered or a single beat, never a held hijack, and the
+marker says "here", never "do".
+
+KTD8. **Decision #5 is not taught until the owner rules.** The design doc describes something the sim
+cannot represent: `BuyOreAction` has no price parameter, the hero always receives the base ask, and the
+tariff moves only what the player pays. Both doors are recorded in Open Questions.
+
+KTD9. **A first-touch lesson may not be the only teacher of a verb the course requires.** Reactive
+lessons fire after discovery, so any verb the course depends on gets a pointed moment as well.
+
+---
+
+### Sequencing
+
+```mermaid
+flowchart TB
+  P1["Wave 1 — Stop lying<br/>U1-U6"]
+  P2["Wave 2 — The pointer reaches everything<br/>U7-U15"]
+  P3["Wave 3 — The first minute and the doors<br/>U16-U20"]
+  P4["Wave 4 — The course teaches the game<br/>U21-U32"]
+  P5["Wave 5 — Bryn becomes a person<br/>U33-U37"]
+  P6["Wave 6 — Prove it keeps working<br/>U38-U39"]
+  P1 --> P2
+  P1 --> P3
+  P2 --> P4
+  P4 --> P5
+  P2 --> P5
+  P4 --> P6
+  P5 --> P6
+```
+
+Wave 1 lands first because it removes live falsehoods and every unit in it is independent. Wave 3 needs
+nothing from Wave 2 and can run beside it. Wave 5's arc lines need Wave 4's beats to attach to.
+
+---
+
+### Unit index
+
+| U | Title | Key files | Depends on |
+|---|---|---|---|
+| U1 | The pricing lesson tells the truth about two mechanisms | `godot/scripts/panels/ShopPanel.cs`, `godot/scripts/ui/TutorialFlow.cs` | — |
+| U2 | The primer describes the game's real clock | `godot/scripts/NewGameSelect.cs`, `godot/scripts/ui/PhaseVocab.cs` | — |
+| U3 | "The sim" leaves the player's ear | `godot/scripts/MainUi.cs`, `godot/scripts/ui/MentorVoice.cs` | — |
+| U4 | Bryn answers on her own surface | `godot/scripts/MainUi.cs`, `godot/tests/MentorStationLiveTests.cs` | — |
+| U5 | Teaching surfaces render their own copy | `godot/scripts/panels/LessonsPanel.cs`, `godot/scripts/ui/ObjectiveTracker.cs` | — |
+| U6 | The census stops overclaiming, and the voice census exists | `godot/tests/TeachingCoverageCensusTests.cs`, `sim/GameSim.Tests/` | — |
+| U7 | Anchors know whether their target exists yet | `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/ui/TutorialOverlay.cs` | — |
+| U8 | Anchors point at containers, not per-entity buttons | `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/ui/UiKit.cs`, panels | U7 |
+| U9 | One surface roster, one way in | `godot/scripts/MainUi.cs`, `godot/scripts/ui/TutorialFlow.cs` | — |
+| U10 | A beat carries its pointer, and one arbiter chooses | `godot/scripts/ui/MentorBanner.cs`, `godot/scripts/MainUi.cs` | U9 |
+| U11 | The outline is clipped, and the target is scrolled into view | `godot/scripts/ui/TutorialOverlay.cs`, `godot/scripts/ui/ObjectiveTracker.cs` | — |
+| U12 | The interact prompt is drawn | `godot/scripts/town2d/WorldInput2D.cs`, `godot/scripts/MainUi.cs` | — |
+| U13 | Legality comes from one source | `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/ui/SurfaceUnlocks.cs` | — |
+| U14 | A pointer, and an unshown beat, survive a quit | `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/ui/MentorBanner.cs` | U10 |
+| U15 | Off-camera targets have a pointer, and it is unmistakable | `godot/scripts/ui/TutorialOverlay.cs`, `godot/scripts/town2d/Town2D.cs`, `godot/scripts/town2d/Building2D.cs` | U7 |
+| U16 | The game says what it is | `godot/scripts/NewGameSelect.cs`, `godot/scripts/ui/TutorialFlow.cs` | U2 |
+| U17 | The returning smith's door | `godot/scripts/NewGameSelect.cs`, `godot/scripts/ui/TutorialFlow.cs` | — |
+| U18 | A tester can stand on day 4 | `godot/scripts/tools/`, `godot/scripts/CampaignSave.cs` | — |
+| U19 | The game notices a stuck player | `godot/scripts/MainUi.cs`, `godot/scripts/ui/MentorBanner.cs` | U10 |
+| U20 | Leaving a room is taught, and "where do I go" is a key | `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/ui/ShortcutMap.cs` | U15 |
+| U21 | Five acts | `godot/scripts/ui/TutorialFlow.cs` | — |
+| U22 | `ThreadHero` | `godot/scripts/ui/TutorialFlow.cs` | — |
+| U23 | The shelf is a public place | `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/panels/ShopPanel.cs` | U8 |
+| U24 | Deliver what you promised | `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/panels/CommissionBoard.cs` | U7, U8 |
+| U25 | The counter's economics | `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/panels/CounterPanel.cs` | U8 |
+| U26 | Read what the town wants | `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/panels/DemandPanel.cs` | U9 |
+| U27 | Five decisions become forks | `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/panels/` | U8, U23 |
+| U28 | The day's slots, and what they don't cost | `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/MainUi.cs` | — |
+| U29 | The voice budget arms instead of queueing | `godot/scripts/ui/MentorBanner.cs`, `godot/scripts/ui/TutorialFlow.cs` | U10 |
+| U30 | The proof gets a row | `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/panels/LedgerModal.cs` | U21, U29 |
+| U31 | The loss gets a voice | `godot/scripts/ui/TutorialFlow.cs` | U29 |
+| U32 | The memory gets a row, and graduation is event-shaped | `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/panels/LegendsWall.cs` | U21, U30 |
+| U33 | Her five arc lines | `godot/scripts/ui/MentorVoice.cs`, `godot/scripts/ui/TutorialFlow.cs` | U29, U30, U31, U32 |
+| U34 | She says what she's seen | `godot/scripts/ui/MentorVoice.cs` | U4, U33 |
+| U35 | She leaves | `godot/scripts/town2d/InteriorLayout2D.cs`, `godot/scripts/ui/MentorVoice.cs` | U32, U33 |
+| U36 | She has a body and a face | `art/specs/`, `godot/scripts/ui/MentorBanner.cs` | U33 |
+| U37 | She is somewhere, and she remembers | `godot/scripts/town2d/`, `godot/scripts/ui/TutorialFlow.cs` | U34, U35 |
+| U38 | A harness takes the course | `godot/scripts/tools/FullPlaytest.cs` | U15, U29 |
+| U39 | Copy cannot outlive its control | `godot/tests/`, `godot/scripts/tools/PlaytestLog.cs` | U33 |
+
+---
+
+### Wave 1 — Stop lying
+
+#### U1. The pricing lesson tells the truth about two mechanisms
+
+- Goal: replace one half-false sentence with two true ones, and move the lesson to before the choice.
+- Requirements: R1, R15
+- Files: `godot/scripts/panels/ShopPanel.cs`, `godot/scripts/ui/TutorialFlow.cs`, `godot/tests/DilemmaLessonsTests.cs`
+- Approach: the shelf sentence says the price decides only whether they can afford it; the counter
+  sentence says a pin is remembered kindly and a fleece is remembered otherwise. Fire the shelf half at
+  the first price the player ever sets — the Shelve step already owns that moment — and the counter half
+  in the OpenCounter teach copy. The reprice-only firing retires into the Lessons book.
+- Test scenarios: a player who stocks at the suggested price and never reprices still receives the shelf
+  lesson; the counter half fires on the first counter session; the census still counts decision #2 as
+  covered; a shelf-overpriced item fails only the affordability gate and produces no mood delta.
+- Verification: both sentences appear at their own surface, and neither claims a mechanism the other owns.
+
+#### U2. The primer describes the game's real clock
+
+- Goal: the first screen a player reads stops naming a control that does not exist.
+- Requirements: R3, R35
+- Files: `godot/scripts/NewGameSelect.cs`, `godot/scripts/ui/PhaseVocab.cs`, `godot/tests/`
+- Approach: join the primer's clock copy to `PhaseVocab` the way all in-course copy already is, so it
+  names "Send them off" and "Snuff the lanterns" and says the day waits for the player. Extend the
+  followability suite's jurisdiction to the primer scene — that suite already catches this class and its
+  reach simply stops one scene early.
+- Test scenarios: the primer names no control absent from the live scene tree; renaming a bell label goes
+  red; auto-advance's default is stated correctly.
+- Verification: the followability test covers `NewGameSelect` and fails when primer copy drifts.
+
+#### U3. "The sim" leaves the player's ear
+
+- Goal: two player-facing lines stop naming the engine, and a test stops the third from appearing.
+- Requirements: R2
+- Files: `godot/scripts/MainUi.cs`, `godot/scripts/ui/MentorVoice.cs`, `godot/tests/MentorVoiceTests.cs`
+- Approach: the proof line and the read-only-surfaces line become the town's record. Add a register check
+  over her corpus for "the sim", "button", "click", and "HUD".
+- Test scenarios: the register check goes red on a line containing any banned token; both existing lines pass.
+- Verification: no player-facing string in `godot/scripts` contains the banned tokens.
+
+#### U4. Bryn answers on her own surface
+
+- Goal: pressing E at her station opens her untimed banner instead of the four-second rejection toast.
+- Requirements: R23, R5
+- Files: `godot/scripts/MainUi.cs`, `godot/scripts/ui/MentorVoice.cs`, `godot/tests/MentorStationLiveTests.cs`
+- Approach: `OnStationActivated` routes her station id to the banner path she already owns. Strip or
+  render markup before it reaches her mouth — today the toast path prints literal asterisks during the
+  counter step. `MentorStationLiveTests` currently pins the toast and must be rewritten to pin the banner.
+- Test scenarios: E at her station shows the banner and no toast; the banner dismisses only on a press;
+  a lesson containing bold markup renders without asterisks; her longest lesson is not truncated.
+- Verification: the live test asserts the banner, and the rejection toast no longer answers a greeting.
+
+#### U5. Teaching surfaces render their own copy
+
+- Goal: three render defects on the surfaces the course is written onto.
+- Requirements: R5
+- Files: `godot/scripts/ui/ObjectiveTracker.cs`, `godot/scripts/panels/LessonsPanel.cs`
+- Approach: completed steps render their label as well as their glyph; the Lessons book calls the same
+  plain-text pass the card uses so nineteen copy lines stop printing literal bold; book entries take
+  their title from copy rather than a raw slug.
+- Test scenarios: a completed row shows its label; a lesson containing markup renders none literally; no
+  book entry title contains a hyphenated slug.
+- Verification: a rendered frame of the Lessons book shows no asterisks and no slugs.
+
+#### U6. The census stops overclaiming, and the voice census exists
+
+- Goal: two pinned claims that measurement contradicts, and one census the T9 charter named and nobody built.
+- Requirements: R4, R21, R9
+- Files: `godot/tests/TeachingCoverageCensusTests.cs`, `sim/GameSim.Tests/`
+- Approach: `Unstock` is pinned "a deliberate, low-stakes gap" — two of the six decisions route through
+  that button and `SendSupplyLegal` rejects any shelved item, so a player with everything shelved has no
+  legal supply to send. Re-rule it as owed. Separately, the census's first-touch claims prove id
+  adjacency, not that a player was ever led to the verb; say so in the doc block so the next reader is
+  not misled. Then add the fast-lane chronicle census the voice budget's charter row called for: over
+  `batch --seeds N`, assert no seed and no night exceeds two act-facts.
+- Test scenarios: the census names `Unstock` as owed with its two routes cited; the doc block distinguishes
+  discovery from adjacency; the chronicle census passes on current seeds and goes red on a synthetic
+  three-act night.
+- Verification: the census exists in the fast lane and runs over `runs/`.
+
+---
+
+### Wave 2 — The pointer reaches everything
+
+#### U7. Anchors know whether their target exists yet
+
+- Goal: an anchor may name a target the sim has not produced, and point at the way in until it has.
+- Requirements: R7
+- Files: `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/ui/TutorialOverlay.cs`
+- Approach: generalize the two-phase shape `AimAnchor` already proved — anchor plus an `Exists(GameState)`
+  predicate plus a declared fallback anchor, resolved at refresh time the way live station ids already
+  are. The throw-on-unresolvable contract stays: the fallback is declared, never inferred.
+- Test scenarios: an anchor whose entity is absent resolves to its fallback; the same anchor resolves to
+  the target once the entity exists; an anchor with no declared fallback still throws.
+- Verification: a registry row can name a commission card on a day with no commissions and draw the way in.
+
+#### U8. Anchors point at containers, not per-entity buttons
+
+- Goal: reach the buttons whose names carry an entity id.
+- Requirements: R6
+- Files: `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/ui/UiKit.cs`, `godot/scripts/panels/`
+- Approach: a section-scoped anchor kind plus a stable-name contract on the section builder, so a step
+  anchors the container rather than `Stock_{item}`, `CommissionAccept_{hero}` or `Honor_{hero}`. A
+  conformance test pins the naming convention the way the registry's static anchors are already pinned.
+- Test scenarios: a section anchor resolves with zero, one and many rows; a renamed section goes red;
+  per-entity buttons remain reachable through their container.
+- Verification: the unshelved-crafts, commission, rite and counter containers all resolve by name.
+
+#### U9. One surface roster, one way in
+
+- Goal: one table of every surface the pointer can address, replacing two hardcoded lists and a naming assumption.
+- Requirements: R6
+- Files: `godot/scripts/MainUi.cs`, `godot/scripts/ui/TutorialFlow.cs`
+- Approach: id, content root, and way-in anchor per surface. The drawer's ten and the five modals collapse
+  into it, and the Mirror, Bestiary, Chronicle, dock and Docket join — they are mounted on the root and
+  sit in no roster today, so a pointer at the Mirror throws. The `Open{id}` tray convention is a default,
+  not a law: the Mirror's way in is its watch button.
+- Test scenarios: every surface in the roster resolves its content root; every surface names a reachable
+  way in; a surface absent from the roster throws with its own name in the message.
+- Verification: the roster is the only place a surface id is declared.
+
+#### U10. A beat carries its pointer, and one arbiter chooses
+
+- Goal: a beat's line and its pointer arrive and leave together.
+- Requirements: R10
+- Files: `godot/scripts/ui/MentorBanner.cs`, `godot/scripts/MainUi.cs`
+- Approach: the queue entry becomes line, rank and anchor. One arbiter owns the choice between the forge
+  spotlight, the current beat, the chain step and the loss row — today that is a hardcoded ternary in the
+  root that grows a branch per feature.
+- Test scenarios: a queued beat's anchor becomes live when its line does and clears when dismissed; a
+  higher-ranked beat preempts both line and pointer; the arbiter's precedence is asserted directly.
+- Verification: no beat can speak without pointing, and none can point without speaking.
+
+#### U11. The outline is clipped, and the target is scrolled into view
+
+- Goal: two silent failures on the pointer's own drawing.
+- Requirements: R8
+- Files: `godot/scripts/ui/TutorialOverlay.cs`, `godot/scripts/ui/ObjectiveTracker.cs`
+- Approach: intersect the target rect with its scroll ancestor before drawing — today an unclipped global
+  rect lets a highlight render outside its panel over unrelated interface. Scroll a pointed control into
+  view, and auto-scroll the checklist to the current row: the strip is a 75px window that never scrolls,
+  so from step three on the current instruction and its trap warning sit below the fold.
+- Test scenarios: a target scrolled out of its container draws no outline outside the container; changing
+  step scrolls the checklist to the new row; the trap warning is visible when it applies.
+- Verification: a rendered frame shows the current row and its note inside the strip.
+
+#### U12. The interact prompt is drawn
+
+- Goal: the core verb of the game gets an on-screen affordance.
+- Requirements: R13
+- Files: `godot/scripts/town2d/WorldInput2D.cs`, `godot/scripts/MainUi.cs`
+- Approach: bind a prompt chip to the computed prompt text, whose only reader today is a playtest tool.
+  This also shortens card copy that currently spells out the keypress in prose against a three-line budget.
+- Test scenarios: approaching a station shows the chip with that station's name; leaving clears it; a
+  station with no action shows nothing.
+- Verification: a rendered frame near the forge shows the prompt.
+
+#### U13. Legality comes from one source
+
+- Goal: stop mirroring the sim's legality table by hand.
+- Requirements: R11
+- Files: `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/ui/SurfaceUnlocks.cs`
+- Approach: each registry row carries a canonical action instance judged by the sim's own legality call,
+  and wait copy derives from that verdict. The mirror has already drifted once in production. Generalize
+  the gate protection that today special-cases exactly two control names so no future beat can point at a
+  surface the player cannot open.
+- Test scenarios: a step's availability matches the sim's verdict across every phase and a spent budget;
+  adding a slot-consuming action needs no tutorial edit; a gated surface a beat points at is forced open.
+- Verification: no availability predicate restates a phase or slot rule the sim owns.
+
+#### U14. A pointer, and an unshown beat, survive a quit
+
+- Goal: stop losing beats permanently on reload.
+- Requirements: R12
+- Files: `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/ui/MentorBanner.cs`
+- Approach: a lesson is persisted as *fired* before it is ever displayed and the queue is runtime-only, so
+  quitting with a backlog loses those lines and their pointers forever. Split the shown bit from the fired
+  bit and rebuild the queue from fired-but-unshown at boot. Persist the arrived ratchet too.
+- Test scenarios: quitting with three queued beats restores all three; a shown beat never re-fires; the
+  arrived ratchet survives reload; a new game clears all of it.
+- Verification: no beat can be lost by quitting, and none can repeat.
+
+#### U15. Off-camera targets have a pointer, and it is unmistakable
+
+- Goal: the player can see where to go when the target is not on screen, and can tell the course's pointer
+  from ordinary glow.
+- Requirements: R8, R9
+- Files: `godot/scripts/ui/TutorialOverlay.cs`, `godot/scripts/town2d/Town2D.cs`, `godot/scripts/town2d/Building2D.cs`
+- Approach: project the target's world position through the camera and container stretch, draw the pulse
+  when it is on screen and a screen-edge marker when it is not. At spawn the camera shows only the forge
+  and the other three day-one targets are a screen or more away, drawn as a sprite tint that renders
+  nothing off camera. Give the course one reserved pointer signature and damp sibling station tells while
+  a world anchor is live — three warm-gold languages currently coexist and the pulse's only differentiator
+  from a hover tint is hue. Per KTD7 the marker points and the camera peek is player-triggered.
+- Test scenarios: a target off camera shows an edge marker on the correct side; walking toward it converts
+  the marker to the pulse; the marker never persists after arrival; sibling tells dim while a world anchor
+  is live and restore after; no camera movement occurs without a player press.
+- Verification: rendered frames at spawn show a marker toward the market, the notice board and the gate.
+
+---
+
+### Wave 3 — The first minute and the doors
+
+#### U16. The game says what it is
+
+- Goal: state the inversion and law 1 before the first instruction.
+- Requirements: R29
+- Files: `godot/scripts/NewGameSelect.cs`, `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/ui/MentorVoice.cs`
+- Approach: a first-morning beat states the premise and its negative half — you are the smith, you never
+  go down, and you cannot give a hero an order. Law 1 is the rule most likely to collide with genre
+  expectation and no surface states it today; a player who tries to command a hero learns it by absence.
+- Test scenarios: the beat fires once, before the first numbered step, on a new game only; its copy names
+  the inversion and the no-orders rule; it survives a reload before being dismissed.
+- Verification: a new game's first voice is the premise, not "buy material".
+
+#### U17. The returning smith's door
+
+- Goal: a second campaign stops replaying every once-ever lesson.
+- Requirements: R30
+- Files: `godot/scripts/NewGameSelect.cs`, `godot/scripts/ui/TutorialFlow.cs`
+- Approach: the new-game reset deletes the file that also holds every fired first-touch id, so campaign two
+  re-fires all of them and re-runs all ten steps. The only current opt-out is written for an apprentice
+  forfeiting the warrant. Offer a returning-smith choice — course on, or lessons book only — and let the
+  fired set optionally persist across campaigns. Law 7 already holds; this makes the skip fit the person skipping.
+- Test scenarios: a returning smith keeps the warrant and gets no numbered chain; first-touch ids persist or
+  clear as chosen; a first-time player is unaffected; the choice survives a reload.
+- Verification: campaign two on the returning path fires no once-ever lesson already seen.
+
+#### U18. A tester can stand on day 4
+
+- Goal: reach the payoff without hand-playing three days.
+- Requirements: R31
+- Files: `godot/scripts/tools/`, `godot/scripts/CampaignSave.cs`
+- Approach: determinism makes this nearly free — a seed plus scripted baseline actions manufactures a
+  day-N state written where Continue picks it up. Dev-gated by environment variable, following the existing
+  playtest-log precedent. This is a tool, not a second save slot; the anti-reroll rationale for one player
+  slot stands.
+- Test scenarios: the same seed and day produce an identical state twice; the tutorial chain is mid-flight
+  in the written save; the gate is off by default and the tool is unreachable without it.
+- Verification: a documented command lands a human on day 4 with the chain live.
+
+#### U19. The game notices a stuck player
+
+- Goal: help keyed to the player's behavior, not only to game state.
+- Requirements: R32
+- Files: `godot/scripts/MainUi.cs`, `godot/scripts/ui/MentorBanner.cs`
+- Approach: every aid today keys off state and nothing observes the player. No-progress detection in the
+  adapter offers the current step's teaching once; a third identical refusal promotes its gating note to a
+  banner. Those refusals are already logged for the developer and escalate nothing on screen. Per KTD6 this
+  is wall-clock in the adapter and uses the once-ever anti-nag shape.
+- Test scenarios: idling past the threshold offers help exactly once; acting resets the detector; a third
+  identical refusal promotes the note and a fourth does not repeat it; nothing fires when the course is complete.
+- Verification: a player standing still receives one offer, and never a second for the same step.
+
+#### U20. Leaving a room is taught, and "where do I go" is a key
+
+- Goal: two absences the second numbered step already depends on.
+- Requirements: R33
+- Files: `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/ui/ShortcutMap.cs`
+- Approach: the second step requires leaving a room and nothing teaches it. Add one idempotent input and a
+  matching control that re-asserts the current pointer: peek the camera at the anchor, flash the signature,
+  restate the line. A course that can be re-asked is one the player can safely wander away from.
+- Test scenarios: the re-ask input restates the current step and moves nothing else; it is inert once the
+  course completes; the room-exit lesson fires before the step that needs it; the key appears in the legend.
+- Verification: the shortcut legend lists it and pressing it re-points at the live anchor.
+
+---
+
+### Wave 4 — The course teaches the game
+
+#### U21. Five acts
+
+- Goal: split the folded act so five links have five chapters.
+- Requirements: R14
+- Files: `godot/scripts/ui/TutorialFlow.cs`
+- Approach: the act enum folds links 3 and 4 into one and its own doc concedes the memory act is missing
+  the fifth link's beats. Split into Mark, Hand-Off, Dark, Proof and Memory. Act-scoped numbering absorbs
+  the change without touching a global count.
+- Test scenarios: every registry row maps to exactly one act; act-scoped numbering is contiguous per act;
+  the display order matches play order.
+- Verification: the finale reads as the last row of the act it belongs to.
+
+#### U22. `ThreadHero`
+
+- Goal: one derived name the copy may use, and a test that keeps it out of completion.
+- Requirements: R14
+- Files: `godot/scripts/ui/TutorialFlow.cs`
+- Approach: a pure derivation with no new state — the first hero, in event order, to receive the player's
+  work: a shop sale, else the first accepted commission's hero, else the first delivered supply. Day one's
+  send-off beat already names buyer, item and price, so the adoption moment ships with one added line.
+- Test scenarios: the derivation is stable across a reload for the same log; it returns nothing before any
+  hand-off; a test asserts no completion predicate reads it; the beat copy names the mechanism, not the hero.
+- Verification: the pinned test goes red if any `IsDone` references it.
+
+#### U23. The shelf is a public place
+
+- Goal: teach one fact that makes three others derivable.
+- Requirements: R16
+- Files: `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/panels/ShopPanel.cs`
+- Approach: what sits on the shelf anyone may buy, it cannot be sent to a camp, and taking it off is how
+  you keep it for someone. Taught once at the hold-or-sell moment, with the unstock button named. Vigil
+  eligibility and holding for a commission then follow from it rather than needing lessons of their own.
+- Test scenarios: the lesson fires before the first hold-or-sell choice; it names the unstock control; the
+  vigil card's copy references it rather than repeating it; a player with all stock shelved is told why no supply is sendable.
+- Verification: the unstock verb is named in copy and pointed at once.
+
+#### U24. Deliver what you promised
+
+- Goal: the missing back half of the commission channel.
+- Requirements: R17
+- Files: `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/panels/CommissionBoard.cs`
+- Approach: a dormant act armed on an accepted commission — per KTD2, not a numbered step. It teaches that
+  the shelf is the delivery channel, that the price the player set is what the hero must afford, and that a
+  broken promise costs mood while a decline costs nothing. It also names the untaught risk: fulfilment reads
+  the shared shelf, so an earlier shopper can buy the piece being held.
+- Test scenarios: armed on accept and never on decline; `Done` on the qualifying item being stocked; `Skipped`
+  at window end with the deadline passed; the copy names the price dependency and the shared-shelf risk; a
+  player who never accepts sees nothing.
+- Verification: an accepting player is walked from promise to delivery.
+
+#### U25. The counter's economics
+
+- Goal: teach the machine behind the five buttons.
+- Requirements: R18
+- Files: `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/panels/CounterPanel.cs`
+- Approach: one sentence in the counter teaching copy — a counter always closes the sale, so the only
+  question is what it costs later — plus a dormant act armed on the first fleece saying the price will be
+  remembered. Patience is three rounds and holding firm is a real gamble, which the copy names qualitatively
+  rather than quoting the sim's constants.
+- Test scenarios: the fleece act arms on the first fleece only and retires honestly; the counter sentence
+  appears before the first haggle; no client-side number contradicts the sim; a player who never fleeces
+  never sees the act.
+- Verification: a fleecing player is told once, after the fact, without a scold.
+
+#### U26. Read what the town wants
+
+- Goal: point at the surface that answers "what should I make next".
+- Requirements: R19
+- Files: `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/panels/DemandPanel.cs`
+- Approach: the board carries pass reasons, depth stalls naming the exact slot or grade that blocks a hero,
+  and the published bounty floor that turns a bounty from a guess into a decision. The bounty teaching copy
+  already warns that too thin a reward is refused without saying the floor is published here. It needs
+  pointing, not building.
+- Test scenarios: the beat arms on the first refusal existing; the anchor resolves with zero and with many
+  stall rows; the bounty copy references the floor; nothing fires before a refusal exists.
+- Verification: the board is pointed at once, on the morning after a refusal.
+
+#### U27. Five decisions become forks
+
+- Goal: each of five decisions is presented as a choice with both arms' costs named, before the choice.
+- Requirements: R15
+- Files: `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/panels/`
+- Approach: the vigil step is the standard the rest must meet. Decision 1 moves its lesson to the moment an
+  open commission renders with a live accept and decline pair, on both doors — the tavern handshake has no
+  lesson wiring at all today, so declining teaches nothing. Decision 2 lands per U1. Decision 3 becomes a
+  dormant act armed on the first forecast that renders a gear gap; the board already opens itself nightly and
+  is simply never pointed at. Decision 6 gains the half it is missing: a topped-up party presses deeper, and
+  the deep floors are where heroes die.
+- Test scenarios: the decision-1 lesson fires on render, before either press, from both surfaces; a declining
+  player receives it; decision 3's act arms only when a gap renders; decision 6's copy names the risk to the
+  party as well as the fee; the census counts five as covered and one as ruled.
+- Verification: no decision lesson fires only on one arm.
+
+#### U28. The day's slots, and what they don't cost
+
+- Goal: teach the budget before it is spent, and land T9's two cuts with their real costs named.
+- Requirements: R20
+- Files: `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/MainUi.cs`
+- Approach: name the budget in the first step's teaching copy and give the slot pips a stable name so the
+  pointer can flash them on the first spend. Name the free set explicitly — the whole counter session,
+  every shelf verb, commission answers, camp verbs, the rite. Add a deferred line for the first vigil that
+  opens with no slots left, which is where the banked arm finally bites; nothing reports unspent slots today
+  and dawn erases them silently. Move the bounty step from day 1 to day 3 and record the knock-on: the
+  measured day-2 camp depends on a bounty posting, so days 2–3 may now have no vigil to teach and the vigil
+  row must read `Skipped` honestly when they do not. Collapse the doubled warrant reminder to one.
+- Test scenarios: the budget copy precedes the first spend; the pip row resolves as an anchor; the free set
+  is named and matches the sim's consuming list; the vigil row reads `Skipped` on a run with no camp; the
+  warrant reminder appears exactly once.
+- Verification: the free-versus-costly split appears in copy and matches the sim.
+
+#### U29. The voice budget arms instead of queueing
+
+- Goal: the night a hero dies and the proof lands does not bury the proof.
+- Requirements: R21, R22
+- Files: `godot/scripts/ui/MentorBanner.cs`, `godot/scripts/ui/TutorialFlow.cs`
+- Approach: two act-voices per night. A dormant act whose fact lands on a full night arms for the next
+  morning at full window rather than queueing, which the window mechanism already supports. Fixed precedence:
+  death, then the proof, then graduation, then the warrant's end, then the act change, then a fulfilled
+  commission, then a rank-up. So on the four seeds in twelve where both land together, the death speaks and
+  the proof waits a day. Per KTD3 deferral is by arming date, never a countdown.
+- Test scenarios: the measured worst night delivers the death first, the proof absent and armed rather than
+  queued, and an ordinary lesson as the only drop; a beat that arms late gets its full window; no beat is
+  lost; precedence is asserted pair by pair.
+- Verification: the chronicle census from U6 passes with the arming rule live.
+
+#### U30. The proof gets a row
+
+- Goal: the sentence the game exists to produce gets a pointed beat instead of a toast wherever the player stands.
+- Requirements: R14, R10
+- Files: `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/panels/LedgerModal.cs`
+- Approach: the Proof act's dormant row, armed on the first attribution beat, anchored into the ledger's beat
+  card, ranked as an act voice. It replaces the current first-touch, which fires wherever the player happens
+  to be standing and says "the sim". Copy asserts the mechanism; the card asserts the hero, per KTD5.
+- Test scenarios: armed on the first beat only; `Done` on the beat card being opened; `Skipped` at window end;
+  the anchor points at the way in while the ledger is closed; the copy names no hero.
+- Verification: a player is walked to the beat card on the night it lands.
+
+#### U31. The loss gets a voice
+
+- Goal: the dormant loss act is anchored, bounded and honest, and voiced by nobody.
+- Requirements: R14
+- Files: `godot/scripts/ui/TutorialFlow.cs`
+- Approach: give the act its row and keep the mechanism copy unattributed in the ledger — permadeath, and the
+  rite is the player's if they want it. That copy also needs rewriting: "this is permadeath: the roster
+  refills" sits on the most solemn beat in the game. If the fallen carried the player's work, the copy names
+  the name the player was told to remember, per KTD5.
+- Test scenarios: the act arms on the first death; the row is visible one night and one day then retires;
+  `Done` on the rite and `Skipped` otherwise; it still fires after graduation; the copy names no survival math.
+- Verification: the first death produces a row, and the roster-refills line is gone.
+
+#### U32. The memory gets a row, and graduation is event-shaped
+
+- Goal: the fifth link gets one row, and the course ends when it is finished rather than on a date.
+- Requirements: R14
+- Files: `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/panels/LegendsWall.cs`
+- Approach: one row, armed on the first beat existing in the town's record, anchored into the wall — the
+  shipped first-touches carry the detail. Completion fires when the Memory act's last row resolves, with the
+  day-eight backstop unchanged. A player who never sells gives the sim nothing to prove, so the backstop must
+  close with those rows honestly absent rather than falsely done.
+- Test scenarios: the row arms on the record carrying the player's mark; `Done` on reading it; graduation
+  fires on the act resolving; the backstop still closes a run where the proof never landed, with the rows
+  absent and not `Done`.
+- Verification: a median run graduates before day eight and an empty run graduates honestly.
+
+---
+
+### Wave 5 — Bryn becomes a person
+
+#### U33. Her five arc lines
+
+- Goal: she has things happen to her across seven days instead of a curriculum she recites.
+- Requirements: R24
+- Files: `godot/scripts/ui/MentorVoice.cs`, `godot/scripts/ui/TutorialFlow.cs`
+- Approach: introduction, the proof, the first death, a promise kept, and graduation — each armed on a logged
+  fact and each ranked as an act voice, finally producing the rank that has no producers today. Her register
+  is set by her best existing lines: a journeyman whose own work carried no mark anyone checked, who teaches
+  because she wants to watch one smith's name come to mean something. On the death night the mechanism copy
+  stays the town's and hers is the only line allowed to be about stake. Her current de facto goodbye is a
+  quick-travel tooltip, which this displaces.
+- Test scenarios: each line fires once, on its own fact, at act rank; none fires on a night already at budget;
+  the death line has both variants depending on whether the fallen carried the player's work; a declining
+  player gets no promise-kept line; the quick-travel line is no longer her last word.
+- Verification: five lines exist, each keyed to a logged fact, none at lesson rank.
+
+#### U34. She says what she's seen
+
+- Goal: make her hover line true — she watches the work here and says what she has seen.
+- Requirements: R25
+- Files: `godot/scripts/ui/MentorVoice.cs`
+- Approach: a pure total function over the event log with an authored template table and a deterministic pick,
+  offered at her station once the current lesson is exhausted: the sale she watched, the price the player took,
+  a hero underground carrying their work, a hero who died wearing it. The worn gear and the killing item are
+  both recorded and almost unread. Her single best line already proves the register works — it is the only one
+  that names a fact about this player. Per KTD4 a test pins that every template's facts come from the log.
+- Test scenarios: the same log yields the same observation twice; an empty log yields nothing; no template can
+  render a fact absent from the log; observations are past tense and contain no instruction; a told observation
+  is not repeated.
+- Verification: the pinned test goes red on a template referencing anything the log does not carry.
+
+#### U35. She leaves
+
+- Goal: presence change is the strongest signal that she is a person and not furniture.
+- Requirements: R26
+- Files: `godot/scripts/town2d/InteriorLayout2D.cs`, `godot/scripts/ui/MentorVoice.cs`
+- Approach: her station is appended to the workshop unconditionally and forever, and she repeats one resting
+  line for the rest of the campaign. Condition the append on graduation, adapter-side. She returns exactly
+  once — the first time the player's mark lands in a wall legend — then is gone. Her goodbye must name where
+  the lessons live, which her resting line already says well.
+- Test scenarios: her station is present before graduation and absent after; the one return fires once and
+  persists as seen; her goodbye names the Lessons book; the presence tests that pin her existence learn the condition.
+- Verification: after graduation her tile is empty, and the return happens once.
+
+#### U36. She has a body and a face
+
+- Goal: stop sharing a sprite with two named plaza townspeople.
+- Requirements: R27
+- Files: `art/specs/`, `godot/scripts/ui/MentorBanner.cs`, asset registry
+- Approach: a dedicated sprite set through the existing townsfolk pipeline at the size the game draws it, and
+  a small portrait on her banner so her lines arrive with a face, following the hero-portrait precedent. This
+  overrides R14.5's "on an existing townsfolk body" ruling — see Open Questions.
+- Test scenarios: her sprite id differs from every townsfolk id; the portrait renders at draw size with no
+  runtime scale; a missing asset says so rather than falling back silently.
+- Verification: a rendered frame shows her distinct from the plaza NPCs, and her banner carries a face.
+
+#### U37. She is somewhere, and she remembers
+
+- Goal: she breathes, she is sometimes elsewhere, and she does not forget overnight.
+- Requirements: R27, R25
+- Files: `godot/scripts/town2d/`, `godot/scripts/ui/TutorialFlow.cs`
+- Approach: replace the frozen station sprite with an actor using the existing idle-breath driver, undim her
+  nameplate — it is dimmed like the quench bucket by a flag keyed on having no action — and place her by phase:
+  the bench in the morning, the gate at the send-off, near the wall on a loss evening. Location keys off sim
+  phase, never independent knowledge. Persist what she has told, whether she was ever spoken to, and whether
+  her farewell was seen; if she was never spoken to by graduation, her goodbye says so once, without guilt.
+- Test scenarios: her position is deterministic per phase; her nameplate is undimmed; told observations do not
+  repeat after a reload; the ignored goodbye variant fires only when she was never addressed and carries no
+  reproach; the E-press target follows her.
+- Verification: she is in a different place at dawn and at the send-off, and remembers across a reload.
+
+---
+
+### Wave 6 — Prove it keeps working
+
+#### U38. A harness takes the course
+
+- Goal: an automated run reads the instructions and obeys them.
+- Requirements: R34
+- Files: `godot/scripts/tools/FullPlaytest.cs`
+- Approach: neither real-launch harness mentions the tutorial at all today — both rendered defects that
+  shipped passed all fifteen suites and were caught by a human eye. A lane that reads the card, does what it
+  says, screenshots each beat, and asserts the overlay's live target is non-null and on screen at every step.
+  The registry and its copy accessor make the instructions machine-readable. Uses U18's scenario saves so it
+  can start at day 4.
+- Test scenarios: the lane completes the chain from a new game; a step whose anchor draws nothing fails the
+  run; a beat that stops firing fails; the run reaches graduation on a median seed and honestly reports an
+  absent proof on a starved one.
+- Verification: the run fails when a pointer points at nothing.
+
+#### U39. Copy cannot outlive its control
+
+- Goal: widen the tripwires to the corpus they are supposed to guard, and make a tester's session measurable.
+- Requirements: R35, R36, R28
+- Files: `godot/tests/`, `godot/scripts/tools/PlaytestLog.cs`
+- Approach: her never-orders check today reads two lines and two patterns while her corpus is scattered across
+  seven files; consolidate the corpus into one table and iterate all of it. Extend followability to the primer
+  and to her lines. Correct the card's fit gate, which enforces three lines against an allowance twice the
+  real budget, so six of ten cards overflow. Add the tutorial step and act as playtest-log columns so
+  "which step do testers stall on" is answerable without asking them.
+- Test scenarios: every line in her table is checked for command register and banned tokens; a renamed control
+  goes red in primer and adviser copy alike; the fit gate rejects a card that overflows the real budget; the log
+  carries step and act on every row.
+- Verification: the never-orders check iterates the whole corpus, and the fit gate matches the rendered width.
+
+---
+
+### Verification contract
+
+| Gate | Command | Applies to |
+|---|---|---|
+| Fast lane | `dotnet test sim/GameSim.Tests/GameSim.Tests.csproj --filter Category!=Balance` | every unit |
+| Balance | `dotnet test sim/GameSim.Tests/GameSim.Tests.csproj --filter Category=Balance` | U6, and any unit touching sim content |
+| Engine suite | `dotnet test godot/tests --settings .runsettings` | every `godot/` unit |
+| Chronicle census | `dotnet run --project sim/GameSim.Cli -- batch --seeds 20 --days 100` then the fast lane | U6, U29 |
+| Deploy | `play.bat verify` | every wave's last unit |
+
+The engine gate is the **pass count**, never the runner's verdict: compare against the current floor and
+treat a large drop as a failure even when the reported failures are zero. Two concurrent runs each report
+success while losing hundreds of tests, so engine tests are never run from two worktrees at once. A fresh
+worktree imports once before its first run or the rebuild faults and reports a false green.
+
+Rendered verification is required, not optional, for U5, U11, U12, U15, U36 and U37: both tutorial defects
+that reached `main` passed every suite and were found by looking at pixels.
+
+---
+
+### Definition of done
+
+- The fast lane passes locally, CI is green, the engine pass count is compared against the floor, and the PR
+  is squash-merged to `main` with auto-merge armed in the same breath as its creation.
+- Every PR body carries one `Serves:` line.
+- Rendered proof is attached for the units named above.
+- Abandoned approaches are removed from the diff, not left in it.
+- The wave's last PR deletes any scratch doc it created and quotes `origin/main`'s SHA with what will launch.
+- §11.14.13's superseded unit table is gone, not annotated.
+
+---
+
+### Open questions
+
+OQ1. **Decision #5 — build the gift, or amend the design doc.** §3.5 describes buying goodwill by overpaying,
+which the sim cannot represent: the action has no price parameter, the hero always receives the base ask, and
+the tariff moves only what the player pays, discount-only, with the surcharge branch dormant. The standing that
+is real is the **faction's**. Cheap door: amend §3.5 to "buy the ore, or buy the faction's favour", already
+fully built and teachable as a dormant beat on the first tariff. Expensive door: add an offered-price arm and
+re-baseline the golden replay. *Deferred — blocks no unit here; the decision stays pinned as an honest gap.*
+
+OQ2. **Bryn's own body overrides R14.5.** That ruling said she rides an existing townsfolk sprite; it predates
+"the adviser as a real character", and she currently shares a body with two named plaza NPCs. *Blocks U36 only.
+Default if unruled: proceed with her own sprite and portrait.*
+
+OQ3. **The timing-skill gate.** Craft quality is gated on timing, heroes begin refusing Poor work around day
+10, and the only skill-free path to quality sits behind a purchased masterwork at Tier II — so a player with
+impaired motor control is priced out of the midgame. Separately there is no colour-vision provision anywhere,
+and the pointer's only differentiator from a hover tint is hue, which U15 partly addresses. *Deferred — a
+steady-hands assist whose trade-off is named in copy is law 7's shape, not a breach, but the design call is
+the owner's.*
+
+OQ4. **The third plan slot.** This program lands here because rule 6 caps `docs/plans/` at two and both
+slots hold live work — the balance baseline plan has five of seven units unshipped and the honesty-riders plan
+has all four. *Deferred — if this program should own a slot instead, one of those two finishes or is dropped first.*
+
+---
+
+### What must survive, named so this rework cannot quietly discard it
+
+The honesty machinery is the best tutorial engineering in the repo and none of it is up for revision: the
+`Skipped` third state; gating notes that tell the truth about today instead of naming a day; phase-honest wait
+copy; the throw-on-unresolvable-anchor contract; the day holding open for an unanswered look; the empty-shelf
+trap named before it bites; the new-game reset; the once-ever persisted first-touch engine; the queue drained
+only by the player's own press; the destitution floor that narrates itself; and the vocabulary joins that go
+red when a control is renamed. Also sound and verified: the tray-button override, dismiss and reload
+persistence, and the vigil step's three-state honesty.
+
+### One thing this program does not touch, and why
+
+**Localization and non-prose teaching.** There is not one translated string in the client and every lesson is
+a paragraph. That is almost certainly a deliberate hobby-scope cut — but §7's list of honest gaps does not
+name it, and a gap this project has not declared is the one shape of silence its own rules forbid. Naming it
+here is the whole fix; building it is not in scope.
+
+---
+
 ## §11.14.13 T9 — The course reaches the sentence (owner ruling, 2026-08-21)
+
+**Superseded in scope by §11.14.14 (2026-08-24).** The diagnosis and measurements below
+stand; the unit table does not.
 
 Completes T2 (§11.14.4) rather than replacing it. T2 built a correct, honest, well-tested teaching
 **machine**; what the owner has asked for three times is the **course**, and the course stops three
@@ -5012,56 +5877,11 @@ mechanism and never asserts which hero; the card asserts the hero. When the two 
 common case since the buyer is usually the carrier, it lands harder for free. If the thread hero dies
 early that *is* the loss act, landing on someone the player was told to remember.
 
-### The units, revised
+### Superseded
 
-| Unit | What |
-|---|---|
-| U-T9-0 | **The voice budget.** A priority rule — on a night with a death the death speaks and the proof arms for tomorrow (the dormant window already supports a deferred start); a first-touch never queues ahead of a numbered dormant row — plus a fast-lane census over the batch chronicles asserting no seed, no night, exceeds the budget. Ships before any beat. |
-| U-T9-6 | **The anchor reaches everywhere** (widened). Register the five modals in the same content-root table the drawer uses, with the same throw-on-miss contract; give the payoff containers stable names so a step anchors to the section rather than a per-entity button; and extend the journey anchor shipped in U-T9-5 to panels — approach via the venue building or the `Open{PanelId}` tray button, hand off to the control once the panel is open. Without this every in-panel beat highlights nothing, which is the station-behind-a-wall defect through a second door. |
-| U-T9-8 | **Three render defects on the teaching surfaces**, unchanged and still early: completed steps render a glyph and no label; the Lessons book renders `**bold**` literally (19 copy lines carry it, `ObjectiveTracker.Plain` strips it for the card and `LessonsPanel` never calls it); that book titles entries with raw slugs. A course written onto a surface that cannot render its own copy is wasted copy. |
-| U-T9-9 | **Five acts.** Split Dark into Dark and Proof. |
-| U-T9-10 | **`ThreadHero`**, with its hard rule pinned by a test: no `IsDone` predicate may read it. |
-| U-T9-1 | **The proof** — the Proof act's dormant row, armed on the first `AttributionBeatEvent`, anchored into the Ledger's beat card, voiced by Bryn. Replaces the `the-proof-taught` first-touch, which fires wherever the player happens to be standing. |
-| U-T9-2 | **The loss gets a voice and a row** — the dormant act exists, is anchored, bounded and honest, and is voiced by nobody. |
-| U-T9-3 | **The memory** — ONE row, not a wall-and-chronicle-and-rite trio; T8's shipped first-touches carry the detail. |
-| U-T9-4 | **Graduation** — Bryn's goodbye, fired on the Memory act resolving rather than only at the backstop. |
-| U-T9-7 | **Bryn's arc** (widened): five new lines — introduction, proof, first death, promise-kept, graduation — plus purging "the sim" from her two player-facing lines, plus the E-press routing fix (her station currently answers through `ShowBellToast`, the four-second **rejection** banner, while the untimed `MentorBanner` she already owns waits for the player's own press; her greeting promises "Ask me anything," which a four-second toast cannot keep). |
-
-### What the course cuts, so it does not only add
-
-1. **PostBounty moves from day 1 to day 3.** On day 1 it competes for scarce gold and slots against the
-   buy-craft-shelve spine, and teaches an aiming lever before the player has met anyone to aim at.
-   Named knock-on: `SecondProfessionMilestoneReached` is the first paid bounty, so the second-profession
-   affordance arrives around day 4–5 instead of day 2–3 — mid-course, which is arguably its better moment.
-2. **The doubled warrant reminder collapses to one.** MeetHeroes and Commission both end with it; with
-   the loss act voiced, the second copy is redundant.
-3. **The mark-read stays a first-touch.** So do the Docket and the forecast board. Resist numbering them.
-
-### Ordering
-
-U-T9-0 first — it is a constraint, not a feature, and every beat inherits it. Then U-T9-6 and U-T9-8
-together: the anchor has to reach a surface before a beat can point at one, and the surface has to
-render its own copy. Then U-T9-9 and U-T9-10, both small and both prerequisites for the beats' copy.
-Then the beats in day order: U-T9-1, U-T9-2, U-T9-3, U-T9-4. U-T9-7 lands with or before U-T9-1,
-never after — U-T9-1 rewrites the line that contains the worst "the sim" instance.
-
-### What must survive, named so a rework cannot quietly discard it
-
-The honesty machinery is the best tutorial engineering in this repo and none of it is to be rebuilt:
-the `Skipped` third state (a checkmark would claim the player answered something they never saw);
-gating notes that tell the truth instead of naming a day; phase-honest wait copy; the
-throw-on-unresolvable-anchor contract; the day holding open for `LookIn`; the empty-shelf trap named
-*before* it bites; `ResetForNewGame`; the once-ever persisted first-touch engine with its anti-nag
-proof; and the queue-not-drop banner drained by the player's own press. `TutorialCopyIsFollowableTests`
-— copy that quotes the live control's own label and goes red on a rename — must keep passing.
-
-### One thing this program does not touch, and why
-
-Dilemma #5, "buy the ore or buy the goodwill", stays untaught. No goodwill mechanism exists: the hero
-always receives the base ask, the tariff only discounts what the player pays, and a surcharge would
-feed a faction sink rather than the hero (register #170). Teaching it would make the game lie about
-its own choices. It is an owner decision — build the mechanism or amend `THE-GAME.md` — and until it
-is ruled, `DilemmaLessonsTests` carries it as the one honest gap with its reason written out.
+The unit table, the ordering, the two cuts, and the survive / does-not-touch lists that stood here
+are superseded by §11.14.14, which absorbs T9's eight owed units (U-T9-1/2/3/4/7/8/9/10) with their
+content intact. The measurements and the three-lane pattern above stand and are cited there.
 
 ## §11.14.12 T8 — Link 5's own verb was the untaught one (2026-08-19)
 
