@@ -151,16 +151,35 @@ public partial class MentorBanner : PanelContainer
     /// callers that branch on it (<c>ForgePanel</c>'s material-ceiling/mark-read pair) still read
     /// correctly, since "did this one get the screen" is exactly the question they ask.</para>
     /// </summary>
-    public bool ShowFirstTouch(string? fired, bool preempt = false, MentorVoiceRank rank = MentorVoiceRank.Lesson)
+    public bool ShowFirstTouch(string? fired, bool preempt = false, MentorVoiceRank rank = MentorVoiceRank.Lesson) =>
+        fired is not null && Show(fired, preempt, rank);
+
+    /// <summary>
+    /// U4 (§11.14.14): the plain, non-gated half of <see cref="ShowFirstTouch"/> — same busy/
+    /// preempt/queue rule, just for a caller that already knows it has something to say rather than
+    /// one gating on <see cref="TutorialFlow.ConsumeFirstTouch"/>'s once-ever contract.
+    ///
+    /// <para>Exists because <c>MainUi.OnStationActivated</c>'s station router needed to show
+    /// <see cref="MentorVoice.CurrentLesson"/> on EVERY press of Bryn's own station, not once ever
+    /// — before this unit that call went through <c>ShowBellToast</c> instead (the four-second
+    /// rejection banner), which truncated her longest lessons mid-sentence and rendered
+    /// <c>TutorialFlow</c>'s <c>**bold**</c> markup as literal asterisks, since that toast path has
+    /// no markup parser either. Both defects are fixed by routing through THIS banner instead: no
+    /// timer (law), and <see cref="ObjectiveTracker.Plain"/> strips the emphasis here so no caller
+    /// of either method has to remember to.</para>
+    /// </summary>
+    public bool Show(string line, bool preempt = false, MentorVoiceRank rank = MentorVoiceRank.Lesson)
     {
-        if (fired is null)
-        {
-            return false;
-        }
+        // Stripped once, here, rather than at each caller — the same markup-carrying strings
+        // (TutorialFlow's TeachNote, quoted verbatim by MentorVoice.CurrentLesson) reach the CLI
+        // too, where ** IS meaningful, so the sim/registry text itself must stay unchanged
+        // (MentorVoice.Speak's own "never rewrites the line" contract). This is presentation-only,
+        // the exact seam ObjectiveTracker's own doc already uses for the objective card.
+        var plain = ObjectiveTracker.Plain(line);
 
         if (Visible && !preempt)
         {
-            Enqueue(fired, rank);
+            Enqueue(plain, rank);
             return false;
         }
 
@@ -173,7 +192,7 @@ public partial class MentorBanner : PanelContainer
             Enqueue(_label.Text, _currentRank, front: true);
         }
 
-        _label.Text = fired;
+        _label.Text = plain;
         _currentRank = rank;
         Visible = true;
         return true;

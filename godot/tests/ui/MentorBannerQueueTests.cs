@@ -1,4 +1,5 @@
 #if GDUNIT_TESTS
+using System.Linq;
 using GdUnit4;
 using Godot;
 using GodotClient.Ui;
@@ -48,6 +49,58 @@ public class MentorBannerQueueTests
             AssertThat(banner.ShowFirstTouch("first")).IsTrue();
             AssertThat(banner.Visible).IsTrue();
             AssertThat(banner.PendingLessonCount).IsEqual(0);
+        }
+        finally { banner.Free(); }
+    }
+
+    /// <summary>
+    /// U4 (§11.14.14): before this unit, <c>MainUi.OnStationActivated</c> spoke Bryn's station
+    /// press through <c>ShowBellToast</c> instead of this banner — a Label with no markup parser —
+    /// so <c>TutorialFlow</c>'s <c>**bold**</c> TeachNote copy (meaningful for the CLI, meaningless
+    /// for a Godot <see cref="Label"/>) rendered as literal asterisks: "**Present** a shelved
+    /// item." <see cref="MentorBanner.Show"/>/<see cref="MentorBanner.ShowFirstTouch"/> now strip it
+    /// on the way in (<see cref="ObjectiveTracker.Plain"/>, the same seam the objective card already
+    /// uses for the identical TeachNote text), so nothing reaching this banner can carry it through.
+    /// </summary>
+    [TestCase]
+    public void Show_StripsBoldMarkup_SoNoLiteralAsteriskReachesTheLabel()
+    {
+        var banner = Built();
+        try
+        {
+            banner.Show("**Present** a shelved item, or **Suggest** one first.");
+
+            AssertThat(BannerText(banner))
+                .OverrideFailureMessage($"Bryn spoke literal markdown: \"{BannerText(banner)}\".")
+                .IsEqual("Present a shelved item, or Suggest one first.");
+        }
+        finally { banner.Free(); }
+    }
+
+    /// <summary>Ties the strip to a REAL line rather than only a synthetic fixture: OpenCounter's
+    /// TeachNote is her heaviest use of the markup (five bolded verbs) and, measured against every
+    /// other row in <see cref="TutorialFlow.Registry"/>, her single longest lesson — the same one
+    /// the old four-second rejection toast (<see cref="MainUi.RejectionToastSeconds"/>) truncated
+    /// worst before U4 routed her station press through this banner instead. Asserting full
+    /// equality against <see cref="ObjectiveTracker.Plain"/>'s own output (not just "no asterisks")
+    /// proves this is a strip, not an accidental truncation to the same effect.</summary>
+    [TestCase]
+    public void Show_RendersHerLongestRealLesson_FullyAndWithNoMarkdown()
+    {
+        var withMarkup = MentorVoice.CurrentLesson(TutorialStep.OpenCounter);
+        AssertThat(withMarkup.Contains("*"))
+            .OverrideFailureMessage("Fixture guard: OpenCounter's TeachNote no longer carries markdown — this test needs a different lesson to mean anything.")
+            .IsTrue();
+        AssertThat(TutorialFlow.Registry.All(def => MentorVoice.CurrentLesson(def.Step).Length <= withMarkup.Length))
+            .OverrideFailureMessage("Fixture guard: OpenCounter is no longer her longest lesson.")
+            .IsTrue();
+
+        var banner = Built();
+        try
+        {
+            banner.Show(withMarkup);
+
+            AssertThat(BannerText(banner)).IsEqual(ObjectiveTracker.Plain(withMarkup));
         }
         finally { banner.Free(); }
     }

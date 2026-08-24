@@ -132,7 +132,10 @@ public class WaveELessonsTests
                 .IsTrue();
             var text = Find<Label>(ui.Mentor, "MentorBannerText").Text;
             AssertThat(text).Contains(MentorVoice.Name);
-            AssertThat(text).Contains("sim");
+            // U3 (§11.14.14): used to assert "sim" — the line named the engine out loud until this
+            // unit's register-check fix made it the town's own record instead (MentorVoiceTests'
+            // widened corpus check pins the ban going forward).
+            AssertThat(text).Contains("town");
         }
         finally
         {
@@ -158,7 +161,8 @@ public class WaveELessonsTests
                 .IsTrue();
             var text = Find<Label>(ui.Mentor, "MentorBannerText").Text;
             AssertThat(text).Contains(MentorVoice.Name);
-            AssertThat(text).Contains("sim");
+            // U3 (§11.14.14): see the Depths test above for why this is "town", not "sim".
+            AssertThat(text).Contains("town");
         }
         finally
         {

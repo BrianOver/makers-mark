@@ -63,12 +63,20 @@ public static class MentorVoice
     /// <see cref="InteriorLayout2D.StationSpec"/>'s own doc) — an invitation, not an instruction.</summary>
     public const string HoverLine = "Bryn, the journeyman — she watches the work here, and says what she's seen";
 
-    /// <summary>Her greeting's own raw words — wrapped by <see cref="Speak"/> (never baked in here
-    /// itself, so it stays the SAME text whether it is read plain or spoken). Used as the STATIC
-    /// table default for <see cref="InteriorLayout2D.StationSpec.FlavorLine"/>; <c>MainUi</c>'s own
-    /// station router replaces the SHOWN toast live with <see cref="CurrentLesson"/> so pressing her
-    /// actually speaks whatever the player is mid-lesson on, not this fixed line (see that call
-    /// site's own doc) — this stays the fallback the table-level reflective guards check.</summary>
+    /// <summary>
+    /// Her greeting's own raw words — wrapped by <see cref="Speak"/> (never baked in here itself,
+    /// so it stays the SAME text whether it is read plain or spoken). Used as the STATIC table
+    /// default for <see cref="InteriorLayout2D.StationSpec.FlavorLine"/> — but honestly, that field
+    /// is dead for her specifically: <c>MainUi.OnStationActivated</c> special-cases her station id
+    /// and returns BEFORE the generic flavor-station branch that would ever read <c>FlavorLine</c>
+    /// (see that method's own doc), so this "Ask me anything" invitation has never once reached a
+    /// player and cannot today — pressing her always speaks <see cref="CurrentLesson"/> instead,
+    /// win or lose. It still earns its keep as the fallback the table-level reflective guards check
+    /// (<c>MentorVoiceTests.Station_IsHonestFlavor_NeverGatesAnyStepsCompletion</c> requires a
+    /// non-blank <c>FlavorLine</c> on every station), and as honest FOUNDATION for an ask-surface
+    /// that does not exist yet — U4 (§11.14.14) found this while fixing her one existing gesture
+    /// (the station press) and deliberately did not build one; a later unit owns making "ask me
+    /// anything" true.</summary>
     public const string GreetingLine = "First time at the bench? Ask me anything — I've made every mistake already.";
 
     /// <summary>What she says once there is no active lesson left to quote (the apprenticeship
