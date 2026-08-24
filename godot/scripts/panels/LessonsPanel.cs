@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using Godot;
 using GodotClient.Ui;
@@ -24,6 +25,57 @@ namespace GodotClient.Panels;
 /// </summary>
 public partial class LessonsPanel : SimPanel
 {
+    /// <summary>
+    /// U5 (§11.14.14, "teaching surfaces render their own copy"): a human title for every
+    /// first-touch id the game actually fires. <see cref="TutorialFlow.FirstTouch"/>'s own <see
+    /// cref="FirstTouchLessons.Fired"/> table carries only the id (its bookkeeping key) and the
+    /// fired lesson text — deliberately: <see cref="FirstTouchLessons"/>'s class doc says outright
+    /// "this class has no idea what 'reachable' means for any given action... pure bookkeeping
+    /// only", and a display title is exactly the presentation knowledge it disclaims. Before this
+    /// table, the book headed every fired first-touch card with the raw id string verbatim ("◆
+    /// the-proof-taught") — the internal kebab-case bookkeeping key, never a word a person wrote,
+    /// in the one surface a player who never reads source is guaranteed to see it.
+    ///
+    /// <para>An id missing here falls back to itself (<see cref="FirstTouchTitle"/>) rather than
+    /// throwing — a test fixture's own throwaway id (e.g. <c>LessonsPanelTests</c>' "test-overwrite")
+    /// has no real title and was never meant to, so a hard failure belongs to the GUARD, not the
+    /// render path: <c>LessonsPanelFirstTouchTitleTests</c> source-scans every <c>.cs</c> file under
+    /// <c>res://scripts</c> (the same idiom <c>TeachingCoverageCensusTests.FirstTouchIdIsWiredInSource</c>
+    /// already uses) for every id ANY live <c>ConsumeFirstTouch</c>/<c>ShowMentorFirstTouch</c> call
+    /// site names, and fails BY ID for any one missing from this table — so a new Wave-E-style
+    /// long-tail lesson that forgets its title is caught the day it ships, never silently, the
+    /// "128 untested assets" shape this repo has already been bitten by once.</para>
+    /// </summary>
+    public static readonly IReadOnlyDictionary<string, string> FirstTouchTitles = new Dictionary<string, string>
+    {
+        ["the-proof-taught"] = "The proof, explained",
+        ["read-only-surfaces"] = "Nothing here is a button",
+        ["tomorrow-at-the-counter"] = "Tomorrow's counter",
+        ["quick-travel-unlocked"] = "Quick travel unlocked",
+        ["second-profession-picked"] = "A second profession",
+        ["hold-or-sell"] = "Hold it, or sell it",
+        ["the-mark-read"] = "The mark, read",
+        ["legends-wall-taught"] = "The town's memory",
+        ["honor-memorial"] = "The farewell rite",
+        ["reforge-heirloom"] = "Reforging an heirloom",
+        ["forecast-board-taught"] = "Tomorrow's forecast",
+        ["the-muster-speaks"] = "What the muster shows",
+        ["pricing-as-a-decision"] = "Pricing is a decision",
+        ["material-ceiling-hand-band"] = "The material sets the ceiling",
+        ["forge-act1-shaping"] = "The forge, shaping",
+        ["forge-act2-quench"] = "The forge, the quench",
+        ["alchemy-brew"] = "Brewing the reagents",
+        ["engineering-assembly"] = "Assembling the parts",
+        ["tanning-frame"] = "Working the tanning frame",
+        ["first-talent-unlock"] = "Unlocking a talent",
+        ["foundry-four-verbs"] = "The Foundry's four verbs",
+    };
+
+    /// <summary>Copy for <paramref name="id"/>'s card heading — see <see cref="FirstTouchTitles"/>'s
+    /// own doc for why an unrecognized id falls back to itself instead of throwing.</summary>
+    private static string FirstTouchTitle(string id) =>
+        FirstTouchTitles.TryGetValue(id, out var title) ? title : id;
+
     private VBoxContainer? _content;
 
     /// <summary>The live chain, for marking the current row — null only before <c>MainUi</c> wires
@@ -68,13 +120,21 @@ public partial class LessonsPanel : SimPanel
             var marker = isCurrent ? "◆" : "○"; // filled diamond / hollow circle — same glyphs ObjectiveTracker's checklist uses
             var (position, total) = TutorialFlow.ActPosition(def.Step);
             var title = AddLabel(
-                titleRow, $"{marker} {TutorialActVocab.DisplayName(def.Act)} · {position} of {total} — {def.ShortLabel}");
+                titleRow,
+                ObjectiveTracker.Plain(
+                    $"{marker} {TutorialActVocab.DisplayName(def.Act)} · {position} of {total} — {def.ShortLabel}"));
             if (isCurrent)
             {
                 title.AddThemeColorOverride("font_color", GameTheme.WarnColor);
             }
 
-            AddLabel(body, def.TeachNote);
+            // U5 (§11.14.14): this copy is shared with the CLI, where **bold** is meaningful — a
+            // Godot Label has no markup parser, so before this fix a TeachNote carrying emphasis
+            // (e.g. OpenCounter's own "**Present** a shelved item...") rendered the asterisks
+            // literally in this permanent record. ObjectiveTracker.Plain is the SAME strip the
+            // tutorial card and checklist already apply to the identical strings; this panel had
+            // simply never called it.
+            AddLabel(body, ObjectiveTracker.Plain(def.TeachNote));
         }
 
         // §11.13 amendment (U6): the loss lesson — not one of the ten registry rows (it is dormant
@@ -91,7 +151,7 @@ public partial class LessonsPanel : SimPanel
             card.AddChild(body);
 
             AddLabel(body, "◆ The first loss").AddThemeColorOverride("font_color", GameTheme.WarnColor);
-            AddLabel(body, lossLesson);
+            AddLabel(body, ObjectiveTracker.Plain(lossLesson));
         }
 
         // U-T2-7 (Wave A substrate, §11.14.4): the first-touch tier's own permanent record — every
@@ -110,8 +170,13 @@ public partial class LessonsPanel : SimPanel
                 var body = new VBoxContainer();
                 card.AddChild(body);
 
-                AddLabel(body, $"◆ {id}").AddThemeColorOverride("font_color", GameTheme.WarnColor);
-                AddLabel(body, lessonText);
+                // U5 (§11.14.14): the card used to head itself with the raw bookkeeping id
+                // ("◆ the-proof-taught") — see FirstTouchTitles' own doc for why the title is
+                // looked up from copy instead. The text gets the same bold-strip every other card
+                // in this book applies (see the registry loop above) — first-touch lessonText is
+                // authored the same way TeachNote is and can carry the same markup.
+                AddLabel(body, $"◆ {FirstTouchTitle(id)}").AddThemeColorOverride("font_color", GameTheme.WarnColor);
+                AddLabel(body, ObjectiveTracker.Plain(lessonText));
             }
         }
     }

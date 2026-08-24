@@ -1,8 +1,12 @@
 #if GDUNIT_TESTS
 using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using GdUnit4;
 using Godot;
+using GodotClient.Panels;
 using GodotClient.Ui;
 using static GdUnit4.Assertions;
 using static GodotClient.Tests.UiTestSupport;
@@ -29,7 +33,7 @@ public class LessonsPanelTests
             var text = RenderedText(ui.Lessons);
             foreach (var def in TutorialFlow.Registry)
             {
-                AssertThat(text.Contains(def.TeachNote, StringComparison.Ordinal))
+                AssertThat(text.Contains(ObjectiveTracker.Plain(def.TeachNote), StringComparison.Ordinal))
                     .OverrideFailureMessage($"{def.Step}'s TeachNote is missing from the Lessons book.")
                     .IsTrue();
             }
@@ -53,7 +57,7 @@ public class LessonsPanelTests
             var text = RenderedText(ui.Lessons);
             foreach (var def in TutorialFlow.Registry)
             {
-                AssertThat(text.Contains(def.TeachNote, StringComparison.Ordinal))
+                AssertThat(text.Contains(ObjectiveTracker.Plain(def.TeachNote), StringComparison.Ordinal))
                     .OverrideFailureMessage($"{def.Step}'s TeachNote vanished from the Lessons book after Dismiss.")
                     .IsTrue();
             }
@@ -85,7 +89,7 @@ public class LessonsPanelTests
             var text = RenderedText(ui.Lessons);
             foreach (var def in TutorialFlow.Registry)
             {
-                AssertThat(text.Contains(def.TeachNote, StringComparison.Ordinal))
+                AssertThat(text.Contains(ObjectiveTracker.Plain(def.TeachNote), StringComparison.Ordinal))
                     .OverrideFailureMessage($"{def.Step}'s TeachNote vanished from the Lessons book after completion.")
                     .IsTrue();
             }
@@ -193,6 +197,123 @@ public class LessonsPanelTests
         {
             Unmount(ui);
         }
+    }
+
+    /// <summary>U5 (§11.14.14, "teaching surfaces render their own copy"): TeachNote copy is
+    /// shared with the CLI, where <c>**bold**</c> is meaningful — a Godot <see cref="Label"/> has
+    /// no markup parser, so before this fix the asterisks rendered literally in this permanent
+    /// record. Proven against REAL production copy (<see cref="TutorialStep.OpenCounter"/>'s own
+    /// TeachNote, the one registry row that actually carries emphasis today — "**Present** a
+    /// shelved item...") rather than a fabricated fixture string, so this cannot pass by accident
+    /// against copy nobody actually ships. <see cref="ObjectiveTracker.Plain"/> already made this
+    /// exact promise for the tutorial card and checklist (<c>FreshCampaign_TutorialActive_...</c>
+    /// in <c>TutorialFlowTests</c>); this panel had simply never called it.</summary>
+    [TestCase]
+    public void LessonsPanel_RendersNoLiteralAsterisks_ForARegistryTeachNoteThatCarriesBoldMarkup()
+    {
+        var openCounter = TutorialFlow.Registry.Single(d => d.Step == TutorialStep.OpenCounter);
+        AssertThat(openCounter.TeachNote.Contains("**", StringComparison.Ordinal))
+            .OverrideFailureMessage(
+                "Fixture assumption broke: OpenCounter's TeachNote no longer carries bold markup — " +
+                "pick another registry row that does before trusting this test.")
+            .IsTrue();
+
+        var ui = MountMainUi();
+        try
+        {
+            ui.OpenPanel("Lessons");
+            var text = RenderedText(ui.Lessons);
+
+            AssertThat(text.Contains("**", StringComparison.Ordinal))
+                .OverrideFailureMessage("The Lessons book rendered a literal \"**\" — markdown bold markup is leaking onto screen.")
+                .IsFalse();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>
+    /// U5 (§11.14.14): every first-touch card used to head itself with the raw bookkeeping id —
+    /// "◆ the-proof-taught" instead of anything a person wrote (<see
+    /// cref="LessonsPanel.FirstTouchTitles"/> is the fix). This is the guard the unit asked for
+    /// explicitly: it must iterate every REAL id, not a hand-typed handful, or it stops covering
+    /// the family the exact way <c>TeachingCoverageCensusTests</c>' own doc warns against ("the
+    /// 128-untested-assets lesson"). So it source-scans every <c>.cs</c> file under
+    /// <c>res://scripts</c> for every live <c>ConsumeFirstTouch</c>/<c>ShowMentorFirstTouch</c> call
+    /// site (the same idiom <see cref="TeachingCoverageCensusTests"/> already uses to verify one
+    /// known id, run here in the opposite direction to DISCOVER the whole set) and checks the
+    /// catalog against that discovered set in BOTH directions — a live id with no title, and a
+    /// title left behind for an id nothing calls anymore, both fail by name.
+    /// </summary>
+    [TestCase]
+    public void EveryLiveFirstTouchId_HasANonSlugTitleInTheCatalog()
+    {
+        var liveIds = AllLiveFirstTouchIds();
+
+        // Denominator guard (this program's own recurring vacuous-green shape, per
+        // TeachingCoverageCensusTests): a broken GlobalizePath or a regex that stopped matching
+        // would make every check below pass by having nothing left to check.
+        AssertThat(liveIds.Count)
+            .OverrideFailureMessage("Source scan found too few first-touch ids -- the scan is broken, not the catalog.")
+            .IsGreaterEqual(15);
+
+        var problems = new List<string>();
+        foreach (var id in liveIds)
+        {
+            if (!LessonsPanel.FirstTouchTitles.TryGetValue(id, out var title))
+            {
+                problems.Add(
+                    $"\"{id}\" has a live ConsumeFirstTouch/ShowMentorFirstTouch call site but no title in " +
+                    "LessonsPanel.FirstTouchTitles -- the book would head its card with the raw id.");
+                continue;
+            }
+
+            if (title.Contains('-'))
+            {
+                problems.Add($"\"{id}\"'s catalog title (\"{title}\") still reads like a hyphenated slug.");
+            }
+        }
+
+        foreach (var staleId in LessonsPanel.FirstTouchTitles.Keys.Except(liveIds))
+        {
+            problems.Add(
+                $"LessonsPanel.FirstTouchTitles has a title for \"{staleId}\", but no live call site names it " +
+                "anymore -- a rename/delete moved the id and this catalog entry was not updated with it.");
+        }
+
+        AssertThat(problems.Count).OverrideFailureMessage(string.Join("\n", problems)).IsEqual(0);
+    }
+
+    /// <summary>Every first-touch id ANY live production call site actually names — the source-scan
+    /// idiom <see cref="TeachingCoverageCensusTests"/>' own <c>FirstTouchIdIsWiredInSource</c> uses
+    /// to verify ONE known id, run in the opposite direction to discover the WHOLE set. Handles the
+    /// one call site (<c>ForgePanel.MarkReadLessonId</c>) that reads a shared id from a
+    /// <c>const string</c> instead of retyping the literal, same as that method does.</summary>
+    private static HashSet<string> AllLiveFirstTouchIds()
+    {
+        var scriptsDir = ProjectSettings.GlobalizePath("res://scripts");
+        var files = Directory.GetFiles(scriptsDir, "*.cs", SearchOption.AllDirectories);
+        var source = string.Join("\n---FILE---\n", files.Select(File.ReadAllText));
+
+        var ids = new HashSet<string>();
+        foreach (Match m in Regex.Matches(
+                     source, @"(?:ConsumeFirstTouch|ShowMentorFirstTouch)\(\s*(?:\r?\n\s*)?""([a-z0-9-]+)"""))
+        {
+            ids.Add(m.Groups[1].Value);
+        }
+
+        foreach (Match constDecl in Regex.Matches(source, @"\bconst\s+string\s+(\w+)\s*=\s*""([a-z0-9-]+)"""))
+        {
+            var constName = Regex.Escape(constDecl.Groups[1].Value);
+            if (Regex.IsMatch(source, $@"(?:ConsumeFirstTouch|ShowMentorFirstTouch)\(\s*(?:\r?\n\s*)?{constName}\b"))
+            {
+                ids.Add(constDecl.Groups[2].Value);
+            }
+        }
+
+        return ids;
     }
 }
 #endif

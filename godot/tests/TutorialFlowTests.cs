@@ -518,6 +518,39 @@ public class TutorialFlowTests
         }
     }
 
+    /// <summary>U5 (§11.14.14, "teaching surfaces render their own copy"): the reported defect was
+    /// a completed checklist row showing its tick with no label — a player reviewing what they had
+    /// already done would see a column of checkmarks and nothing saying what any of them were for.
+    /// Reads the RENDERED tree (<see cref="ObjectiveTracker.TutorialChecklist"/>), not just <see
+    /// cref="TutorialFlow.Checklist"/>'s own data (already pinned Done/Current/Neither by <see
+    /// cref="Checklist_MarksEveryPriorSlotDone_CurrentSlotCurrent_LaterSlotsNeither"/> above) — a
+    /// row's own <see cref="ChecklistRow.Label"/> being non-empty proves nothing about what actually
+    /// reaches the screen if the render path ever drops it for a Done row specifically.</summary>
+    [TestCase]
+    public void Checklist_RendersBothTheGlyphAndTheLabel_ForADoneRow()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            DriveDay1ToLookIn(ui); // -> LookIn, display slot 5; slots 1-4 now read Done
+            var doneRow = ui.Tutorial.Checklist(ui.Adapter.CurrentState).First(r => r.Done);
+
+            var rendered = RenderedText(ui.Objective.TutorialChecklist);
+            AssertThat(rendered.Contains("✓", System.StringComparison.Ordinal))
+                .OverrideFailureMessage("No Done row's glyph reached the rendered checklist at all.")
+                .IsTrue();
+            AssertThat(rendered.Contains(ObjectiveTracker.Plain(doneRow.Label), System.StringComparison.Ordinal))
+                .OverrideFailureMessage(
+                    $"A Done checklist row (slot {doneRow.DisplayIndex}, \"{doneRow.Label}\") is missing its " +
+                    "own label text from the rendered tree — only the glyph would be showing on screen.")
+                .IsTrue();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
     // ── The 2026-08-09 owner report's tutorial half ──────────────────────────────────────────────
     //
     //  "i clicked send them off and it auto jumped to night???? yet this is still on tutorial 5???"
