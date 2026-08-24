@@ -2379,10 +2379,14 @@ public partial class MainUi : Control
             return;
         }
 
+        // U3 (§11.14.14, register check): used to say "the sim just replayed this fight" — Bryn
+        // is a townsfolk who has never heard the word, and the town's own counterfactual replay
+        // (AttributionEngine) is exactly what the docket lesson below already calls "what the
+        // town has already decided." Same fix, same file, same voice.
         Mentor.ShowFirstTouch(Tutorial.ConsumeFirstTouch(
             "the-proof-taught",
             MentorVoice.Speak(
-                "That flash is the proof: the sim just replayed this fight with your craft taken back "
+                "That flash is the proof: the town just replayed this fight with your craft taken back "
                 + "out of it, and found it would have gone differently. Only something you actually "
                 + "forged can ever earn a beat like that — nothing else a hero happens to be carrying "
                 + "counts.")));
@@ -2395,12 +2399,17 @@ public partial class MainUi : Control
     /// reaches first (<see cref="OpenPanel"/> for HeroCards/Depths/Heroes, <see
     /// cref="OnBestiaryVisibilityChanged"/> for Bestiary) — the other three become no-ops by <see
     /// cref="TutorialFlow.ConsumeFirstTouch"/>'s own once-ever contract.</summary>
+    // U3 (§11.14.14, register check): used to say "a button" and "the sim's own record" — the
+    // same engine-naming defect the proof lesson above had, twice over in one line. "Something
+    // to press" and "the town's own record" say the identical thing without ever naming the
+    // engine underneath.
     private void ShowReadOnlySurfaceLesson() =>
         Mentor.ShowFirstTouch(Tutorial.ConsumeFirstTouch(
             "read-only-surfaces",
             MentorVoice.Speak(
-                "Nothing on this board is a button — it only shows you what has already happened. "
-                + "Heroes, depths, and the bestiary are the sim's own record, not a place to act.")));
+                "Nothing on this board is something to press — it only shows you what has already "
+                + "happened. Heroes, depths, and the bestiary are the town's own record, not a place "
+                + "to act.")));
 
     /// <summary>
     /// Register #160: <i>"Tomorrow at the counter is good but needs integration into the game
@@ -2438,11 +2447,14 @@ public partial class MainUi : Control
             return;
         }
 
+        // U3 (§11.14.14, register check): "one click away" named the input device, not the town —
+        // the same family of defect as the two lines above, just quieter (one word, easy to miss
+        // in a pass that was only looking for "the sim").
         Mentor.ShowFirstTouch(Tutorial.ConsumeFirstTouch(
             "quick-travel-unlocked",
             MentorVoice.Speak(
                 "A quick-travel row just opened up top — every building you have already visited is "
-                + "now one click away, no walk required.")));
+                + "now one step away, no walk required.")));
     }
 
     /// <summary>U5: a transient bell-action notice (reuses the rejection-toast banner).</summary>
@@ -3905,9 +3917,18 @@ public partial class MainUi : Control
         // MentorVoice.Greeting every other flavor station's static FlavorLine would otherwise show.
         // Checked before the generic flavor branch below (which she would also satisfy, since her
         // own Action is null) so pressing her always speaks the CURRENT lesson, not a stale one-off.
+        //
+        // U4 (§11.14.14): used to route through ShowBellToast — the FOUR-SECOND rejection banner
+        // (RejectionToastSeconds), built to reject illegal actions, not to carry her longest
+        // lessons. Two real defects came of it: the timer cut her off mid-sentence on any TeachNote
+        // longer than four seconds' reading (OpenCounter's is the worst case), and that toast path
+        // has no markup parser, so the counter step's TeachNote spoke literal asterisks —
+        // "**Present** a shelved item." Her own MentorBanner already exists for exactly this (no
+        // timer, ever — law: no timers on decisions) and now strips the markup itself (see
+        // MentorBanner.Show's own doc), so routing here is the whole fix.
         if (station.Id == MentorVoice.StationId)
         {
-            ShowBellToast(MentorVoice.CurrentLesson(Tutorial.Active ? Tutorial.Step : null));
+            Mentor.Show(MentorVoice.CurrentLesson(Tutorial.Active ? Tutorial.Step : null));
             return;
         }
 
