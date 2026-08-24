@@ -662,6 +662,12 @@ public partial class ShopPanel : SimPanel
         }
 
         var id = new ItemId(itemId);
+        // U1 (§11.14.14 defect, "pricing-as-a-decision" fired from the wrong surface): the FIRST
+        // price a player ever sets in a campaign is this one — the initial stock price, not
+        // necessarily a later Reprice edit — so the shelf half of the pricing lesson fires HERE,
+        // before the StockAction that commits it, never after. A player who stocks at the
+        // suggested price and never once touches a price tag must still hear it exactly once.
+        ShowShelfPricingLesson();
         Adapter.Queue(new StockAction(id, price));
         GodotClient.Audio.AudioDirector.For(this)?.Play(GodotClient.Audio.Cue.Shelve);
         // U6 (auto pricing): names the price's origin in the immediate feedback too, not just the
@@ -714,25 +720,44 @@ public partial class ShopPanel : SimPanel
         var id = new ItemId(itemId);
         Adapter.Queue(new SetPriceAction(id, price));
         _feedback!.Text = $"queued: reprice {id} to {price}g";
-        ShowPricingDecisionLesson();
+        // U1 (§11.14.14 defect): the pricing lesson no longer fires from here. Reprice can only
+        // ever touch an item that was stocked first (ActionLegality.SetPriceLegal requires the
+        // item already be on Player.Shelf), so by the time a player reaches this button the shelf
+        // half of the lesson has already had its turn from PlaceOnShelf — see
+        // ShowShelfPricingLesson's own doc for why re-firing it here was both too late (one line
+        // after the price already queued) and wrong (Reprice-only meant a stock-and-never-touch-it
+        // player never heard it at all). Retired into the Lessons book, not deleted:
+        // FirstTouch.Fired keeps whatever fired at the first stock re-readable there forever.
     }
 
     /// <summary>
-    /// U-T2 Wave C (§11.14.4, Act II, dilemma #2, R14.7 "one sentence each, both sides, no
-    /// recommendation"): names the pricing dilemma out loud the first time the player EVER touches
-    /// a price — before this unit, of the six dilemmas the game is made of, pricing was one of the
-    /// two never taught at all. Fires once per campaign via the SAME once-ever first-touch engine
-    /// Wave A shipped (<see cref="TutorialFlow.ConsumeFirstTouch"/>), shown on the SAME shared
-    /// banner Wave C introduced for exactly this (<see cref="MentorBanner"/>) rather than a second
-    /// mechanism. Null-tolerant: a caller with no <see cref="Tutorial"/>/<see cref="Mentor"/> wired
-    /// (most existing tests) sees no banner ever, never a crash.
+    /// U1 (§11.14.14 defect, "pricing-as-a-decision" fired from the wrong surface): the SHELF
+    /// half of the pricing dilemma — named the first time the player EVER sets a shelf price, which
+    /// is the initial stock price, not a later reprice edit. Before this unit the only firing site
+    /// was <see cref="Reprice"/>, one line AFTER the SetPriceAction it fired for was already
+    /// queued — so a player who stocked at the suggested price and never touched a tag never heard
+    /// it — AND the copy it spoke described the COUNTER's own machinery (goodwill/mood swings on a
+    /// pin or a fleece, <c>WillingnessModel</c>) though it fired off a SHELF action:
+    /// <see cref="GameSim.Heroes.ShoppingAi.EvaluateItem"/> (the shelf's own gate) has no
+    /// price-fairness check at all, ever — role fit, veteran quality, affordability, gear-score
+    /// gain, nothing else. The new copy claims only what the shelf actually does (a pure
+    /// afford/can't-afford gate) and names the counter as where the remembered half of a price
+    /// decision actually lives; <see cref="TutorialFlow"/>'s OpenCounter TeachNote is that other,
+    /// true half, taught on the surface that actually has the mechanism. Routed through the SAME
+    /// once-ever first-touch engine (<see cref="TutorialFlow.ConsumeFirstTouch"/>) under the SAME
+    /// id, so the corrected copy simply replaces the old one for every campaign, past and future —
+    /// never a second mechanism. Shown on the SAME shared banner Wave C introduced for exactly this
+    /// (<see cref="MentorBanner"/>). Null-tolerant: a caller with no <see cref="Tutorial"/>/
+    /// <see cref="Mentor"/> wired (most existing tests) sees no banner ever, never a crash.
     /// </summary>
-    private void ShowPricingDecisionLesson() =>
+    private void ShowShelfPricingLesson() =>
         Mentor?.ShowFirstTouch(Tutorial?.ConsumeFirstTouch(
             "pricing-as-a-decision",
             MentorVoice.Speak(
-                "Price for the sale, or price for the relationship — a fair price earns goodwill "
-                + "that compounds, while squeezing every gold you can from a hero earns it only once.")));
+                "A shelf price only ever decides one thing: whether a hero can afford what you "
+                + "made. Price it out of reach and the sale is gone, nothing more — no hero "
+                + "remembers a shelf tag kindly or otherwise. Every price this town remembers is "
+                + "set across the counter, not here.")));
 
     /// <summary>
     /// U5: a pick-up-able card. Godot's native drag-and-drop virtuals

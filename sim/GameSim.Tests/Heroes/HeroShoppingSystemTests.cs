@@ -116,6 +116,13 @@ public class HeroShoppingSystemTests
         Assert.Contains("30g", pass.Reason);
         Assert.Equal(30, after.Heroes[1].Gold);
         Assert.Single(after.Player.Shelf);
+
+        // U1 (§11.14.14 defect): pins the sim fact ShopPanel's shelf-pricing lesson depends on — a
+        // shelf overprice fails ONLY the affordability gate (no role/veteran/gear-score reason
+        // fired here) and leaves Hero.MoodPermille untouched. ApplyPurchase is the one path that
+        // ever rewrites a Hero, and it never runs on a Pass, so a hero who can't afford the shelf
+        // price carries no memory of it — kindly or otherwise.
+        Assert.Equal(hero.MoodPermille, after.Heroes[1].MoodPermille);
     }
 
     [Fact]

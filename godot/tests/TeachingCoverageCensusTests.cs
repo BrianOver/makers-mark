@@ -252,6 +252,12 @@ public class TeachingCoverageCensusTests
     private static readonly Dictionary<Type, string> ActionFirstTouch = new()
     {
         [typeof(CraftAction)] = "the-mark-read",
+        // U1 (§11.14.14 defect): the live call site sits in ShopPanel.PlaceOnShelf, not a
+        // SetPriceAction/Reprice handler -- the lesson covers the ONE shelf-pricing mechanic
+        // StockAction and SetPriceAction both drive (setting the price a hero sees), and fires at
+        // the FIRST of the two a campaign ever reaches, which is always the initial stock:
+        // ActionLegality.SetPriceLegal requires the item already be on Player.Shelf, so a reprice
+        // can never happen before a stock does.
         [typeof(SetPriceAction)] = "pricing-as-a-decision",
         [typeof(UnlockTalentAction)] = "first-talent-unlock",
         [typeof(SetProfessionsAction)] = "second-profession-picked",

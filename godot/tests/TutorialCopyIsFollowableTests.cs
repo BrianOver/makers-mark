@@ -628,6 +628,40 @@ public class TutorialCopyIsFollowableTests
     }
 
     /// <summary>
+    /// U1 (§11.14.14 defect): the counter is the ONE surface that actually has the mechanism the
+    /// old shelf-side "pricing-as-a-decision" lesson used to (wrongly) describe — <c>WillingnessModel</c>'s
+    /// pin/fleece swing hero mood, a gate <see cref="GameSim.Heroes.ShoppingAi.EvaluateItem"/> (the
+    /// shelf's own gate) never touches. This pins that the counter's own TeachNote now names its
+    /// real half of the pricing dilemma — a fair answer is remembered kindly, a squeeze is
+    /// remembered too, just not kindly — and never smuggles in a client-invented number for the
+    /// sim's own mood math (same "show only what the sim decided" discipline
+    /// <see cref="GodotClient.Tests.ForgeMentorLessonsTests"/> pins for material-ceiling).
+    /// </summary>
+    [TestCase]
+    public void TheCounterStep_TeachesThatAFairAnswerIsRememberedAndASqueezeIsnt()
+    {
+        var note = TutorialFlow.Registry.Single(d => d.Step == TutorialStep.OpenCounter).TeachNote;
+
+        AssertThat(note.Contains("remembered", StringComparison.OrdinalIgnoreCase))
+            .OverrideFailureMessage(
+                $"OpenCounter's TeachNote never names the counter's own remembered-relationship " +
+                $"mechanism:\n  \"{note}\"")
+            .IsTrue();
+
+        AssertThat(note.Any(char.IsDigit))
+            .OverrideFailureMessage(
+                $"The counter's pricing lesson contains a digit — a client-authored quantity has " +
+                $"leaked into copy that must only describe the mechanism:\n  \"{note}\"")
+            .IsFalse();
+
+        AssertThat(note.Contains("you should", StringComparison.OrdinalIgnoreCase))
+            .OverrideFailureMessage(
+                $"The counter's pricing lesson reads as a recommendation, not a naming of both " +
+                $"sides:\n  \"{note}\"")
+            .IsFalse();
+    }
+
+    /// <summary>
     /// U-T2-16 (#162 defect 4): mirrors <see
     /// cref="TutorialFlowTests.Step7_NeverClaimsADayGate_ForAConditionThatIsNotDayGated"/> — the same
     /// regression shape, for the SAME class of lie. OpenCounter's MinDay dropped from 2 to 1: the
