@@ -5060,14 +5060,11 @@ lessons fire after discovery, so any verb the course depends on gets a pointed m
 
 ```mermaid
 flowchart TB
-  P1["Wave 1 — Stop lying<br/>U1-U6"]
   P2["Wave 2 — The pointer reaches everything<br/>U7-U15"]
   P3["Wave 3 — The first minute and the doors<br/>U16-U20"]
   P4["Wave 4 — The course teaches the game<br/>U21-U32, U40"]
   P5["Wave 5 — Bryn becomes a person<br/>U33-U37"]
   P6["Wave 6 — Prove it keeps working<br/>U38-U39"]
-  P1 --> P2
-  P1 --> P3
   P2 --> P4
   P4 --> P5
   P2 --> P5
@@ -5075,8 +5072,12 @@ flowchart TB
   P5 --> P6
 ```
 
-Wave 1 lands first because it removes live falsehoods and every unit in it is independent. Wave 3 needs
-nothing from Wave 2 and can run beside it. Wave 5's arc lines need Wave 4's beats to attach to.
+Wave 3 needs nothing from Wave 2 and can run beside it. Wave 5's arc lines need Wave 4's beats to attach to.
+
+Wave 1 removed the shipped falsehoods and is in `git log` — with three findings that change the units below.
+It also disproved one of its own premises: the claim that a completed checklist row rendered a glyph without
+its label was **wrong**. `ObjectiveTracker` adds the label unconditionally for every row and only the colour
+changes when it is done. A regression pin now holds that.
 
 ---
 
@@ -5084,12 +5085,6 @@ nothing from Wave 2 and can run beside it. Wave 5's arc lines need Wave 4's beat
 
 | U | Title | Key files | Depends on |
 |---|---|---|---|
-| U1 | The pricing lesson tells the truth about two mechanisms | `godot/scripts/panels/ShopPanel.cs`, `godot/scripts/ui/TutorialFlow.cs` | — |
-| U2 | The primer describes the game's real clock | `godot/scripts/NewGameSelect.cs`, `godot/scripts/ui/PhaseVocab.cs` | — |
-| U3 | "The sim" leaves the player's ear | `godot/scripts/MainUi.cs`, `godot/scripts/ui/MentorVoice.cs` | — |
-| U4 | Bryn answers on her own surface | `godot/scripts/MainUi.cs`, `godot/tests/MentorStationLiveTests.cs` | — |
-| U5 | Teaching surfaces render their own copy | `godot/scripts/panels/LessonsPanel.cs`, `godot/scripts/ui/ObjectiveTracker.cs` | — |
-| U6 | The census stops overclaiming, and the voice census exists | `godot/tests/TeachingCoverageCensusTests.cs`, `sim/GameSim.Tests/` | — |
 | U7 | Anchors know whether their target exists yet | `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/ui/TutorialOverlay.cs` | — |
 | U8 | Anchors point at containers, not per-entity buttons | `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/ui/UiKit.cs`, panels | U7 |
 | U9 | One surface roster, one way in | `godot/scripts/MainUi.cs`, `godot/scripts/ui/TutorialFlow.cs` | — |
@@ -5124,87 +5119,7 @@ nothing from Wave 2 and can run beside it. Wave 5's arc lines need Wave 4's beat
 | U38 | A harness takes the course | `godot/scripts/tools/FullPlaytest.cs` | U15, U29 |
 | U39 | Copy cannot outlive its control | `godot/tests/`, `godot/scripts/tools/PlaytestLog.cs` | U33 |
 | U40 | The sixth decision becomes teachable | `godot/scripts/ui/TutorialFlow.cs`, `godot/tests/DilemmaLessonsTests.cs` | U27 |
-
----
-
-### Wave 1 — Stop lying
-
-#### U1. The pricing lesson tells the truth about two mechanisms
-
-- Goal: replace one half-false sentence with two true ones, and move the lesson to before the choice.
-- Requirements: R1, R15
-- Files: `godot/scripts/panels/ShopPanel.cs`, `godot/scripts/ui/TutorialFlow.cs`, `godot/tests/DilemmaLessonsTests.cs`
-- Approach: the shelf sentence says the price decides only whether they can afford it; the counter
-  sentence says a pin is remembered kindly and a fleece is remembered otherwise. Fire the shelf half at
-  the first price the player ever sets — the Shelve step already owns that moment — and the counter half
-  in the OpenCounter teach copy. The reprice-only firing retires into the Lessons book.
-- Test scenarios: a player who stocks at the suggested price and never reprices still receives the shelf
-  lesson; the counter half fires on the first counter session; the census still counts decision #2 as
-  covered; a shelf-overpriced item fails only the affordability gate and produces no mood delta.
-- Verification: both sentences appear at their own surface, and neither claims a mechanism the other owns.
-
-#### U2. The primer describes the game's real clock
-
-- Goal: the first screen a player reads stops naming a control that does not exist.
-- Requirements: R3, R35
-- Files: `godot/scripts/NewGameSelect.cs`, `godot/scripts/ui/PhaseVocab.cs`, `godot/tests/`
-- Approach: join the primer's clock copy to `PhaseVocab` the way all in-course copy already is, so it
-  names "Send them off" and "Snuff the lanterns" and says the day waits for the player. Extend the
-  followability suite's jurisdiction to the primer scene — that suite already catches this class and its
-  reach simply stops one scene early.
-- Test scenarios: the primer names no control absent from the live scene tree; renaming a bell label goes
-  red; auto-advance's default is stated correctly.
-- Verification: the followability test covers `NewGameSelect` and fails when primer copy drifts.
-
-#### U3. "The sim" leaves the player's ear
-
-- Goal: two player-facing lines stop naming the engine, and a test stops the third from appearing.
-- Requirements: R2
-- Files: `godot/scripts/MainUi.cs`, `godot/scripts/ui/MentorVoice.cs`, `godot/tests/MentorVoiceTests.cs`
-- Approach: the proof line and the read-only-surfaces line become the town's record. Add a register check
-  over her corpus for "the sim", "button", "click", and "HUD".
-- Test scenarios: the register check goes red on a line containing any banned token; both existing lines pass.
-- Verification: no player-facing string in `godot/scripts` contains the banned tokens.
-
-#### U4. Bryn answers on her own surface
-
-- Goal: pressing E at her station opens her untimed banner instead of the four-second rejection toast.
-- Requirements: R23, R5
-- Files: `godot/scripts/MainUi.cs`, `godot/scripts/ui/MentorVoice.cs`, `godot/tests/MentorStationLiveTests.cs`
-- Approach: `OnStationActivated` routes her station id to the banner path she already owns. Strip or
-  render markup before it reaches her mouth — today the toast path prints literal asterisks during the
-  counter step. `MentorStationLiveTests` currently pins the toast and must be rewritten to pin the banner.
-- Test scenarios: E at her station shows the banner and no toast; the banner dismisses only on a press;
-  a lesson containing bold markup renders without asterisks; her longest lesson is not truncated.
-- Verification: the live test asserts the banner, and the rejection toast no longer answers a greeting.
-
-#### U5. Teaching surfaces render their own copy
-
-- Goal: three render defects on the surfaces the course is written onto.
-- Requirements: R5
-- Files: `godot/scripts/ui/ObjectiveTracker.cs`, `godot/scripts/panels/LessonsPanel.cs`
-- Approach: completed steps render their label as well as their glyph; the Lessons book calls the same
-  plain-text pass the card uses so nineteen copy lines stop printing literal bold; book entries take
-  their title from copy rather than a raw slug.
-- Test scenarios: a completed row shows its label; a lesson containing markup renders none literally; no
-  book entry title contains a hyphenated slug.
-- Verification: a rendered frame of the Lessons book shows no asterisks and no slugs.
-
-#### U6. The census stops overclaiming, and the voice census exists
-
-- Goal: two pinned claims that measurement contradicts, and one census the T9 charter named and nobody built.
-- Requirements: R4, R21, R9
-- Files: `godot/tests/TeachingCoverageCensusTests.cs`, `sim/GameSim.Tests/`
-- Approach: `Unstock` is pinned "a deliberate, low-stakes gap" — two of the six decisions route through
-  that button and `SendSupplyLegal` rejects any shelved item, so a player with everything shelved has no
-  legal supply to send. Re-rule it as owed. Separately, the census's first-touch claims prove id
-  adjacency, not that a player was ever led to the verb; say so in the doc block so the next reader is
-  not misled. Then add the fast-lane chronicle census the voice budget's charter row called for: over
-  `batch --seeds N`, assert no seed and no night exceeds two act-facts.
-- Test scenarios: the census names `Unstock` as owed with its two routes cited; the doc block distinguishes
-  discovery from adjacency; the chronicle census passes on current seeds and goes red on a synthetic
-  three-act night.
-- Verification: the census exists in the fast lane and runs over `runs/`.
+| U41 | The clock's own doc stops contradicting the clock | `sim/GameSim/Kernel/PhaseClock.cs` | — |
 
 ---
 
@@ -5336,7 +5251,10 @@ nothing from Wave 2 and can run beside it. Wave 5's arc lines need Wave 4's beat
 - Files: `godot/scripts/NewGameSelect.cs`, `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/ui/MentorVoice.cs`
 - Approach: a first-morning beat states the premise and its negative half — you are the smith, you never
   go down, and you cannot give a hero an order. Law 1 is the rule most likely to collide with genre
-  expectation and no surface states it today; a player who tries to command a hero learns it by absence.
+  expectation and no surface states it today; a player who tries to command a hero learns it by absence. The
+  primer's existing premise line was checked during wave 1 and **holds up** against the five links — all four
+  channels are hero-paid, so "heroes will buy this gear" is a fair compression, and "written on your name"
+  fairly carries links 4 and 5. So this unit owes the negative half and law 1, not a rewrite of what is there.
 - Test scenarios: the beat fires once, before the first numbered step, on a new game only; its copy names
   the inversion and the no-orders rule; it survives a reload before being dismissed.
 - Verification: a new game's first voice is the premise, not "buy material".
@@ -5511,8 +5429,13 @@ nothing from Wave 2 and can run beside it. Wave 5's arc lines need Wave 4's beat
 - Goal: the night a hero dies and the proof lands does not bury the proof.
 - Requirements: R21, R22
 - Files: `godot/scripts/ui/MentorBanner.cs`, `godot/scripts/ui/TutorialFlow.cs`
-- Approach: two act-voices per night. A dormant act whose fact lands on a full night arms for the next
-  morning at full window rather than queueing, which the window mechanism already supports. Fixed precedence:
+- Approach: two act-voices per night. **Measured before building** (12 seeds, 10 days, baseline player, a
+  pure-sim census in the fast lane): day 4 carries **four** act-facts on 12 of 12 seeds — the attribution
+  beat, a fulfilled commission, the Act II advance and the warrant's end — and **five** on 4 of 12 when the
+  first death lands the same night. The banner holds four waiting plus one on screen, so a third of seeds sit
+  exactly at the deliverable ceiling and every seed is at double the target. This unit therefore has to defer
+  **three** voices on the worst night, not one. A dormant act whose fact lands on a full night arms for the
+  next morning at full window rather than queueing, which the window mechanism already supports. Fixed precedence:
   death, then the proof, then graduation, then the warrant's end, then the act change, then a fulfilled
   commission, then a rank-up. So on the four seeds in twelve where both land together, the death speaks and
   the proof waits a day. Per KTD3 deferral is by arming date, never a countdown.
@@ -5684,6 +5607,19 @@ nothing from Wave 2 and can run beside it. Wave 5's arc lines need Wave 4's beat
   goes red in primer and adviser copy alike; the fit gate rejects a card that overflows the real budget; the log
   carries step and act on every row.
 - Verification: the never-orders check iterates the whole corpus, and the fit gate matches the rendered width.
+
+#### U41. The clock's own doc stops contradicting the clock
+
+- Goal: delete a stale sentence living inside the code, found while fixing the primer that repeated it.
+- Requirements: R3, R4
+- Files: `sim/GameSim/Kernel/PhaseClock.cs`
+- Approach: the class-level doc comment says auto-advance is on by default for a new campaign. The field's own
+  default forty lines below is `false`, and its inline doc says so. The primer's defect was the same claim, one
+  layer out — which is how a stale comment becomes shipped copy. Delete the wrong sentence rather than
+  softening it, and check whether any other comment in the file repeats it.
+- Test scenarios: a test asserts the documented default matches the field's actual default, so the two cannot
+  drift again.
+- Verification: no comment in the file states a default the code contradicts.
 
 ---
 
