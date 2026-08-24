@@ -508,12 +508,23 @@ public sealed partial class TutorialFlow : PanelContainer
             // what they will ask for. Its own lesson fires on first touch (MainUi
             // .ShowDocketLesson); this line is the tie between the tool and the beat it serves,
             // so the step never DEPENDS on the docket having been opened.
+            //
+            // U1 (§11.14.14 defect): the trailing sentence is the COUNTER half of the pricing
+            // dilemma — the half ShopPanel.ShowShelfPricingLesson's own doc explains the shelf
+            // literally cannot teach, because ShoppingAi.EvaluateItem (the shelf's gate) has no
+            // price-fairness check at all. This surface DOES have the mechanism (WillingnessModel's
+            // pin/fleece swing hero mood, which feeds future willingness and RelationshipBands) --
+            // named qualitatively here (no client-invented mood numbers, same discipline
+            // ForgePanel's material-ceiling lesson set), because it is the one place in the game
+            // that mechanism actually lives.
             TeachNote: "The counter is a live haggle. **Present** a shelved item, or **Suggest** one first to "
                        + "raise their interest for a stronger opening offer. Once they've named a price, "
                        + "**Accept** it, **Hold Firm** and wait them out, or name your own with **Counter**. "
                        + "Walking away empty — theirs or yours — is a real answer too, not a mistake. "
                        + "**Tomorrow at the Counter**, bottom-left, lists who is coming next — keep it open "
-                       + "while you craft.",
+                       + "while you craft. Answer them well and the price is remembered kindly, warming "
+                       + "every deal after; squeeze them for everything they will bear and it is "
+                       + "remembered too, just not kindly — a cost the shelf never touches.",
             // U1 (§11.13): re-gated off what the PLAYER did, not what the customer (ShoppingAi)
             // decided — see CounterAnsweredAtLeastOnce's own doc for why the old CounterSaleClosed-
             // only predicate could stall forever on a perfectly legal walk-away. Verified reachable:

@@ -16,61 +16,95 @@ namespace GodotClient.Tests;
 /// <summary>
 /// U-T2 Wave C (§11.14.4, Act II, R14.7 "the tutorial names the six dilemmas out loud — one
 /// sentence each, both sides, no recommendation"): the two dilemmas this wave teaches — "pricing
-/// as a decision" (dilemma #2, fires the first time the player ever reprices a shelf item) and
-/// "hold-or-sell" (dilemma #1, fires the first time the player ever accepts a commission) — both
-/// routed through the SAME shared <see cref="MentorBanner"/> Wave C introduces rather than a
-/// panel-private copy, and the SAME <see cref="TutorialFlow.ConsumeFirstTouch"/> once-ever engine
-/// Wave A shipped.
+/// as a decision" (dilemma #2) and "hold-or-sell" (dilemma #1, fires the first time the player
+/// ever accepts a commission) — both routed through the SAME shared <see cref="MentorBanner"/>
+/// Wave C introduces rather than a panel-private copy, and the SAME
+/// <see cref="TutorialFlow.ConsumeFirstTouch"/> once-ever engine Wave A shipped.
+///
+/// <para>U1 (§11.14.14 defect): dilemma #2 used to fire ONLY from <c>ShopPanel.Reprice</c>, one
+/// line after the SetPriceAction it fired for was already queued — so a player who stocked at the
+/// suggested price and never touched a tag never heard it — and its copy described the counter's
+/// own goodwill/mood machinery even though it fired off a shelf action that has no price-fairness
+/// gate at all. It now fires at the FIRST price a player ever sets in a campaign, which is the
+/// initial stock (<c>ShopPanel.PlaceOnShelf</c>) — Reprice can only ever touch an already-shelved
+/// item, so Stock always comes first — and its copy claims only the shelf's real mechanism
+/// (afford/can't-afford). The counter's own true half moved to <see cref="TutorialStep.OpenCounter"/>'s
+/// own TeachNote (see <see cref="GodotClient.Tests.TutorialCopyIsFollowableTests"/> for that
+/// coverage) — two true sentences, one per surface, rather than one sentence describing a
+/// mechanism only one of the two surfaces has.</para>
 /// </summary>
 [TestSuite]
 [RequireGodotRuntime]
 public class DilemmaLessonsTests
 {
-    private static readonly ItemId ShelvedItemId = new(9401);
+    private static readonly ItemId UnshelvedItemId = new(9402);
+    private static readonly ItemId SecondUnshelvedItemId = new(9403);
 
-    private static GameState StateWithOneShelvedItem()
+    private static Item TestBuckler(ItemId id) => new(
+        id, "test-dilemma-shelf-item", "Test Buckler", ItemSlot.Weapon,
+        QualityGrade.Common, new ItemStats(Attack: 4, Defense: 0, Weight: 2),
+        new MakersMark("You", 1), ImmutableList<ItemHistoryEntry>.Empty);
+
+    /// <summary>U1 (§11.14.14 defect): the shelf half of the pricing lesson fires at the FIRST
+    /// price a player ever sets — the initial stock, not a later reprice — so this fixture leaves
+    /// the item UNSHELVED (in the player's crafted stock, not yet on <see cref="Player.Shelf"/>)
+    /// so a test presses the real Stock button rather than starting from a state that has already
+    /// skipped past the moment the lesson exists to teach.</summary>
+    private static GameState StateWithOneUnshelvedItem()
     {
-        var baseState = GameComposition.NewCampaign(seed: 9401);
-        var item = new Item(
-            ShelvedItemId, "test-dilemma-shelf-item", "Test Buckler", ItemSlot.Weapon,
-            QualityGrade.Common, new ItemStats(Attack: 4, Defense: 0, Weight: 2),
-            new MakersMark("You", 1), ImmutableList<ItemHistoryEntry>.Empty);
-
-        return baseState with
-        {
-            Items = baseState.Items.Add(item.Id.Value, item),
-            Player = baseState.Player with { Shelf = ImmutableList.Create(new ShelfEntry(item.Id, 10)) },
-        };
+        var baseState = GameComposition.NewCampaign(seed: 9402);
+        var item = TestBuckler(UnshelvedItemId);
+        return baseState with { Items = baseState.Items.Add(item.Id.Value, item) };
     }
 
-    /// <summary>Pricing is one of the two dilemmas the census named as wholly untaught before this
-    /// unit (plan §11.14.4's own finding). Reprice's own Wave-C wiring must reach the shared
-    /// banner regardless of which control drove it (the legacy button, exercised here).</summary>
-    [TestCase]
-    public void RepricingAShelfItemForTheFirstTime_TeachesThePricingDilemma()
+    private static GameState StateWithTwoUnshelvedItems()
     {
-        var ui = MountMainUi(new SimAdapter(StateWithOneShelvedItem()));
+        var baseState = StateWithOneUnshelvedItem();
+        var second = TestBuckler(SecondUnshelvedItemId);
+        return baseState with { Items = baseState.Items.Add(second.Id.Value, second) };
+    }
+
+    /// <summary>Pricing is one of the two dilemmas the census named as wholly untaught before
+    /// Wave C. U1 (§11.14.14 defect) moved the firing point onto the initial Stock press — the
+    /// actual first price a player ever sets — and this drives that real button (never touching
+    /// the StockPrice_ SpinBox first), exactly the "stocks at the suggested price and never
+    /// reprices" case the unit exists to cover.</summary>
+    [TestCase]
+    public void StockingAShelfItemForTheFirstTimeEver_TeachesThePricingDilemma()
+    {
+        var ui = MountMainUi(new SimAdapter(StateWithOneUnshelvedItem()));
         try
         {
             ui.OpenPanel("Shop");
 
-            PressEnabled(ui.Shop, $"Reprice_{ShelvedItemId.Value}");
+            PressEnabled(ui.Shop, $"Stock_{UnshelvedItemId.Value}");
 
-            AssertThat(ui.Adapter.AppliedThisPhase.OfType<SetPriceAction>().Any(a => a.Item == ShelvedItemId))
-                .OverrideFailureMessage("Setup check: the Reprice press did not queue a SetPriceAction.")
+            AssertThat(ui.Adapter.AppliedThisPhase.OfType<StockAction>().Any(a => a.Item == UnshelvedItemId))
+                .OverrideFailureMessage("Setup check: the Stock press did not queue a StockAction.")
                 .IsTrue();
 
             AssertThat(ui.Mentor.Visible)
-                .OverrideFailureMessage("The pricing dilemma never showed on the player's first-ever reprice.")
+                .OverrideFailureMessage("The pricing dilemma never showed on the player's first-ever stock.")
                 .IsTrue();
             var text = Find<Label>(ui.Mentor, "MentorBannerText").Text;
             AssertThat(text).Contains(MentorVoice.Name); // attributed to Bryn, never an anonymous tooltip
-            AssertThat(text).Contains("relationship");
-            AssertThat(text).Contains("sale");
+            AssertThat(text).Contains("afford");
+            AssertThat(text).Contains("counter");
 
-            // R14.7: no recommendation — the lesson must not tell the player which side to take.
+            // Law 4 ("show only what the sim decided"): ShoppingAi.EvaluateItem (the shelf's own
+            // gate) never touches mood/goodwill — the shelf half of the lesson must never borrow
+            // the counter's own vocabulary for a mechanism this surface does not have.
+            AssertThat(text.Contains("goodwill", System.StringComparison.OrdinalIgnoreCase))
+                .OverrideFailureMessage($"The shelf pricing lesson claims a goodwill mechanism the shelf does not have: \"{text}\"")
+                .IsFalse();
+            AssertThat(text.Contains("mood", System.StringComparison.OrdinalIgnoreCase))
+                .OverrideFailureMessage($"The shelf pricing lesson claims a mood mechanism the shelf does not have: \"{text}\"")
+                .IsFalse();
+
+            // R14.7 / law 12: influence never orders — the lesson must not tell the player which
+            // side to take.
             AssertThat(text.Contains("you should", System.StringComparison.OrdinalIgnoreCase))
-                .OverrideFailureMessage($"The pricing dilemma reads as a recommendation, not a naming of both sides: \"{text}\"")
+                .OverrideFailureMessage($"The pricing dilemma reads as a recommendation: \"{text}\"")
                 .IsFalse();
         }
         finally
@@ -79,22 +113,61 @@ public class DilemmaLessonsTests
         }
     }
 
-    /// <summary>A second reprice must NOT re-fire the lesson — the same once-ever contract every
-    /// other first-touch lesson in this codebase carries (the 1287x memorial nag precedent).</summary>
+    /// <summary>A second stock (on a different item) must NOT re-fire the lesson — the same
+    /// once-ever contract every other first-touch lesson in this codebase carries (the 1287x
+    /// memorial nag precedent).</summary>
     [TestCase]
-    public void RepricingASecondTime_DoesNotReshowThePricingDilemma()
+    public void StockingASecondItem_DoesNotReshowThePricingDilemma()
     {
-        var ui = MountMainUi(new SimAdapter(StateWithOneShelvedItem()));
+        var ui = MountMainUi(new SimAdapter(StateWithTwoUnshelvedItems()));
         try
         {
             ui.OpenPanel("Shop");
-            PressEnabled(ui.Shop, $"Reprice_{ShelvedItemId.Value}");
+            PressEnabled(ui.Shop, $"Stock_{UnshelvedItemId.Value}");
             ui.Mentor.Dismiss();
 
-            PressEnabled(ui.Shop, $"Reprice_{ShelvedItemId.Value}");
+            PressEnabled(ui.Shop, $"Stock_{SecondUnshelvedItemId.Value}");
 
             AssertThat(ui.Mentor.Visible)
                 .OverrideFailureMessage("The pricing dilemma fired a SECOND time — the anti-nag pin failed.")
+                .IsFalse();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>U1 (§11.14.14 defect, requirement 4): the lesson retires OUT of Reprice once it
+    /// has already fired at the first stock — Reprice stops being "the only teacher," and stops
+    /// being A teacher too once the shelf lesson has had its one turn. The text stays re-readable
+    /// forever in the Lessons book (<c>LessonsPanel</c> renders every <c>FirstTouch.Fired</c> id);
+    /// this only pins that Reprice itself never re-triggers the banner.</summary>
+    [TestCase]
+    public void RepricingAnAlreadyStockedItem_NeverReshowsThePricingDilemma()
+    {
+        var ui = MountMainUi(new SimAdapter(StateWithOneUnshelvedItem()));
+        try
+        {
+            ui.OpenPanel("Shop");
+            PressEnabled(ui.Shop, $"Stock_{UnshelvedItemId.Value}");
+            AssertThat(ui.Mentor.Visible)
+                .OverrideFailureMessage("Setup check: the shelf lesson never fired on the first stock.")
+                .IsTrue();
+            ui.Mentor.Dismiss();
+            // StockAction resolves immediately (ActionTiming.ResolvesImmediately) — CurrentState
+            // already has the item on the shelf; re-opening the panel just refreshes the rows so
+            // Reprice_ exists to press (no AdvancePhase, which would let HeroShoppingSystem run
+            // and could buy the item back off the shelf before this test gets to it).
+            ui.OpenPanel("Shop");
+
+            PressEnabled(ui.Shop, $"Reprice_{UnshelvedItemId.Value}");
+
+            AssertThat(ui.Adapter.AppliedThisPhase.OfType<SetPriceAction>().Any(a => a.Item == UnshelvedItemId))
+                .OverrideFailureMessage("Setup check: the Reprice press did not queue a SetPriceAction.")
+                .IsTrue();
+            AssertThat(ui.Mentor.Visible)
+                .OverrideFailureMessage("Reprice re-fired the pricing dilemma — it should be retired from that surface entirely.")
                 .IsFalse();
         }
         finally
@@ -141,12 +214,12 @@ public class DilemmaLessonsTests
     [TestCase]
     public async System.Threading.Tasks.Task MentorBanner_NeverAutoDismisses_RegardlessOfHowManyFramesPass()
     {
-        var ui = MountMainUi(new SimAdapter(StateWithOneShelvedItem()));
+        var ui = MountMainUi(new SimAdapter(StateWithOneUnshelvedItem()));
         var player = new HumanPlayer(ui);
         try
         {
             ui.OpenPanel("Shop");
-            PressEnabled(ui.Shop, $"Reprice_{ShelvedItemId.Value}");
+            PressEnabled(ui.Shop, $"Stock_{UnshelvedItemId.Value}");
             AssertThat(ui.Mentor.Visible).IsTrue();
 
             await player.Frames(90);
