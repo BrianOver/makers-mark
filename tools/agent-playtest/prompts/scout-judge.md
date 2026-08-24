@@ -18,7 +18,7 @@ Six decisions are what the game is actually made of:
 2. Price for the sale, or price for the relationship?
 3. Fill the empty slot, or upgrade the full one?
 4. Spend the slot, or bank it?
-5. Buy the ore, or buy the goodwill?
+5. Buy the ore, or buy the faction's favour?
 6. Send the runner, or trust their judgment?
 
 Seven laws bind how the game may ever be built. Most are not directly observable from playing a session, but two are exactly what you are here to check:

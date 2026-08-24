@@ -273,8 +273,9 @@ The decisions the game is actually made of.
    under-equipped. It does not tell you who will survive.
 4. **Spend the slot, or bank it?** Five actions a day, and shelf work is free — the budget is a
    real constraint on ambition, not a formality.
-5. **Buy the ore, or buy the goodwill?** Ore purchases are the one place you can transfer wealth
-   directly to a hero, and paying above the ask is the only gift the game sanctions.
+5. **Buy the ore, or buy the faction's favour?** Every purchase pays the returning hero their ask
+   and raises your standing with their faction, which cheapens every future load. The fork is whose
+   ore you buy: the faction you will need, or the hero standing in front of you tonight.
 6. **Send the runner, or trust their judgment?** The full shape of this one is worth stating
    plainly: provisioning a camped party provably saves that party, and measurably endangers the run.
    A topped-up party dares one floor deeper, and the deep floors are where heroes die. Both halves
@@ -479,6 +480,13 @@ Stated as description. These are properties of the game as it stands, not gaps a
   in the world specifically *needs* what only a tanner or an engineer can make.
 - **Nothing is spoken aloud.** Four written narrator voices carry the prose and a director paces
   them, but the game is read, not heard. There is no narrator in the ear.
+- **Craft quality is gated on hand skill.** The forge minigames decide the grade, and by the second
+  week heroes refuse Poor work. The only route to quality that does not pass through the player's own
+  hands is the purchased masterwork behind forge Tier II. There is no timing assist — a deliberate
+  choice about how this game expresses mastery, ruled 2026-08-24, not an oversight.
+- **English only, and every lesson is prose.** No string in the client is translated, and nothing is
+  taught by a picture. A hobby-scope cut, named here because an undeclared gap is the one silence
+  this project's own rules forbid.
 - **Most of what the town knows arrives as text on a board.** Two surfaces deliver information
   through a person — the customer at the counter states their want before you present anything, and
   the tavern patron carries their business face to face. Everything else is posted: the muster

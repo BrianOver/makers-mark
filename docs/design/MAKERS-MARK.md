@@ -4621,7 +4621,7 @@ Pricing landed as `pricing-as-a-decision`. The slot budget was subtler: a lesson
 already existed and had gone FALSE — `first-talent-unlock` said "Unlocking one costs you nothing"
 after U-T1-9 made the unlock spend a day action slot — so the one place the trade-off lives was
 denying there was one. Naming the cost honestly is what taught it. Five of six are taught today; #5
-("buy the ore or buy the goodwill") is the one honest gap, because no goodwill mechanism exists —
+("buy the ore or buy the faction's favour") was the one honest gap until the 2026-08-24 ruling —
 register #170, and an owner decision, since teaching it would make the game lie about its own
 choices.
 
@@ -4982,7 +4982,7 @@ R13. The interact verb has an on-screen affordance.
 **What the course teaches**
 
 R14. The course spans seven days and reaches the counterfactual proof and the town's memory.
-R15. Five of the six decisions are presented as forks with both arms' costs named before the choice.
+R15. All six decisions are presented as forks with both arms' costs named before the choice.
 R16. A player learns that the shelf is public: what sits on it anyone may buy, and it cannot be sent or held.
 R17. A player learns how an accepted commission is delivered, and what breaking one costs.
 R18. A player learns that a counter always closes the sale, and that a fleece is remembered.
@@ -5043,9 +5043,13 @@ KTD7. **The off-camera pointer points and never orders.** A screen-edge marker p
 step from a quest compass. The peek is player-triggered or a single beat, never a held hijack, and the
 marker says "here", never "do".
 
-KTD8. **Decision #5 is not taught until the owner rules.** The design doc describes something the sim
-cannot represent: `BuyOreAction` has no price parameter, the hero always receives the base ask, and the
-tariff moves only what the player pays. Both doors are recorded in Open Questions.
+KTD8. **Decision #5 is the faction's favour, and the doc was amended to say so** (owner ruling,
+2026-08-24). The design doc described overpaying a hero, which the sim cannot represent: the action has
+no price parameter, the hero always receives the base ask, and the tariff moves only what the player
+pays. The fork that ships is **whose** ore you buy — every purchase raises that faction's standing and
+cheapens every future load. `THE-GAME.md` §3.5 #5 and register #170 are corrected in this PR; U40 teaches
+it. Building the gift instead would have needed a sim change and a golden re-baseline, and was declined
+as tutorial-driven scope.
 
 KTD9. **A first-touch lesson may not be the only teacher of a verb the course requires.** Reactive
 lessons fire after discovery, so any verb the course depends on gets a pointed moment as well.
@@ -5059,7 +5063,7 @@ flowchart TB
   P1["Wave 1 — Stop lying<br/>U1-U6"]
   P2["Wave 2 — The pointer reaches everything<br/>U7-U15"]
   P3["Wave 3 — The first minute and the doors<br/>U16-U20"]
-  P4["Wave 4 — The course teaches the game<br/>U21-U32"]
+  P4["Wave 4 — The course teaches the game<br/>U21-U32, U40"]
   P5["Wave 5 — Bryn becomes a person<br/>U33-U37"]
   P6["Wave 6 — Prove it keeps working<br/>U38-U39"]
   P1 --> P2
@@ -5119,6 +5123,7 @@ nothing from Wave 2 and can run beside it. Wave 5's arc lines need Wave 4's beat
 | U37 | She is somewhere, and she remembers | `godot/scripts/town2d/`, `godot/scripts/ui/TutorialFlow.cs` | U34, U35 |
 | U38 | A harness takes the course | `godot/scripts/tools/FullPlaytest.cs` | U15, U29 |
 | U39 | Copy cannot outlive its control | `godot/tests/`, `godot/scripts/tools/PlaytestLog.cs` | U33 |
+| U40 | The sixth decision becomes teachable | `godot/scripts/ui/TutorialFlow.cs`, `godot/tests/DilemmaLessonsTests.cs` | U27 |
 
 ---
 
@@ -5555,6 +5560,21 @@ nothing from Wave 2 and can run beside it. Wave 5's arc lines need Wave 4's beat
   absent and not `Done`.
 - Verification: a median run graduates before day eight and an empty run graduates honestly.
 
+#### U40. The sixth decision becomes teachable
+
+- Goal: teach decision #5 as the mechanism that ships, and drop the count-locked gap to zero.
+- Requirements: R15, R1
+- Files: `godot/scripts/ui/TutorialFlow.cs`, `godot/tests/DilemmaLessonsTests.cs`
+- Approach: a dormant act armed on the first tariff applied — the moment the player's own standing first
+  moves what they pay. Copy states the fork the sim supports: every purchase pays the hero their ask and
+  raises that faction's standing, so the choice is whose ore to buy. `DilemmaLessonsTests` is count-locked
+  at exactly one missing dilemma with register #170 cited; that lock goes to zero, which is a red-then-
+  reviewed diff in a compiled file by design.
+- Test scenarios: the act arms on the first tariff only; the copy names no price the player can offer,
+  because none exists; the count lock reads zero and goes red if a dilemma regresses to untaught; a player
+  who never buys ore sees nothing and the row retires honestly.
+- Verification: the census reports six of six taught, and no lesson mentions overpaying.
+
 ---
 
 ### Wave 5 — Bryn becomes a person
@@ -5609,8 +5629,9 @@ nothing from Wave 2 and can run beside it. Wave 5's arc lines need Wave 4's beat
 - Requirements: R27
 - Files: `art/specs/`, `godot/scripts/ui/MentorBanner.cs`, asset registry
 - Approach: a dedicated sprite set through the existing townsfolk pipeline at the size the game draws it, and
-  a small portrait on her banner so her lines arrive with a face, following the hero-portrait precedent. This
-  overrides R14.5's "on an existing townsfolk body" ruling — see Open Questions.
+  a small portrait on her banner so her lines arrive with a face, following the hero-portrait precedent.
+  Overrides R14.5's "on an existing townsfolk body" ruling, granted 2026-08-24 (OQ2). Generation respects
+  the GPU limits: one job at a time, at least 14GB free to start, abort above 14GB used or 83°C.
 - Test scenarios: her sprite id differs from every townsfolk id; the portrait renders at draw size with no
   runtime scale; a missing asset says so rather than falling back silently.
 - Verification: a rendered frame shows her distinct from the plaza NPCs, and her banner carries a face.
@@ -5700,29 +5721,28 @@ that reached `main` passed every suite and were found by looking at pixels.
 
 ### Open questions
 
-OQ1. **Decision #5 — build the gift, or amend the design doc.** §3.5 describes buying goodwill by overpaying,
-which the sim cannot represent: the action has no price parameter, the hero always receives the base ask, and
-the tariff moves only what the player pays, discount-only, with the surcharge branch dormant. The standing that
-is real is the **faction's**. Cheap door: amend §3.5 to "buy the ore, or buy the faction's favour", already
-fully built and teachable as a dormant beat on the first tariff. Expensive door: add an offered-price arm and
-re-baseline the golden replay. *Deferred — blocks no unit here; the decision stays pinned as an honest gap.*
+OQ1. **Decision #5 — ruled 2026-08-24: amend the doc.** §3.5 #5 now reads "buy the ore, or buy the
+faction's favour", the mechanism that ships. Register #170, three playtest persona prompts and the two
+stale §11 references are corrected in this PR; U40 teaches it. Building the gift was declined — it needs a
+sim change and a golden re-baseline, and deserves its own wave rather than riding in on a tutorial program.
 
-OQ2. **Bryn's own body overrides R14.5.** That ruling said she rides an existing townsfolk sprite; it predates
-"the adviser as a real character", and she currently shares a body with two named plaza NPCs. *Blocks U36 only.
-Default if unruled: proceed with her own sprite and portrait.*
+OQ2. **Bryn's own body — ruled 2026-08-24: override R14.5.** She gets her own sprite set and a banner
+portrait. U36 is unblocked and carries the GPU limits: one job, at least 14GB free to start, abort above
+14GB used or 83°C.
 
-OQ3. **The timing-skill gate.** Craft quality is gated on timing, heroes begin refusing Poor work around day
-10, and the only skill-free path to quality sits behind a purchased masterwork at Tier II — so a player with
-impaired motor control is priced out of the midgame. Separately there is no colour-vision provision anywhere,
-and the pointer's only differentiator from a hover tint is hue, which U15 partly addresses. *Deferred — a
-steady-hands assist whose trade-off is named in copy is law 7's shape, not a breach, but the design call is
-the owner's.*
+OQ3. **The timing-skill gate — ruled 2026-08-24: out of scope, and stated rather than left silent.** The
+forge minigame is how this game expresses mastery, and gating quality on it is deliberate. `THE-GAME.md`
+§7 now says so, alongside the English-only gap, so neither reads as an oversight. The colour-vision half
+is still fixed inside this program: U15 gives the pointer a signature that is not a hue judgment.
 
-OQ4. **The third plan slot.** This program lands here because rule 6 caps `docs/plans/` at two and both
-slots hold live work — the balance baseline plan has five of seven units unshipped and the honesty-riders plan
-has all four. *Deferred — if this program should own a slot instead, one of those two finishes or is dropped first.*
+OQ4. **One line only you can change.** `CLAUDE.md`'s six-decision list still reads "buy the ore or buy
+the goodwill". It is on the multi-agent deny list, so no session may edit it — including this one. Until
+you change it by hand, the repo's most-read file contradicts §3.5, and rule 8 says a doc git contradicts is
+an instruction the next session obeys.
 
----
+OQ5. **The third plan slot.** This program lands here because rule 6 caps `docs/plans/` at two and both
+slots hold live work — the balance baseline plan has five of seven units unshipped and the honesty-riders
+plan all four. *Deferred — if this program should own a slot instead, one of those two finishes or is dropped first.*
 
 ### What must survive, named so this rework cannot quietly discard it
 
@@ -5736,10 +5756,9 @@ persistence, and the vigil step's three-state honesty.
 
 ### One thing this program does not touch, and why
 
-**Localization and non-prose teaching.** There is not one translated string in the client and every lesson is
-a paragraph. That is almost certainly a deliberate hobby-scope cut — but §7's list of honest gaps does not
-name it, and a gap this project has not declared is the one shape of silence its own rules forbid. Naming it
-here is the whole fix; building it is not in scope.
+**Localization and non-prose teaching.** There is not one translated string in the client and every lesson
+is a paragraph — a deliberate hobby-scope cut that `THE-GAME.md` §7 had never declared. This PR names it
+there, beside the timing gate. Naming it was the whole fix; building it is not in scope.
 
 ---
 
