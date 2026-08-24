@@ -32,7 +32,7 @@ these the same way every time tested one player, not a person, and that is itsel
 2. Price for the sale, or price for the relationship?
 3. Fill the empty slot, or upgrade the full one?
 4. Spend the slot, or bank it?
-5. Buy the ore, or buy the goodwill?
+5. Buy the ore, or buy the faction's favour?
 6. Send the runner, or trust their judgment?
 
 Seven laws bind how the game may ever be built. Two are directly observable from a played session:
