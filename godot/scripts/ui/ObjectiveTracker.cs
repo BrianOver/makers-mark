@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using GameSim.Advisor;
 using GameSim.Contracts;
@@ -424,6 +425,13 @@ public sealed partial class ObjectiveTracker : PanelContainer
             return;
         }
 
+        // U11 (§11.14.14): the deepest control built for the CURRENT row — its own line if it has
+        // neither a TeachNote nor a GatingNote, else whichever of those renders last (gating, then
+        // teach — see the loop below, which appends them in that order). Handed to
+        // DeferScrollChecklistToCurrent once the loop finishes so the auto-scroll always lands on
+        // the LAST thing the current row rendered, never just its label.
+        Control? currentRowLastControl = null;
+
         foreach (var row in rows)
         {
             // U1 (§11.13): Skipped is a THIRD state, checked before Done/Current — a row the chain
@@ -438,6 +446,10 @@ public sealed partial class ObjectiveTracker : PanelContainer
             var line = new HBoxContainer { Name = $"TutorialChecklistRow_{row.DisplayIndex}" };
             line.AddThemeConstantOverride("separation", GameTheme.Space8);
             TutorialChecklist.AddChild(line);
+            if (row.Current)
+            {
+                currentRowLastControl = line; // overwritten below if a TeachNote/GatingNote follows
+            }
 
             var glyphLabel = new Label { Text = glyph };
             glyphLabel.AddThemeColorOverride("font_color", glyphColor);
@@ -475,6 +487,7 @@ public sealed partial class ObjectiveTracker : PanelContainer
                 };
                 teachLabel.AddThemeColorOverride("font_color", GameTheme.TextDim);
                 TutorialChecklist.AddChild(teachLabel);
+                currentRowLastControl = teachLabel;
             }
 
             if (row.Current && row.GatingNote is { } note)
@@ -488,8 +501,85 @@ public sealed partial class ObjectiveTracker : PanelContainer
                 };
                 noteLabel.AddThemeColorOverride("font_color", GameTheme.WarnColor);
                 TutorialChecklist.AddChild(noteLabel);
+                currentRowLastControl = noteLabel;
             }
         }
+
+        // U11 (§11.14.14): auto-scroll to the current row on every rebuild — which includes every
+        // step change, since a step change is exactly what makes ChecklistUnchanged (above) return
+        // false. Before this, the checklist stayed wherever it last was: past the second or third
+        // step, the live instruction, its TeachNote, and (the acute case) the GatingNote warning a
+        // trap the player was about to walk into all sat below ChecklistMaxHeight's 75px fold with
+        // no scrollbar nudge telling anyone to look — the warning was unreadable at exactly the
+        // moment it applied. currentRowLastControl is null only if no row is Current (rows exist
+        // but the chain is between steps), which is never expected mid-tutorial but costs nothing
+        // to guard.
+        if (currentRowLastControl is not null)
+        {
+            DeferScrollChecklistToCurrent(currentRowLastControl);
+        }
+    }
+
+    /// <summary>Settle-poll ceiling for <see cref="DeferScrollChecklistToCurrent"/> — mirrors
+    /// <c>GodotClient.Panels.ForgePanel.DeferEnsureVisible</c>'s own documented constants (wait on
+    /// the CONDITION, never a guessed frame count).</summary>
+    private const int ChecklistScrollSettleFrames = 240;
+
+    private const int ChecklistScrollStableFramesRequired = 3;
+
+    /// <summary>
+    /// U11 (§11.14.14): scroll <see cref="_checklistScroll"/> so <paramref name="target"/> — the
+    /// LAST control the current row rendered (its own line, or its TeachNote/GatingNote when they
+    /// exist; see the call site) — sits on screen. Bottom-anchors <paramref name="target"/> against
+    /// the scroll's own viewport rather than top-aligning it: <paramref name="target"/> is always
+    /// the deepest, most-recently-relevant line for the current row (the GatingNote when one
+    /// exists, since that is the row's own acute warning — the defect this unit exists to fix), so
+    /// landing ITS bottom edge on the viewport's bottom edge guarantees IT is fully visible
+    /// regardless of how tall the row+notes block above it is, while any leftover room in the
+    /// viewport is spent showing as much of that block (and the row before it) as still fits —
+    /// never the reverse, which would let a long TeachNote push the very note it explains off
+    /// screen. Mirrors <c>GodotClient.Panels.ForgePanel.DeferEnsureVisible</c>'s own settle-poll
+    /// idiom (wait on the CONDITION — the target's <see cref="Control.GlobalPosition"/> going
+    /// stable across frames — never a guessed frame count): a freshly Clear-then-composed
+    /// <see cref="TutorialChecklist"/> has not run a layout pass on the SAME frame its children were
+    /// added, so reading GlobalPosition immediately would measure last frame's stale layout.
+    /// </summary>
+    private async void DeferScrollChecklistToCurrent(Control target)
+    {
+        var tree = GetTree();
+        if (tree is null)
+        {
+            return;
+        }
+
+        var previous = new Vector2(float.NaN, float.NaN);
+        var stable = 0;
+        for (var i = 0; i < ChecklistScrollSettleFrames; i++)
+        {
+            await ToSignal(tree, SceneTree.SignalName.ProcessFrame);
+            if (!GodotObject.IsInstanceValid(_checklistScroll) || !GodotObject.IsInstanceValid(target))
+            {
+                return;
+            }
+
+            var current = target.GlobalPosition;
+            stable = current == previous ? stable + 1 : 0;
+            previous = current;
+
+            if (stable >= ChecklistScrollStableFramesRequired)
+            {
+                break;
+            }
+        }
+
+        if (!GodotObject.IsInstanceValid(_checklistScroll) || !GodotObject.IsInstanceValid(target))
+        {
+            return;
+        }
+
+        var delta = (int)((target.GlobalPosition.Y + target.Size.Y)
+            - (_checklistScroll.GlobalPosition.Y + _checklistScroll.Size.Y));
+        _checklistScroll.ScrollVertical = Math.Max(0, _checklistScroll.ScrollVertical + delta);
     }
 
     /// <summary>Value-equality check for <see cref="RefreshTutorialChecklist"/>'s skip-if-unchanged

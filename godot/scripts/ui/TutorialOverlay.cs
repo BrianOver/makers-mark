@@ -68,6 +68,20 @@ public sealed partial class TutorialOverlay : Control
     private Control? _hudTarget;
     private double _elapsed;
 
+    /// <summary>U11 (§11.14.14): the target <see cref="ScrollIntoView"/> last fired for — distinct
+    /// from <see cref="_hudTarget"/> itself so <see cref="Tick"/> (called every frame) only scrolls
+    /// a freshly-activated anchor into view ONCE, never every frame the pulse keeps ticking. A
+    /// repeated auto-scroll would fight a player who deliberately scrolled the panel away from the
+    /// hint afterward.</summary>
+    private Control? _scrolledTarget;
+
+    /// <summary>Settle-poll ceiling for <see cref="ScrollIntoView"/> — mirrors
+    /// <c>GodotClient.Panels.ForgePanel.DeferEnsureVisible</c>'s own documented constants (wait on
+    /// the CONDITION, never a guessed frame count).</summary>
+    private const int ScrollIntoViewSettleFrames = 240;
+
+    private const int ScrollIntoViewStableFramesRequired = 3;
+
     /// <summary>Which anchor is currently active — test/inspection surface.</summary>
     public TutorialAnchor CurrentAnchor => _anchor;
 
@@ -211,10 +225,123 @@ public sealed partial class TutorialOverlay : Control
             return;
         }
 
+        // U11 (§11.14.14): the FIRST tick a target is on screen, scroll it into view inside
+        // whatever ScrollContainer owns it. RefreshAnchor (the anchor-RESOLUTION half of this
+        // class — see class doc's kind-by-kind split) only decides WHICH control is the target,
+        // never where that control's own panel happens to be scrolled, so a step whose control
+        // started scrolled away used to point at something the player could not reach without
+        // already knowing to scroll first. Gated on _scrolledTarget so this fires once per anchor
+        // activation, not every frame the pulse ticks.
+        if (!ReferenceEquals(_hudTarget, _scrolledTarget))
+        {
+            _scrolledTarget = _hudTarget;
+            ScrollIntoView(_hudTarget);
+        }
+
+        // Bug fix (U11, §11.14.14): a control scrolled out of its own ScrollContainer's viewport
+        // is STILL IsVisibleInTree() == true — Godot's scroll clipping is a paint-time crop, not a
+        // tree-visibility flag — so drawing the target's own unclipped GetGlobalRect() let this
+        // outline float outside the panel that owns it, over whatever unrelated interface happened
+        // to sit there (a rendered defect that reached main once already for a different reason —
+        // see this unit's own PR body). Intersect against the nearest ScrollContainer ancestor (if
+        // any) before drawing.
+        var rect = _hudTarget.GetGlobalRect();
+        var scroll = FindAncestorScroll(_hudTarget);
+        if (scroll is not null)
+        {
+            rect = rect.Intersection(scroll.GetGlobalRect());
+            if (rect.Size.X <= 0f || rect.Size.Y <= 0f)
+            {
+                // Fully scrolled out: draw NOTHING rather than a degenerate sliver pinned to the
+                // container's own edge, which would read as "pointing at the edge" instead of "not
+                // on screen right now" — and this path should be transient anyway, since the
+                // ScrollIntoView call above is what is supposed to bring a fresh target back into
+                // frame in the first place.
+                HideOutline();
+                return;
+            }
+        }
+
         _elapsed += delta;
         var phase = (float)((_elapsed % PulsePeriodSeconds) / PulsePeriodSeconds);
         var alpha = PulseMinAlpha + (1f - PulseMinAlpha) * (0.5f + 0.5f * Mathf.Sin(Mathf.Tau * phase));
-        DrawOutline(_hudTarget.GetGlobalRect(), alpha);
+        DrawOutline(rect, alpha);
+    }
+
+    /// <summary>U11 (§11.14.14): the nearest <see cref="ScrollContainer"/> ancestor of
+    /// <paramref name="control"/>, or null. Both the clip fix (<see cref="Tick"/>: draw nothing/
+    /// draw clipped outside it) and the scroll-into-view fix (<see cref="ScrollIntoView"/>: bring
+    /// the target on screen inside it) key off this SAME single ancestor — Godot's own scroll
+    /// clipping is per-ScrollContainer (a control's rendered rect is already cropped to its
+    /// immediate scrolling parent, never a further-out one), so that is the one boundary either fix
+    /// needs to respect. Mirrors <c>GodotClient.Tests.HumanPlayer.VisiblePartOf</c>'s own ancestor-
+    /// walk shape (test-only, so not reused directly — production code cannot depend on the test
+    /// assembly).</summary>
+    private static ScrollContainer? FindAncestorScroll(Control control)
+    {
+        for (var parent = control.GetParent(); parent is not null; parent = parent.GetParent())
+        {
+            if (parent is ScrollContainer scroll)
+            {
+                return scroll;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>U11 (§11.14.14): scroll <paramref name="target"/>'s <see cref="FindAncestorScroll"/>
+    /// so it is on screen inside its own panel — a no-op if it has no scrolling ancestor. Mirrors
+    /// <c>GodotClient.Panels.ForgePanel.DeferEnsureVisible</c>'s own settle-poll idiom EXACTLY (wait
+    /// on the CONDITION — the target's <see cref="Control.GlobalPosition"/> going stable across
+    /// frames — never a guessed frame count, this codebase's own rule, cited there too): a target
+    /// that just became the active anchor may have had its panel made Visible the SAME frame (a
+    /// drawer just opened), so its GlobalPosition is not guaranteed to have settled into its final
+    /// layout position yet. Aligns the target's TOP edge to the scroll's own top — the same landing
+    /// register #156 fixed <c>GodotClient.Panels.ForgePanel.FocusSection</c> to use for a single
+    /// small target rather than Godot's built-in <c>ensure_control_visible</c>, which lands on the
+    /// BOTTOM edge instead once a target is taller than its viewport.</summary>
+    private async void ScrollIntoView(Control target)
+    {
+        var scroll = FindAncestorScroll(target);
+        if (scroll is null)
+        {
+            return;
+        }
+
+        var tree = GetTree();
+        if (tree is null)
+        {
+            return;
+        }
+
+        var previous = new Vector2(float.NaN, float.NaN);
+        var stable = 0;
+        for (var i = 0; i < ScrollIntoViewSettleFrames; i++)
+        {
+            await ToSignal(tree, SceneTree.SignalName.ProcessFrame);
+            if (!GodotObject.IsInstanceValid(scroll) || !GodotObject.IsInstanceValid(target))
+            {
+                return;
+            }
+
+            var current = target.GlobalPosition;
+            stable = current == previous ? stable + 1 : 0;
+            previous = current;
+
+            if (stable >= ScrollIntoViewStableFramesRequired)
+            {
+                break;
+            }
+        }
+
+        if (!GodotObject.IsInstanceValid(scroll) || !GodotObject.IsInstanceValid(target))
+        {
+            return;
+        }
+
+        var delta = (int)(target.GlobalPosition.Y - scroll.GlobalPosition.Y);
+        scroll.ScrollVertical = Math.Max(0, scroll.ScrollVertical + delta);
     }
 
     private void HideOutline()
