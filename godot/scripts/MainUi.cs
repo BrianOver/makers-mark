@@ -318,6 +318,25 @@ public partial class MainUi : Control
     private Label _clockLabel = null!;
     private PanelContainer _toastBanner = null!;
     private Label _toast = null!;
+
+    /// <summary>U12 (§11.14.14, R13): the core verb's on-screen affordance — a small bottom-center
+    /// chip mirroring <see cref="Town2d.WorldInput2D.PromptText"/> verbatim (see <see
+    /// cref="UpdateInteractPrompt"/>). That field's only reader used to be the playtest tool
+    /// (<c>AgentPlaytest.BuildDigest</c>'s <c>InteractPrompt</c> column) — the game computed the
+    /// right string every frame and never showed it to a human, leaning entirely on the tutorial
+    /// card's prose ("press E to use it") instead. Hidden (zero size, no panel) whenever the
+    /// mirrored text is empty, exactly like <see cref="_toastBanner"/>'s own show/hide contract —
+    /// but with no timer, since a live prompt must track proximity instantly, not fade on a clock.</summary>
+    private PanelContainer _interactPrompt = null!;
+    private Label _interactPromptLabel = null!;
+
+    /// <summary>Test-observable handle on the interact-prompt chip's label (mirrors <see
+    /// cref="HudHeader"/>'s own contract) — lets an engine test assert the exact rendered string
+    /// without reaching into the private field itself. Visibility rides the SAME <see
+    /// cref="Control.IsVisibleInTree"/> chain <c>HumanPlayer.Sees</c> already reads: hidden means
+    /// this label's parent <see cref="_interactPrompt"/> panel is <see cref="Control.Visible"/> ==
+    /// false, never a blank-but-present Text.</summary>
+    public Label InteractPromptLabel => _interactPromptLabel;
     private Button _advance = null!;
     private Button _auto = null!;
     private Button _playPause = null!;
@@ -874,6 +893,12 @@ public partial class MainUi : Control
         // U5 (loop-legibility plan): tick the tutorial's pointing pulse/outline (no-op with
         // nothing anchored — i.e. whenever the tutorial is inactive).
         Overlay.Tick(delta);
+
+        // U12 (§11.14.14, R13): mirror the world's own live prompt onto the HUD every frame —
+        // Town.WorldInputNode.PromptText changes on ANY WorldInput2D._PhysicsProcess tick (walking
+        // in or out of a station's Interact zone), not on a phase boundary, so this cannot be a
+        // once-per-tick Refresh() like ObjectiveTracker's.
+        UpdateInteractPrompt();
 
         // U23 (R5): quick-travel hotkeys — inert until the tutorial chain completes.
         if (Tutorial.QuickTravelUnlocked)
@@ -1556,6 +1581,54 @@ public partial class MainUi : Control
             var wanted = Tutorial.GetCombinedMinimumSize().Y;
             Tutorial.OffsetBottom = tutorialTop + Mathf.Min(wanted, Mathf.Max(0f, available));
         }
+    }
+
+    /// <summary>Clearance (px) the interact-prompt chip's bottom edge keeps above the true window
+    /// bottom — the AdventureTicker's own reserved band (28px, <c>tickerWrap.CustomMinimumSize</c>
+    /// in <see cref="BuildUi"/>) plus one <see cref="GameTheme.Space16"/> gap, so the marquee's
+    /// full-width scrolling line never runs under the chip's text.</summary>
+    private const float InteractPromptBottomMargin = 28f + GameTheme.Space16;
+
+    /// <summary>
+    /// U12 (§11.14.14, R13): "the core interaction verb of this game has no on-screen affordance"
+    /// — <see cref="Town2d.WorldInput2D.PromptText"/> already computes exactly the right string
+    /// ("E · Forge", a flavor station's own honest HoverLine, or empty with nothing in range) on
+    /// every proximity change; this is that field's second reader, and its first HUD one. Mirrors
+    /// the string VERBATIM — no re-derivation of the "E · {name}" shape here, which would silently
+    /// disagree with WorldInput2D's own HoverLine override (see its <c>SetTarget</c> doc) the next
+    /// time either side changes.
+    ///
+    /// <para>Called every <see cref="_Process"/> frame (unlike <see cref="UpdateObjectiveDock"/>'s
+    /// once-per-tick contract): the target a player is nearest to can change on ANY physics frame,
+    /// not just a phase boundary. The early-return below keeps a steady-state frame (no target
+    /// change) to a single string comparison — the Label write and re-dock only happen the frame
+    /// the text actually changes.</para>
+    /// </summary>
+    private void UpdateInteractPrompt()
+    {
+        var text = Town.WorldInputNode.PromptText;
+        if (text == _interactPromptLabel.Text)
+        {
+            return;
+        }
+
+        _interactPromptLabel.Text = text;
+        _interactPrompt.Visible = !string.IsNullOrEmpty(text);
+
+        if (!_interactPrompt.Visible)
+        {
+            return;
+        }
+
+        // Hug the text rather than a fixed dock width (Objective/Tutorial's own DockWidth exists
+        // for a multi-line reading column; a one-line "E · Forge" chip should not claim 320px of
+        // the world view) — re-centered here since the string, and so the chip's own minimum
+        // width, just changed.
+        var size = _interactPrompt.GetCombinedMinimumSize();
+        _interactPrompt.OffsetLeft = -size.X / 2f;
+        _interactPrompt.OffsetRight = size.X / 2f;
+        _interactPrompt.OffsetBottom = -InteractPromptBottomMargin;
+        _interactPrompt.OffsetTop = _interactPrompt.OffsetBottom - size.Y;
     }
 
     /// <summary>U18/U15: the day-timeline's engaged-wait indicator mirrors <see cref="
@@ -3251,6 +3324,29 @@ public partial class MainUi : Control
         // lesson's id with MainUi.OnSecondProfessionPicked (see ProgressionPanel.Tutorial's own doc).
         Progress.Tutorial = Tutorial;
         Progress.Mentor = Mentor;
+
+        // --- U12 (§11.14.14, R13): the interact-prompt chip — a floating overlay sibling on the
+        //     same "mounted directly on MainUi, anchored + offset" idiom as Objective/Tutorial/
+        //     Mirror/Pip above (never a scene-tree child of Town2D: this is screen-space HUD, not
+        //     a world-space label on the target, so the fixed pixel-art font stays crisp at the
+        //     game's fixed CameraZoom instead of riding a moving Node2D through it). Bare
+        //     PanelContainer + Label — no dedicated class, mirroring _toastBanner's own inline
+        //     shape (this chip's whole job is "mirror one string, show/hide"; ObjectiveTracker's
+        //     heavier Refresh/Expand-button contract has nothing here to earn its own class for).
+        //     Anchored CenterBottom and re-centered on every text change in UpdateInteractPrompt
+        //     (called from _Process, tracking Town.WorldInputNode.PromptText's own per-physics-
+        //     frame updates) rather than docked to a fixed width like Objective/Tutorial, since a
+        //     one-line prompt ("E · Forge") should hug its own text, not a 320px reading column. --
+        _interactPrompt = new PanelContainer { Name = "InteractPrompt", Visible = false, MouseFilter = MouseFilterEnum.Ignore };
+        AddChild(_interactPrompt);
+        _interactPrompt.SetAnchorsPreset(LayoutPreset.CenterBottom);
+        _interactPromptLabel = new Label
+        {
+            Name = "InteractPromptText",
+            HorizontalAlignment = HorizontalAlignment.Center,
+            MouseFilter = MouseFilterEnum.Ignore,
+        };
+        _interactPrompt.AddChild(_interactPromptLabel);
 
         // --- build-provenance stamp (deploy hygiene): a small always-visible corner label naming
         //     this build — mounted last so it draws over everything else. See BuildStamp's own
