@@ -1217,7 +1217,9 @@ public partial class MainUi : Control
             // U-T9-6: the open-surface id, not the location id — a visible modal is where the
             // player is looking, so an anchor pointing into it aims at the control instead of
             // the way in. See CurrentOpenSurfaceId's own doc.
-            : Tutorial.Active ? Tutorial.AnchorFor(CurrentOpenSurfaceId())
+            // U7 (§11.14.14): state, so AnchorFor can resolve a conditional row's own existence
+            // predicate fresh off the SAME live state this refresh already read — never a stale copy.
+            : Tutorial.Active ? Tutorial.AnchorFor(state, CurrentOpenSurfaceId())
             : lossRow is not null ? TutorialAnchor.ForHud("OpenLegends")
             : TutorialAnchor.None,
             Town, Drawer, this);

@@ -240,7 +240,28 @@ public sealed record TutorialStepDef(
     string TeachNote,
     Func<GameState, bool> IsDone,
     TutorialStep[] AdvanceFrom,
-    TutorialStep? AdvancesTo);
+    TutorialStep? AdvancesTo,
+    // U7 (§11.14.14): a row MAY declare that Anchor's own target is not guaranteed to exist in
+    // GameState yet — a commission card on a day with no commissions, an unshelved item before
+    // anything is crafted, a camped party's slate before anyone camps. AnchorExists reads LIVE
+    // GameState only (law 4 — show only what the sim decided; this predicate must never promise
+    // something the sim has not made yet), mirroring the honesty standard VigilGatingNote already
+    // set by reading MusterPlan.Compute instead of naming a day. AnchorFallback is the anchor to
+    // point at instead while AnchorExists reads false — typically the surface or building that will
+    // eventually contain the target — and is DECLARED here, never inferred: a conditional row with
+    // no AnchorFallback still throws (ResolveExistence), the same never-point-at-nothing house rule
+    // TutorialOverlay's own throw sites already enforce for an unconditional anchor. Both null (the
+    // default — every row before this unit) means "unconditional", and CurrentAnchor/AnchorFor
+    // behave exactly as they did before this unit.
+    //
+    // Both fields live HERE, on the row, rather than as fields of TutorialAnchor itself: Fallback
+    // would need a nullable field of TutorialAnchor's OWN type, which the CLR refuses inside a
+    // struct (a layout cycle) — and TutorialAnchor is also compared by == all over this file and
+    // its tests (SurfaceEffectivelyOpen, half of TutorialRegistryConformanceTests), so keeping it a
+    // plain, behavior-free value type is worth preserving. The row is already the declarative home
+    // for every other per-step concern (IsDone, MinDay, TeachNote) — this is one more.
+    Func<GameState, bool>? AnchorExists = null,
+    TutorialAnchor? AnchorFallback = null);
 
 /// <summary>
 /// World-rework U23 (R5/R10/R13): the first-run tutorial chain, the earn-2nd-profession affordance,
@@ -679,8 +700,18 @@ public sealed partial class TutorialFlow : PanelContainer
     /// (<c>MainUi.CurrentLocationPanelId</c>) — the same value <see cref="IsAtAnchor"/> reads, so
     /// the pulse and the card's own "You're at the ..." acknowledgement can never disagree about
     /// where the player is standing.</para>
+    ///
+    /// <para>U7 (§11.14.14): <paramref name="state"/> resolves the CURRENT step's own conditional
+    /// existence (<see cref="ResolveExistence"/>) BEFORE aiming — a fallback anchor still gets the
+    /// same "point at the way in" treatment as any other declared anchor, and the real target only
+    /// ever gets aimed-at once it both exists AND the player is where <see cref="AimAnchor"/> needs
+    /// them to be. Passed fresh by the caller every refresh (<c>MainUi.RefreshObjectiveLine</c>
+    /// re-reads <c>Adapter.CurrentState</c> each time), never cached here — the same "live, not
+    /// registry-construction-time" contract <see cref="ResolveAnchor"/>'s station-id substitution
+    /// already keeps.</para>
     /// </summary>
-    public TutorialAnchor AnchorFor(string? openPanelId) => AimAnchor(CurrentAnchor, openPanelId);
+    public TutorialAnchor AnchorFor(GameState state, string? openPanelId) =>
+        AimAnchor(ResolveExistence(CurrentAnchor, ByStep[Step], state), openPanelId);
 
     /// <summary>
     /// U-T9-5: the aiming rule itself, pure and static so it can be tested against EVERY registry
@@ -751,6 +782,41 @@ public sealed partial class TutorialFlow : PanelContainer
             TutorialStep.Craft => anchor with { StationId = _craftStationId },
             _ => anchor,
         };
+    }
+
+    /// <summary>
+    /// U7 (§11.14.14): resolves a row's declared existence predicate — the state-conditional
+    /// counterpart to <see cref="ResolveAnchor"/>'s live station-id substitution just above, and
+    /// pure/static for the identical reason <see cref="AimAnchor"/> is (its own doc): so it can be
+    /// proven against EVERY registry row, not just whichever step a test happens to be able to
+    /// drive. <see cref="TutorialStepDef.AnchorExists"/> is null on every row before this unit — the
+    /// common, unconditional case — so <paramref name="anchor"/> passes straight through unchanged.
+    ///
+    /// <para>When <see cref="TutorialStepDef.AnchorExists"/> is set and reads false against
+    /// <paramref name="state"/>, the anchor is REPLACED wholesale by <see
+    /// cref="TutorialStepDef.AnchorFallback"/> — never patched, never inferred. A conditional row
+    /// declared with no fallback still throws, right here, with a message that names the step and
+    /// the missing field — earlier and clearer than letting resolution fall through to whatever
+    /// generic "does not resolve" exception the eventual Kind-specific lookup would have thrown
+    /// instead. The house rule stands either way: a tutorial step must never point at nothing.</para>
+    /// </summary>
+    public static TutorialAnchor ResolveExistence(TutorialAnchor anchor, TutorialStepDef def, GameState state)
+    {
+        if (def.AnchorExists is null || def.AnchorExists(state))
+        {
+            return anchor;
+        }
+
+        if (def.AnchorFallback is { } fallback)
+        {
+            return fallback;
+        }
+
+        throw new InvalidOperationException(
+            $"{def.Step}: AnchorExists reads false for the live state and no AnchorFallback was " +
+            "declared on this row — an anchor whose target is not there yet must name where to " +
+            "point instead (house rule: never a silent fallback). Add an AnchorFallback to this row " +
+            "in TutorialFlow.Registry, or make AnchorExists unconditional.");
     }
 
     /// <summary>"Take a second profession" — visible once <see

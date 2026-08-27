@@ -109,7 +109,7 @@ public class StationAnchorHandoffTests
                 .OverrideFailureMessage("Fixture guard: step 1 is supposed to declare a Station anchor.")
                 .IsEqual(TutorialAnchorKind.Station);
 
-            var aimed = ui.Tutorial.AnchorFor(null);
+            var aimed = ui.Tutorial.AnchorFor(ui.Adapter.CurrentState, null);
 
             AssertThat(aimed.Kind)
                 .OverrideFailureMessage(
