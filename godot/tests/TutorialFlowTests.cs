@@ -1,4 +1,5 @@
 #if GDUNIT_TESTS
+using System;
 using System.Collections.Immutable;
 using System.Linq;
 using GameSim;
@@ -2575,6 +2576,234 @@ public class TutorialFlowTests
             reloaded.Free();
             TutorialFlow.DeleteForTests(); // leave a clean file for the next test, same discipline as Unmount
         }
+    }
+
+    // ── U30 (§11.14.14): the Proof act's dormant row ─────────────────────────────────────────────
+
+    private static GameState AttributionBeatState(int day) => GameComposition.NewCampaign(ScriptedSession.Seed) with
+    {
+        Day = day,
+        EventLog = ImmutableList.Create<GameEvent>(
+            new AttributionBeatEvent(BeatType.KillingBlow, new ItemId(1), new HeroId(1), Floor: 1, Detail: "test beat")),
+    };
+
+    [TestCase]
+    public void ProofBeat_RendersNothing_UntilTheFirstAttributionBeat()
+    {
+        var ui = MountMainUi(); // no beat has ever happened
+        try
+        {
+            AssertThat(ui.Tutorial.ConsumeProofBeat(ui.Adapter.CurrentState)).IsNull();
+            AssertThat(ui.Tutorial.ProofBeatRow(ui.Adapter.CurrentState)).IsNull();
+            AssertThat(ui.Tutorial.ProofLessonText).IsNull();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void ProofBeat_Arms_OnTheFirstAttributionBeatEvent()
+    {
+        var ui = MountMainUi(new SimAdapter(AttributionBeatState(day: 4)));
+        try
+        {
+            var line = ui.Tutorial.ConsumeProofBeat(ui.Adapter.CurrentState);
+            AssertThat(line).IsNotNull();
+            AssertThat(line!.Contains("sim", StringComparison.OrdinalIgnoreCase))
+                .OverrideFailureMessage("Bryn is a townsfolk who has never heard the word \"sim\".")
+                .IsFalse();
+
+            var row = ui.Tutorial.ProofBeatRow(ui.Adapter.CurrentState);
+            AssertThat(row).IsNotNull();
+            AssertThat(row!.Value.Done).IsFalse();
+            AssertThat(row.Value.Skipped).IsFalse();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>The course owns the FIRST beat only — a second one raises no new surface, same
+    /// precedent <see cref="SecondDeath_RaisesNoTutorialSurface"/> already set for the loss act.</summary>
+    [TestCase]
+    public void SecondAttributionBeat_RaisesNoNewProofSurface()
+    {
+        var firstBeatState = AttributionBeatState(day: 4);
+        var ui = MountMainUi(new SimAdapter(firstBeatState));
+        try
+        {
+            ui.Tutorial.ConsumeProofBeat(ui.Adapter.CurrentState);
+
+            var secondBeatState = firstBeatState with
+            {
+                Day = 20,
+                EventLog = firstBeatState.EventLog.Add(
+                    new AttributionBeatEvent(BeatType.LethalSave, new ItemId(2), new HeroId(2), Floor: 3, Detail: "a second beat")),
+            };
+            AssertThat(ui.Tutorial.ConsumeProofBeat(secondBeatState)).IsNull();
+            AssertThat(ui.Tutorial.ProofBeatRow(secondBeatState)).IsNull(); // day 20 is long past the first beat's own window
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void ProofBeatRow_Done_OnceTheLedgerHasBeenOpened()
+    {
+        var ui = MountMainUi(new SimAdapter(AttributionBeatState(day: 4)));
+        try
+        {
+            ui.Tutorial.ConsumeProofBeat(ui.Adapter.CurrentState);
+            var beforeOpen = ui.Tutorial.ProofBeatRow(ui.Adapter.CurrentState);
+            AssertThat(beforeOpen).IsNotNull();
+            AssertThat(beforeOpen!.Value.Done).IsFalse();
+
+            ui.Tutorial.NotifyLedgerOpened();
+
+            var afterOpen = ui.Tutorial.ProofBeatRow(ui.Adapter.CurrentState);
+            AssertThat(afterOpen).IsNotNull();
+            AssertThat(afterOpen!.Value.Done).IsTrue();
+            AssertThat(afterOpen.Value.Skipped).IsFalse();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>"One night, one day, then an honest retire" (KTD-H) — the identical shape <see
+    /// cref="LossStep_RetiresAtTheSecondDawn_AsSkipped_NeverAFalseTick"/> already proves for the
+    /// loss act.</summary>
+    [TestCase]
+    public void ProofBeatRow_RetiresAtTheSecondDawn_AsSkipped_NeverAFalseTick()
+    {
+        var ui = MountMainUi(new SimAdapter(AttributionBeatState(day: 4)));
+        try
+        {
+            ui.Tutorial.ConsumeProofBeat(ui.Adapter.CurrentState); // arms at day 4, never opened
+
+            var nightOf = ui.Tutorial.ProofBeatRow(ui.Adapter.CurrentState with { Day = 4 });
+            AssertThat(nightOf).IsNotNull();
+            AssertThat(nightOf!.Value.Skipped).IsFalse();
+
+            var dayAfter = ui.Tutorial.ProofBeatRow(ui.Adapter.CurrentState with { Day = 5 });
+            AssertThat(dayAfter)
+                .OverrideFailureMessage("Never opened by the day after — must render Skipped, not vanish silently.")
+                .IsNotNull();
+            AssertThat(dayAfter!.Value.Skipped).IsTrue();
+            AssertThat(dayAfter.Value.Done).IsFalse();
+
+            var secondDawn = ui.Tutorial.ProofBeatRow(ui.Adapter.CurrentState with { Day = 6 });
+            AssertThat(secondDawn)
+                .OverrideFailureMessage("The row must retire (vanish) at the second dawn — KTD-H's anti-nag rule.")
+                .IsNull();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void ProofLessonText_IsReadableInLessons_AfterTheRowRetires()
+    {
+        var ui = MountMainUi(new SimAdapter(AttributionBeatState(day: 4)));
+        try
+        {
+            AssertThat(ui.Tutorial.ProofLessonText).IsNull();
+
+            ui.Tutorial.ConsumeProofBeat(ui.Adapter.CurrentState);
+            AssertThat(ui.Tutorial.ProofLessonText).IsNotNull();
+
+            var afterRetire = ui.Adapter.CurrentState with { Day = 40 };
+            AssertThat(ui.Tutorial.ProofBeatRow(afterRetire)).IsNull();
+            AssertThat(ui.Tutorial.ProofLessonText).IsNotNull(); // the lesson never retires
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>KTD5: Bryn asserts the mechanism, never the hero — the beat may land on someone
+    /// other than the thread hero, and a line naming the wrong person lies (this class's own hard
+    /// rule for <see cref="TutorialFlow.ThreadHero"/>).</summary>
+    [TestCase]
+    public void ProofBeatCopy_NamesNoHero()
+    {
+        var ui = MountMainUi(new SimAdapter(AttributionBeatState(day: 4)));
+        try
+        {
+            var line = ui.Tutorial.ConsumeProofBeat(ui.Adapter.CurrentState)!;
+            foreach (var hero in ui.Adapter.CurrentState.Heroes.Values)
+            {
+                AssertThat(line.Contains(hero.Name, StringComparison.Ordinal))
+                    .OverrideFailureMessage($"Bryn's proof line named a hero (\"{hero.Name}\") — it must assert the mechanism only.")
+                    .IsFalse();
+            }
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>R21's death/proof exclusion, proven against the REAL Consume methods rather than
+    /// only the pure allocator: a night with both a death and the campaign's first attribution beat
+    /// speaks the death and defers the proof to the next morning, at its own full window.</summary>
+    [TestCase]
+    public void Proof_DefersToTheNextMorning_WhenDeathTakesTonightsSlot()
+    {
+        var bothState = HeroDiedState(day: 4) with
+        {
+            EventLog = HeroDiedState(day: 4).EventLog.Add(
+                new AttributionBeatEvent(BeatType.KillingBlow, new ItemId(1), new HeroId(2), Floor: 1, Detail: "test beat")),
+        };
+        var ui = MountMainUi(new SimAdapter(bothState));
+        try
+        {
+            AssertThat(ui.Tutorial.ConsumeFirstLossBlock(ui.Adapter.CurrentState)).IsNotNull(); // death wins the slot
+            AssertThat(ui.Tutorial.ConsumeProofBeat(ui.Adapter.CurrentState))
+                .OverrideFailureMessage("R21's own corollary: death and the proof never share a night.")
+                .IsNull();
+            AssertThat(ui.Tutorial.ProofBeatRow(ui.Adapter.CurrentState)).IsNull(); // not armed yet
+
+            var tomorrow = ui.Adapter.CurrentState with { Day = 5 };
+            var deferred = ui.Tutorial.ConsumeProofBeat(tomorrow);
+            AssertThat(deferred).IsNotNull(); // wins the slot the next night, nothing else contending
+
+            var row = ui.Tutorial.ProofBeatRow(tomorrow);
+            AssertThat(row).IsNotNull();
+            AssertThat(row!.Value.Skipped)
+                .OverrideFailureMessage("A deferred beat must open its own FULL window, never a remainder.")
+                .IsFalse();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>Pure/static — the identical "point at the way in while closed" rule <see
+    /// cref="AimAnchor"/> already enforces for every PanelControl row, proven directly against
+    /// <see cref="TutorialFlow.ProofBeatAnchor"/> with no campaign needed.</summary>
+    [TestCase]
+    public void ProofBeatAnchor_PointsAtTheWayIn_WhileTheLedgerIsClosed()
+    {
+        var closed = TutorialFlow.ProofBeatAnchor(openPanelId: null);
+        AssertThat(closed).IsEqual(TutorialAnchor.ForHud("OpenLedger"));
+    }
+
+    [TestCase]
+    public void ProofBeatAnchor_PointsAtTheBeatCard_WhileTheLedgerIsOpen()
+    {
+        var open = TutorialFlow.ProofBeatAnchor(openPanelId: "Ledger");
+        AssertThat(open).IsEqual(TutorialAnchor.ForPanelControl("Ledger", "LedgerCard_0"));
     }
 }
 #endif
