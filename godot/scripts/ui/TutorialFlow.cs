@@ -861,10 +861,23 @@ public sealed partial class TutorialFlow : PanelContainer
             // exactly the same panel/modal PanelControl is, so "point at the way in while closed" is
             // the identical rule for both; only the CONTROL being aimed at (a button vs. a container)
             // differs, and that distinction is resolved by TutorialOverlay, not here.
+            //
+            // U9 (§11.14.14): used to COMPUTE the way in here — a real venue via VenueForPanel, else
+            // a guessed Hud control named "Open{id}". Two real surfaces broke that guess outright
+            // (the Mirror's tray control is named for watching, never "OpenMirror"; Heroes has no
+            // button at all — see TutorialSurfaceRegistry's class doc), so the way in is now DECLARED
+            // per surface in TutorialSurfaceRegistry.Surfaces instead of guessed here. A surface with
+            // no roster row at all throws (a caller bug); one that genuinely has no live way in yet
+            // (Heroes/Bestiary/Chronicle/Pip) throws too, rather than silently pointing at a button
+            // that does not exist — the exact "point at nothing" failure this rule exists to prevent.
             case TutorialAnchorKind.PanelControl or TutorialAnchorKind.PanelSection when openPanelId != anchor.Key:
-                return VenueForPanel(anchor.Key!) is { } venue
-                    ? TutorialAnchor.ForBuilding(venue)
-                    : TutorialAnchor.ForHud($"Open{anchor.Key}");
+                return TutorialSurfaceRegistry.WayInFor(anchor.Key!)
+                    ?? throw new InvalidOperationException(
+                        $"Tutorial {anchor.Kind} anchor names surface \"{anchor.Key}\", which " +
+                        "TutorialSurfaceRegistry declares has no live way in yet — a tutorial step must " +
+                        "never point at nothing while its surface is closed (house rule). Either the " +
+                        "surface needs a real way in wired up first, or this step must not run until the " +
+                        "player is already on that surface.");
 
             default:
                 return anchor;
@@ -872,9 +885,11 @@ public sealed partial class TutorialFlow : PanelContainer
     }
 
     /// <summary>The inverse of <see cref="PanelIdForVenue"/> — which surfaces are reached by walking
-    /// to a building, and which are only reached from the tray. Everything not named here is opened by
-    /// a tray button called <c>Open{id}</c>, the convention <c>MainUi.RegisterGatedTrayButton</c>
-    /// already established, so <see cref="AimAnchor"/> needs no new data to find the way in.</summary>
+    /// to a building. Kept for <see cref="PanelIdForVenue"/>'s own round-trip test and for
+    /// <see cref="CurrentLocationPanelId"/>'s consumers; <see cref="AimAnchor"/> no longer reads this
+    /// table directly (U9, §11.14.14) — <see cref="TutorialSurfaceRegistry"/>'s declared <c>WayIn</c>
+    /// carries the identical values for these five surfaces, but as DATA rather than a convention
+    /// AimAnchor computed on the fly.</summary>
     public static string? VenueForPanel(string panelId) => panelId switch
     {
         "Forge" => "forge",

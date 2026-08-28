@@ -1245,22 +1245,31 @@ public partial class MainUi : Control
             state,
             Tutorial.TopSlotText(state, locationId), // U23: tutorial overrides the top slot only
             checklist); // U5/U6: the checklist ticks alongside it
+        // U10 (§11.14.14): used to be a hardcoded conditional chain here — "the forge spotlight,
+        // else the current chain step, else the loss row" — that every new pointing feature had to
+        // add a branch to. TutorialAnchorArbiter is now the one place that precedence lives, tested
+        // pair by pair rather than implied by the order of an if. Each source below is resolved to
+        // "does it want the pulse right now" HERE (this method already owns the state each source
+        // needs); the arbiter only ever picks between the results.
         Overlay.RefreshAnchor(
-            // U-T2 Wave B: Bryn's own spotlight (e.g. "the mark, read" pointing at the material
-            // dropdown) outranks the chain's own anchor while her banner is up — the player is
-            // mid-lesson, not mid-chain-step, so the pulse must follow HER, not the chain.
-            Forge.MentorSpotlight is { } mentorSpotlight ? mentorSpotlight
-            // U-T9-5: AnchorFor, not CurrentAnchor — a Station anchor points at the town building
-            // until the player is actually inside the venue, then hands off to the station. See its
-            // own doc for why the un-aimed version left steps 1/2/7 pulsing behind a wall.
-            // U-T9-6: the open-surface id, not the location id — a visible modal is where the
-            // player is looking, so an anchor pointing into it aims at the control instead of
-            // the way in. See CurrentOpenSurfaceId's own doc.
-            // U7 (§11.14.14): state, so AnchorFor can resolve a conditional row's own existence
-            // predicate fresh off the SAME live state this refresh already read — never a stale copy.
-            : Tutorial.Active ? Tutorial.AnchorFor(state, CurrentOpenSurfaceId())
-            : lossRow is not null ? TutorialAnchor.ForHud("OpenLegends")
-            : TutorialAnchor.None,
+            TutorialAnchorArbiter.Resolve(new TutorialAnchorArbiter.TutorialAnchorSources(
+                // U-T2 Wave B: Bryn's own spotlight (e.g. "the mark, read" pointing at the material
+                // dropdown) — non-null only while ForgePanel's own private banner is up.
+                ForgeSpotlight: Forge.MentorSpotlight,
+                // U10: the shared Mentor banner's own anchor — non-null only while IT is showing a
+                // line that declared one (MentorBanner.CurrentAnchor's own doc: cleared to null the
+                // instant the banner closes, so no separate Visible check is needed here).
+                MentorBannerAnchor: Mentor.CurrentAnchor,
+                // U-T9-5: AnchorFor, not CurrentAnchor — a Station anchor points at the town building
+                // until the player is actually inside the venue, then hands off to the station. See
+                // its own doc for why the un-aimed version left steps 1/2/7 pulsing behind a wall.
+                // U-T9-6: the open-surface id, not the location id — a visible modal is where the
+                // player is looking, so an anchor pointing into it aims at the control instead of
+                // the way in. See CurrentOpenSurfaceId's own doc.
+                // U7 (§11.14.14): state, so AnchorFor can resolve a conditional row's own existence
+                // predicate fresh off the SAME live state this refresh already read — never a stale copy.
+                ChainStep: Tutorial.Active ? Tutorial.AnchorFor(state, CurrentOpenSurfaceId()) : null,
+                LossRow: lossRow is not null ? TutorialAnchor.ForHud("OpenLegends") : null)),
             Town, Drawer, this);
         UpdateObjectiveDock(); // Refresh can change the reason line's line count — re-dock to it
     }
@@ -1280,21 +1289,16 @@ public partial class MainUi : Control
     /// this value is threaded through.</para>
     /// </summary>
     /// <summary>
-    /// U-T9-6: the five modal surfaces a tutorial <c>PanelControl</c> anchor may point into, in the
-    /// same id vocabulary <c>DrawerHost.Register</c> uses for its ten. These are mounted directly on
-    /// this node rather than registered with the drawer, and every one of them hosts a beat the T9
-    /// course has to be able to point at. Returns null for an unknown id so <c>TutorialOverlay</c>
-    /// keeps throwing rather than silently pointing nowhere.
+    /// U-T9-6: the modal-ish surfaces a tutorial <c>PanelControl</c>/<c>PanelSection</c> anchor may
+    /// point into — mounted directly on this node rather than registered with the drawer. Originally
+    /// a five-arm switch (Ledger/Commissions/Legends/Camp/Forecast); U9 (§11.14.14) found it MISSED
+    /// five more real surfaces mounted the same way (Mirror/Bestiary/Chronicle/Pip/Docket), so it now
+    /// delegates to <see cref="TutorialSurfaceRegistry"/> — the one roster both this switch and
+    /// <see cref="PanelFor"/>'s own duplicate list were replaced with (see that class's own doc).
+    /// Returns null for an unknown id so <c>TutorialOverlay</c> keeps throwing rather than silently
+    /// pointing nowhere.
     /// </summary>
-    public Control? ModalContent(string id) => id switch
-    {
-        "Ledger" => Ledger,
-        "Commissions" => Commissions,
-        "Legends" => Legends,
-        "Camp" => Camp,
-        "Forecast" => Forecast,
-        _ => null,
-    };
+    public Control? ModalContent(string id) => TutorialSurfaceRegistry.ContentRootFor(id, Drawer, this);
 
     /// <summary>
     /// U-T9-6: where the player is, for anchor-aiming purposes — which is not the question
@@ -1317,7 +1321,11 @@ public partial class MainUi : Control
         return CurrentLocationPanelId();
     }
 
-    /// <summary>The ids <see cref="ModalContent"/> answers, kept beside it so the two cannot drift.</summary>
+    /// <summary>The subset of <see cref="ModalContent"/>'s now-wider answer set that counts as "the
+    /// player's current location" for the tutorial's own "you're at X" acknowledgement — narrower on
+    /// purpose (Mirror/Bestiary/Chronicle/Pip/Docket are not locations in that narrative sense), so
+    /// this stays its own short, hand-picked list rather than every id <see cref="ModalContent"/> can
+    /// now resolve.</summary>
     private static readonly string[] ModalAnchorSurfaces = ["Ledger", "Commissions", "Legends", "Camp", "Forecast"];
 
     private string? CurrentLocationPanelId() =>
@@ -3318,6 +3326,11 @@ public partial class MainUi : Control
         Mentor = new MentorBanner();
         AddChild(Mentor);
         Mentor.Build();
+        // U10 (§11.14.14): mirrors Forge.MentorSpotlightChanged above — Mentor.CurrentAnchor is now
+        // one of TutorialAnchorArbiter's own competing sources (RefreshObjectiveLine), so a Show/
+        // Dismiss that changes it must force that arbiter to re-resolve immediately, not wait for
+        // whatever unrelated tick next calls RefreshObjectiveLine.
+        Mentor.Changed += RefreshObjectiveLine;
 
         // U-T2 Wave C: the two dilemma lessons that do not live in the Forge (pricing, hold-or-
         // sell) need the SAME live chain + shared banner Forge already got in Wave B — wired here,
@@ -3725,21 +3738,15 @@ public partial class MainUi : Control
         trigger == NarratorVoiceDirector.Trigger.DeathEpitaph ? Cue.DeathToll : null;
 
     /// <summary>The drawer-hosted panel registered under <paramref name="id"/> — "Town" is not a
-    /// drawer panel (the world is the permanent base, not routed through here).</summary>
-    private SimPanel PanelFor(string id) => id switch
-    {
-        "Forge" => Forge,
-        "Shop" => Shop,
-        "Heroes" => Heroes,
-        "Tavern" => Tavern,
-        "Depths" => Depths,
-        "Bounties" => Bounties,
-        "Demand" => Demand,
-        "HeroCards" => HeroCards,
-        "Progress" => Progress,
-        "Lessons" => Lessons,
-        _ => throw new ArgumentOutOfRangeException(nameof(id), id, "no such drawer panel"),
-    };
+    /// drawer panel (the world is the permanent base, not routed through here). U9 (§11.14.14): used
+    /// to hand-copy the drawer's own ten registered ids into a second switch, purely to narrow <see
+    /// cref="DrawerHost.PanelContent"/>'s <see cref="Control"/> down to the <see cref="SimPanel"/>
+    /// type this method's own callers need for <c>Refresh()</c>/<c>ForgePanel</c> casts — a duplicate
+    /// list that could (and did) drift from <see cref="DrawerHost.Register"/>'s real registrations.
+    /// Casts the drawer's own answer instead of re-declaring the list.</summary>
+    private SimPanel PanelFor(string id) =>
+        Drawer.PanelContent(id) as SimPanel
+        ?? throw new ArgumentOutOfRangeException(nameof(id), id, "no such drawer panel");
 
     /// <summary>
     /// UI-4 (menu-sizing/cozy redesign): the PRIMARY VERB button's Ember-filled surface — now
