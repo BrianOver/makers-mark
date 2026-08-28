@@ -688,6 +688,64 @@ public partial class Town2D : Control
         FindInteriorRoom(venueKey).Stations.FirstOrDefault(s => s.Key == stationId)
         ?? throw new InvalidOperationException($"No station '{stationId}' in venue '{venueKey}' room.");
 
+    /// <summary>
+    /// U15 (§11.14.14): the visible world canvas's own rect, in SCREEN space (the same coordinate
+    /// system <see cref="Control.GetGlobalRect"/> reports for any other control in this game's ONE
+    /// top-level viewport — <see cref="GodotClient.Ui.TutorialOverlay"/> lives there too). This is
+    /// <see cref="ViewportContainer"/>'s own global rect: <c>Stretch=true</c> (see <see
+    /// cref="Build"/>) means the container draws <see cref="WorldViewport"/>'s rendered image to
+    /// fill exactly this rect, so it IS "what part of the screen shows the world" regardless of
+    /// where this whole control sits inside <c>MainUi</c>'s layout (below the header, above the
+    /// ticker).
+    /// </summary>
+    public Rect2 ViewportScreenRect => ViewportContainer.GetGlobalRect();
+
+    /// <summary>
+    /// U15: projects a WORLD position (e.g. <see cref="Building2D.GlobalPosition"/>) to SCREEN
+    /// space — <see cref="TutorialOverlay"/>'s off-camera marker needs this to decide "is the
+    /// anchor's target on screen right now, and if not, which way is it".
+    ///
+    /// <para>Two links, both already proven elsewhere in this codebase (<see
+    /// cref="RealClickReachesBuildingTests"/> drives the SAME chain in reverse, screen→world, to
+    /// prove clicking works): <see cref="WorldViewport"/>'s own <see
+    /// cref="Viewport.GetCanvasTransform"/> — which bakes in wherever <see cref="Cam"/> currently
+    /// sits/is zoomed — maps world space to the SubViewport's OWN internal pixel space; multiplying
+    /// by <see cref="CanvasShrink"/> undoes the container's <c>StretchShrink</c> downscale back up to
+    /// real screen pixels; adding <see cref="ViewportScreenRect"/>'s own top-left accounts for
+    /// wherever the container itself sits inside the outer window (never (0,0) in the real game —
+    /// the header claims a row above it).</para>
+    /// </summary>
+    public Vector2 WorldToScreen(Vector2 worldPos) =>
+        ViewportScreenRect.Position + (WorldViewport.GetCanvasTransform() * worldPos) * CanvasShrink;
+
+    /// <summary>
+    /// U15 (§11.14.14): while <paramref name="live"/> (a Building/Station-kind tutorial anchor is
+    /// the currently active one — see <see cref="TutorialOverlay.RefreshAnchor"/>'s call site),
+    /// dampens every OTHER station's ambient <see cref="Building2D.Tell"/> glow (see <see
+    /// cref="Building2D.SetTellDamped"/>) so it never competes with the anchor's own pulse in the
+    /// SAME warm-gold hue family — three such languages already coexist in this town (<see
+    /// cref="Building2D"/>'s own class doc), and hue alone was never enough to tell them apart.
+    /// <paramref name="except"/> (the pulsing station itself, when the anchor names one) is left
+    /// undamped; passing <paramref name="live"/> false restores every station's Tell to its
+    /// ordinary brightness regardless of <paramref name="except"/>.
+    ///
+    /// <para>Iterates every room's stations, not just whichever one is currently entered — rooms
+    /// are cheap to touch even off-frame (KTD-1's own "islands exist off-camera from the start"),
+    /// and this keeps the state correct the instant the player walks into a DIFFERENT room than
+    /// whichever one was live when the anchor last changed, with no extra bookkeeping needed here.
+    /// </para>
+    /// </summary>
+    public void SetWorldAnchorTellDamping(bool live, Building2D? except)
+    {
+        foreach (var room in _interiorRooms.Values)
+        {
+            foreach (var station in room.Stations)
+            {
+                station.SetTellDamped(live && !ReferenceEquals(station, except));
+            }
+        }
+    }
+
     /// <summary>U6: test/inspection surface for the tavern's patron seating — null only if <see
     /// cref="WireTavernLife"/> found no tavern row/table stations (never expected on a real
     /// build).</summary>

@@ -24,6 +24,14 @@ namespace GodotClient.Town2d;
 /// from the nametag's dim/bright color alone (#349's cue, which only reads once you are already
 /// close enough to read 7px world-pixel text). A flavor station gets nothing beyond that dim
 /// nametag, unchanged.</para>
+///
+/// <para><b>U15 (§11.14.14):</b> two additions, both about telling the tutorial's own pointer apart
+/// from this file's OTHER warm-gold cues without leaning on hue. <see
+/// cref="SetTutorialPulsing"/>'s pulse now breathes in SCALE as well as color (see <see
+/// cref="TutorialPulseScaleAmplitude"/>'s doc), and <see cref="SetTellDamped"/> lets <see
+/// cref="Town2d.Town2D"/> turn down every OTHER station's <see cref="Tell"/> while one of them is
+/// the active world anchor, so "the course wants THIS one" stays unambiguous even between two
+/// stations standing right next to each other.</para>
 /// </summary>
 public partial class Building2D : Node2D
 {
@@ -204,6 +212,11 @@ public partial class Building2D : Node2D
 
         _tellElapsed += (float)delta;
         var alpha = TellBaseAlpha + TellPulseAmplitude * Mathf.Sin(_tellElapsed * TellPulseHz * Mathf.Tau);
+        if (_tellDamped)
+        {
+            alpha *= TellDampFactor;
+        }
+
         var color = Tell.Modulate;
         color.A = alpha;
         Tell.Modulate = color;
@@ -270,8 +283,13 @@ public partial class Building2D : Node2D
     /// cref="HighlightModulate"/>'s cool brighten so a tutorial-pointed building never reads as
     /// merely hovered — the same glow language this class already uses for "you can click this",
     /// aimed instead at "the tutorial wants you here". <see cref="GodotClient.Ui.TutorialOverlay"/>
-    /// is the only caller.</summary>
-    private static readonly Color TutorialPulseColor = new(1.4f, 1.05f, 0.3f);
+    /// is the only caller.
+    ///
+    /// <para><b>U15 (§11.14.14): widened to <see langword="public"/></b> so <see
+    /// cref="GodotClient.Ui.TutorialOverlay"/>'s off-camera marker can paint itself in the SAME
+    /// hue — see <see cref="TutorialPulseScaleAmplitude"/>'s own doc for why hue was never the part
+    /// doing the actual work anyway.</para></summary>
+    public static readonly Color TutorialPulseColor = new(1.4f, 1.05f, 0.3f);
 
     /// <summary>Pulse period/floor — mirrors <c>DayTimeline</c>'s own waiting-dot idiom
     /// (accumulated-delta, no engine Tween in this codebase).</summary>
@@ -279,17 +297,50 @@ public partial class Building2D : Node2D
 
     private const float TutorialPulseMinAlpha = 0.35f;
 
+    /// <summary>
+    /// U15 (§11.14.14, KTD8/OQ3): the pulse's SHAPE signature — a uniform scale "breathe" layered
+    /// ON TOP OF the existing color lerp, peaking at <c>1 + this</c> and troughing at <c>1 - this</c>.
+    ///
+    /// <para>Before this unit, "the tutorial wants you here" was a hue judgment ONLY — <see
+    /// cref="TutorialPulseColor"/> against <see cref="HighlightModulate"/>'s cool brighten, plus
+    /// this town's ambient station <see cref="Tell"/> glow, plus <see
+    /// cref="GodotClient.Ui.TutorialOverlay"/>'s own HUD outline: three warm-gold visual languages
+    /// that all differ from each other by hue/saturation alone. §11.14.14's own OQ3 ruling calls
+    /// this out directly: gating a course on color discrimination is a real accessibility gap, and
+    /// this unit's job is to close it, not retune yet another shade of gold. A uniform scale breathe
+    /// is a dimension no other warm-gold cue in this town animates, so it reads as ITS OWN signature
+    /// even to a colorblind eye — and, via <see cref="TutorialPulseScale"/> below, the SAME
+    /// signature reappears on <c>TutorialOverlay</c>'s off-camera marker when this building's pulse
+    /// is not on screen to look at directly.</para>
+    /// </summary>
+    private const float TutorialPulseScaleAmplitude = 0.07f;
+
     private bool _tutorialPulsing;
     private double _tutorialPulseElapsed;
 
     /// <summary>Test/inspection surface (mirrors <see cref="IsHighlighted"/>).</summary>
     public bool IsTutorialPulsing => _tutorialPulsing;
 
+    /// <summary>U15: the pulse's live color-lerp fraction (0 = white, 1 = full <see
+    /// cref="TutorialPulseColor"/>) as of the last <see cref="TickTutorialPulse"/> — <see
+    /// cref="TutorialPulseMinAlpha"/> (never fully white) while <see cref="IsTutorialPulsing"/> is
+    /// false. <see cref="GodotClient.Ui.TutorialOverlay"/>'s off-camera marker reads this directly
+    /// rather than re-deriving its own phase, so the on-screen pulse and the off-screen marker are
+    /// provably the SAME animation, not two clocks that happen to look similar.</summary>
+    public float TutorialPulseAlpha { get; private set; } = TutorialPulseMinAlpha;
+
+    /// <summary>U15: the pulse's live scale multiplier (see <see
+    /// cref="TutorialPulseScaleAmplitude"/>'s doc) as of the last <see cref="TickTutorialPulse"/> —
+    /// 1 (no breathe) while <see cref="IsTutorialPulsing"/> is false. Same single-source reasoning
+    /// as <see cref="TutorialPulseAlpha"/>.</summary>
+    public float TutorialPulseScale { get; private set; } = 1f;
+
     /// <summary>Start/stop the tutorial's pointing pulse. While running it owns <see
-    /// cref="Sprite"/>'s <see cref="CanvasItem.Modulate"/> every <see cref="TickTutorialPulse"/>
-    /// call; turning it off restores whatever <see cref="SetHighlighted"/> last asked for (hover
-    /// and the tutorial pulse are independent flags — last-write-wins while pulsing, restored on
-    /// stop).</summary>
+    /// cref="Sprite"/>'s <see cref="CanvasItem.Modulate"/> AND <see cref="CanvasItem.Scale"/> (U15)
+    /// every <see cref="TickTutorialPulse"/> call; turning it off restores whatever <see
+    /// cref="SetHighlighted"/> last asked for (hover and the tutorial pulse are independent flags —
+    /// last-write-wins while pulsing, restored on stop) and resets <see cref="Sprite"/>'s scale to
+    /// 1 — a building must never stay visually enlarged after the course moves on.</summary>
     public void SetTutorialPulsing(bool on)
     {
         _tutorialPulsing = on;
@@ -297,6 +348,9 @@ public partial class Building2D : Node2D
         if (!on)
         {
             Sprite.Modulate = IsHighlighted ? HighlightModulate : Colors.White;
+            Sprite.Scale = Vector2.One;
+            TutorialPulseAlpha = TutorialPulseMinAlpha;
+            TutorialPulseScale = 1f;
         }
     }
 
@@ -313,7 +367,39 @@ public partial class Building2D : Node2D
         var phase = (float)((_tutorialPulseElapsed % TutorialPulsePeriodSeconds) / TutorialPulsePeriodSeconds);
         var t = TutorialPulseMinAlpha + (1f - TutorialPulseMinAlpha) * (0.5f + 0.5f * Mathf.Sin(Mathf.Tau * phase));
         Sprite.Modulate = Colors.White.Lerp(TutorialPulseColor, t);
+        TutorialPulseAlpha = t;
+
+        // U15: the SAME phase as the color lerp (not "t" itself, which sits in [MinAlpha, 1] rather
+        // than [-1, 1]) — a pure sine so the shape signature has its own read even at the pulse's
+        // dimmest color moment, and so trough/peak land exactly opposite the color's own trough/peak
+        // rather than drifting out of sync with it.
+        var scale = 1f + TutorialPulseScaleAmplitude * Mathf.Sin(Mathf.Tau * phase);
+        Sprite.Scale = new Vector2(scale, scale);
+        TutorialPulseScale = scale;
     }
+
+    /// <summary>
+    /// U15 (§11.14.14): fraction of <see cref="Tell"/>'s ordinary alpha shown while <see
+    /// cref="IsTellDamped"/> — never 0 (a fully-hidden Tell would read as "this station lost its
+    /// verb", which is false), just far enough down that it stops competing with whichever OTHER
+    /// station is carrying the live world-anchor pulse. See <see
+    /// cref="Town2d.Town2D.SetWorldAnchorTellDamping"/> for who calls this and why.
+    /// </summary>
+    private const float TellDampFactor = 0.3f;
+
+    private bool _tellDamped;
+
+    /// <summary>Test/inspection surface for <see cref="SetTellDamped"/>.</summary>
+    public bool IsTellDamped => _tellDamped;
+
+    /// <summary>
+    /// U15: dampens (see <see cref="TellDampFactor"/>) this station's ambient <see cref="Tell"/>
+    /// glow while some OTHER station carries the live tutorial world-anchor pulse — a no-op if this
+    /// building was never configured with a Tell (<see cref="Tell"/> null; every flavor station,
+    /// every town building). Reversible: turning it back off restores the ordinary pulse next
+    /// frame, read live in <see cref="_Process"/> rather than snapshotted here.
+    /// </summary>
+    public void SetTellDamped(bool on) => _tellDamped = on;
 
     /// <summary>Test seam (also the real click path's terminus, see
     /// <see cref="OnInteractInputEvent"/>, and <see cref="WorldInput2D"/>'s E-interact path) —
