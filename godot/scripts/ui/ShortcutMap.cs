@@ -94,6 +94,13 @@ public static class ShortcutMap
         new ShortcutEntry(
             "docket_toggle", "Tomorrow at the Counter", "Toggle the counter forecast — stays open while you craft.",
             new[] { "docket_toggle" }),
+        // U20 (§11.14.14): "there is no way to ask where to go" — a player who wandered off mid-step
+        // had only the objective card to re-read. Restates the current tutorial step and flashes its
+        // pointer; a camera peek only ever happens on THIS press (law 1 — see MainUi.ReaskTutorial's
+        // own doc), never on its own.
+        new ShortcutEntry(
+            "tutorial_reask", "Remind me", "Restates the current tutorial step and flashes its pointer.",
+            new[] { "tutorial_reask" }),
         new ShortcutEntry(
             "fullscreen", "Fullscreen", "Toggle fullscreen.",
             Array.Empty<string>(), RawKey: Key.F11),

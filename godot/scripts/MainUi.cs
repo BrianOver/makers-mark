@@ -2661,6 +2661,89 @@ public partial class MainUi : Control
                 + "now one step away, no walk required.")));
     }
 
+    /// <summary>Timed-borrow duration for <see cref="ReaskTutorial"/>'s own camera peek — a peek, not
+    /// a cinematic (contrast <c>Town2D.MineGateFocusSeconds</c>'s 3.2s departure pan): long enough to
+    /// register where the anchor actually is, short enough to hand the camera back to the player
+    /// quickly if they keep walking.</summary>
+    private const float ReaskCameraPeekSeconds = 1.6f;
+
+    /// <summary>
+    /// U20 (§11.14.14): "there is no way to ask where to go." The shortcut legend covers movement,
+    /// interact, the minigame verbs, escape, the docket, fullscreen, and quick-travel — nothing lets
+    /// a player say "remind me what I'm doing." A player who wandered off mid-step, or came back
+    /// after ten minutes, had only the 320px objective card to re-read. Bound to BOTH the
+    /// "tutorial_reask" key (<see cref="_UnhandledKeyInput"/>, below) and <see
+    /// cref="ObjectiveTracker.TutorialReask"/>'s own on-screen button — one handler either way, wired
+    /// to both in <see cref="BuildUi"/>, since "restate the current step" means the same thing
+    /// regardless of which control asked for it.
+    ///
+    /// <para><b>Law 1 (influence never orders).</b> An automatic camera nudge toward an anchor is
+    /// exactly what that law forbids — but a peek triggered by THIS press is legal, because the
+    /// player is the one asking for it. <see cref="Town2D.FocusOn"/>'s own contract ("a TIMED BORROW
+    /// rather than a mode: no state to get stuck in ... input is untouched throughout") is precisely
+    /// the bounded shape the law permits, and this is the only call site that reaches it from a
+    /// player press rather than a scripted beat — nothing here can fire on its own.</para>
+    ///
+    /// <para>Restates the CURRENT step's own on-screen line (<see cref="TutorialFlow.TopSlotText"/>
+    /// — the exact string <see cref="ObjectiveTracker.Reason"/> already shows, never a re-derived
+    /// paraphrase) through the shared <see cref="Mentor"/> banner, preempting whatever else is on
+    /// screen — the player pressed a control asking for exactly this, right now, so it wins; the
+    /// displaced line is never dropped, only pushed to the front of the queue (<see
+    /// cref="MentorBanner.Show"/>'s own contract). <see cref="TutorialOverlay.ForceRefreshOnNextCall"/>
+    /// is what makes the flash real: called BEFORE <see cref="MentorBanner.Show"/> on purpose — <see
+    /// cref="Mentor"/>'s own <see cref="MentorBanner.Changed"/> event re-resolves <see
+    /// cref="RefreshObjectiveLine"/> synchronously the instant the line lands, so the overlay's own
+    /// no-op guard has to already be defeated by the time that happens, not after.</para>
+    ///
+    /// <para>Idempotent and inert once the course completes: reads live state, submits no <see
+    /// cref="PlayerAction"/>, never touches <see cref="TutorialFlow.Step"/>, and never calls <see
+    /// cref="TutorialFlow.ConsumeFirstTouch"/> — a re-ask is not a first-touch lesson, it is the SAME
+    /// line every time, so any number of presses in a row leave the sim exactly as a single press
+    /// did (the one bounded artifact of repeating it while the banner already shows the identical
+    /// re-ask line is <see cref="MentorBanner.Enqueue"/>'s own dedup guard settling at one harmless
+    /// queued duplicate rather than growing further — never unbounded). A no-op entirely while <see
+    /// cref="TutorialFlow.Active"/> is false, the same guard <see cref="RefreshObjectiveLine"/>
+    /// itself already reads before computing a tutorial override at all.</para>
+    /// </summary>
+    private void ReaskTutorial()
+    {
+        if (!Tutorial.Active)
+        {
+            return;
+        }
+
+        var state = Adapter.CurrentState;
+        var anchor = Tutorial.AnchorFor(state, CurrentOpenSurfaceId());
+        var line = Tutorial.TopSlotText(state, CurrentLocationPanelId());
+        if (line is null)
+        {
+            return;
+        }
+
+        Overlay.ForceRefreshOnNextCall(); // must run BEFORE Show — see this method's own doc
+        Mentor.Show(MentorVoice.Speak(ObjectiveTracker.Plain(line)), preempt: true, anchor: anchor);
+
+        if (ResolveWorldAnchorPosition(anchor) is { } worldPos)
+        {
+            Town.FocusOn(worldPos, ReaskCameraPeekSeconds);
+        }
+    }
+
+    /// <summary>U20: the world position a Building/Station anchor's own pointer means — the SAME
+    /// resolution <see cref="TutorialOverlay.RefreshAnchor"/> performs internally (<see
+    /// cref="Town2D.FindBuilding"/>/<see cref="Town2D.FindStation"/>), read here directly rather than
+    /// waiting on the overlay's own next tick to expose it, so <see cref="ReaskTutorial"/>'s camera
+    /// peek never races the arbiter's own resolve. Null for every other anchor kind (Hud/
+    /// PanelControl/PanelSection/None) — none of those name a world position, and peeking at nothing
+    /// would just be a random pan with no "the thing you asked about" to land on.</summary>
+    private Vector2? ResolveWorldAnchorPosition(TutorialAnchor anchor) =>
+        anchor.Kind switch
+        {
+            TutorialAnchorKind.Building => Town.FindBuilding(anchor.Key!).GlobalPosition,
+            TutorialAnchorKind.Station => Town.FindStation(anchor.Key!, anchor.StationId!).GlobalPosition,
+            _ => null,
+        };
+
     /// <summary>U5: a transient bell-action notice (reuses the rejection-toast banner).</summary>
     private void ShowBellToast(string message)
     {
@@ -3350,6 +3433,10 @@ public partial class MainUi : Control
         // press. TutorialFlow.DismissConfirmCopy names the warrant's cost (if any is still owed) at
         // press time, before the choice is made.
         Objective.TutorialDismiss.Pressed += () => Objective.ShowDismissConfirm(TutorialFlow.DismissConfirmCopy(Adapter.CurrentState));
+
+        // U20 (§11.14.14): the on-screen twin of the "tutorial_reask" key — same handler either way
+        // (ReaskTutorial's own doc explains both halves of this feature together).
+        Objective.TutorialReask.Pressed += ReaskTutorial;
 
         // Confirming submits ConcludeApprenticeshipAction through the adapter AND calls
         // TutorialFlow.Dismiss() — one press, both layers, never one without the other (Objective's
@@ -4338,6 +4425,17 @@ public partial class MainUi : Control
         if (@event.IsActionPressed("docket_toggle"))
         {
             Docket.Toggle();
+            GetViewport()?.SetInputAsHandled();
+        }
+
+        // U20 (§11.14.14): the "remind me" re-ask — same routing reason as docket_toggle just
+        // above ("R" races none of the minigame/movement keys, and a focused text field would
+        // already have consumed it as typed text in _gui_input first). ReaskTutorial is its own
+        // no-op while the chain is inactive, so this handler stays this simple rather than
+        // duplicating that guard here too.
+        if (@event.IsActionPressed("tutorial_reask"))
+        {
+            ReaskTutorial();
             GetViewport()?.SetInputAsHandled();
         }
     }

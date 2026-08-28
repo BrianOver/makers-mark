@@ -130,6 +130,27 @@ public sealed partial class TutorialOverlay : Control
     /// surface.</summary>
     public bool OffCameraMarkerVisible => _offCameraMarker.Visible;
 
+    /// <summary>
+    /// U20 (§11.14.14): forces the very NEXT <see cref="RefreshAnchor"/> call to treat its anchor as
+    /// freshly arrived, even when it names the IDENTICAL anchor already showing. <see
+    /// cref="RefreshAnchor"/>'s own doc says a no-op guard exists precisely so an idle tick never
+    /// restarts the pulse for no reason — but a player's own "remind me" press (<see
+    /// cref="MainUi.ReaskTutorial"/>) is the ONE case a restart IS wanted: the flash — the pulse
+    /// snapping back to its brightest point, the off-camera marker's <c>Visible</c> flipping through
+    /// false first — is the whole visible answer to that press. Without this, re-asking about a step
+    /// whose anchor has not moved since the last tick would hit the no-op guard and nothing on the
+    /// world side would respond at all.
+    ///
+    /// <para>Reached from exactly one call site, never a tick — so this can never fire on its own
+    /// (law 1: influence never orders). Implemented as clearing the remembered anchor rather than a
+    /// separate "flash now" flag: the NEXT <see cref="RefreshAnchor"/> call (triggered synchronously
+    /// by <see cref="MentorBanner.Changed"/> the instant <c>ReaskTutorial</c> shows its line) sees
+    /// <see cref="TutorialAnchor.None"/> where the real anchor used to be, takes the "changed" branch
+    /// unconditionally, and re-resolves the real anchor fresh — the identical mechanism a genuine
+    /// anchor change already uses, reused rather than duplicated.</para>
+    /// </summary>
+    public void ForceRefreshOnNextCall() => _anchor = TutorialAnchor.None;
+
     /// <summary>U15: the marker's live on-screen center — meaningful only while <see
     /// cref="OffCameraMarkerVisible"/> is true. Screen space (same system <see
     /// cref="Control.GetGlobalRect"/> reports for any control here).</summary>
