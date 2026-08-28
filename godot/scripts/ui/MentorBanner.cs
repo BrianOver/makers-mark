@@ -387,9 +387,11 @@ public partial class MentorBanner : PanelContainer
     /// a third of seeds the first hero death as well. So the T9 course cannot treat the cap as an
     /// impossible edge, and a caller firing "in a batch" is not always a bug: sometimes the day
     /// genuinely is that loud. The other half of the answer belongs to the acts themselves — a beat
-    /// whose night is already full arms for tomorrow instead of queueing (§11.14.13's priority rule,
-    /// landing with U-T9-1) — because the honest fix for a loud night is fewer voices, not a longer
-    /// queue.</para></summary>
+    /// whose night is already full arms for tomorrow instead of queueing. <b>Landed in U29
+    /// (§11.14.14, R21/R22)</b>: <see cref="TutorialFlow.ResolveTonightsActVoices"/> caps a night to
+    /// two act-voices BEFORE a caller ever reaches this queue, so from U29 on this cap is reached by
+    /// <see cref="MentorVoiceRank.Lesson"/> traffic only — the honest fix for a loud night was fewer
+    /// voices, not a longer queue, and that fix now exists upstream of here.</para></summary>
     private const int MaxPendingLessons = 4;
 
     private void Enqueue(string lesson, MentorVoiceRank rank, TutorialAnchor? anchor, bool front = false)

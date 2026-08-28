@@ -2035,6 +2035,130 @@ public sealed partial class TutorialFlow : PanelContainer
         return "This is the day's story — read who came home, what they found, and what it cost.";
     }
 
+    // ── U29 (§11.14.14, R21/R22): the two-act-voice-per-night budget ────────────────────────────
+    //
+    // The measurement that forced this section to exist: a pure-sim census (sim/GameSim.Tests/
+    // Presentation/ActVoiceBudgetCensusTests.cs) drove twelve seeds, ten days, BaselinePlayer, and
+    // counted how many of the six-plus-one course-carrying facts land on the SAME in-game day. Day
+    // 4 carries four on every seed (the attribution beat, a fulfilled commission, the Act II advance,
+    // the warrant's own end) and five on a third of them (the campaign's first hero death joins).
+    // R21's target is two. This section is the arming mechanism that gets there — see
+    // ResolveTonightsActVoices's own doc for the algorithm and PendingActVoiceCandidates's own doc
+    // for what actually feeds it today.
+
+    /// <summary>
+    /// U29 (§11.14.14, R21/R22): fixed precedence for the seven facts that can ever want an "act
+    /// voice" — the tier <see cref="MentorBanner.MentorVoiceRank.Act"/> already names ("the proof
+    /// fired, a promise was kept, somebody died... the course, not its footnotes"). Declaration order
+    /// IS precedence, highest first — the same convention <see cref="MentorBanner.MentorVoiceRank"/>
+    /// itself already uses (Lesson=0 &lt; Act=1), so there is no separate int table to drift out of
+    /// sync with this list. R21's own approach text names this exact order.
+    ///
+    /// <para>Only <see cref="HeroDeath"/> (<see cref="ConsumeFirstLossBlock"/>) and <see
+    /// cref="WarrantEnded"/> (<see cref="ConsumeWarrantEndBeat"/>) back a real dormant act today —
+    /// <see cref="Proof"/>, <see cref="Graduation"/>, <see cref="ActAdvance"/>, <see
+    /// cref="CommissionFulfilled"/> and <see cref="RankUp"/> land their own dormant acts in U30-U33
+    /// and wire into <see cref="ResolveTonightsActVoices"/> the same way the two real ones already
+    /// do (<see cref="PendingActVoiceCandidates"/>'s own doc). This unit builds the budget/precedence
+    /// MECHANISM, not the other five voices.</para>
+    /// </summary>
+    public enum ActVoiceKind
+    {
+        HeroDeath,
+        Proof,
+        Graduation,
+        WarrantEnded,
+        ActAdvance,
+        CommissionFulfilled,
+        RankUp,
+    }
+
+    /// <summary>R21's own number: no in-game night ever delivers more than this many act-voices. The
+    /// census this section exists to satisfy (its own class doc, above) measured a worst night of
+    /// five before this budget existed; two is the target, not a compromise on the way to it.</summary>
+    private const int ActVoiceBudgetPerNight = 2;
+
+    /// <summary>
+    /// U29 (§11.14.14, R21/R22): given everything that WANTS one of tonight's <see
+    /// cref="ActVoiceBudgetPerNight"/> slots, returns which ones actually get one. Pure and
+    /// stateless — no mutation of <paramref name="candidates"/>, no clock read, no persisted field
+    /// read — every caller supplies its OWN "who else wants tonight" set (<see
+    /// cref="PendingActVoiceCandidates"/>) and reads back only whether IT is in the result.
+    ///
+    /// <para><b>R21's own corollary, and the one that is NOT implied by precedence alone:</b> "on a
+    /// night with a death, the death speaks and the proof arms for tomorrow. They never share a
+    /// night." Plain top-<see cref="ActVoiceBudgetPerNight"/>-by-declared-order would seat them
+    /// together (death outranks everything; proof outranks everything else), so this is a hard
+    /// exclusion, applied FIRST: <see cref="HeroDeath"/> present removes <see cref="Proof"/> from the
+    /// pool for the whole night, budget or no. Everything the pool still has room for beyond that
+    /// follows plain declared-order precedence.</para>
+    ///
+    /// <para>Applied to the measured worst night (death, proof, the warrant's end, the act advance,
+    /// the fulfilled commission, all landing day 4 on 4 of 12 seeds): death excludes proof, then the
+    /// two highest of what remains — death, the warrant's end — take the two slots, and the other
+    /// three (proof included) defer. Three deferred, not one — R21's own approach text names this
+    /// number.</para>
+    ///
+    /// <para>Deferral itself is not this method's job: a candidate this call excludes simply is not
+    /// in the returned set, and the CALLER (<see cref="ConsumeFirstLossBlock"/>, <see
+    /// cref="ConsumeWarrantEndBeat"/>) responds by not committing its own arm-day field and trying
+    /// again on its very next call — ordinarily tomorrow, at whatever day that call actually lands.
+    /// That is why a deferred beat's own window (e.g. <see cref="LossActRow"/>) always gets its FULL
+    /// length: the window's day-offset start is the day this method finally lets the kind through,
+    /// never the day the underlying fact first became true. No countdown, no shortened window, no
+    /// second mechanism — the window already supported a day-offset start (<see
+    /// cref="LossActRow"/>'s own <c>dayOffset</c> read), reused rather than reinvented, and deferral
+    /// is exactly "arm it a day later" (KTD3/R22: by arming date only, never a timer).</para>
+    ///
+    /// <para><paramref name="budget"/> defaults to the real <see cref="ActVoiceBudgetPerNight"/> —
+    /// every production caller takes the default. Tests narrow it (typically to 1) to force a
+    /// single winner out of exactly two candidates, which is what turns "declaration order is
+    /// precedence" into a PAIRWISE proof against this method's own allocation logic, rather than a
+    /// second assertion of the enum's own declared list.</para>
+    /// </summary>
+    public static IReadOnlySet<ActVoiceKind> ResolveTonightsActVoices(
+        IReadOnlyCollection<ActVoiceKind> candidates, int budget = ActVoiceBudgetPerNight)
+    {
+        var pool = candidates.Contains(ActVoiceKind.HeroDeath)
+            ? candidates.Where(k => k != ActVoiceKind.Proof)
+            : candidates;
+
+        return pool.Distinct()
+            .OrderBy(k => (int)k) // declaration order IS precedence — this enum's own class doc
+            .Take(budget)
+            .ToHashSet();
+    }
+
+    /// <summary>
+    /// U29: the "who else wants tonight" set <see cref="ResolveTonightsActVoices"/> needs — every
+    /// REAL dormant act whose underlying fact has landed and has not yet spoken, read fresh off
+    /// <paramref name="state"/> on every call (never cached). <see cref="ConsumeFirstLossBlock"/> and
+    /// <see cref="ConsumeWarrantEndBeat"/> fire from two different reveal hooks in <c>MainUi</c> (the
+    /// Ledger's automatic reveal, and the general rejection-gated refresh) with no guaranteed order
+    /// on a shared tick, so the budget decision cannot depend on who happens to ask first — reading
+    /// live state on every call, rather than caching "who asked already," is what keeps the answer
+    /// order-independent. Only <see cref="ActVoiceKind.HeroDeath"/>/<see
+    /// cref="ActVoiceKind.WarrantEnded"/> are checked today; U30-U33 each add their own kind's own
+    /// eligibility check here — the ONE place a night's real contenders are gathered, rather than a
+    /// second budget mechanism.
+    /// </summary>
+    private HashSet<ActVoiceKind> PendingActVoiceCandidates(GameState state)
+    {
+        var pending = new HashSet<ActVoiceKind>();
+
+        if (!Dismissed && _firstLossDay == 0 && state.EventLog.OfType<HeroDied>().Any())
+        {
+            pending.Add(ActVoiceKind.HeroDeath);
+        }
+
+        if (!_hasSeenWarrantEndBeat && state.Day >= WarrantEndDay && !ApprenticeWarrant.Concluded(state))
+        {
+            pending.Add(ActVoiceKind.WarrantEnded);
+        }
+
+        return pending;
+    }
+
     /// <summary>
     /// §11.13 amendment (U5, R9's own fixed point — "the end is a beat, not a footnote"): the
     /// once-ever line on the first Morning after <see cref="ApprenticeWarrant.LastGraceDay"/> —
@@ -2045,6 +2169,11 @@ public sealed partial class TutorialFlow : PanelContainer
     /// cref="DismissConfirmCopy"/>'s own confirm at press time, so repeating it here on the dawn that
     /// follows would be the tutorial's OWN voice restating news the player already answered — the
     /// exact double-telling this amendment's staging exists to avoid.
+    ///
+    /// <para>U29 (§11.14.14, R21/R22): "the first Morning after" is the NATURAL day, not always the
+    /// SPOKEN one — if tonight's two-act-voice budget is already spent by something that outranks
+    /// the warrant's end (<see cref="ResolveTonightsActVoices"/>), this stays silent and does not
+    /// consume the once-ever flag, so the very next call (ordinarily tomorrow) tries again fresh.</para>
     /// </summary>
     public string? ConsumeWarrantEndBeat(GameState state)
     {
@@ -2053,11 +2182,27 @@ public sealed partial class TutorialFlow : PanelContainer
             return null;
         }
 
+        if (ApprenticeWarrant.Concluded(state))
+        {
+            // An early graduate already heard this in the confirm — never repeat it, and never spend
+            // one of tonight's two act-voice slots (U29) on a beat that renders no text at all.
+            _hasSeenWarrantEndBeat = true;
+            Save();
+            return null;
+        }
+
+        // U29 (§11.14.14, R21/R22): tonight's fixed two-voice budget — see ResolveTonightsActVoices's
+        // own doc for the precedence and the death/proof exclusion. Losing the slot means staying
+        // silent and NOT committing _hasSeenWarrantEndBeat — the next call re-asks fresh and, once it
+        // wins a slot, fires exactly once, same once-ever contract as before this unit.
+        if (!ResolveTonightsActVoices(PendingActVoiceCandidates(state)).Contains(ActVoiceKind.WarrantEnded))
+        {
+            return null;
+        }
+
         _hasSeenWarrantEndBeat = true;
         Save();
-        return ApprenticeWarrant.Concluded(state)
-            ? null // an early graduate already heard this in the confirm — never repeat it
-            : "The apprenticeship's warrant ended at dawn. From today the Mine keeps what it takes.";
+        return "The apprenticeship's warrant ended at dawn. From today the Mine keeps what it takes.";
     }
 
     /// <summary>U5: once-ever consumed flag backing <see cref="ConsumeWarrantEndBeat"/> — persisted
@@ -2070,10 +2215,16 @@ public sealed partial class TutorialFlow : PanelContainer
     /// dismiss (a dismissed chain gets §11.11 U6's ordinary death-card staging only — this act is
     /// the tutorial's own last lesson, and declining the tutorial declines its last lesson too).
     /// <c>MainUi</c> calls this from the SAME automatic Return-Ritual reveal spot as <see
-    /// cref="ConsumeLedgerTip"/>, so it fires on exactly the Evening the death actually landed —
-    /// no arming date is needed: while the warrant holds, no <see cref="HeroDied"/> can exist at all
-    /// (U4 test 8), so this can only ever wake in the ordinary-mortality region the tutorial itself
-    /// walked the player into.
+    /// cref="ConsumeLedgerTip"/>, so it ordinarily fires on exactly the Evening the death actually
+    /// landed. While the warrant holds, no <see cref="HeroDied"/> can exist at all (U4 test 8), so
+    /// this can only ever wake in the ordinary-mortality region the tutorial itself walked the
+    /// player into.
+    ///
+    /// <para>U29 (§11.14.14, R21/R22): "ordinarily" — nothing in <see cref="ActVoiceKind"/>'s own
+    /// declared order outranks <see cref="ActVoiceKind.HeroDeath"/>, so today this can only defer
+    /// past its own Evening once a future kind's own dormant act (U30-U33) is also contending the
+    /// same night; when it does, it arms one day later instead, at its own full one-night-one-day
+    /// window (<see cref="ResolveTonightsActVoices"/>), never a shortened one.</para>
     /// </summary>
     public string? ConsumeFirstLossBlock(GameState state)
     {
@@ -2083,6 +2234,16 @@ public sealed partial class TutorialFlow : PanelContainer
         }
 
         if (!state.EventLog.OfType<HeroDied>().Any())
+        {
+            return null;
+        }
+
+        // U29 (§11.14.14, R21/R22): same budget gate as ConsumeWarrantEndBeat — see that method's
+        // own remark and ResolveTonightsActVoices's own doc. Losing the slot means staying silent
+        // and NOT setting _firstLossDay — LossActRow's own window only starts counting from
+        // whichever day this method actually commits it, so a deferred loss still gets its FULL
+        // window, never a truncated one.
+        if (!ResolveTonightsActVoices(PendingActVoiceCandidates(state)).Contains(ActVoiceKind.HeroDeath))
         {
             return null;
         }

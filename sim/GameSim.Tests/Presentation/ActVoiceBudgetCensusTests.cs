@@ -41,9 +41,7 @@ namespace GameSim.Tests.Presentation;
 /// counts straight off <see cref="TickResult.Events"/>. No file on disk, no prior `batch` run, no
 /// <c>runs/</c> dependency.</para>
 ///
-/// <para><b>THE FINDING, not a bug in this test.</b> R21's ceiling of two is a TARGET the arming
-/// rule (U29) has not built yet — today, nothing sheds a voice off a loud night, the banner's own
-/// queue (U-T9-0) just absorbs the overflow. Measured here, twelve seeds/ten days of
+/// <para><b>THE FINDING, not a bug in this test.</b> Measured here, twelve seeds/ten days of
 /// <see cref="BaselinePlayer"/>, the global worst night across ALL twelve seeds and all ten days
 /// is FIVE: day 4 carries the attribution beat, the fulfilled commission, the Act II advance, and
 /// the warrant ending on every one of the twelve seeds (four act-voices before any hero has ever
@@ -53,9 +51,23 @@ namespace GameSim.Tests.Presentation;
 /// act-advanced/warrant-ended never recur once spent. This reproduces <c>MentorBanner</c>'s own
 /// U-T9-0 measurement almost exactly (four voices on 8 of 12 seeds, five on the other 4) using a
 /// different seed list, which is corroboration, not coincidence. <see cref="CurrentMeasuredCeiling"/>
-/// below is that measured five, not the design's target two — asserting two today would fail on
-/// the very first run for a reason this unit did not cause and U29 has not yet fixed. When U29
-/// lands, tighten this constant to 2 and delete this paragraph.</para>
+/// below is that measured five.</para>
+///
+/// <para><b>U29 landed the arming rule and this constant STAYS five — that is not a stale
+/// promise, it is what "pure sim, not <c>runs/</c>" (above) implies once you follow it through.</b>
+/// This census counts facts as the KERNEL lands them on a calendar day, straight off
+/// <see cref="TickResult.Events"/> — that is what makes it a fast-lane, sim-purity-respecting
+/// (KTD2) measurement in the first place. The arming rule (<c>TutorialFlow.ResolveTonightsActVoices</c>,
+/// <c>godot/scripts/ui/TutorialFlow.cs</c>) enforces R21's ceiling of two entirely on the
+/// PRESENTATION side — it decides which of a day's landed facts the mentor banner actually speaks
+/// tonight versus arms for tomorrow, a decision this sim-only census has no way to observe and, by
+/// its own KTD2 charter, must never be given a Godot dependency in order to. Tightening
+/// <see cref="CurrentMeasuredCeiling"/> to 2 would not prove the arming rule works; it would just
+/// fail this test forever, since the sim's own day-4 landing count did not change and structurally
+/// cannot be changed by a Godot-only file. The real ≤2-per-night guarantee is proven where the
+/// decision actually lives: <c>godot/tests/TutorialFlowTests.cs</c>'s U29 section (search
+/// "ResolveTonightsActVoices" — the pairwise-precedence, worst-night-fixture, and no-beat-lost
+/// tests).</para>
 /// </summary>
 public class ActVoiceBudgetCensusTests
 {
