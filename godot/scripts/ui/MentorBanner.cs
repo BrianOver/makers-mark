@@ -52,6 +52,17 @@ public partial class MentorBanner : PanelContainer
 {
     private Label _label = null!;
 
+    /// <summary>U10 (§11.14.14): raised whenever <see cref="Show"/> or <see cref="Dismiss"/> changes
+    /// what is actually on screen — a new line taking over, the queue draining into the next one, or
+    /// the banner closing outright. <c>MainUi</c> hooks this exactly like <see
+    /// cref="Panels.ForgePanel.MentorSpotlightChanged"/> (the one other place a mentor voice's own
+    /// anchor could change independently of the tutorial's own tick), so <see
+    /// cref="TutorialAnchorArbiter"/>'s next resolve — and therefore the overlay's own pulse — never
+    /// lags a frame behind whatever this banner just started, or stopped, speaking. NOT raised by
+    /// <see cref="Enqueue"/> alone: queuing a beat behind the current one changes nothing the player
+    /// can see yet.</summary>
+    public event Action? Changed;
+
     /// <summary>Build the banner chrome once, hidden. Idempotent-guarded like every other
     /// code-built node on this project.</summary>
     public void Build()
@@ -113,6 +124,17 @@ public partial class MentorBanner : PanelContainer
     }
 
     /// <summary>
+    /// U10 (§11.14.14): the anchor a queued or currently-shown line carries alongside its text and
+    /// rank — <see langword="null"/> means the beat deliberately declares no pointer (a plain text
+    /// lesson, same as every call site before this unit). Cleared to <see langword="null"/> exactly
+    /// when <see cref="Visible"/> goes false (see <see cref="Dismiss"/>), so a caller never has to
+    /// separately check <see cref="Visible"/> before reading it — mirrors <see
+    /// cref="Panels.ForgePanel.MentorSpotlight"/>'s own "non-null implies the banner backing it is up"
+    /// contract, the one other place a mentor voice already pointed at something.
+    /// </summary>
+    public TutorialAnchor? CurrentAnchor { get; private set; }
+
+    /// <summary>
     /// Shows <paramref name="fired"/> (already-wrapped in Bryn's own voice, already-gated through
     /// <see cref="TutorialFlow.ConsumeFirstTouch"/> by the caller) — or does nothing when
     /// <paramref name="fired"/> is <see langword="null"/> (the lesson did not fire this call, per
@@ -150,9 +172,18 @@ public partial class MentorBanner : PanelContainer
     /// langword="false"/> return with a non-null <paramref name="fired"/> means queued, not dropped —
     /// callers that branch on it (<c>ForgePanel</c>'s material-ceiling/mark-read pair) still read
     /// correctly, since "did this one get the screen" is exactly the question they ask.</para>
+    ///
+    /// <para>U10 (§11.14.14): <paramref name="anchor"/> — the tutorial overlay's own pulse target
+    /// while THIS line is on screen, or <see langword="null"/> (the default, and every call site
+    /// before this unit) for a beat that deliberately speaks with no pointer. Travels with the line
+    /// through the queue and back out again (see <see cref="CurrentAnchor"/>'s own doc) — the gap
+    /// this unit closes: before it, only <c>ForgePanel</c>'s OWN separate one-slot banner could ever
+    /// point at anything, so a lesson routed through THIS shared banner (five panels, plus Bryn's own
+    /// station toast) could speak but never point.</para>
     /// </summary>
-    public bool ShowFirstTouch(string? fired, bool preempt = false, MentorVoiceRank rank = MentorVoiceRank.Lesson) =>
-        fired is not null && Show(fired, preempt, rank);
+    public bool ShowFirstTouch(
+        string? fired, bool preempt = false, MentorVoiceRank rank = MentorVoiceRank.Lesson, TutorialAnchor? anchor = null) =>
+        fired is not null && Show(fired, preempt, rank, anchor);
 
     /// <summary>
     /// U4 (§11.14.14): the plain, non-gated half of <see cref="ShowFirstTouch"/> — same busy/
@@ -168,7 +199,7 @@ public partial class MentorBanner : PanelContainer
     /// timer (law), and <see cref="ObjectiveTracker.Plain"/> strips the emphasis here so no caller
     /// of either method has to remember to.</para>
     /// </summary>
-    public bool Show(string line, bool preempt = false, MentorVoiceRank rank = MentorVoiceRank.Lesson)
+    public bool Show(string line, bool preempt = false, MentorVoiceRank rank = MentorVoiceRank.Lesson, TutorialAnchor? anchor = null)
     {
         // Stripped once, here, rather than at each caller — the same markup-carrying strings
         // (TutorialFlow's TeachNote, quoted verbatim by MentorVoice.CurrentLesson) reach the CLI
@@ -179,7 +210,7 @@ public partial class MentorBanner : PanelContainer
 
         if (Visible && !preempt)
         {
-            Enqueue(plain, rank);
+            Enqueue(plain, rank, anchor);
             return false;
         }
 
@@ -188,29 +219,44 @@ public partial class MentorBanner : PanelContainer
             // Preempting: the note being displaced has already been consumed and would otherwise be
             // dropped, so it takes the front of its own rank band rather than the bin. Front, not
             // back: it was fired first and it is the more general of the two, so it reads better
-            // after the specific one than buried behind whatever arrives later.
-            Enqueue(_label.Text, _currentRank, front: true);
+            // after the specific one than buried behind whatever arrives later. Its own anchor
+            // (U10) travels with it — a displaced line's pointer is exactly as much "already
+            // consumed" as its text, never dropped on the floor while the text survives.
+            Enqueue(_label.Text, _currentRank, CurrentAnchor, front: true);
         }
 
         _label.Text = plain;
         _currentRank = rank;
+        CurrentAnchor = anchor; // U10: arrives with the line, same tick — see this property's own doc
         Visible = true;
+        Changed?.Invoke(); // U10: same tick as the line/anchor above — see this event's own doc
         return true;
     }
 
     /// <summary>The banner's own "Got it" — never a timer, always the player's own press (law: no
     /// timers on decisions). Drains one queued lesson if any is waiting, so the press advances
-    /// through the backlog instead of discarding it; only an empty queue closes the banner.</summary>
+    /// through the backlog instead of discarding it; only an empty queue closes the banner.
+    ///
+    /// <para>U10 (§11.14.14): <see cref="CurrentAnchor"/> travels with whichever line is now on
+    /// screen — drained along with its own <c>Text</c>/<c>Rank</c> when the queue has one, or
+    /// explicitly cleared to <see langword="null"/> when the banner actually closes. The clear is
+    /// deliberate, not a leftover: it is what lets a caller read <see cref="CurrentAnchor"/> alone,
+    /// with no separate <see cref="Visible"/> check, exactly the same contract <see
+    /// cref="Panels.ForgePanel.MentorSpotlight"/> already established for its own dismiss.</para>
+    /// </summary>
     public void Dismiss()
     {
         if (_pending.Count > 0)
         {
-            (_label.Text, _currentRank) = _pending[0];
+            (_label.Text, _currentRank, CurrentAnchor) = _pending[0];
             _pending.RemoveAt(0);
+            Changed?.Invoke();
             return;
         }
 
         Visible = false;
+        CurrentAnchor = null;
+        Changed?.Invoke();
     }
 
     /// <summary>How many consumed-but-not-yet-shown lessons are waiting behind the current one.
@@ -218,8 +264,11 @@ public partial class MentorBanner : PanelContainer
     public int PendingLessonCount => _pending.Count;
 
     /// <summary>Lessons consumed while the banner was busy, in the order they will be shown —
-    /// highest <see cref="MentorVoiceRank"/> first, insertion order within a rank.</summary>
-    private readonly List<(string Text, MentorVoiceRank Rank)> _pending = new();
+    /// highest <see cref="MentorVoiceRank"/> first, insertion order within a rank. U10 (§11.14.14):
+    /// each entry now carries its OWN <see cref="TutorialAnchor"/> (or <see langword="null"/>)
+    /// alongside its text and rank, so a beat's words and its pointer arrive and leave together —
+    /// see <see cref="CurrentAnchor"/>'s own doc for why this was the whole point of the unit.</summary>
+    private readonly List<(string Text, MentorVoiceRank Rank, TutorialAnchor? Anchor)> _pending = new();
 
     /// <summary>The rank of whatever is on screen right now, so a preempted line re-enters the queue
     /// at its own rank rather than being demoted by the act of being displaced.</summary>
@@ -242,7 +291,7 @@ public partial class MentorBanner : PanelContainer
     /// queue.</para></summary>
     private const int MaxPendingLessons = 4;
 
-    private void Enqueue(string lesson, MentorVoiceRank rank, bool front = false)
+    private void Enqueue(string lesson, MentorVoiceRank rank, TutorialAnchor? anchor, bool front = false)
     {
         // Same text twice would read as a stutter on consecutive presses. Cannot normally happen
         // (ConsumeFirstTouch is once-ever per id) but the queue should not be the thing that makes
@@ -292,7 +341,7 @@ public partial class MentorBanner : PanelContainer
             }
         }
 
-        _pending.Insert(at, (lesson, rank));
+        _pending.Insert(at, (lesson, rank, anchor));
     }
 
     /// <summary>Same small local widget-builders every other code-built panel on this project

@@ -1245,22 +1245,31 @@ public partial class MainUi : Control
             state,
             Tutorial.TopSlotText(state, locationId), // U23: tutorial overrides the top slot only
             checklist); // U5/U6: the checklist ticks alongside it
+        // U10 (§11.14.14): used to be a hardcoded conditional chain here — "the forge spotlight,
+        // else the current chain step, else the loss row" — that every new pointing feature had to
+        // add a branch to. TutorialAnchorArbiter is now the one place that precedence lives, tested
+        // pair by pair rather than implied by the order of an if. Each source below is resolved to
+        // "does it want the pulse right now" HERE (this method already owns the state each source
+        // needs); the arbiter only ever picks between the results.
         Overlay.RefreshAnchor(
-            // U-T2 Wave B: Bryn's own spotlight (e.g. "the mark, read" pointing at the material
-            // dropdown) outranks the chain's own anchor while her banner is up — the player is
-            // mid-lesson, not mid-chain-step, so the pulse must follow HER, not the chain.
-            Forge.MentorSpotlight is { } mentorSpotlight ? mentorSpotlight
-            // U-T9-5: AnchorFor, not CurrentAnchor — a Station anchor points at the town building
-            // until the player is actually inside the venue, then hands off to the station. See its
-            // own doc for why the un-aimed version left steps 1/2/7 pulsing behind a wall.
-            // U-T9-6: the open-surface id, not the location id — a visible modal is where the
-            // player is looking, so an anchor pointing into it aims at the control instead of
-            // the way in. See CurrentOpenSurfaceId's own doc.
-            // U7 (§11.14.14): state, so AnchorFor can resolve a conditional row's own existence
-            // predicate fresh off the SAME live state this refresh already read — never a stale copy.
-            : Tutorial.Active ? Tutorial.AnchorFor(state, CurrentOpenSurfaceId())
-            : lossRow is not null ? TutorialAnchor.ForHud("OpenLegends")
-            : TutorialAnchor.None,
+            TutorialAnchorArbiter.Resolve(new TutorialAnchorArbiter.TutorialAnchorSources(
+                // U-T2 Wave B: Bryn's own spotlight (e.g. "the mark, read" pointing at the material
+                // dropdown) — non-null only while ForgePanel's own private banner is up.
+                ForgeSpotlight: Forge.MentorSpotlight,
+                // U10: the shared Mentor banner's own anchor — non-null only while IT is showing a
+                // line that declared one (MentorBanner.CurrentAnchor's own doc: cleared to null the
+                // instant the banner closes, so no separate Visible check is needed here).
+                MentorBannerAnchor: Mentor.CurrentAnchor,
+                // U-T9-5: AnchorFor, not CurrentAnchor — a Station anchor points at the town building
+                // until the player is actually inside the venue, then hands off to the station. See
+                // its own doc for why the un-aimed version left steps 1/2/7 pulsing behind a wall.
+                // U-T9-6: the open-surface id, not the location id — a visible modal is where the
+                // player is looking, so an anchor pointing into it aims at the control instead of
+                // the way in. See CurrentOpenSurfaceId's own doc.
+                // U7 (§11.14.14): state, so AnchorFor can resolve a conditional row's own existence
+                // predicate fresh off the SAME live state this refresh already read — never a stale copy.
+                ChainStep: Tutorial.Active ? Tutorial.AnchorFor(state, CurrentOpenSurfaceId()) : null,
+                LossRow: lossRow is not null ? TutorialAnchor.ForHud("OpenLegends") : null)),
             Town, Drawer, this);
         UpdateObjectiveDock(); // Refresh can change the reason line's line count — re-dock to it
     }
@@ -3317,6 +3326,11 @@ public partial class MainUi : Control
         Mentor = new MentorBanner();
         AddChild(Mentor);
         Mentor.Build();
+        // U10 (§11.14.14): mirrors Forge.MentorSpotlightChanged above — Mentor.CurrentAnchor is now
+        // one of TutorialAnchorArbiter's own competing sources (RefreshObjectiveLine), so a Show/
+        // Dismiss that changes it must force that arbiter to re-resolve immediately, not wait for
+        // whatever unrelated tick next calls RefreshObjectiveLine.
+        Mentor.Changed += RefreshObjectiveLine;
 
         // U-T2 Wave C: the two dilemma lessons that do not live in the Forge (pricing, hold-or-
         // sell) need the SAME live chain + shared banner Forge already got in Wave B — wired here,
