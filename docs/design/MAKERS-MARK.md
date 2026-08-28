@@ -5132,6 +5132,7 @@ changes when it is done. A regression pin now holds that.
 | U41 | The clock's own doc stops contradicting the clock | `sim/GameSim/Kernel/PhaseClock.cs` | — |
 | U42 | The off-camera marker stops landing on the objective card | `godot/scripts/ui/TutorialOverlay.cs`, `godot/scripts/ui/ObjectiveTracker.cs` | U15 |
 | U43 | The course can be photographed mid-step | `godot/tools/shot_harness.gd`, `godot/scripts/MainUi.cs` | — |
+| U44 | The craft lesson can never be skipped past | `godot/scripts/ui/TutorialFlow.cs` | — |
 
 ---
 
@@ -5651,6 +5652,24 @@ changes when it is done. A regression pin now holds that.
 - Test scenarios: the harness still refuses an unknown state name; the new state leaves the chain on
   the shelve step with the player at spawn and the camera unmoved.
 - Verification: the capture shows the live step and its off-camera target's marker.
+
+#### U44. The craft lesson can never be skipped past
+
+- Goal: the teaching for the verb that makes the marked thing always reaches the screen.
+- Requirements: R14, R16
+- Files: `godot/scripts/ui/TutorialFlow.cs`
+- Approach: found while U20 chose which row to hang room-exit copy on. `Craft`'s row advances on
+  **either** a buy or a craft — deliberate anti-stranding, so a player who crafts straight off the
+  starter kit without buying cannot stall. Its own doc block says so. What no doc says is the
+  consequence: on that path `Step` never becomes `Craft`, so **Craft's `TeachNote` never displays**.
+  A new player handed starting materials may well craft before buying anything, so this is not an edge
+  path, and the lesson lost is the one for the single verb the whole product rests on. Either let the
+  row become current for one refresh before advancing, or move the load-bearing sentence into the row
+  that is guaranteed to show. Do not remove the anti-stranding advance — it prevents a worse failure.
+- Test scenarios: a player who crafts off the starter kit without buying still sees Craft's teaching;
+  the anti-stranding advance still fires so the chain cannot stall; the normal buy-then-craft path is
+  unchanged; a test asserts every registry row's `TeachNote` is reachable on at least one real path.
+- Verification: the craft lesson appears on both the buy-first and craft-first paths.
 
 #### U41. The clock's own doc stops contradicting the clock
 
