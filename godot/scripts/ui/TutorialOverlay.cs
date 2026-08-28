@@ -241,21 +241,24 @@ public sealed partial class TutorialOverlay : Control
                 // onto MainUi, and they are exactly the surfaces the course's payoff happens on — the
                 // proof card, the rite, accept/decline, the vigil card. So this kind, built to point at
                 // a control inside a panel, could not reach a single one of them, and T9's beats all
-                // live there. Modals resolve through MainUi's own scoped lookup rather than a recursive
-                // search of the whole mounted tree, so the scoping this kind exists for still holds.
+                // live there.
                 // U8 (§11.14.14): TutorialAnchorKind.PanelSection falls into this exact same case —
                 // a section container resolves by the identical scoped-panel-then-FindChild lookup as
                 // any other named control (class doc's own new bullet explains why it is still a
                 // distinct Kind rather than a bare PanelControl alias).
-                var panelRoot = drawer.PanelContent(anchor.Key!)
-                    ?? (hudRoot as GodotClient.MainUi)?.ModalContent(anchor.Key!);
+                // U9 (§11.14.14): the drawer-then-modal OR-chain that used to live here was itself two
+                // hardcoded lists (DrawerHost's own registrations, MainUi.ModalContent's five-arm
+                // switch) that missed five real MainUi-mounted surfaces (Mirror/Bestiary/Chronicle/
+                // Pip/Docket). TutorialSurfaceRegistry is now the ONE roster both lists were replaced
+                // with — see its own class doc.
+                var panelRoot = TutorialSurfaceRegistry.ContentRootFor(anchor.Key!, drawer, hudRoot as GodotClient.MainUi);
                 if (panelRoot is null)
                 {
                     throw new InvalidOperationException(
-                        $"Tutorial {anchor.Kind} anchor names surface \"{anchor.Key}\", which is neither " +
-                        "a registered DrawerHost panel nor a known modal — a tutorial step must never " +
-                        "point at nothing (house rule). Fix the registry row in TutorialFlow.Registry, " +
-                        "or add the modal to MainUi.ModalContent.");
+                        $"Tutorial {anchor.Kind} anchor names surface \"{anchor.Key}\", which is not a " +
+                        "registered tutorial surface — a tutorial step must never point at nothing (house " +
+                        "rule). Fix the registry row in TutorialFlow.Registry, or add the surface to " +
+                        "TutorialSurfaceRegistry.Surfaces.");
                 }
 
                 _hudTarget = panelRoot.FindChild(anchor.ControlName!, recursive: true, owned: false) as Control;

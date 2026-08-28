@@ -1266,21 +1266,16 @@ public partial class MainUi : Control
     /// this value is threaded through.</para>
     /// </summary>
     /// <summary>
-    /// U-T9-6: the five modal surfaces a tutorial <c>PanelControl</c> anchor may point into, in the
-    /// same id vocabulary <c>DrawerHost.Register</c> uses for its ten. These are mounted directly on
-    /// this node rather than registered with the drawer, and every one of them hosts a beat the T9
-    /// course has to be able to point at. Returns null for an unknown id so <c>TutorialOverlay</c>
-    /// keeps throwing rather than silently pointing nowhere.
+    /// U-T9-6: the modal-ish surfaces a tutorial <c>PanelControl</c>/<c>PanelSection</c> anchor may
+    /// point into — mounted directly on this node rather than registered with the drawer. Originally
+    /// a five-arm switch (Ledger/Commissions/Legends/Camp/Forecast); U9 (§11.14.14) found it MISSED
+    /// five more real surfaces mounted the same way (Mirror/Bestiary/Chronicle/Pip/Docket), so it now
+    /// delegates to <see cref="TutorialSurfaceRegistry"/> — the one roster both this switch and
+    /// <see cref="PanelFor"/>'s own duplicate list were replaced with (see that class's own doc).
+    /// Returns null for an unknown id so <c>TutorialOverlay</c> keeps throwing rather than silently
+    /// pointing nowhere.
     /// </summary>
-    public Control? ModalContent(string id) => id switch
-    {
-        "Ledger" => Ledger,
-        "Commissions" => Commissions,
-        "Legends" => Legends,
-        "Camp" => Camp,
-        "Forecast" => Forecast,
-        _ => null,
-    };
+    public Control? ModalContent(string id) => TutorialSurfaceRegistry.ContentRootFor(id, Drawer, this);
 
     /// <summary>
     /// U-T9-6: where the player is, for anchor-aiming purposes — which is not the question
@@ -1303,7 +1298,11 @@ public partial class MainUi : Control
         return CurrentLocationPanelId();
     }
 
-    /// <summary>The ids <see cref="ModalContent"/> answers, kept beside it so the two cannot drift.</summary>
+    /// <summary>The subset of <see cref="ModalContent"/>'s now-wider answer set that counts as "the
+    /// player's current location" for the tutorial's own "you're at X" acknowledgement — narrower on
+    /// purpose (Mirror/Bestiary/Chronicle/Pip/Docket are not locations in that narrative sense), so
+    /// this stays its own short, hand-picked list rather than every id <see cref="ModalContent"/> can
+    /// now resolve.</summary>
     private static readonly string[] ModalAnchorSurfaces = ["Ledger", "Commissions", "Legends", "Camp", "Forecast"];
 
     private string? CurrentLocationPanelId() =>
@@ -3711,21 +3710,15 @@ public partial class MainUi : Control
         trigger == NarratorVoiceDirector.Trigger.DeathEpitaph ? Cue.DeathToll : null;
 
     /// <summary>The drawer-hosted panel registered under <paramref name="id"/> — "Town" is not a
-    /// drawer panel (the world is the permanent base, not routed through here).</summary>
-    private SimPanel PanelFor(string id) => id switch
-    {
-        "Forge" => Forge,
-        "Shop" => Shop,
-        "Heroes" => Heroes,
-        "Tavern" => Tavern,
-        "Depths" => Depths,
-        "Bounties" => Bounties,
-        "Demand" => Demand,
-        "HeroCards" => HeroCards,
-        "Progress" => Progress,
-        "Lessons" => Lessons,
-        _ => throw new ArgumentOutOfRangeException(nameof(id), id, "no such drawer panel"),
-    };
+    /// drawer panel (the world is the permanent base, not routed through here). U9 (§11.14.14): used
+    /// to hand-copy the drawer's own ten registered ids into a second switch, purely to narrow <see
+    /// cref="DrawerHost.PanelContent"/>'s <see cref="Control"/> down to the <see cref="SimPanel"/>
+    /// type this method's own callers need for <c>Refresh()</c>/<c>ForgePanel</c> casts — a duplicate
+    /// list that could (and did) drift from <see cref="DrawerHost.Register"/>'s real registrations.
+    /// Casts the drawer's own answer instead of re-declaring the list.</summary>
+    private SimPanel PanelFor(string id) =>
+        Drawer.PanelContent(id) as SimPanel
+        ?? throw new ArgumentOutOfRangeException(nameof(id), id, "no such drawer panel");
 
     /// <summary>
     /// UI-4 (menu-sizing/cozy redesign): the PRIMARY VERB button's Ember-filled surface — now
