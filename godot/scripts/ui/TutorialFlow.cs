@@ -145,8 +145,10 @@ public enum TutorialAnchorKind
 /// re-run, surfaced as the Scrying Mirror's ★ attribution beats — see <see
 /// cref="TutorialStep.LookIn"/>'s row), and it is the payoff the whole course exists to reach; it
 /// does not earn that by sharing a heading with the send-off. Splitting the act moves exactly one
-/// row (<see cref="TutorialStep.LookIn"/>, from Dark to Proof); nothing else about the registry
-/// changes, and act-scoped numbering (<see cref="TutorialFlow.ActPosition"/>) absorbs a fifth act
+/// row into it — <b>Proof ships with none</b>, and that is deliberate: the only moment that belongs
+/// to it is the day-4 counterfactual beat, which does not exist as a registry row yet (U30 adds it).
+/// Nothing else about the registry changes, and act-scoped numbering (<see
+/// cref="TutorialFlow.ActPosition"/>) absorbs a fifth act — and an empty one —
 /// without touching <see cref="TutorialFlow.TotalSteps"/> or any row's own <c>DisplayIndex</c> —
 /// see that method's own doc for why the position math needed no change at all to support this.</para>
 /// </summary>
@@ -607,12 +609,15 @@ public sealed partial class TutorialFlow : PanelContainer
             ],
             AdvancesTo: TutorialStep.LookIn),
         new(
-            // U21 (§11.14.14): Act moved from Dark to Proof. This is the row that opens the Scrying
-            // Mirror, which is where the ★ attribution beats live (ScryingMirror.OnShowProvenance,
-            // backed by AttributionEngine's counterfactual re-run) — link 4, "the game proves it
-            // mattered," not link 3's "carry it into the dark." DisplayIndex is unchanged (still 5,
-            // still the day-1 capstone); only which chapter heading the card prints for it moves.
-            Step: TutorialStep.LookIn, DisplayIndex: 5, Act: TutorialAct.Proof,
+            // U21 (§11.14.14): stays in Dark, deliberately. It was briefly moved to Proof on the
+            // reasoning that the Mirror is where attribution beats surface — true of the surface,
+            // false of this moment. LookIn is a day-1 step and the first attribution beat lands day 4
+            // on 12 of 12 measured seeds, so when this row is current there is provably nothing proved
+            // yet, and the heading would promise the player something the screen does not contain.
+            // Watching heroes descend IS link 3. Proof therefore ships as an act with no rows until
+            // the day-4 beat exists to fill it (U30) — an empty act is harmless here, because
+            // ActPosition groups totals from the rows the registry actually holds.
+            Step: TutorialStep.LookIn, DisplayIndex: 5, Act: TutorialAct.Dark,
             Anchor: TutorialAnchor.ForHud("WatchButton"), MinDay: 1,
             ShortLabel: "Press Watch to look in on them",
             TeachNote: "The Scrying Mirror shows the raid live, floor by floor, including which of your work "
