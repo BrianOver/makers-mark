@@ -1366,18 +1366,20 @@ public partial class MainUi : Control
     /// <summary>
     /// Whether <paramref name="surfaceId"/> should render/behave as OPEN right now — <see
     /// cref="SurfaceUnlocks.IsOpen"/>'s own verdict, OR an override while the tutorial is actively
-    /// pointing its OWN Hud anchor at this exact surface's tray button. This is the pin U3 must
-    /// never violate: two Hud anchors in <see cref="TutorialFlow.Registry"/> name a gated tray
-    /// button by its Godot control name ("OpenHeroCards" for MeetHeroes, "OpenCommissions" for
-    /// Commission), and neither gate is guaranteed true by the day the tutorial reaches those
-    /// steps — a player can legally reach day 3 having sold nothing and having no commission
-    /// posted. A gate that hid the very button the tutorial told the player to press would strand
-    /// them there forever, since pressing it is the ONLY way <see
-    /// cref="TutorialFlow.NotifyPanelOpened"/> ever fires for those two steps.
+    /// pointing its OWN anchor INTO this exact gated surface (<see
+    /// cref="SurfaceUnlocks.ForcedOpenByAnchor"/> — U13 generalized this past the two Hud-anchored
+    /// rows that happened to exist when this override was first written; see that method's own doc
+    /// for both naming conventions it now recognizes). This is the pin U3 must never violate:
+    /// neither HeroCards' own gate (first sale to a hero) nor Commissions' (first commission
+    /// posted) is guaranteed true by the day the tutorial reaches those two steps — a player can
+    /// legally reach day 3 having sold nothing and having no commission posted. A gate that hid the
+    /// very button the tutorial told the player to press would strand them there forever, since
+    /// pressing it is the ONLY way <see cref="TutorialFlow.NotifyPanelOpened"/> ever fires for
+    /// those two steps.
     /// </summary>
     private bool SurfaceEffectivelyOpen(GameState state, string surfaceId) =>
         SurfaceUnlocks.IsOpen(state, surfaceId)
-        || (Tutorial.Active && Tutorial.CurrentAnchor == TutorialAnchor.ForHud($"Open{surfaceId}"));
+        || (Tutorial.Active && SurfaceUnlocks.ForcedOpenByAnchor(Tutorial.CurrentAnchor, surfaceId));
 
     /// <summary>Re-grey (or un-grey) every gated tray button from live state, and fire a one-line
     /// town-voiced arrival toast the FIRST tick a surface reads open (never on the seeding tick —
