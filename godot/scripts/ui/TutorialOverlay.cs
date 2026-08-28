@@ -30,6 +30,12 @@ namespace GodotClient.Ui;
 /// drawer panel (<see cref="DrawerHost.PanelContent"/>) rather than searching the whole mounted UI —
 /// two different panels reusing a control name can never resolve to the wrong one this way, the gap
 /// a plain Hud lookup would have left open.</item>
+/// <item>U8 (§11.14.14): a <see cref="TutorialAnchorKind.PanelSection"/> anchor resolves through the
+/// EXACT SAME scoped lookup as <see cref="TutorialAnchorKind.PanelControl"/> — a section container
+/// is a <see cref="Control"/> by name like any other — and draws the identical outline once found.
+/// The two share one <c>case</c> below for exactly that reason; see <see
+/// cref="TutorialAnchorKind.PanelSection"/>'s own doc for why it is still a distinct Kind rather
+/// than a bare alias.</item>
 /// </list>
 ///
 /// <para><b>Never a dead click, never a silent fallback</b> (house rule). <see cref="RefreshAnchor"/>
@@ -170,6 +176,7 @@ public sealed partial class TutorialOverlay : Control
                 break;
 
             case TutorialAnchorKind.PanelControl:
+            case TutorialAnchorKind.PanelSection:
                 // U-T2-6: resolved SCOPED to the named panel's own registered content root, never
                 // against the whole mounted UI — this is the whole reason this kind exists over
                 // reusing Hud (class doc). Reuses _hudTarget for the actual outline: a panel control
@@ -185,12 +192,16 @@ public sealed partial class TutorialOverlay : Control
                 // a control inside a panel, could not reach a single one of them, and T9's beats all
                 // live there. Modals resolve through MainUi's own scoped lookup rather than a recursive
                 // search of the whole mounted tree, so the scoping this kind exists for still holds.
+                // U8 (§11.14.14): TutorialAnchorKind.PanelSection falls into this exact same case —
+                // a section container resolves by the identical scoped-panel-then-FindChild lookup as
+                // any other named control (class doc's own new bullet explains why it is still a
+                // distinct Kind rather than a bare PanelControl alias).
                 var panelRoot = drawer.PanelContent(anchor.Key!)
                     ?? (hudRoot as GodotClient.MainUi)?.ModalContent(anchor.Key!);
                 if (panelRoot is null)
                 {
                     throw new InvalidOperationException(
-                        $"Tutorial PanelControl anchor names surface \"{anchor.Key}\", which is neither " +
+                        $"Tutorial {anchor.Kind} anchor names surface \"{anchor.Key}\", which is neither " +
                         "a registered DrawerHost panel nor a known modal — a tutorial step must never " +
                         "point at nothing (house rule). Fix the registry row in TutorialFlow.Registry, " +
                         "or add the modal to MainUi.ModalContent.");
@@ -200,7 +211,7 @@ public sealed partial class TutorialOverlay : Control
                 if (_hudTarget is null)
                 {
                     throw new InvalidOperationException(
-                        $"Tutorial PanelControl anchor \"{anchor.Key}/{anchor.ControlName}\" does not resolve " +
+                        $"Tutorial {anchor.Kind} anchor \"{anchor.Key}/{anchor.ControlName}\" does not resolve " +
                         "to a Control inside that panel — a tutorial step must never point at nothing (house " +
                         "rule). Fix the registry row in TutorialFlow.Registry or the control's own Name.");
                 }

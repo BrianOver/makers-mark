@@ -2045,7 +2045,10 @@ public partial class ForgePanel : SimPanel
         modRow.AddChild(ModifierSelectGroup(_fitSelect, GameSim.Contracts.ModifierFamily.Fitting));
 
         var vendorSection = Section("Morning Vendor");
-        vendorSection.Root.Name = "VendorSection"; // U3: distinguishes it from every other Section-built root (all named "Section" otherwise) for FocusSection/test/diagnostic lookup
+        // U3: a short, hand-picked name for FocusSection/test/diagnostic lookup, kept even though U8
+        // (§11.14.14) made UiKit.Section itself derive a title-based name ("MorningVendorSection")
+        // automatically — this override just wins afterward; nothing here depends on which one wins.
+        vendorSection.Root.Name = "VendorSection";
         _materialsViewRoot.AddChild(vendorSection.Root);
         _vendorSectionRoot = vendorSection.Root; // U3: FocusSection("materials") scroll/flash target
         _vendorRows = new VBoxContainer { Name = "VendorRows" };
