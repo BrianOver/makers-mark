@@ -884,7 +884,19 @@ public partial class MainUi : Control
                 // OnLedgerVisibilityChanged's forecast chain) never re-asks for it. §11.13 amendment
                 // (U6): ConsumeFirstLossBlock rides the SAME automatic-reveal-only wiring — it
                 // returns non-null exactly once, on the night of the campaign's first HeroDied.
-                Ledger.ShowFor(_pendingLedgerDay, Tutorial.ConsumeLedgerTip(), Tutorial.ConsumeFirstLossBlock(Adapter.CurrentState));
+                var lossBlock = Tutorial.ConsumeFirstLossBlock(Adapter.CurrentState);
+                Ledger.ShowFor(_pendingLedgerDay, Tutorial.ConsumeLedgerTip(), lossBlock);
+
+                // U31 (§11.14.14): Bryn's own voice for the loss act — fires the SAME tick
+                // ConsumeFirstLossBlock actually commits (never re-asked independently, since her
+                // line is the same once-ever fact, just a second surface for it), anchored at the
+                // Legends tray the same way TutorialAnchorArbiter's own LossRow source already is.
+                if (lossBlock is not null && Tutorial.LossVoiceLine(Adapter.CurrentState) is { } lossVoice)
+                {
+                    Mentor.Show(
+                        MentorVoice.Speak(lossVoice), rank: MentorVoiceRank.Act,
+                        anchor: TutorialAnchor.ForHud("OpenLegends"));
+                }
 
                 // U30 (§11.14.14): the Proof act's own dormant voice — rides the SAME automatic-
                 // reveal-only wiring as ConsumeLedgerTip/ConsumeFirstLossBlock just above (all three
