@@ -125,6 +125,20 @@ public partial class NewGameSelect : Control
     private string? _pendingProfessionId;
     private ulong _pendingSeed;
 
+    // U17 (§11.14.14 defect): the returning-smith choice — see Ui.TutorialFlow.ResetForReturningSmith's
+    // own doc for the defect this closes. Only ever shown when Ui.TutorialFlow.HasPriorProgress says
+    // there is something to skip (a true first-timer has nothing taught yet, so the question would be
+    // meaningless noise on their very first screen).
+    private VBoxContainer _returningSmithChoice = null!;
+    private Button _runCourseButton = null!;
+    private Button _skipCourseButton = null!;
+    private Label _returningSmithNote = null!;
+
+    /// <summary>The live pick — false (run the course) by default every time the primer mounts, so a
+    /// player who never touches the toggle gets the exact <see cref="Ui.TutorialFlow.ResetForNewGame"/>
+    /// behavior this unit did not change.</summary>
+    private bool _skipTutorialCourse;
+
     public override void _Ready()
     {
         // P007-style cascade (mirrors MainUi._Ready): assign the shared Theme BEFORE building
@@ -567,6 +581,12 @@ public partial class NewGameSelect : Control
         _seedLabel.AddThemeColorOverride("font_color", GameTheme.TextDim);
         primer.AddChild(_seedLabel);
 
+        // U17 (§11.14.14 defect): the returning-smith choice. Built once, hidden until
+        // OnProfessionPicked re-checks Ui.TutorialFlow.HasPriorProgress against the live save.
+        _returningSmithChoice = BuildReturningSmithChoice();
+        _returningSmithChoice.Visible = false;
+        primer.AddChild(_returningSmithChoice);
+
         var actions = new HBoxContainer { Name = "PrimerActions" };
         actions.AddThemeConstantOverride("separation", GameTheme.Space12);
         primer.AddChild(actions);
@@ -599,11 +619,88 @@ public partial class NewGameSelect : Control
         return primer;
     }
 
+    /// <summary>
+    /// U17 (§11.14.14 defect): "run the course, or skip it and keep the Lessons book only" — the
+    /// returning-smith choice. No <see cref="ButtonGroup"/> anywhere in this project (<c>ForgePanel</c>'s
+    /// own remark: zero uses, measured) — two <see cref="BaseButton.ToggleMode"/> buttons with
+    /// exclusivity kept by hand via <see cref="SetReturningSmithChoice"/>, the house idiom
+    /// (<c>ForgePanel</c>'s own tab row, <c>ScryingMirror</c>'s party tabs).
+    /// </summary>
+    private VBoxContainer BuildReturningSmithChoice()
+    {
+        var section = new VBoxContainer { Name = "ReturningSmithChoice" };
+        section.AddThemeConstantOverride("separation", GameTheme.Space4);
+
+        var header = new Label
+        {
+            Name = "ReturningSmithHeader",
+            Text = "You've kept a shop before.",
+            AutowrapMode = TextServer.AutowrapMode.WordSmart,
+        };
+        section.AddChild(header);
+
+        var row = new HBoxContainer { Name = "ReturningSmithRow" };
+        row.AddThemeConstantOverride("separation", GameTheme.Space12);
+        section.AddChild(row);
+
+        _runCourseButton = new Button
+        {
+            Name = "RunCourse",
+            Text = "Run the course",
+            ToggleMode = true,
+            SizeFlagsHorizontal = SizeFlags.ExpandFill,
+        };
+        _runCourseButton.Pressed += () => SetReturningSmithChoice(skip: false);
+        row.AddChild(_runCourseButton);
+
+        _skipCourseButton = new Button
+        {
+            Name = "SkipCourse",
+            Text = "Skip it — Lessons book only",
+            ToggleMode = true,
+            SizeFlagsHorizontal = SizeFlags.ExpandFill,
+        };
+        _skipCourseButton.Pressed += () => SetReturningSmithChoice(skip: true);
+        row.AddChild(_skipCourseButton);
+
+        _returningSmithNote = new Label { Name = "ReturningSmithNote", AutowrapMode = TextServer.AutowrapMode.WordSmart };
+        _returningSmithNote.AddThemeColorOverride("font_color", GameTheme.TextDim);
+        section.AddChild(_returningSmithNote);
+
+        return section;
+    }
+
+    /// <summary>Law 7 ("skipping stays legal and its cost is named in copy, never engineered"), read
+    /// the HONEST direction: unlike <see cref="Ui.TutorialFlow.DismissConfirmCopy"/> (a first-timer
+    /// FORFEITING the apprenticeship warrant mid-chain), this path never touches the warrant at all —
+    /// so the copy names what the returning smith KEEPS, not a cost they are about to pay.</summary>
+    private const string RunCourseNote =
+        "Runs the three-day apprenticeship course again, exactly like a first campaign.";
+
+    private const string SkipCourseNote =
+        "No numbered course this time — what you already learned stays in the Lessons book, and "
+        + "nothing you've already been taught fires twice. The warrant still stands: through day 3, "
+        + "the Mine doesn't keep anyone.";
+
+    private void SetReturningSmithChoice(bool skip)
+    {
+        _skipTutorialCourse = skip;
+        _runCourseButton.ButtonPressed = !skip;
+        _skipCourseButton.ButtonPressed = skip;
+        _returningSmithNote.Text = skip ? SkipCourseNote : RunCourseNote;
+    }
+
     private void OnProfessionPicked(string professionId)
     {
         _pendingProfessionId = professionId;
         _pendingSeed = SeedSource(); // drawn once here; Begin reuses it (display == what ships)
         _seedLabel.Text = $"Seed: {_pendingSeed}";
+
+        // U17: re-armed every time the primer mounts fresh — HasPriorProgress is re-checked against
+        // the LIVE save (never cached from a previous pick), and the choice itself always resets to
+        // "run the course" so a Back-then-pick-again never carries a stale Skip selection forward.
+        _returningSmithChoice.Visible = Ui.TutorialFlow.HasPriorProgress;
+        SetReturningSmithChoice(skip: false);
 
         // Defensive (see class doc's FullPlaytest note): a caller that bypasses "New Game" and
         // presses Pick_* directly must still land in a single coherent view, not primer-over-
@@ -637,13 +734,25 @@ public partial class NewGameSelect : Control
         // abandoned, which reads as the new game having silently failed to start.
         CampaignSave.Clear();
 
-        // Root-cause fix (owner playtest: "The tutorial is missing?"): TutorialFlow persists its
-        // own Completed/Dismissed/Step at a SEPARATE user:// file that outlives the sim save above
-        // — MainUi.BuildUi loads it unconditionally on every mount, so a tutorial finished or
-        // dismissed on any earlier campaign silently suppressed the whole chain (Active=false, no
-        // on-screen sign why) on every New Game after it. A brand-new campaign must start with a
-        // brand-new tutorial, exactly like it starts with a brand-new sim save.
-        Ui.TutorialFlow.ResetForNewGame();
+        // U17 (§11.14.14 defect): the returning-smith choice. Re-checked against the LIVE
+        // HasPriorProgress here, not just trusted from the toggle state — the same defensive
+        // footing as the null-guard above: a caller that bypasses the picker and fires a hidden
+        // control directly (class doc's FullPlaytest note) must never be able to hand a genuine
+        // first-timer the returning-smith reset.
+        if (_skipTutorialCourse && Ui.TutorialFlow.HasPriorProgress)
+        {
+            Ui.TutorialFlow.ResetForReturningSmith();
+        }
+        else
+        {
+            // Root-cause fix (owner playtest: "The tutorial is missing?"): TutorialFlow persists its
+            // own Completed/Dismissed/Step at a SEPARATE user:// file that outlives the sim save above
+            // — MainUi.BuildUi loads it unconditionally on every mount, so a tutorial finished or
+            // dismissed on any earlier campaign silently suppressed the whole chain (Active=false, no
+            // on-screen sign why) on every New Game after it. A brand-new campaign must start with a
+            // brand-new tutorial, exactly like it starts with a brand-new sim save.
+            Ui.TutorialFlow.ResetForNewGame();
+        }
 
         var state = GameComposition.NewCampaign(_pendingSeed, _pendingProfessionId);
         MainUi.AdapterOverride = new SimAdapter(state);
