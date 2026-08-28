@@ -189,10 +189,16 @@ public class InteractPromptTests
                 .IsNotNull();
 
             // Interior stations are built off-frame at Town.Build() time (KTD-1: "a far-off region
-            // ... off every town camera frame") — teleport the player onto the real station and let
-            // the real proximity scan pick it up, rather than racing a manual SetTarget against the
-            // very next _PhysicsProcess overlap scan (which would just overwrite it back to null,
-            // since the player is nowhere near the ledger physically).
+            // ... off every town camera frame"), so the player must actually BE in the room before
+            // its proximity scan does anything — teleporting a player into an interior they never
+            // entered leaves the scan inert. That is precisely why this test's own setup check
+            // failed in CI while its three siblings passed: the forge is a building at spawn, the
+            // ledger is an interior station. EnterInterior is the shipped path a real player takes
+            // (AgentPlaytestBridgeTests precedent), so drive that first, then teleport onto the
+            // station and let the real scan pick it up rather than racing a manual SetTarget
+            // against the next _PhysicsProcess overlap pass.
+            ui.Town.EnterInterior("market");
+            await PumpWorldFrames(ui, 4);
             ui.Town.Player.GlobalPosition = ledger.GlobalPosition;
             await PumpWorldFrames(ui, 6);
             await SettleLayout(ui); // let MainUi._Process pick up the new PromptText
