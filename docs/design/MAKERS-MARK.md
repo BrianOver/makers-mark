@@ -5708,6 +5708,15 @@ the goodwill". It is on the multi-agent deny list, so no session may edit it —
 you change it by hand, the repo's most-read file contradicts §3.5, and rule 8 says a doc git contradicts is
 an instruction the next session obeys.
 
+OQ6. **The Bestiary is unreachable, and a comment in shipped code says otherwise.** Found while
+building U9's surface roster. `BestiaryPanel` is constructed and mounted, `MainUi`'s hotspot router
+handles `"Bestiary"` live, and `MainUi`'s own doc comment says the panel is "opened from the Tavern's
+'Bestiary' hotspot" — but `InteriorLayout2D` declares no station carrying that action, and has not
+since the 2.5D pivot. A player cannot open it by any means. Two honest doors: give the Tavern the
+station its comment already claims, or delete the panel. Until then the roster declares its way in as
+an honest `null`, pinned to an exact four-item list so a fifth unreachable surface fails the build.
+*Deferred — a design call, not a tutorial defect, but the lying comment should die either way.*
+
 OQ5. **The third plan slot.** This program lands here because rule 6 caps `docs/plans/` at two and both
 slots hold live work — the balance baseline plan has five of seven units unshipped and the honesty-riders
 plan all four. *Deferred — if this program should own a slot instead, one of those two finishes or is dropped first.*
