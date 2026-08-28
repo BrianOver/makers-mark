@@ -42,6 +42,10 @@ public class ReturningSmithTests
     private static void UnmountNewGameSelect(NewGameSelect screen)
     {
         MainUi.AdapterOverride = null; // never leak a picked campaign into a later suite
+        // U16: defensive, same reasoning as NewGameSelectTests' own Unmount — every test in THIS
+        // file happens to consume it via MountMainUi right after Begin, but a leak guard should not
+        // depend on that staying true forever.
+        MainUi.FirstMorningBeatPending = false;
         screen.GetParent()?.RemoveChild(screen);
         screen.Free();
     }
@@ -90,7 +94,12 @@ public class ReturningSmithTests
                 AssertThat(ui.Tutorial.Dismissed).IsFalse();
                 AssertThat(ui.Tutorial.Active).IsTrue();
                 AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.BuyMaterial);
-                AssertThat(ui.Tutorial.FirstTouch.Fired.Count).IsEqual(0);
+                // U16: a real Begin press now fires exactly one thing unconditionally — Bryn's
+                // cold-open beat (see TutorialFlow.FirstMorningBeatText's own doc) — before this
+                // assertion even runs, so "unaffected by U17's own mechanism" is now pinned as
+                // "exactly the cold-open and nothing else", not "nothing at all".
+                AssertThat(ui.Tutorial.FirstTouch.Fired.Count).IsEqual(1);
+                AssertThat(ui.Tutorial.FirstTouch.HasFired(TutorialFlow.FirstMorningBeatId)).IsTrue();
             }
             finally
             {

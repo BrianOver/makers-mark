@@ -1,4 +1,5 @@
 #if GDUNIT_TESTS
+using System;
 using System.Linq;
 using GdUnit4;
 using GodotClient.Panels;
@@ -119,6 +120,11 @@ public class MentorVoiceTests
         MentorVoice.GreetingLine,
         MentorVoice.RestingLine,
 
+        // TutorialFlow.cs — U16 (§11.14.14): the first-morning cold-open beat. A symbol reference,
+        // not a copy, like the two lines immediately above (both already named constants) — unlike
+        // most of this corpus, there was never a reason to inline this one at its own call site.
+        TutorialFlow.FirstMorningBeatText,
+
         // MainUi.cs
         "That flash is the proof: the town just replayed this fight with your craft taken back "
         + "out of it, and found it would have gone differently. Only something you actually "
@@ -236,6 +242,61 @@ public class MentorVoiceTests
     {
         AssertThat(MentorVoice.Label.Contains(MentorVoice.Name)).IsTrue();
         AssertThat(MentorVoice.HoverLine.Contains(MentorVoice.Name)).IsTrue();
+    }
+
+    /// <summary>
+    /// U16 (§11.14.14, "the first thing any player ever reads"): the cold-open beat's own three
+    /// facts, pinned by content — not just "this text exists somewhere," but that a reader is
+    /// actually told (1) they ARE the smith, (2) they never go down into the Mine, and (3) no hero
+    /// here ever takes an order from them (law 1). Each assertion quotes the exact clause that
+    /// carries the fact, so a future rewording that drops one silently is the thing this test is
+    /// FOR catching, not a false alarm to work around.
+    /// </summary>
+    [TestCase]
+    public void FirstMorningBeatText_NamesAllThreeFacts()
+    {
+        var text = TutorialFlow.FirstMorningBeatText;
+
+        AssertThat(text.Contains("You're the smith now"))
+            .OverrideFailureMessage("The beat never states plainly that the player IS the smith.")
+            .IsTrue();
+        AssertThat(text.Contains("You don't") && text.Contains("go down into the Mine"))
+            .OverrideFailureMessage("The beat never states that the player never descends into the Mine.")
+            .IsTrue();
+        AssertThat(text.Contains("Nobody in this town takes an order from you"))
+            .OverrideFailureMessage("The beat never states law 1 — that no hero here takes an order from the player.")
+            .IsTrue();
+    }
+
+    /// <summary>
+    /// U16: the register check (<see cref="HerOwnAuthoredLines_NeverReadAsACommand"/>) is narrow BY
+    /// CONSTRUCTION — an ending "!" and the literal substring " must " — so it would wave through a
+    /// real second-person imperative that uses neither ("Stamp your gear before the day ends.",
+    /// "Go tell the hero yourself."). This test does not widen that check (a general imperative-mood
+    /// detector is a much bigger, separate unit); it instead hand-verifies THIS beat's specific text
+    /// against the gap the checked-in check cannot see, so the narrowness is a documented, verified
+    /// fact about this line rather than an unstated assumption. Every clause here names what already
+    /// IS, never what the player should do next.
+    /// </summary>
+    [TestCase]
+    public void FirstMorningBeatText_NeverReadsAsAnImperative_BeyondWhatTheRegisterCheckCatches()
+    {
+        var text = TutorialFlow.FirstMorningBeatText;
+
+        // A crude but effective second pass: split on sentence-ending punctuation and reject any
+        // sentence that OPENS on a bare second-person verb ("Stamp...", "Go...", "Make...") — the
+        // shape a real imperative takes that "!" / " must " alone would miss.
+        string[] imperativeOpeners = { "Stamp ", "Go ", "Make ", "Sell ", "Price ", "Put ", "Choose ", "Carry " };
+        foreach (var sentence in text.Replace("\n\n", " ").Split('.', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var trimmed = sentence.TrimStart();
+            foreach (var opener in imperativeOpeners)
+            {
+                AssertThat(trimmed.StartsWith(opener))
+                    .OverrideFailureMessage($"\"{trimmed.Trim()}\" opens on a bare imperative verb (\"{opener.Trim()}\") — reads as an order.")
+                    .IsFalse();
+            }
+        }
     }
 }
 #endif

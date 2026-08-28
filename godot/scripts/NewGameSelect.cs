@@ -754,6 +754,16 @@ public partial class NewGameSelect : Control
             Ui.TutorialFlow.ResetForNewGame();
         }
 
+        // U16 (§11.14.14, "the first thing any player ever reads"): tell the next MainUi mount to
+        // open with Bryn's cold-open beat already showing — see MainUi.FirstMorningBeatPending's
+        // own doc for the full contract. Set on BOTH branches above (run the course, or skip it as
+        // a returning smith): the beat states the game's own premise, not a numbered mechanical
+        // step, so a returning smith who opted out of the course is not exempt from it — only the
+        // ordinary once-ever guard (ConsumeFirstTouch) decides whether they actually see it again.
+        // Never set from OnContinuePressed: a resumed campaign relies on its own persisted
+        // FirstTouch/PendingMentorLines state, never on this one-shot new-game signal.
+        MainUi.FirstMorningBeatPending = true;
+
         var state = GameComposition.NewCampaign(_pendingSeed, _pendingProfessionId);
         MainUi.AdapterOverride = new SimAdapter(state);
 

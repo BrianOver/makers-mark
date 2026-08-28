@@ -2060,6 +2060,75 @@ public sealed partial class TutorialFlow : PanelContainer
         return "This is the day's story — read who came home, what they found, and what it cost.";
     }
 
+    // ── U16 (§11.14.14, "the first thing any player ever reads"): the first-morning cold open ──
+    //
+    // The gap this closes: nothing on the front door (NewGameSelect's primer) or in the numbered
+    // course ever states law 1 ("influence never orders") or its two companion facts — the player
+    // IS the smith, and the player never descends. A player who tries to command a hero learns the
+    // rule only by its absence. This is the negative half the primer's own FantasyNote deliberately
+    // does not carry (that line says what the player's work is FOR; this says what the player is
+    // NOT), spoken once, before the numbered chain's first card (BuyMaterial) is the only thing on
+    // screen.
+
+    /// <summary>
+    /// The once-ever id this beat fires under — routed through the SAME <see
+    /// cref="ConsumeFirstTouch"/> engine every other lesson uses, never a bespoke persisted bool.
+    /// That reuse is what gives this beat, for free, everything a hand-rolled flag would have to
+    /// earn separately: a reload mid-display restores it (<see cref="PendingMentorLines"/>'s own
+    /// pipeline), dismissing it persists immediately, and it can never fire twice for the same
+    /// campaign — the exact three properties this unit's tests pin.
+    /// </summary>
+    public const string FirstMorningBeatId = "first-morning";
+
+    /// <summary>
+    /// Bryn's cold open (U16). <see cref="MainUi.BuildUi"/> fires this — via <see
+    /// cref="ConsumeFirstTouch"/> then <see cref="MentorBanner.ShowFirstTouch"/> — only when <see
+    /// cref="MainUi.FirstMorningBeatPending"/> is true, which <see cref="NewGameSelect.OnBeginPressed"/>
+    /// sets on EVERY "Begin" press (both the ordinary and the returning-smith branch — see this
+    /// field's own remark below for why neither is exempt) and never on Continue. A bare test mount
+    /// that never goes through that front door leaves the flag unset and never sees this beat at
+    /// all — deliberate: this is the one place in the whole first-touch corpus where WHEN a lesson
+    /// is even eligible to fire is gated by something other than "reachable," because nothing about
+    /// live <see cref="GameSim.Contracts.GameState"/> distinguishes a freshly-Begun campaign from a
+    /// test harness's own bare fresh mount (both are Day 1, Morning, Step <see
+    /// cref="TutorialStep.BuyMaterial"/>, empty <see cref="FirstTouch"/>) — only the front door
+    /// itself knows which one just happened.
+    ///
+    /// <para><b>States the negative half only (constraint: never restate the primer's premise
+    /// line).</b> Names the three facts a new player is most likely to get wrong about this game:
+    /// they ARE the smith (first line), they never go down into the Mine themselves (second
+    /// paragraph's first sentence), and no hero here ever takes an order from them (second
+    /// paragraph's last sentence) — law 1, stated plainly, before it can be violated by a player's
+    /// own false assumption.</para>
+    ///
+    /// <para><b>She never orders, describing throughout.</b> Every sentence names what already is,
+    /// never what the player should do next — <see
+    /// cref="MentorVoiceTests.HerOwnAuthoredLines_NeverReadAsACommand"/> pins this line alongside
+    /// her whole corpus (no "!", no " must "). That check is narrow by construction (an ending
+    /// punctuation mark and one substring) — it would not catch a real second-person imperative
+    /// with neither ("Stamp your gear before the day ends"), so this text was hand-checked against
+    /// that gap too: every sentence is declarative ("You're the smith now," "Nobody... takes an
+    /// order from you"), never an instruction.</para>
+    ///
+    /// <para><b>Independent of <see cref="Active"/>/<see cref="Dismissed"/></b> — same precedent as
+    /// <see cref="ConsumeLedgerTip"/>/<see cref="ConsumeFirstTouch"/>'s own "the long tail's own
+    /// lessons matter to every campaign" doc. A returning smith who chose Skip is declining ten
+    /// numbered mechanical steps, not asking never to have heard the game's own premise stated once
+    /// — so this fires for them too, UNLESS <see cref="ResetForReturningSmith"/> already carried
+    /// this exact id forward from an earlier campaign that showed it (its own "fired ids survive,
+    /// everything else about the old campaign does not" contract). A veteran who has genuinely never
+    /// seen it (a save written before this unit existed) hears it exactly once, same as anyone
+    /// else — never re-taught, never withheld from someone who is owed it.</para>
+    /// </summary>
+    public const string FirstMorningBeatText =
+        "Bryn. I kept this bench for the smith before you — good hands, and not one piece anyone "
+        + "remembers whose they were. You're the smith now.\n\n"
+        + "Six of them go down into the Mine. You don't — the ladder isn't yours, and neither is "
+        + "the fight down there. What's yours is what they carry, and only they decide whether to "
+        + "carry it. You can make it, price it, put it where they'll see it. Then they choose, "
+        + "every time. Nobody in this town takes an order from you — not them, not me.\n\n"
+        + "You'll stamp everything you make. I'd like to see what that turns into.";
+
     // ── U29 (§11.14.14, R21/R22): the two-act-voice-per-night budget ────────────────────────────
     //
     // The measurement that forced this section to exist: a pure-sim census (sim/GameSim.Tests/
