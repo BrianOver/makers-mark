@@ -186,10 +186,26 @@ public static class UiKit
     /// default (Stop) — see <see cref="Card"/>'s own remarks for why: this exact root swallowing
     /// wheel-scroll meant for an ancestor <see cref="ScrollContainer"/> is the confirmed root
     /// cause fixed alongside it.</para>
+    ///
+    /// <para>U8 (§11.14.14, container/section tutorial anchors): <see cref="SectionView.Root"/>'s
+    /// own <see cref="Node.Name"/> is now derived from <paramref name="title"/> (<see
+    /// cref="SectionName"/>), not the one literal "Section" every section used to share. Before
+    /// this unit every <see cref="Section"/>-built root in a panel answered to the SAME name —
+    /// harmless for a panel with exactly one section, but <see cref="Panels.ShopPanel"/> alone
+    /// composes four ("Who Would Buy This", "Your Shelf", "Unshelved Crafts", "Rival Shelf") in
+    /// the same scroll, so <c>FindChild("Section", recursive: true)</c> could only ever reach
+    /// whichever one happens to sit first in tree order. <c>ForgePanel.BuildUi</c>'s own
+    /// "Morning Vendor" section already worked around this by hand-patching
+    /// <c>vendorSection.Root.Name = "VendorSection"</c> straight after the call — a fix a caller
+    /// has to remember to apply, and every OTHER section in that same panel still did not. Baking
+    /// the derivation into this one factory turns "give this section a stable name" from an
+    /// opt-in a caller can forget into a contract every section gets whether the caller asked or
+    /// not — the substrate <see cref="TutorialAnchorKind.PanelSection"/> anchors (<see
+    /// cref="TutorialFlow"/>) point at.</para>
     /// </summary>
     public static SectionView Section(string title)
     {
-        var root = new PanelContainer { Name = "Section", MouseFilter = Control.MouseFilterEnum.Ignore };
+        var root = new PanelContainer { Name = SectionName(title), MouseFilter = Control.MouseFilterEnum.Ignore };
         var body = new VBoxContainer { Name = "SectionBody" };
         root.AddChild(body);
 
@@ -202,6 +218,39 @@ public static class UiKit
         body.AddChild(header);
 
         return new SectionView(root, body);
+    }
+
+    /// <summary>
+    /// U8 (§11.14.14): the naming CONVENTION <see cref="Section"/>'s own root commits to — every
+    /// word character of <paramref name="title"/> Title-Cased and concatenated, punctuation and
+    /// whitespace dropped, "Section" appended ("Unshelved Crafts" -&gt; "UnshelvedCraftsSection").
+    /// Pure and static so a registry row's own hardcoded expectation (<see
+    /// cref="TutorialAnchor.ForPanelSection"/>) and this method can independently drift apart —
+    /// the whole point (this unit's own conformance test): if a section's <paramref name="title"/>
+    /// changes, or the constant string a registry row names never gets updated to match, the
+    /// mismatch is a live resolution failure, never a silent rename. A registry row is expected to
+    /// spell the string literally rather than call this method itself, the same "pinned twice"
+    /// discipline <see cref="TutorialFlow"/>'s own registry/test pairs already use elsewhere —
+    /// coupling the row to this method would let a title rename silently drag the row's own
+    /// expectation along with it, defeating the one property a naming CONVENTION exists to buy.
+    /// </summary>
+    public static string SectionName(string title)
+    {
+        var name = new System.Text.StringBuilder(title.Length + 7);
+        var startOfWord = true;
+        foreach (var ch in title)
+        {
+            if (!char.IsLetterOrDigit(ch))
+            {
+                startOfWord = true;
+                continue;
+            }
+
+            name.Append(startOfWord ? char.ToUpperInvariant(ch) : ch);
+            startOfWord = false;
+        }
+
+        return name.Append("Section").ToString();
     }
 
     /// <summary>A small themed pill: <paramref name="label"/> plus a <paramref name="value"/>

@@ -123,9 +123,21 @@ public partial class LegendsWall : Control
     private void RenderMemorials(GameState state)
     {
         AddHeader(_body!, "THE FALLEN");
+
+        // U8 (§11.14.14, container/section tutorial anchors): the fallen list gets its own named
+        // container — before this unit every row here (and every Reforge row
+        // RenderReforgeOptions adds beneath it) was a direct, anonymous child of the wall's ONE
+        // shared _body, indistinguishable by Name from the Depths Records or Legendary Gear rows
+        // sitting elsewhere in the same scroll. A tutorial step meaning "the fallen section" (<see
+        // cref="Ui.TutorialAnchorKind.PanelSection"/>) needs a stable Control to resolve, and none
+        // existed to find. This container is that stable target — present, with its own Name,
+        // whether the wall shows zero fallen heroes (the empty-state label below) or many.
+        var fallenSection = new VBoxContainer { Name = "FallenSection" };
+        _body!.AddChild(fallenSection);
+
         if (state.Drama.Memorials.IsEmpty)
         {
-            AddLabel(_body!, "  Nobody has fallen yet.");
+            AddLabel(fallenSection, "  Nobody has fallen yet.");
             return;
         }
 
@@ -136,7 +148,7 @@ public partial class LegendsWall : Control
         // Recent first — the newest loss is the one the player is most likely here to see.
         foreach (var memorial in state.Drama.Memorials.OrderByDescending(m => m.Day))
         {
-            var row = AddRow(_body!);
+            var row = AddRow(fallenSection);
             var text = $"  Day {memorial.Day} — {memorial.HeroName}, carrying {memorial.GearNamed}"
                 + (memorial.Honored ? " — honored" : string.Empty);
             var label = AddLabel(row, text);
@@ -175,7 +187,7 @@ public partial class LegendsWall : Control
                 row.AddChild(honor);
             }
 
-            RenderReforgeOptions(state, memorial.Hero, reforgedSourceIds);
+            RenderReforgeOptions(fallenSection, state, memorial.Hero, reforgedSourceIds);
         }
     }
 
@@ -183,8 +195,13 @@ public partial class LegendsWall : Control
     /// <paramref name="hero"/>'s worn-at-death gear — a real item, recorded on that hero's
     /// <see cref="HeroDied"/> event, not already reforged. A slot the hero never wore (sparse
     /// gear — e.g. no shield/trinket) simply produces no row for that slot; nothing here can
-    /// throw on a missing slot, only skip it (the existing guard chain below, unchanged).</summary>
-    private void RenderReforgeOptions(GameState state, HeroId hero, HashSet<int> reforgedSourceIds)
+    /// throw on a missing slot, only skip it (the existing guard chain below, unchanged).
+    ///
+    /// <para>U8 (§11.14.14): <paramref name="parent"/> is now passed in rather than hardcoding
+    /// <c>_body!</c> — <see cref="RenderMemorials"/>'s own new "FallenSection" container, so a
+    /// hero's Reforge row stays nested under the SAME stable section as her Honor row rather than
+    /// becoming a sibling of it one level up.</para></summary>
+    private void RenderReforgeOptions(Node parent, GameState state, HeroId hero, HashSet<int> reforgedSourceIds)
     {
         var died = state.EventLog.OfType<HeroDied>().FirstOrDefault(d => d.Hero == hero);
         if (died is null)
@@ -211,7 +228,7 @@ public partial class LegendsWall : Control
                 continue;
             }
 
-            var row = AddRow(_body!);
+            var row = AddRow(parent);
             var label = AddLabel(row, $"    reforge {item.Name} into:");
             label.SizeFlagsHorizontal = SizeFlags.ExpandFill;
 

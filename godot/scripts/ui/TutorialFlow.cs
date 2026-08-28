@@ -89,6 +89,41 @@ public enum TutorialAnchorKind
     /// it end to end against a real, always-mounted panel control in the meantime.
     /// </summary>
     PanelControl,
+
+    /// <summary>
+    /// U8 (§11.14.14): points at a named CONTAINER inside a panel — "the Unshelved Crafts section",
+    /// "the commission cards" — standing in for whichever per-entity rows it happens to hold today,
+    /// rather than one specific control's own name. The gap this closes: the remaining T9 course
+    /// beats need to point at buttons that carry an entity id (<c>Stock_{item.Id}</c>,
+    /// <c>CommissionAccept_{hero}</c>, <c>Honor_{hero}</c>), and no static registry row can ever
+    /// spell an id that does not exist yet — <see cref="PanelControl"/> is exactly this precise
+    /// (its whole point is naming ONE always-there control), which makes it the wrong tool for a
+    /// row that means "point at whichever cards are there, if any." A section is present whether
+    /// it holds zero, one, or many rows (the panel still renders an empty-state label rather than
+    /// omitting the container), so a step anchored here never needs its own <see
+    /// cref="TutorialStepDef.AnchorExists"/>/<see cref="TutorialStepDef.AnchorFallback"/> pair just
+    /// to survive an empty section — those still compose normally for a step that means something
+    /// narrower ("the FIRST unshelved craft exists").
+    ///
+    /// <para>Resolves IDENTICALLY to <see cref="PanelControl"/> (same scoped-panel-then-FindChild
+    /// lookup in <see cref="TutorialOverlay.RefreshAnchor"/>, same "point at the way in while the
+    /// panel is closed" aim in <see cref="TutorialFlow.AimAnchor"/>) — a section container is a
+    /// <see cref="Control"/> by name like any other, so nothing about resolving it differs. It is
+    /// still its own <see cref="TutorialAnchorKind"/>, not a bare alias for <see
+    /// cref="PanelControl"/>, so a registry-conformance test can select "every section-scoped
+    /// anchor" (<c>Kind == PanelSection</c>) without also sweeping up ordinary per-button
+    /// PanelControl rows, which carry no such zero/one/many tolerance and should not be graded as
+    /// if they did.</para>
+    ///
+    /// <para>The OTHER half this closes: the containers those buttons live in used to be anonymous.
+    /// <see cref="Ui.UiKit.Section"/>-built roots all shared one literal Name ("Section") until this
+    /// unit gave each one a title-derived name (<see cref="Ui.UiKit.SectionName"/>); <see
+    /// cref="Panels.LegendsWall"/>'s "THE FALLEN" region had no container of its own at all (its
+    /// rows sat directly under the wall's single scroll body) until this unit gave it one
+    /// ("FallenSection"). <see cref="Panels.CommissionBoard"/> needed no change — its one card list
+    /// already answers to a stable name ("CommissionBody").</para>
+    /// </summary>
+    PanelSection,
 }
 
 /// <summary>
@@ -136,10 +171,12 @@ public static class TutorialActVocab
 /// to resolve by <see cref="Node.FindChild(string, bool, bool)"/> against the mounted HUD for a
 /// <see cref="TutorialAnchorKind.Hud"/>, OR (U-T2-6) the registered DRAWER PANEL id (<see
 /// cref="Ui.DrawerHost.CurrentPanelId"/>'s own vocabulary, e.g. "Forge"/"Shop") for a <see
-/// cref="TutorialAnchorKind.PanelControl"/>. <see cref="StationId"/> is Station-only: the specific
-/// station's own stable id within that venue's room (<c>InteriorLayout2D.StationSpec.Id</c>, e.g.
-/// "anvil") — resolved via <c>Town2D.FindStation(Key, StationId)</c>. <see cref="ControlName"/> is
-/// the PanelControl-only twin of that same slot — see its own doc.
+/// cref="TutorialAnchorKind.PanelControl"/>, OR (U8) the same panel/modal id for a <see
+/// cref="TutorialAnchorKind.PanelSection"/> naming a CONTAINER rather than one specific control.
+/// <see cref="StationId"/> is Station-only: the specific station's own stable id within that
+/// venue's room (<c>InteriorLayout2D.StationSpec.Id</c>, e.g. "anvil") — resolved via
+/// <c>Town2D.FindStation(Key, StationId)</c>. <see cref="ControlName"/> is the PanelControl/
+/// PanelSection twin of that same slot — see its own doc.
 /// </summary>
 public readonly record struct TutorialAnchor(TutorialAnchorKind Kind, string? Key, string? StationId = null)
 {
@@ -158,9 +195,22 @@ public readonly record struct TutorialAnchor(TutorialAnchorKind Kind, string? Ke
     public static TutorialAnchor ForPanelControl(string panelId, string controlName) =>
         new(TutorialAnchorKind.PanelControl, panelId, controlName);
 
-    /// <summary>U-T2-6: a readable alias for <see cref="StationId"/> when <see cref="Kind"/> is <see
-    /// cref="TutorialAnchorKind.PanelControl"/> — same underlying value, named for what it actually
-    /// holds at THIS kind rather than borrowing Station's own name for it.</summary>
+    /// <summary>U8 (§11.14.14): a CONTAINER scoped to one specific panel — <see
+    /// cref="TutorialAnchorKind.PanelSection"/>'s own doc explains why this is a distinct Kind
+    /// rather than a bare call to <see cref="ForPanelControl"/>, even though the two resolve
+    /// identically. <paramref name="panelId"/> is the same drawer-panel/modal vocabulary <see
+    /// cref="ForPanelControl"/> takes; <paramref name="sectionName"/> is expected to be a LITERAL
+    /// string a caller spells out by hand (e.g. <c>"UnshelvedCraftsSection"</c>), never a live call
+    /// to <see cref="Ui.UiKit.SectionName"/> — see that method's own doc for why coupling the two
+    /// would defeat the naming convention's whole point.</summary>
+    public static TutorialAnchor ForPanelSection(string panelId, string sectionName) =>
+        new(TutorialAnchorKind.PanelSection, panelId, sectionName);
+
+    /// <summary>U-T2-6 (extended by U8 to <see cref="TutorialAnchorKind.PanelSection"/>): a readable
+    /// alias for <see cref="StationId"/> when <see cref="Kind"/> is <see
+    /// cref="TutorialAnchorKind.PanelControl"/> or <see cref="TutorialAnchorKind.PanelSection"/> —
+    /// same underlying value, named for what it actually holds at THOSE kinds rather than borrowing
+    /// Station's own name for it.</summary>
     public string? ControlName => StationId;
 
     /// <summary>U2: <paramref name="venueKey"/> is always "forge" today (the only venue with a
@@ -737,7 +787,12 @@ public sealed partial class TutorialFlow : PanelContainer
             // through a second door, and in a full course it would hit nearly every beat, since the
             // player has not opened the panel yet. That is exactly what a guided tutorial exists to
             // prevent. So point at the way IN until the player is in.
-            case TutorialAnchorKind.PanelControl when openPanelId != anchor.Key:
+            //
+            // U8 (§11.14.14): PanelSection joins this case unchanged — a section anchor is scoped to
+            // exactly the same panel/modal PanelControl is, so "point at the way in while closed" is
+            // the identical rule for both; only the CONTROL being aimed at (a button vs. a container)
+            // differs, and that distinction is resolved by TutorialOverlay, not here.
+            case TutorialAnchorKind.PanelControl or TutorialAnchorKind.PanelSection when openPanelId != anchor.Key:
                 return VenueForPanel(anchor.Key!) is { } venue
                     ? TutorialAnchor.ForBuilding(venue)
                     : TutorialAnchor.ForHud($"Open{anchor.Key}");
