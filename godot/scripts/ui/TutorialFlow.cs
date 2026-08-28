@@ -2377,6 +2377,96 @@ public sealed partial class TutorialFlow : PanelContainer
         }
     }
 
+    /// <summary>
+    /// U17 (§11.14.14 defect): whether a PRIOR campaign ever wrote this file at all — the one signal
+    /// <see cref="NewGameSelect"/> needs to decide whether "run the course, or skip it" is even a
+    /// coherent question. A true first-timer has never fired a lesson and never dismissed anything,
+    /// so asking them to choose would be noise on the very first screen they ever see (this is what
+    /// keeps that player <b>completely unaffected</b> — the choice section never mounts, and <see
+    /// cref="ResetForNewGame"/>, untouched by this unit, is the only path Begin can take).
+    /// </summary>
+    public static bool HasPriorProgress => Godot.FileAccess.FileExists(SavePath);
+
+    /// <summary>
+    /// U17 (§11.14.14 defect): the returning-smith half of "New Game" — what <see
+    /// cref="NewGameSelect.OnBeginPressed"/> calls INSTEAD of <see cref="ResetForNewGame"/> when the
+    /// player answers "I've kept a shop before, skip the course" at New-Game time.
+    ///
+    /// <para><b>The defect this closes.</b> <see cref="ResetForNewGame"/> is a deliberate fix for the
+    /// opposite bug (a tutorial suppressed forever by a stale flag from an old campaign) — it deletes
+    /// the WHOLE file, which also throws away every fired once-ever lesson id, so campaign two re-
+    /// fires every "once-ever" lesson and re-runs all ten numbered steps from scratch even for a
+    /// player who has already kept a shop. The only other way out was the ✕ dismiss confirm, whose
+    /// copy (<see cref="DismissConfirmCopy"/>) is written for a first-timer FORFEITING their
+    /// apprenticeship warrant — the wrong words, and the wrong cost, for a veteran's preference.</para>
+    ///
+    /// <para><b>The numbered chain never mounts.</b> This writes <see
+    /// cref="PersistedData.Dismissed"/> = true directly — the SAME flag <see cref="Dismiss"/> sets,
+    /// which is already everything <see cref="Active"/> and the checklist need to stay off for the
+    /// whole campaign (<see cref="ConsumeFirstLossBlock"/>'s own "a dismissed chain declines the
+    /// tutorial's last lesson too" precedent already treats Dismissed as exactly this — "this
+    /// campaign is not taking the numbered course" — independent of HOW it got set).</para>
+    ///
+    /// <para><b>The warrant stays whole — never engineered away.</b> Law 7: skipping stays legal and
+    /// its cost is named in copy, never engineered. <see cref="ApprenticeWarrant.Covers"/> ends
+    /// early for exactly one reason: an explicit <see cref="ConcludeApprenticeshipAction"/> in <see
+    /// cref="GameState.ActionLog"/>, which only the ✕ confirm's own caller (<c>MainUi</c>) ever
+    /// submits, in the SAME keystroke as <see cref="Dismiss"/>. This method is pure <c>user://</c>
+    /// bookkeeping, called BEFORE <see cref="GameComposition.NewCampaign"/> even builds a
+    /// <see cref="GameState"/> — there is no sim to queue that action into, so nothing a returning-
+    /// smith pick can reach ever forfeits the warrant. The new campaign's apprenticeship covers day 1
+    /// through <see cref="ApprenticeWarrant.LastGraceDay"/> exactly as a first-timer's would.</para>
+    ///
+    /// <para><b>Fired lessons carry forward; everything else about the OLD campaign does not.</b> The
+    /// fired-once-ever set (<see cref="FirstTouchLessons.Fired"/>, read straight off the file being
+    /// replaced, before it is replaced) is the ONE thing this method preserves — so a veteran is not
+    /// re-taught a lesson they have already read (<see cref="ConsumeFirstTouch"/>'s own anti-nag pin
+    /// keeps holding across the reset). Every other field takes <see cref="PersistedData"/>'s own
+    /// fresh-campaign default: <see cref="PendingMentorLines"/> in particular — the previous
+    /// campaign's own not-yet-dismissed banner backlog belongs to a raid that is over, and inheriting
+    /// it is a half-drained queue about a hero and an item the new campaign has never heard of, the
+    /// exact defect <see cref="RecordMentorQueue"/>'s own doc names as "never a false restore."</para>
+    /// </summary>
+    public static void ResetForReturningSmith()
+    {
+        var carriedFired = ReadFiredLessons();
+
+        using var file = Godot.FileAccess.Open(SavePath, Godot.FileAccess.ModeFlags.Write);
+        file?.StoreString(System.Text.Json.JsonSerializer.Serialize(
+            new PersistedData
+            {
+                Dismissed = true,
+                FirstTouchFired = carriedFired ?? new Dictionary<string, string>(),
+            }));
+    }
+
+    /// <summary>Best-effort read of the CURRENT save's fired-once-ever lesson set, before <see
+    /// cref="ResetForReturningSmith"/> overwrites the file it lives in — fails soft exactly like <see
+    /// cref="Load"/> (a missing or corrupt file reads as "nothing fired yet", never a throw, so a
+    /// returning-smith pick can never crash New Game).</summary>
+    private static Dictionary<string, string>? ReadFiredLessons()
+    {
+        if (!Godot.FileAccess.FileExists(SavePath))
+        {
+            return null;
+        }
+
+        using var file = Godot.FileAccess.Open(SavePath, Godot.FileAccess.ModeFlags.Read);
+        if (file is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            return System.Text.Json.JsonSerializer.Deserialize<PersistedData>(file.GetAsText())?.FirstTouchFired;
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return null; // corrupt file — fail soft, same as Load()
+        }
+    }
+
     /// <summary>Test-only teardown alias — see <see cref="ResetForNewGame"/>, the production
     /// method this forwards to (mirrors <c>MainUi.ClockSettings.DeleteForTests</c>'s own naming
     /// for the OTHER user:// preference file).</summary>
