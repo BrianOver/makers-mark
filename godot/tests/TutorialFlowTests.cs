@@ -2805,5 +2805,145 @@ public class TutorialFlowTests
         var open = TutorialFlow.ProofBeatAnchor(openPanelId: "Ledger");
         AssertThat(open).IsEqual(TutorialAnchor.ForPanelControl("Ledger", "LedgerCard_0"));
     }
+
+    // ── U31 (§11.14.14): the loss act gets a voice ───────────────────────────────────────────────
+
+    private static GameState HeroDiedCarryingPlayerWorkState(int day)
+    {
+        var baseState = GameComposition.NewCampaign(ScriptedSession.Seed);
+        var item = new Item(
+            new ItemId(9201), "test-recipe", "Test Blade", ItemSlot.Weapon, QualityGrade.Common,
+            new ItemStats(Attack: 3, Defense: 0, Weight: 1), new MakersMark("You", 1),
+            ImmutableList<ItemHistoryEntry>.Empty);
+
+        return baseState with
+        {
+            Day = day,
+            Items = baseState.Items.Add(item.Id.Value, item),
+            EventLog = ImmutableList.Create<GameEvent>(
+                new HeroDied(new HeroId(1), Floor: 1, Cause: "slain by a Crypt Crab",
+                    WornGear: GearSet.Empty with { Weapon = item.Id })),
+        };
+    }
+
+    [TestCase]
+    public void LossVoiceLine_IsNull_UntilTheActArms()
+    {
+        var ui = MountMainUi(new SimAdapter(HeroDiedState(day: 5))); // the fact exists, but never consumed
+        try
+        {
+            AssertThat(ui.Tutorial.LossVoiceLine(ui.Adapter.CurrentState)).IsNull();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>KTD5's split, proven both ways: the variant is chosen on whether the FALLEN hero
+    /// carried the player's own work, read off the sim's own recorded <see
+    /// cref="HeroDied.WornGear"/> — never a guess.</summary>
+    [TestCase]
+    public void LossVoiceLine_NamesTheirWork_WhenTheFallenHeroCarriedIt()
+    {
+        var state = HeroDiedCarryingPlayerWorkState(day: 5);
+        var ui = MountMainUi(new SimAdapter(state));
+        try
+        {
+            ui.Tutorial.ConsumeFirstLossBlock(ui.Adapter.CurrentState);
+            var line = ui.Tutorial.LossVoiceLine(ui.Adapter.CurrentState);
+            AssertThat(line).IsNotNull();
+            AssertThat(line!.Contains("had your work on them", StringComparison.Ordinal)).IsTrue();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void LossVoiceLine_SaysNothingOfYours_WhenTheFallenHeroCarriedNone()
+    {
+        var ui = MountMainUi(new SimAdapter(HeroDiedState(day: 5))); // GearSet.Empty — carries nothing at all
+        try
+        {
+            ui.Tutorial.ConsumeFirstLossBlock(ui.Adapter.CurrentState);
+            var line = ui.Tutorial.LossVoiceLine(ui.Adapter.CurrentState);
+            AssertThat(line).IsNotNull();
+            AssertThat(line!.Contains("Nothing of yours went down with them", StringComparison.Ordinal)).IsTrue();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>Three hard constraints on Bryn's own line (§11.14.14's own test scenario): no
+    /// survival math, no instruction, and pronouns that never hardcode "she"/"he" (no <see
+    /// cref="Hero"/> in this sim carries a recorded gender).</summary>
+    [TestCase]
+    public void LossVoiceLine_CarriesNoSurvivalMathNoInstructionNoGenderedPronoun()
+    {
+        var carried = HeroDiedCarryingPlayerWorkState(day: 5);
+        var carriedUi = MountMainUi(new SimAdapter(carried));
+        try
+        {
+            carriedUi.Tutorial.ConsumeFirstLossBlock(carriedUi.Adapter.CurrentState);
+            AssertNoMathNoOrderNoGender(carriedUi.Tutorial.LossVoiceLine(carriedUi.Adapter.CurrentState)!);
+        }
+        finally
+        {
+            Unmount(carriedUi);
+        }
+
+        var none = HeroDiedState(day: 5);
+        var noneUi = MountMainUi(new SimAdapter(none));
+        try
+        {
+            noneUi.Tutorial.ConsumeFirstLossBlock(noneUi.Adapter.CurrentState);
+            AssertNoMathNoOrderNoGender(noneUi.Tutorial.LossVoiceLine(noneUi.Adapter.CurrentState)!);
+        }
+        finally
+        {
+            Unmount(noneUi);
+        }
+    }
+
+    private static void AssertNoMathNoOrderNoGender(string line)
+    {
+        foreach (var digit in "0123456789")
+        {
+            AssertThat(line.Contains(digit))
+                .OverrideFailureMessage($"Bryn's loss line carries a digit (\"{line}\") — no survival math.")
+                .IsFalse();
+        }
+
+        foreach (var pronoun in new[] { " she ", " he ", " her ", " him ", " his ", "She ", "He " })
+        {
+            AssertThat(line.Contains(pronoun, StringComparison.Ordinal))
+                .OverrideFailureMessage($"Bryn's loss line hardcodes a gendered pronoun (\"{pronoun}\") — no hero here carries a recorded gender.")
+                .IsFalse();
+        }
+    }
+
+    /// <summary>The roster-refills clause is gone — the line used to sit on the most solemn beat
+    /// in the game reading like inventory bookkeeping.</summary>
+    [TestCase]
+    public void FirstLossBlock_NoLongerMentionsTheRosterRefilling()
+    {
+        var ui = MountMainUi(new SimAdapter(HeroDiedState(day: 5)));
+        try
+        {
+            var block = ui.Tutorial.ConsumeFirstLossBlock(ui.Adapter.CurrentState);
+            AssertThat(block).IsNotNull();
+            AssertThat(block!.Contains("roster refills", StringComparison.OrdinalIgnoreCase)).IsFalse();
+            AssertThat(block.Contains("permadeath", StringComparison.OrdinalIgnoreCase)).IsTrue();
+            AssertThat(block.Contains("the rite is yours", StringComparison.OrdinalIgnoreCase)).IsTrue();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
 }
 #endif

@@ -2306,10 +2306,17 @@ public sealed partial class TutorialFlow : PanelContainer
     /// permanent Lessons-book entry, so the two can never say something different about the same
     /// night. Names permadeath plainly, names the rite, and adds no second claim about whose item
     /// was on the fallen — the death card itself already carries that (§11.11 U6's own discipline)
-    /// — and never a survival number (§11.4's stakes-qualitatively rule).</summary>
+    /// — and never a survival number (§11.4's stakes-qualitatively rule).
+    ///
+    /// <para>U31 (§11.14.14): "the roster refills, but not with them" is gone — a bookkeeping
+    /// sentence sitting on the most solemn beat in the game, read right after a hero the player
+    /// watched die. The mechanism it stated is still true and still stated (permadeath, gone for
+    /// good); grief and stake belong to <see cref="LossVoiceLine"/> instead — this line stays
+    /// unattributed on purpose (the rite is invited HERE, in the Ledger's own mechanism copy, never
+    /// by Bryn — law 1, influence never orders).</para></summary>
     private const string FirstLossBlockText =
-        "This is permadeath: gone for good — the roster refills, but not with them. Tonight the wall "
-        + "takes their name — the rite is yours if you want it.";
+        "This is permadeath: gone for good. Tonight the wall takes their name — the rite is yours "
+        + "if you want it.";
 
     /// <summary>U6: the day the FIRST <see cref="HeroDied"/> landed for a non-dismissed chain, or 0
     /// before that (armed-but-silent). Persisted so a reload mid-window (the "one night, one day"
@@ -2358,6 +2365,47 @@ public sealed partial class TutorialFlow : PanelContainer
     /// cref="LossActRow"/>'s own two-day visible window (the row retires; the lesson never does —
     /// "re-reading beats re-running", the same answer U2 established for every other lesson).</summary>
     public string? LossLessonText => _firstLossDay > 0 ? FirstLossBlockText : null;
+
+    /// <summary>
+    /// U31 (§11.14.14): Bryn's own line for the loss act — the ONLY place grief and stake are
+    /// allowed to live (KTD5's own division: <see cref="FirstLossBlockText"/> stays unattributed
+    /// mechanism copy in the Ledger, and the rite it invites is never repeated or ordered by her —
+    /// law 1, influence never orders). Two variants, chosen on whether the FIRST fallen hero — the
+    /// one <see cref="ConsumeFirstLossBlock"/> armed on — wore any player-crafted piece at the
+    /// moment they died, read fresh off <paramref name="state"/>'s own durable <see
+    /// cref="HeroDied.WornGear"/> record every call, never cached. Null before the act has ever
+    /// armed (<see cref="_firstLossDay"/> is 0) — <c>MainUi</c> calls this immediately after a
+    /// non-null <see cref="ConsumeFirstLossBlock"/>, the same tick, so it always reads the freshly
+    /// committed state.
+    ///
+    /// <para>Never an instruction (the rite is the LEDGER's own invitation, never hers), never a
+    /// survival number (§11.4's stakes-qualitatively rule — she never says what would have saved
+    /// them), never false comfort (she is allowed the hard true thing; that is her register).
+    /// Pronouns: no <see cref="Hero"/> in this sim carries a recorded gender (<see
+    /// cref="GameSim.Contracts.Hero"/>'s own contract has no such field) — law 4 (show only what the
+    /// sim decided) forbids inventing one, so both variants read "they/them" for every fallen hero
+    /// rather than hardcoding "she".</para>
+    /// </summary>
+    public string? LossVoiceLine(GameState state)
+    {
+        if (_firstLossDay <= 0)
+        {
+            return null;
+        }
+
+        var died = state.EventLog.OfType<HeroDied>().FirstOrDefault();
+        if (died is null)
+        {
+            return null; // defensive: ConsumeFirstLossBlock never commits without one
+        }
+
+        var carriedPlayerWork = new[] { died.WornGear.Weapon, died.WornGear.Shield, died.WornGear.Armor, died.WornGear.Trinket }
+            .Any(slot => slot is { } itemId && state.Items.TryGetValue(itemId.Value, out var item) && item.PlayerCrafted);
+
+        return carriedPlayerWork
+            ? "They had your work on them. It wasn't enough — and it was still the best thing they carried. Both of those are true tonight."
+            : "Nothing of yours went down with them. You get to decide if that's a relief.";
+    }
 
     // ── U30 (§11.14.14): the Proof act's dormant row ─────────────────────────────────────────────
     //
