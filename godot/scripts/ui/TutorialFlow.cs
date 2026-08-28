@@ -2541,7 +2541,9 @@ public sealed partial class TutorialFlow : PanelContainer
     public static HeroId? ThreadHero(GameState state)
     {
         // (Day it happened, same-day tiebreak rank, the hero) — rank 0 shop sale, 1 accepted
-        // commission, 2 vigil supply, exactly the doc's own list order above.
+        // commission, 2 counter sale, 3 vigil supply: all four hand-off channels, in the order a
+        // same-day tie should resolve. Earlier DAY always beats a better rank; rank only settles a
+        // collision, because the action log carries no finer sequence than the day it batched.
         (int Day, int Rank, HeroId Hero)? best = null;
 
         void Consider(int day, int rank, HeroId hero)
@@ -2569,10 +2571,22 @@ public sealed partial class TutorialFlow : PanelContainer
             }
         }
 
+        // U22 follow-up: the counter is a hand-off channel in its own right, and it emits its OWN
+        // event -- CounterSaleClosed(Hero, Item, Price, Pinned) -- with no companion ItemSold. So a
+        // hero who haggled face to face and walked out with the player's work was invisible to this
+        // derivation, which is exactly the hero it most wants to name: the counter is the one channel
+        // where the player and the hero are in the same room. Rank 2 because a shop sale and an
+        // accepted commission both represent an earlier commitment on a same-day tie.
+        var counterSale = state.EventLog.OfType<CounterSaleClosed>().FirstOrDefault();
+        if (counterSale is not null)
+        {
+            Consider(counterSale.Day, 2, counterSale.Hero);
+        }
+
         var supplyDelivered = state.EventLog.OfType<SupplyDelivered>().FirstOrDefault();
         if (supplyDelivered is not null)
         {
-            Consider(supplyDelivered.Day, 2, supplyDelivered.To);
+            Consider(supplyDelivered.Day, 3, supplyDelivered.To);
         }
 
         return best?.Hero;

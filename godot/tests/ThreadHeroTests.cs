@@ -138,6 +138,31 @@ public class ThreadHeroTests
     }
 
     [TestCase]
+    /// <summary>
+    /// U22 follow-up: the counter is the fourth hand-off channel and emits its OWN event
+    /// (<c>CounterSaleClosed</c>) with no companion <c>ItemSold</c>. A hero who haggled face to face
+    /// and walked out with the player's work used to be invisible here — which is perverse, since the
+    /// counter is the one channel where the player and the hero are in the same room.
+    /// </summary>
+    public void ThreadHero_NamesAHero_WhoBoughtOnlyAtTheCounter()
+    {
+        var baseState = GameComposition.NewCampaign(9001);
+        var hero = new HeroId(7);
+        var state = baseState with
+        {
+            EventLog = baseState.EventLog.Add(
+                new CounterSaleClosed(hero, new ItemId(1), Price: 14, Pinned: true) { Day = 2 }),
+        };
+
+        AssertThat(TutorialFlow.ThreadHero(state))
+            .OverrideFailureMessage(
+                "A counter sale is a hand-off: the hero stood at the counter and took the player's work. " +
+                "It emits CounterSaleClosed and never ItemSold, so a derivation reading only ItemSold " +
+                "misses the channel the course most wants to name.")
+            .IsEqual(hero);
+    }
+
+    [TestCase]
     public void ThreadHero_IgnoresAShopSale_OfANonPlayerCraftedItem()
     {
         var baseState = GameComposition.NewCampaign(9001);
