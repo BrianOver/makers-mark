@@ -493,8 +493,19 @@ public sealed partial class TutorialFlow : PanelContainer
             Step: TutorialStep.BuyMaterial, DisplayIndex: 1, Act: TutorialAct.Mark,
             Anchor: TutorialAnchor.ForStation("forge", "shelf"), MinDay: 1,
             ShortLabel: "Buy material, then craft your first item",
+            // U20 (§11.14.14, "the two absences"): the second sentence is new. Leaving a room was
+            // never taught anywhere, and step 2 (Shelve) is the first one that requires it — walking
+            // back out of the workshop to the Shop. Placed on THIS row, not Craft's, on purpose: Step
+            // starts at BuyMaterial by definition (its own field default) and this is the very first
+            // thing rendered, before the player has taken a single action — so it is the ONE row
+            // guaranteed to reach the screen on every path, including the starter-kit-skips-buy case
+            // where Step jumps straight from BuyMaterial to Shelve in one Advance() pass and Craft's
+            // own TeachNote never becomes current at all (TutorialStepDef's own doc, "the shared
+            // display slot"). A lesson that depends on the player having bought material first is not
+            // "before" anything.
             TeachNote: "Inside a building you walk up to a station and press E to use it. The material vendor "
-                       + "and the crafting station are both stations in your workshop.",
+                       + "and the crafting station are both stations in your workshop. Every room has a way "
+                       + "back out, too — press Escape to step outside when you're ready to move on.",
             IsDone: state => state.EventLog.OfType<MaterialPurchased>().Any(),
             AdvanceFrom: [TutorialStep.BuyMaterial], AdvancesTo: TutorialStep.Craft,
             // U13: one candidate per priced material key, quantity 1 — the SAME loop

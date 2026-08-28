@@ -57,6 +57,13 @@ public static class MinigameInput
         // arrows, so it can never race a minigame's own _GuiInput (see MainUi._UnhandledKeyInput's
         // own doc for why that ordering matters).
         AddActionIfMissing("docket_toggle", Key.C);
+
+        // U20 (§11.14.14): the tutorial's own "remind me" re-ask — restates the current step and
+        // flashes its pointer (MainUi.ReaskTutorial). Same reason this lives here rather than
+        // TownInput as docket_toggle's own comment gives. "R" is free: not one of the seven
+        // minigame verbs above, not WASD/arrows, not "C" (docket) or Escape (cancel) — chosen for
+        // the mnemonic ("Remind me") over an arbitrary free key.
+        AddActionIfMissing("tutorial_reask", Key.R);
     }
 
     /// <summary>

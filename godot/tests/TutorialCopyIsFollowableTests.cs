@@ -568,6 +568,55 @@ public class TutorialCopyIsFollowableTests
         }
     }
 
+    /// <summary>
+    /// U20 (§11.14.14, "the two absences" #1): leaving a room was never taught anywhere, and step 2
+    /// (Shelve) is the FIRST one that requires it — walking back out of the workshop to the Shop.
+    /// Pinned on BuyMaterial's own TeachNote (DisplayIndex 1), not Craft's: <see cref="TutorialFlow
+    /// .Step"/> starts at <see cref="TutorialStep.BuyMaterial"/> by definition and is rendered from
+    /// the very first frame, before the player has taken a single action, so it is the ONE row
+    /// guaranteed to reach the screen on every path — including the starter-kit-skips-buy path,
+    /// where <c>Step</c> jumps straight from BuyMaterial to Shelve in a single Advance() pass and
+    /// Craft's own TeachNote never becomes current at all (<c>TutorialStepDef</c>'s own doc, "the
+    /// shared display slot"). A lesson that depends on having bought material first is not "before"
+    /// anything.
+    /// </summary>
+    [TestCase]
+    public void TheRoomExitLesson_IsTaughtOnStep1_BeforeStep2RequiresLeavingTheWorkshop()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            var buyMaterial = TutorialFlow.Registry.Single(d => d.Step == TutorialStep.BuyMaterial);
+            var shelve = TutorialFlow.Registry.Single(d => d.Step == TutorialStep.Shelve);
+
+            AssertThat(buyMaterial.DisplayIndex)
+                .OverrideFailureMessage(
+                    "The room-exit lesson must be taught on a step BEFORE the one that requires leaving.")
+                .IsLess(shelve.DisplayIndex);
+
+            // Read the real bound key rather than guessing it, so a future rebind of "cancel" turns
+            // this red instead of leaving stale copy behind (TutorialCopyIsFollowableTests' own
+            // house style — see e.g. TheDepartureAndCloseSteps_... above).
+            var exitKey = ShortcutMap.KeyLabel(ShortcutMap.Find("cancel"));
+            AssertThat(buyMaterial.TeachNote.Contains(exitKey, StringComparison.Ordinal))
+                .OverrideFailureMessage(
+                    $"Step 1's TeachNote never names the real \"leave the room\" key (\"{exitKey}\"):\n" +
+                    $"  \"{buyMaterial.TeachNote}\"")
+                .IsTrue();
+
+            // And it is guaranteed ON SCREEN before anything else can happen — Step starts at
+            // BuyMaterial before the player has taken a single action, so a fresh mount's own
+            // current checklist row already carries this exact TeachNote.
+            AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.BuyMaterial);
+            var currentRow = ui.Tutorial.Checklist(ui.Adapter.CurrentState).Single(r => r.Current);
+            AssertThat(currentRow.TeachNote).IsEqual(buyMaterial.TeachNote);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
     [TestCase]
     public void TheBountyStep_AndTheBountyPanel_BothExplainWhatABountyActuallyIs()
     {

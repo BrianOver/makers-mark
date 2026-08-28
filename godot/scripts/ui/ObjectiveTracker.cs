@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using GameSim.Advisor;
 using GameSim.Contracts;
 using Godot;
+using GodotClient.Minigames;
 
 namespace GodotClient.Ui;
 
@@ -127,6 +128,17 @@ public sealed partial class ObjectiveTracker : PanelContainer
     /// exposing this chip to any other tutorial-specific concept.</summary>
     public Button TutorialDismiss { get; private set; } = null!;
 
+    /// <summary>
+    /// U20 (§11.14.14): the on-screen half of the "remind me" re-ask — the matching control the
+    /// task's own "Two absences" #2 asks for, so a player who never learns the <c>tutorial_reask</c>
+    /// key still has a press that restates the current step and flashes its pointer. <c>MainUi</c>
+    /// wires this <see cref="Button.Pressed"/> to the SAME <c>ReaskTutorial</c> handler the keyboard
+    /// shortcut calls — one behavior, two ways to ask for it. Visible on the identical <c>isTutorial</c>
+    /// gate as <see cref="TutorialDismiss"/> (see <see cref="Refresh"/>): hidden, and therefore inert,
+    /// the moment the chain is no longer <see cref="TutorialFlow.Active"/>.
+    /// </summary>
+    public Button TutorialReask { get; private set; } = null!;
+
     /// <summary>§11.13 amendment (U5): the confirmed-graduation row's "yes, end it" button — the
     /// caller (<c>MainUi</c>) wires the atomic <c>ConcludeApprenticeshipAction</c> submit +
     /// <see cref="TutorialFlow.Dismiss"/> on this <see cref="Button.Pressed"/> event, on top of this
@@ -210,6 +222,17 @@ public sealed partial class ObjectiveTracker : PanelContainer
             Name = "ObjectiveTutorialDismiss", Text = "✕", Visible = false, TooltipText = "Dismiss tutorial",
         };
         actionsRow.AddChild(TutorialDismiss);
+
+        // U20: "there is no way to ask where to go" — see this field's own doc. MinigameInput's
+        // registry (not TownInput — see its own comment on why) must have already added
+        // "tutorial_reask" before ShortcutMap.Tooltip below reads its key label; guarded/idempotent,
+        // same precedent CompanionDock.Build already set for "docket_toggle".
+        MinigameInput.RegisterActions();
+        TutorialReask = new Button
+        {
+            Name = "ObjectiveTutorialReask", Text = "↻", Visible = false, TooltipText = ShortcutMap.Tooltip("tutorial_reask"),
+        };
+        actionsRow.AddChild(TutorialReask);
 
         // §11.13 amendment (U5, R12 ruled yes): dismissing is graduation, and the ✕ now confirms
         // rather than acting instantly — "no timers on decisions" (law) means this row waits on the
@@ -303,6 +326,7 @@ public sealed partial class ObjectiveTracker : PanelContainer
 
         var isTutorial = tutorialOverride is not null;
         TutorialDismiss.Visible = isTutorial;
+        TutorialReask.Visible = isTutorial; // U20: inert once the course completes — hidden, not just disabled
         if (!isTutorial)
         {
             // Defensive: the chain ending some OTHER way (e.g. BackstopDay's own auto-complete)
