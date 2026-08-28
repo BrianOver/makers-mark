@@ -145,6 +145,12 @@ public static class UiTestSupport
         // toggled it via the Settings checkbox or F11 must never leave a persisted choice for a
         // later suite (or the developer's own real user:// data) to inherit.
         UiSettings.DeleteForTests();
+
+        // U16 (§11.14.14): BuildUi already consumes and clears this on every mount that actually
+        // reads it true, so this is belt-and-suspenders only — a test that sets it directly (rather
+        // than through NewGameSelect.OnBeginPressed) and then fails before that mount completes
+        // must still never leak a pending cold-open beat into a later suite's own MountMainUi().
+        MainUi.FirstMorningBeatPending = false;
     }
 
     /// <summary>

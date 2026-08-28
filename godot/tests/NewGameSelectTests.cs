@@ -44,6 +44,10 @@ public class NewGameSelectTests
     private static void Unmount(NewGameSelect screen)
     {
         MainUi.AdapterOverride = null; // never leak a picked campaign into later suites
+        // U16: several tests below press "Begin" (which sets this true) and never mount MainUi
+        // afterward to consume it — without this, a LATER suite's bare MountMainUi() would
+        // unexpectedly show the cold-open beat and its exact PendingLessonCount/Visible assertions.
+        MainUi.FirstMorningBeatPending = false;
         screen.GetParent()?.RemoveChild(screen);
         screen.Free();
 

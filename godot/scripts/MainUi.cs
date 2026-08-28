@@ -163,6 +163,22 @@ public partial class MainUi : Control
     public static SimAdapter? AdapterOverride { get; set; }
 
     /// <summary>
+    /// U16 (§11.14.14, "the first thing any player ever reads"): the SAME static-handoff, cleared-
+    /// on-read contract as <see cref="AdapterOverride"/> immediately above — one more thing a new
+    /// <c>MainUi</c> instance needs that can only exist after the scene swap from
+    /// <c>NewGameSelect</c>, so it cannot ride along on <see cref="AdapterOverride"/> itself (a
+    /// <see cref="SimAdapter"/> has no room for "and also show this one-shot UI beat").
+    /// <c>NewGameSelect.OnBeginPressed</c> sets this true on EVERY "Begin" press — never on
+    /// Continue — and <see cref="BuildUi"/> consumes and clears it the same tick <see
+    /// cref="Ui.MentorBanner"/> finishes mounting, so a stale <see langword="true"/> can never leak
+    /// into a later mount (a bare test mount that never goes through the front door simply never
+    /// sets this, and never sees the beat — see <see
+    /// cref="Ui.TutorialFlow.FirstMorningBeatText"/>'s own doc for why that gate lives HERE rather
+    /// than on anything <see cref="Ui.TutorialFlow"/> could read for itself).
+    /// </summary>
+    public static bool FirstMorningBeatPending { get; set; }
+
+    /// <summary>
     /// U4 (shell-and-audio plan): scene-change hook for "Save & quit to title" — null = real
     /// <c>GetTree().ChangeSceneToFile</c>. Tests stub this so pressing the button never tears down
     /// the test scene tree (the exact seam <see cref="NewGameSelect.SceneChange"/> already
@@ -3539,6 +3555,19 @@ public partial class MainUi : Control
         // loses a lesson TutorialFlow already marked fired (class doc, MentorBanner.QueueChanged's
         // own doc).
         Mentor.QueueChanged += () => Tutorial.RecordMentorQueue(Mentor.SnapshotForPersistence());
+
+        // U16 (§11.14.14, "the first thing any player ever reads"): Bryn's cold open — fires here,
+        // before ANY panel below gets a chance to queue a lesson of its own, so on a genuine new
+        // game this is always the first thing the banner ever shows. FirstMorningBeatPending's own
+        // doc explains the gate; ConsumeFirstTouch's own once-ever contract is what makes it safe to
+        // read unconditionally here rather than re-deriving "was this already shown" some other way.
+        if (FirstMorningBeatPending)
+        {
+            FirstMorningBeatPending = false;
+            Mentor.ShowFirstTouch(
+                Tutorial.ConsumeFirstTouch(TutorialFlow.FirstMorningBeatId, MentorVoice.Speak(TutorialFlow.FirstMorningBeatText)),
+                rank: MentorVoiceRank.Act);
+        }
 
         // U-T2 Wave C: the two dilemma lessons that do not live in the Forge (pricing, hold-or-
         // sell) need the SAME live chain + shared banner Forge already got in Wave B — wired here,
