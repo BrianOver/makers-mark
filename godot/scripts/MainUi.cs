@@ -50,6 +50,31 @@ public partial class MainUi : Control
     /// </summary>
     public const double RejectionToastSeconds = 4.0;
 
+    /// <summary>
+    /// U19 (§11.14.14, R32): how long the tutorial's CURRENT step must see no real player action
+    /// before <see cref="CheckStuckPlayer"/> offers that step's own teaching unprompted — see <see
+    /// cref="Ui.StuckPlayerDetector"/>'s class doc for the law-2 (no timers on decisions) reasoning.
+    /// This clock decides only WHEN the offer appears; the offer itself is the ordinary no-timer
+    /// <see cref="Mentor"/> toast, closed by nothing but the player's own "Got it".
+    ///
+    /// <para>45s, picked the same way <see cref="RejectionToastSeconds"/> was: long enough that
+    /// reading a step's own card, walking across the town, or sitting through a haggle round never
+    /// trips it — short enough that a player who has genuinely stalled (the "stand still and watch
+    /// the same pulsing outline forever" complaint this unit answers) hears from Bryn well before the
+    /// two-minute mark that finding calls wallpaper.</para>
+    /// </summary>
+    public const double StuckIdleThresholdSeconds = 45.0;
+
+    /// <summary>
+    /// U19 (§11.14.14, R32): the SAME friendly-refusal text (<see cref="FriendlyRejection"/>'s own
+    /// output, never the raw kernel reason) has to reach the screen this many times before <see
+    /// cref="OnPhaseCompleted"/> promotes it off the small auto-clearing toast and onto <see
+    /// cref="Mentor"/>, where it stays until dismissed. Three, not one: a single refusal is normal
+    /// play (a misclick, a price the player chose not to pay) and escalating it would be a nag on its
+    /// own; three IDENTICAL ones is the "bouncing off the same gate" pattern R32 names.
+    /// </summary>
+    public const int StuckRefusalPromotionCount = 3;
+
     /// <summary>U18/KTD13: the objective chip's docked width and its margin from the window's
     /// right edge and the header's bottom edge — an overlay sibling (like the Ledger/Camp
     /// modals) rather than a layout child, so it floats above every tab without shifting
@@ -164,6 +189,18 @@ public partial class MainUi : Control
     /// <summary>How many entries of <see cref="Adapter"/>'s cumulative <c>LastRejections</c> have
     /// already been warned about this phase — see <see cref="OnPhaseCompleted"/>.</summary>
     private int _rejectionsWarned;
+
+    /// <summary>U19 (§11.14.14, R32): the stuck-player bookkeeping — see <see
+    /// cref="Ui.StuckPlayerDetector"/>'s own class doc. One instance for the mount's whole lifetime
+    /// (never rebuilt per-tick), so its refusal counts and idle latch persist exactly as long as the
+    /// session they describe.</summary>
+    private readonly Ui.StuckPlayerDetector _stuck = new();
+
+    /// <summary>U19: the <see cref="TutorialFlow.Step"/> the idle clock is currently timing — a
+    /// change here (including from/to <see langword="null"/> when the chain goes inactive) resets
+    /// <see cref="_stuck"/>'s idle half, exactly like a real player action does. See <see
+    /// cref="CheckStuckPlayer"/>.</summary>
+    private TutorialStep? _stuckTrackedStep;
 
     /// <summary>
     /// The playtest-log "cause" for whichever tick fires next — set immediately before each of the
@@ -873,6 +910,9 @@ public partial class MainUi : Control
             }
         }
 
+        // U19 (§11.14.14, R32): the idle half of the stuck-player detector — see its own doc.
+        CheckStuckPlayer(delta);
+
         // LW3: the gold-chip bounce-scale pop (1.0→1.25→1.0), armed by RefreshStatus whenever the
         // just-completed tick's LastEvents carried a player-shelf sale.
         if (_goldPopElapsed >= 0 && _goldValueLabel is not null)
@@ -949,6 +989,18 @@ public partial class MainUi : Control
         GD.Print($"[MainUi] tick complete: day {completedDay} {completedPhase} -> day {state.Day} {state.Phase} " +
                  $"({Adapter.LastEvents.Count} events, {Adapter.LastRejections.Count} rejections)");
 
+        // U19: `completedPhase == state.Phase` is SoundTheTick's own test for "this call is
+        // SimAdapter.Queue's immediate-action branch, not a real tick" (that method's own doc) — an
+        // immediate action (buy/craft/stock/reprice/etc.) is exactly as real a player action as a
+        // bell-deferred one (see OnActionQueued's matching reset), even when it is refused; a real
+        // tick with no queued action reaching here is either the player's own bell press (already
+        // reset when the action that rode it was queued) or an unattended auto-advance, which is NOT
+        // evidence the player did anything.
+        if (completedPhase == state.Phase)
+        {
+            _stuck.ResetIdle();
+        }
+
         // One JSONL row per tick when MM_PLAYTEST_LOG is set (the launchers set it; a test run does
         // not, so this is a no-op there). This is the same information as the GD.Print above plus the
         // economy columns, written somewhere a later session can actually analyse — see PlaytestLog
@@ -980,6 +1032,21 @@ public partial class MainUi : Control
             // ever sees the friendly toast below.
             EngineDistress.Warn($"[MainUi] rejected {rejected.Action.GetType().Name}: {rejected.Reason}");
             RejectionWarningsEmitted++;
+
+            // U19 (§11.14.14, R32), refusal half: the same loop that just logged this refusal FOR
+            // THE DEVELOPER is the one place that has already walked every NEW rejection exactly
+            // once — the natural home for counting how many times the PLAYER has now seen this
+            // exact friendly line (FriendlyRejection's own output, matching what actually renders
+            // below) on screen. StuckRefusalPromotionCount reads ">=", not "==", purely so a missed
+            // tick can never suppress the promotion — TutorialFlow.ConsumeFirstTouch's own once-ever
+            // gate is what actually keeps the 4th+ occurrence from repeating it (StuckPlayerDetector's
+            // own class doc: this class only counts, it never nags on its own).
+            var friendly = FriendlyRejection(rejected.Reason, rejected.Action);
+            if (_stuck.RegisterRefusal(friendly) >= StuckRefusalPromotionCount)
+            {
+                Mentor.ShowFirstTouch(Tutorial.ConsumeFirstTouch(
+                    $"refusal-x{StuckRefusalPromotionCount}:{friendly}", MentorVoice.Speak(friendly)));
+            }
         }
 
         _rejectionsWarned = rejections.Count;
@@ -1127,8 +1194,46 @@ public partial class MainUi : Control
     /// </summary>
     private void OnActionQueued(PlayerAction action)
     {
+        _stuck.ResetIdle(); // U19: a bell-deferred submission is a real player action too
         ShowBellToast(PendingVerbVocab.BellPromise(action));
         RefreshBellTray();
+    }
+
+    /// <summary>
+    /// U19 (§11.14.14, R32), idle half: while the tutorial chain is <see cref="TutorialFlow.Active"/>
+    /// and its <see cref="TutorialFlow.Step"/> has seen no real player action for <see
+    /// cref="StuckIdleThresholdSeconds"/>, Bryn offers that step's own teaching, unprompted, once —
+    /// the SAME first-touch tier every other lesson uses (<see cref="TutorialFlow.ConsumeFirstTouch"/>
+    /// is what actually enforces "once ever, for this step, forever"; <see cref="_stuck"/> only times
+    /// the session-local wait). Silently does nothing once the chain is inactive (Completed or
+    /// Dismissed) — R32's own "help once" promise ends where the course does.
+    ///
+    /// <para>Resetting on a <see cref="TutorialFlow.Step"/> change (rather than only on a submitted
+    /// <c>PlayerAction</c> — see <see cref="OnActionQueued"/>/<see cref="OnPhaseCompleted"/> for that
+    /// half) covers the two shapes of progress that carry no action at all: the day-1 muster
+    /// (<c>WatchDeparture</c>'s row advances unconditionally once the party actually departs) and the
+    /// two UI-navigation-only steps (<c>LookIn</c>/<c>MeetHeroes</c>), which key off a panel opening,
+    /// not a <see cref="PlayerAction"/> submission.</para>
+    /// </summary>
+    private void CheckStuckPlayer(double delta)
+    {
+        if (!Tutorial.Active)
+        {
+            _stuckTrackedStep = null;
+            return;
+        }
+
+        if (_stuckTrackedStep != Tutorial.Step)
+        {
+            _stuckTrackedStep = Tutorial.Step;
+            _stuck.ResetIdle();
+        }
+
+        if (_stuck.TickIdle(delta, StuckIdleThresholdSeconds))
+        {
+            Mentor.ShowFirstTouch(Tutorial.ConsumeFirstTouch(
+                $"idle-help:{Tutorial.Step}", MentorVoice.CurrentLesson(Tutorial.Step)));
+        }
     }
 
     /// <summary>
