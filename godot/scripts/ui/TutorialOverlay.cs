@@ -125,6 +125,23 @@ public sealed partial class TutorialOverlay : Control
     /// inspection surface, same purpose as <see cref="PulsingBuildingKey"/>.</summary>
     public string? PulsingHudControlName => _hudTarget?.Name.ToString();
 
+    /// <summary>
+    /// U42 (§11.14.14): a HUD control the off-camera marker must not land on top of. Set by
+    /// <c>MainUi</c> to the objective card.
+    ///
+    /// <para>Found by photograph, not by test. U15's marker was measured at screen (1127, 366) on
+    /// day 1 step 2 — hard against the right edge at the vertical centre, direction correct, camera
+    /// untouched. Every assertion about it passed. It was also sitting on the objective card, which
+    /// owns that entire edge, so it read as one of the card's own chevrons rather than as a
+    /// direction to walk. And from the forge spawn the market, the tavern and the mine gate are ALL
+    /// east, so that is not an unlucky case — it is every off-camera marker a new player sees on
+    /// day one.</para>
+    ///
+    /// <para>A reference rather than a rect so the overlay never has to know what the card is or
+    /// where it is anchored; null leaves the marker's placement exactly as U15 left it.</para>
+    /// </summary>
+    public Control? KeepClearOf { get; set; }
+
     /// <summary>U15: true while the off-camera marker is showing (the active anchor's world target
     /// exists but is not inside <see cref="Town2D.ViewportScreenRect"/> right now) — test/inspection
     /// surface.</summary>
@@ -179,6 +196,52 @@ public sealed partial class TutorialOverlay : Control
         // top-to-bottom "later child draws over earlier" ordering regardless).
         _offCameraMarker = new OffCameraMarker { Name = "TutorialOffCameraMarker", MouseFilter = MouseFilterEnum.Ignore, Visible = false };
         AddChild(_offCameraMarker);
+    }
+
+    /// <summary>
+    /// U42: keeps <paramref name="edgePoint"/> off <see cref="KeepClearOf"/> by moving it ALONG the
+    /// edge it already sits on, never inward. Direction legibility is the whole value of this marker,
+    /// so the horizontal position that encodes "east" is preserved and only the vertical slot moves —
+    /// a marker at the right edge above or below the card still reads as east, whereas one pulled
+    /// inward to clear the card reads as pointing at the middle of the screen.
+    ///
+    /// <para>Picks whichever side of the obstacle is nearer and still inside <paramref name="inset"/>.
+    /// If neither side fits (an obstacle taller than the viewport), the point is left where it was:
+    /// overlapping is worse than wrong, but wrong is worse than gone, and this marker's job is to
+    /// name a direction.</para>
+    /// </summary>
+    private Vector2 SlideClearOfHud(Vector2 edgePoint, Rect2 inset)
+    {
+        if (KeepClearOf is null || !GodotObject.IsInstanceValid(KeepClearOf) || !KeepClearOf.IsVisibleInTree())
+        {
+            return edgePoint;
+        }
+
+        // Grown by the marker's own half-extent so "clear" means visually clear, not merely
+        // centre-outside-the-rect with half the triangle still overlapping.
+        var obstacle = KeepClearOf.GetGlobalRect().Grow(OffCameraMarker.PivotCenter.X);
+        if (!obstacle.HasPoint(edgePoint))
+        {
+            return edgePoint;
+        }
+
+        var above = obstacle.Position.Y - OffCameraMarker.PivotCenter.Y;
+        var below = obstacle.End.Y + OffCameraMarker.PivotCenter.Y;
+        var aboveFits = above >= inset.Position.Y;
+        var belowFits = below <= inset.End.Y;
+
+        if (aboveFits && belowFits)
+        {
+            var nearer = Mathf.Abs(edgePoint.Y - above) <= Mathf.Abs(edgePoint.Y - below) ? above : below;
+            return new Vector2(edgePoint.X, nearer);
+        }
+
+        if (aboveFits)
+        {
+            return new Vector2(edgePoint.X, above);
+        }
+
+        return belowFits ? new Vector2(edgePoint.X, below) : edgePoint;
     }
 
     private ColorRect OutlineStrip(string name)
@@ -452,6 +515,8 @@ public sealed partial class TutorialOverlay : Control
         var alongY = Mathf.Abs(direction.Y) > 0.0001f ? half.Y / Mathf.Abs(direction.Y) : float.PositiveInfinity;
         var edgePoint = center + direction * Mathf.Min(alongX, alongY);
 
+        edgePoint = SlideClearOfHud(edgePoint, inset);
+
         _offCameraMarker.Visible = true;
         _offCameraMarker.QueueRedraw(); // geometry is static, but this is cheap and removes any
                                         // doubt about whether a Visible=false→true flip alone
@@ -591,7 +656,10 @@ public sealed partial class TutorialOverlay : Control
     /// </summary>
     private sealed partial class OffCameraMarker : Control
     {
-        private const float DrawSize = 14f;
+        // U42: 20, not 14. At 14 this read as one of the objective card's own chevrons when it
+        // sat beside them. A drawn polygon's own size constant is the honest dial — never a
+        // runtime Scale knob, which this project has shipped and regretted twice.
+        private const float DrawSize = 20f;
 
         /// <summary>The triangle's own local center — also this control's <see
         /// cref="Control.PivotOffset"/>, so rotating/scaling it turns/breathes around its visual

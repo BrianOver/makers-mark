@@ -66,6 +66,61 @@ public class OffCameraPointerTests
     }
 
     [TestCase]
+    /// <summary>
+    /// U42: the marker must not land on the objective card. Found by photograph — U15's marker was
+    /// geometrically perfect and sat on the card's own chevrons, because the card owns the whole right
+    /// edge and every day-one target (market, tavern, mine gate) is east of the forge spawn.
+    /// </summary>
+    public async Task AnEasternTarget_PutsTheMarkerClearOfTheObjectiveCard()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            await SettleLayout(ui);
+
+            var forge = ui.Town.FindBuilding("forge");
+            var market = ui.Town.FindBuilding("market");
+
+            AssertThat(market.GlobalPosition.X > forge.GlobalPosition.X)
+                .OverrideFailureMessage(
+                    "Fixture guard: the market must sit east of the forge (larger world X) for this test " +
+                    "to be about the edge the objective card occupies.")
+                .IsTrue();
+
+            AssertThat(ui.Objective.IsVisibleInTree())
+                .OverrideFailureMessage("Fixture guard: the objective card must be on screen — it is the obstacle under test.")
+                .IsTrue();
+
+            ui.Overlay.RefreshAnchor(TutorialAnchor.ForBuilding("market"), ui.Town, ui.Drawer, ui);
+            ui.Overlay.Tick(0.016);
+
+            AssertThat(ui.Overlay.OffCameraMarkerVisible)
+                .OverrideFailureMessage(
+                    "Fixture guard: the market is a screen away from the forge spawn, so the marker must " +
+                    "be showing for this test to say anything.")
+                .IsTrue();
+
+            var card = ui.Objective.GetGlobalRect();
+            var marker = ui.Overlay.OffCameraMarkerCenter;
+
+            AssertThat(card.HasPoint(marker))
+                .OverrideFailureMessage(
+                    $"The marker ({marker}) is inside the objective card ({card}). It reads as one of the " +
+                    "card's own buttons instead of a direction to walk — which is exactly the defect U42 " +
+                    "exists to fix, and no geometry assertion caught it.")
+                .IsFalse();
+
+            AssertThat(marker.X)
+                .OverrideFailureMessage(
+                    $"Clearing the card must move the marker ALONG its edge, never inward: an eastern " +
+                    $"target's marker ({marker}) still has to sit in the right half of the screen, or it " +
+                    "has stopped encoding a direction.")
+                .IsGreater(ui.Town.ViewportScreenRect.GetCenter().X);
+        }
+        finally { Unmount(ui); }
+    }
+
+    [TestCase]
     public async Task WalkingTheCameraOntoTheTarget_ClearsTheMarker_AndNeverBringsItBack()
     {
         var ui = MountMainUi();
