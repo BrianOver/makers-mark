@@ -36,6 +36,15 @@ namespace GodotClient.Ui;
 /// The two share one <c>case</c> below for exactly that reason; see <see
 /// cref="TutorialAnchorKind.PanelSection"/>'s own doc for why it is still a distinct Kind rather
 /// than a bare alias.</item>
+/// <item>U15 (§11.14.14): a <see cref="TutorialAnchorKind.Building"/> or <see
+/// cref="TutorialAnchorKind.Station"/> anchor's target can sit anywhere in the town — often a
+/// screen or more from wherever the player actually is (KTD-1: this game's whole camera is a single
+/// follow-cam with no minimap). <see cref="Tick"/> now projects that target's world position
+/// through <see cref="Town2D.WorldToScreen"/> every frame and, when it is NOT inside <see
+/// cref="Town2D.ViewportScreenRect"/>, points a small edge marker (<see cref="_offCameraMarker"/>)
+/// at it instead of drawing nothing — the exact "station pulse behind a wall" defect class this
+/// project has already shipped once (see this unit's own PR body). KTD7: the marker only ever says
+/// WHERE — it never moves the camera, so it cannot become the "quest compass" law 1 forbids.</item>
 /// </list>
 ///
 /// <para><b>Never a dead click, never a silent fallback</b> (house rule). <see cref="RefreshAnchor"/>
@@ -74,6 +83,20 @@ public sealed partial class TutorialOverlay : Control
     private Control? _hudTarget;
     private double _elapsed;
 
+    /// <summary>U15 (§11.14.14): the town <see cref="RefreshAnchor"/> was last given — <see
+    /// cref="Tick"/> needs it every frame to re-project the live anchor's world position, but
+    /// <see cref="Tick"/>'s own signature is called from <c>MainUi._Process</c> with no town
+    /// argument, so this is the one place that reference is remembered. Safe to cache: <c>MainUi</c>
+    /// owns exactly one <see cref="Town2D"/> for the life of the session and passes that SAME
+    /// instance every refresh.</summary>
+    private Town2D? _town;
+
+    /// <summary>U15: the off-camera half of a world anchor's pointer — see class doc's new bullet.
+    /// Built once in <see cref="Build"/>, repositioned/rotated/hidden every <see cref="Tick"/> by
+    /// <see cref="UpdateOffCameraMarker"/>. Never a click target (MouseFilter.Ignore, mirrors every
+    /// other child here).</summary>
+    private OffCameraMarker _offCameraMarker = null!;
+
     /// <summary>U11 (§11.14.14): the target <see cref="ScrollIntoView"/> last fired for — distinct
     /// from <see cref="_hudTarget"/> itself so <see cref="Tick"/> (called every frame) only scrolls
     /// a freshly-activated anchor into view ONCE, never every frame the pulse keeps ticking. A
@@ -102,6 +125,21 @@ public sealed partial class TutorialOverlay : Control
     /// inspection surface, same purpose as <see cref="PulsingBuildingKey"/>.</summary>
     public string? PulsingHudControlName => _hudTarget?.Name.ToString();
 
+    /// <summary>U15: true while the off-camera marker is showing (the active anchor's world target
+    /// exists but is not inside <see cref="Town2D.ViewportScreenRect"/> right now) — test/inspection
+    /// surface.</summary>
+    public bool OffCameraMarkerVisible => _offCameraMarker.Visible;
+
+    /// <summary>U15: the marker's live on-screen center — meaningful only while <see
+    /// cref="OffCameraMarkerVisible"/> is true. Screen space (same system <see
+    /// cref="Control.GetGlobalRect"/> reports for any control here).</summary>
+    public Vector2 OffCameraMarkerCenter => _offCameraMarker.Position + OffCameraMarker.PivotCenter;
+
+    /// <summary>U15: the direction (radians, 0 = screen-right, increasing clockwise — Godot's own
+    /// screen-space convention) the marker currently points — meaningful only while <see
+    /// cref="OffCameraMarkerVisible"/> is true.</summary>
+    public float OffCameraMarkerDirectionRadians => _offCameraMarker.Rotation;
+
     /// <summary>Construct the four outline strips. Call once, before the first <see
     /// cref="RefreshAnchor"/>.</summary>
     public void Build()
@@ -113,6 +151,13 @@ public sealed partial class TutorialOverlay : Control
         _bottom = OutlineStrip("TutorialOverlayBottom");
         _left = OutlineStrip("TutorialOverlayLeft");
         _right = OutlineStrip("TutorialOverlayRight");
+
+        // U15: built last so it draws over the outline strips above (never matters in practice —
+        // a Building/Station anchor and a Hud/PanelControl/PanelSection anchor are mutually
+        // exclusive per-tick, see Tick/UpdateOffCameraMarker — but matches this method's own
+        // top-to-bottom "later child draws over earlier" ordering regardless).
+        _offCameraMarker = new OffCameraMarker { Name = "TutorialOffCameraMarker", MouseFilter = MouseFilterEnum.Ignore, Visible = false };
+        AddChild(_offCameraMarker);
     }
 
     private ColorRect OutlineStrip(string name)
@@ -133,6 +178,11 @@ public sealed partial class TutorialOverlay : Control
     /// </summary>
     public void RefreshAnchor(TutorialAnchor anchor, Town2D town, DrawerHost drawer, Node hudRoot)
     {
+        // U15: remembered unconditionally (even on the no-op path below) — Tick has no town
+        // parameter of its own (see _town's doc) and MainUi always hands in the SAME live Town2D,
+        // so there is no staleness risk in refreshing this every call.
+        _town = town;
+
         if (_anchor == anchor)
         {
             return;
@@ -144,6 +194,7 @@ public sealed partial class TutorialOverlay : Control
         _hudTarget = null;
         _elapsed = 0;
         HideOutline();
+        _offCameraMarker.Visible = false; // U15: never let a stale marker survive an anchor change
 
         switch (anchor.Kind)
         {
@@ -218,6 +269,13 @@ public sealed partial class TutorialOverlay : Control
 
                 break;
         }
+
+        // U15: a "world anchor" is live exactly when the switch above populated _pulsingBuilding
+        // (Building or Station kind) — every other kind leaves it null, which correctly restores
+        // every station's Tell to normal (Town2D.SetWorldAnchorTellDamping's own doc). The pulsing
+        // station itself (if any) is passed as the exemption so its OWN Tell never dims under its
+        // own pulse.
+        town.SetWorldAnchorTellDamping(_pulsingBuilding is not null, _pulsingBuilding);
     }
 
     /// <summary>
@@ -229,6 +287,9 @@ public sealed partial class TutorialOverlay : Control
     public void Tick(double delta)
     {
         _pulsingBuilding?.TickTutorialPulse(delta);
+        UpdateOffCameraMarker(); // U15: independent of the Hud path below — a Building/Station
+                                 // anchor never sets _hudTarget, so this must run before the
+                                 // early-return just underneath ever gets a chance to skip it.
 
         if (_hudTarget is null || !_hudTarget.IsVisibleInTree())
         {
@@ -277,6 +338,114 @@ public sealed partial class TutorialOverlay : Control
         var phase = (float)((_elapsed % PulsePeriodSeconds) / PulsePeriodSeconds);
         var alpha = PulseMinAlpha + (1f - PulseMinAlpha) * (0.5f + 0.5f * Mathf.Sin(Mathf.Tau * phase));
         DrawOutline(rect, alpha);
+    }
+
+    /// <summary>
+    /// U15 (§11.14.14): the off-camera half of a world anchor's pointer — see class doc's new
+    /// bullet for the whole feature and <see cref="Town2D.WorldToScreen"/> for the projection math.
+    /// Called every <see cref="Tick"/>, unconditionally (cheap geometry, no allocation beyond the
+    /// odd <see cref="Vector2"/>): shows/hides/repositions <see cref="_offCameraMarker"/> from
+    /// scratch each frame rather than diffing against last frame's state, so there is no separate
+    /// "did the situation change" bookkeeping to get wrong — the SAME reason <see
+    /// cref="Building2D.TickTutorialPulse"/> recomputes its own alpha/scale from scratch every call
+    /// instead of easing toward a cached target.
+    /// </summary>
+    private void UpdateOffCameraMarker()
+    {
+        // No world anchor live at all (Hud/PanelControl/PanelSection/None kinds, or no anchor yet)
+        // — _pulsingBuilding is exactly the Building/Station-kind signal (RefreshAnchor's own
+        // switch), so this single null-check covers all four of those cases in one line.
+        if (_pulsingBuilding is null || _town is null
+            || !GodotObject.IsInstanceValid(_pulsingBuilding) || !GodotObject.IsInstanceValid(_town))
+        {
+            _offCameraMarker.Visible = false;
+            return;
+        }
+
+        // U15: a Station-kind anchor is only ever handed out while the player is ALREADY inside
+        // that station's own venue (TutorialFlow.AimAnchor's own doc: it demotes Station to
+        // Building otherwise), so its room always matches whatever the live camera is clamped to
+        // right now. A Building-kind anchor carries no such guarantee — it names a TOWN building,
+        // which is always valid in the town's OWN coordinate frame, but if the player is currently
+        // standing inside a DIFFERENT interior room, the camera is clamped to THAT room's own
+        // disjoint "island" (InteriorLayout2D's own placement doc: every room sits at a distinct,
+        // far-apart world offset specifically so no camera clamp can ever see two at once). Under
+        // that mismatched camera, projecting the town building's position would produce a screen
+        // point with no real spatial meaning — not "off camera in the right direction", just
+        // arithmetic noise from two unrelated coordinate islands. Silence is more honest than a
+        // confidently wrong direction, so this is the one case the marker deliberately sits out.
+        if (_anchor.Kind == TutorialAnchorKind.Building
+            && _town.InteriorActive
+            && _town.InteriorVenueKey != _anchor.Key)
+        {
+            _offCameraMarker.Visible = false;
+            return;
+        }
+
+        // The margin keeps the marker's own half-size from ever clipping past the canvas edge, and
+        // (deliberately) doubles as the "on screen" threshold below — a target that is technically
+        // inside the raw viewport rect but touching its very edge reads as off-frame to a player
+        // anyway, so treating it as still "off camera" until it clears the margin is the more
+        // honest call, not a separate leniency this code has to justify twice.
+        const float EdgeMargin = 18f;
+        var screenRect = _town.ViewportScreenRect;
+        var inset = screenRect.Grow(-EdgeMargin);
+        if (inset.Size.X <= 0f || inset.Size.Y <= 0f)
+        {
+            // Degenerate (a viewport smaller than the margin, e.g. a tiny test fixture) — fall back
+            // to the raw rect rather than divide-by-near-zero below.
+            inset = screenRect;
+        }
+
+        var targetScreen = _town.WorldToScreen(_pulsingBuilding.GlobalPosition);
+
+        if (inset.HasPoint(targetScreen))
+        {
+            // On screen: Building2D's own pulse (already ticked above) is what reads here — the
+            // marker has nothing to add and must not linger (never-persists, class doc's KTD7 note).
+            _offCameraMarker.Visible = false;
+            return;
+        }
+
+        var center = inset.GetCenter();
+        var toward = targetScreen - center;
+        if (toward.LengthSquared() < 1f)
+        {
+            // Degenerate (dead center — should not coexist with "not HasPoint" above, but a
+            // near-zero rect from the fallback just above could produce this): nothing sensible to
+            // point toward.
+            _offCameraMarker.Visible = false;
+            return;
+        }
+
+        var direction = toward.Normalized();
+
+        // Ray-from-center-to-edge, clamped to the inset rect's own half-extents — the standard
+        // "where does this direction cross the box" solve (minimum of the two axis-aligned hit
+        // distances), so the marker always lands exactly on the rect's border, never past a corner.
+        var half = inset.Size / 2f;
+        var alongX = Mathf.Abs(direction.X) > 0.0001f ? half.X / Mathf.Abs(direction.X) : float.PositiveInfinity;
+        var alongY = Mathf.Abs(direction.Y) > 0.0001f ? half.Y / Mathf.Abs(direction.Y) : float.PositiveInfinity;
+        var edgePoint = center + direction * Mathf.Min(alongX, alongY);
+
+        _offCameraMarker.Visible = true;
+        _offCameraMarker.QueueRedraw(); // geometry is static, but this is cheap and removes any
+                                        // doubt about whether a Visible=false→true flip alone
+                                        // re-triggers _Draw (mirrors QuenchCanvas's own
+                                        // every-frame QueueRedraw idiom elsewhere in this codebase).
+        _offCameraMarker.PivotOffset = OffCameraMarker.PivotCenter;
+        _offCameraMarker.Position = edgePoint - OffCameraMarker.PivotCenter;
+        _offCameraMarker.Rotation = direction.Angle();
+
+        // U15 (KTD8/OQ3): reads the SAME live scale/alpha Building2D.TickTutorialPulse just computed
+        // for the on-screen pulse — not a second copy of the breathe math — so the marker and the
+        // pulse are provably one signature, never two clocks that merely look alike (Building2D's
+        // own TutorialPulseScale/TutorialPulseAlpha doc explains why this is exposed at all).
+        var scale = _pulsingBuilding.TutorialPulseScale;
+        _offCameraMarker.Scale = new Vector2(scale, scale);
+        var color = Building2D.TutorialPulseColor;
+        color.A = _pulsingBuilding.TutorialPulseAlpha;
+        _offCameraMarker.Modulate = color;
     }
 
     /// <summary>U11 (§11.14.14): the nearest <see cref="ScrollContainer"/> ancestor of
@@ -377,5 +546,42 @@ public sealed partial class TutorialOverlay : Control
 
         _right.Position = new Vector2(rect.Position.X + rect.Size.X, rect.Position.Y);
         _right.Size = new Vector2(OutlineWidth, rect.Size.Y);
+    }
+
+    /// <summary>
+    /// U15 (§11.14.14): the drawn half of the off-camera marker — a small solid triangle, tip along
+    /// local +X, that <see cref="UpdateOffCameraMarker"/> positions/rotates/scales/recolors every
+    /// tick (mirrors the <c>node.PivotOffset</c>/<c>node.Scale</c>/<c>node.Modulate</c> idiom already
+    /// used for a breathing icon elsewhere in this codebase, e.g. <c>DelveStage</c>'s sparkle FX and
+    /// <c>BestiaryPanel</c>'s portrait breathe). Deliberately a SHAPE, not another warm-gold hue —
+    /// see class doc's U15 bullet and <see cref="Building2D.TutorialPulseScale"/>'s own doc for why
+    /// a shape/motion signature is the accessible answer here (§11.14.14 OQ3).
+    ///
+    /// <para>The triangle geometry itself never changes frame to frame — only <see
+    /// cref="CanvasItem.Modulate"/>/<see cref="CanvasItem.Rotation"/>/<see cref="CanvasItem.Scale"/>
+    /// do, and Godot applies all three as ordinary render-time transforms with no redraw needed.
+    /// <see cref="UpdateOffCameraMarker"/> still calls <c>QueueRedraw()</c> defensively whenever it
+    /// shows this marker (mirrors <c>QuenchCanvas</c>'s own every-frame <c>QueueRedraw</c> idiom) —
+    /// belt and suspenders against relying on a bare <c>Visible</c> flip alone re-triggering the
+    /// first draw, not because the geometry itself is expected to change.</para>
+    /// </summary>
+    private sealed partial class OffCameraMarker : Control
+    {
+        private const float DrawSize = 14f;
+
+        /// <summary>The triangle's own local center — also this control's <see
+        /// cref="Control.PivotOffset"/>, so rotating/scaling it turns/breathes around its visual
+        /// center rather than its top-left corner.</summary>
+        public static readonly Vector2 PivotCenter = new(DrawSize / 2f, DrawSize / 2f);
+
+        public override void _Draw()
+        {
+            var tip = PivotCenter + new Vector2(DrawSize / 2f, 0f);
+            var baseA = PivotCenter + new Vector2(-DrawSize * 0.35f, DrawSize * 0.4f);
+            var baseB = PivotCenter + new Vector2(-DrawSize * 0.35f, -DrawSize * 0.4f);
+            // Solid white — UpdateOffCameraMarker's Modulate supplies the actual color/alpha, the
+            // same division of labor DrawOutline's ColorRects rely on (geometry here, color there).
+            DrawPolygon(new[] { tip, baseA, baseB }, new[] { Colors.White, Colors.White, Colors.White });
+        }
     }
 }
