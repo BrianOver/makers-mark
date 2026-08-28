@@ -2483,6 +2483,101 @@ public sealed partial class TutorialFlow : PanelContainer
     /// for the OTHER user:// preference file).</summary>
     public static void DeleteForTests() => ResetForNewGame();
 
+    /// <summary>
+    /// U22 (§11.14.14): the first hero, in EVENT ORDER, that the player's own work actually reached
+    /// — the tutorial's "remember the name" (class doc, link 2 — HandOff). A pure derivation over
+    /// <paramref name="state"/> alone: no field of this class, no persisted flag, nothing a save
+    /// written before this unit could ever be missing from.
+    ///
+    /// <para><b>The course cannot choose the hero — the sim already did; this only reads it back.</b>
+    /// Three of the four HandOff channels (<see cref="TutorialAct"/>'s own doc: shelf, counter,
+    /// commission, vigil runner) leave a fact this method can read. A hand-off through the COUNTER
+    /// alone (<see cref="CounterSaleClosed"/> fires with no companion <see cref="ItemSold"/>) is a
+    /// real gap this unit's own spec left open — a campaign whose very first hand-off is a counter
+    /// sale reads as "nobody yet" here until a shelf/commission/vigil hand-off also lands, same as a
+    /// campaign with none of the three at all:
+    /// <list type="bullet">
+    /// <item>a SHELF sale of a player-crafted item — <see cref="ItemSold"/> with <see
+    /// cref="ItemSold.FromPlayerShop"/> true, filtered to an item this same <paramref name="state"/>
+    /// still marks <see cref="Item.PlayerCrafted"/> (rival stock is never a hand-off). A fulfilled
+    /// commission ALSO fires this exact event, one beat before its own <see
+    /// cref="CommissionFulfilled"/> (<see cref="GameSim.Heroes.CommissionHandlers.TryFulfillFromShelf"/>
+    /// emits <see cref="ItemSold"/> immediately before <see cref="CommissionFulfilled"/>) — so a
+    /// fulfilled commission is already caught here, at the sale itself, one row earlier than its own
+    /// companion fact.</item>
+    /// <item>the hero of the first ACCEPTED commission — <see cref="AcceptCommissionAction"/> in
+    /// <see cref="GameState.ActionLog"/>. Accepting is the promise, not the parcel — it can land days
+    /// before any sale, and can even be the only fact on a seed where the commission later expires
+    /// unfulfilled — but the player's own hand reached toward that hero first, which is the property
+    /// this method is named for.</item>
+    /// <item>the first delivered VIGIL supply — <see cref="SupplyDelivered"/>.</item>
+    /// </list>
+    /// </para>
+    ///
+    /// <para><b>Ordering: the calendar day decides; the list above is a same-day tiebreak only.</b>
+    /// Each channel contributes at most its OWN first occurrence (in <see cref="GameState.EventLog"/>/
+    /// <see cref="GameState.ActionLog"/> emission order); the lowest <see cref="GameEvent.Day"/> /
+    /// <see cref="LoggedBatch.Day"/> among the three wins outright — a Day-1 vigil supply beats a
+    /// Day-3 shelf sale to somebody else, full stop, regardless of which channel is listed first
+    /// above. The list's own order is consulted ONLY when two channels first land on the identical
+    /// day: <see cref="GameEvent.Id"/> is a real per-event sequence but <see cref="LoggedBatch"/>
+    /// carries no equivalent counter, so an accepted commission and a shelf sale on the SAME day have
+    /// no finer-grained fact this pure function can compare. <c>ThreadHeroTests</c>' own
+    /// "event order decides, not channel priority" case pins the CROSS-day rule, which is the one
+    /// that actually matters: a static "shop sale always wins" reading would be wrong the moment an
+    /// earlier day's vigil supply exists, and this derivation does not do that.</para>
+    ///
+    /// <para><b>The hard rule this unit exists to pin.</b> <see cref="ThreadHero"/> may choose which
+    /// name a row's copy PRINTS. It may never back a completion predicate — a course that waited for
+    /// "the thread hero" to buy something would silently rewrite which hero it is honoring around
+    /// whichever one happened to shop first, on a seed where the ACTUAL sale went to somebody else
+    /// entirely (the exact lie the class's own "the course cannot choose the hero" warning names).
+    /// Every <see cref="TutorialStepDef.IsDone"/> in <see cref="Registry"/> stays keyed on a fact
+    /// the PLAYER caused, unchanged by this unit; <c>ThreadHeroTests.NoRegistryIsDone_ReadsThreadHero</c>
+    /// walks each row's compiled <see cref="TutorialStepDef.IsDone"/> delegate — and anything IT
+    /// calls inside this class — by IL, so a future row that reaches this method even indirectly goes
+    /// red. A comment here is not the rule; that test is.</para>
+    /// </summary>
+    public static HeroId? ThreadHero(GameState state)
+    {
+        // (Day it happened, same-day tiebreak rank, the hero) — rank 0 shop sale, 1 accepted
+        // commission, 2 vigil supply, exactly the doc's own list order above.
+        (int Day, int Rank, HeroId Hero)? best = null;
+
+        void Consider(int day, int rank, HeroId hero)
+        {
+            if (best is not { } current || day < current.Day || (day == current.Day && rank < current.Rank))
+            {
+                best = (day, rank, hero);
+            }
+        }
+
+        var shopSale = state.EventLog.OfType<ItemSold>().FirstOrDefault(sale =>
+            sale.FromPlayerShop && state.Items.TryGetValue(sale.Item.Value, out var item) && item.PlayerCrafted);
+        if (shopSale is not null)
+        {
+            Consider(shopSale.Day, 0, shopSale.Buyer);
+        }
+
+        foreach (var batch in state.ActionLog)
+        {
+            var accept = batch.Actions.OfType<AcceptCommissionAction>().FirstOrDefault();
+            if (accept is not null)
+            {
+                Consider(batch.Day, 1, accept.Hero);
+                break; // first ACCEPTED commission only — a later one never overrides this one
+            }
+        }
+
+        var supplyDelivered = state.EventLog.OfType<SupplyDelivered>().FirstOrDefault();
+        if (supplyDelivered is not null)
+        {
+            Consider(supplyDelivered.Day, 2, supplyDelivered.To);
+        }
+
+        return best?.Hero;
+    }
+
     private sealed class PersistedData
     {
         public bool Completed { get; set; }
