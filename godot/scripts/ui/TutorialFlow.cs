@@ -2161,13 +2161,14 @@ public sealed partial class TutorialFlow : PanelContainer
     /// itself already uses (Lesson=0 &lt; Act=1), so there is no separate int table to drift out of
     /// sync with this list. R21's own approach text names this exact order.
     ///
-    /// <para>Only <see cref="HeroDeath"/> (<see cref="ConsumeFirstLossBlock"/>) and <see
-    /// cref="WarrantEnded"/> (<see cref="ConsumeWarrantEndBeat"/>) back a real dormant act today —
-    /// <see cref="Proof"/>, <see cref="Graduation"/>, <see cref="ActAdvance"/>, <see
-    /// cref="CommissionFulfilled"/> and <see cref="RankUp"/> land their own dormant acts in U30-U33
-    /// and wire into <see cref="ResolveTonightsActVoices"/> the same way the two real ones already
-    /// do (<see cref="PendingActVoiceCandidates"/>'s own doc). This unit builds the budget/precedence
-    /// MECHANISM, not the other five voices.</para>
+    /// <para><see cref="HeroDeath"/> (<see cref="ConsumeFirstLossBlock"/>), <see
+    /// cref="WarrantEnded"/> (<see cref="ConsumeWarrantEndBeat"/>) and, as of U30, <see
+    /// cref="Proof"/> (<see cref="ConsumeProofBeat"/>) back a real dormant act today — <see
+    /// cref="Graduation"/>, <see cref="ActAdvance"/>, <see cref="CommissionFulfilled"/> and <see
+    /// cref="RankUp"/> land their own dormant acts in U31-U33 and wire into <see
+    /// cref="ResolveTonightsActVoices"/> the same way the three real ones already do (<see
+    /// cref="PendingActVoiceCandidates"/>'s own doc). U29 built the budget/precedence MECHANISM,
+    /// not the voices themselves.</para>
     /// </summary>
     public enum ActVoiceKind
     {
@@ -2253,7 +2254,17 @@ public sealed partial class TutorialFlow : PanelContainer
     {
         var pending = new HashSet<ActVoiceKind>();
 
-        if (!Dismissed && _firstLossDay == 0 && state.EventLog.OfType<HeroDied>().Any())
+        // U30: HeroDeath must keep occupying the death/proof exclusion even AFTER
+        // ConsumeFirstLossBlock has already committed _firstLossDay FOR TODAY — MainUi's own
+        // wiring calls ConsumeFirstLossBlock, then ConsumeProofBeat, on the SAME state the same
+        // tick; without this, the second call would re-derive a pool where HeroDeath's own gate
+        // (_firstLossDay == 0) now reads false, dropping it from the pool entirely and letting
+        // Proof through on the very night R21's own corollary forbids sharing. "Committed today"
+        // and "not yet committed, but the underlying fact already exists" both count as "HeroDeath
+        // is active tonight" for this pool's purposes.
+        if (!Dismissed && (_firstLossDay == 0
+                ? state.EventLog.OfType<HeroDied>().Any()
+                : _firstLossDay == state.Day))
         {
             pending.Add(ActVoiceKind.HeroDeath);
         }
@@ -2261,6 +2272,18 @@ public sealed partial class TutorialFlow : PanelContainer
         if (!_hasSeenWarrantEndBeat && state.Day >= WarrantEndDay && !ApprenticeWarrant.Concluded(state))
         {
             pending.Add(ActVoiceKind.WarrantEnded);
+        }
+
+        // U30 (§11.14.14): the Proof act's own candidacy — the first EVER AttributionBeatEvent,
+        // read off the durable EventLog exactly like HeroDeath just above (both land at the
+        // identical Evening-reveal moment, ExpeditionRevealSystem's own fixed emission order:
+        // "HeroDied*, ... AttributionBeatEvent*"). No !Dismissed gate — unlike HeroDeath, this is
+        // not "the tutorial's last lesson" (ConsumeFirstLossBlock's own remark); it is the
+        // sentence the whole game exists to produce, and it fired unconditionally before this unit
+        // too (the old per-tick first-touch it replaces was explicitly independent of Dismissed).
+        if (_proofBeatDay == 0 && state.EventLog.OfType<AttributionBeatEvent>().Any())
+        {
+            pending.Add(ActVoiceKind.Proof);
         }
 
         return pending;
@@ -2417,6 +2440,156 @@ public sealed partial class TutorialFlow : PanelContainer
     /// cref="LossActRow"/>'s own two-day visible window (the row retires; the lesson never does —
     /// "re-reading beats re-running", the same answer U2 established for every other lesson).</summary>
     public string? LossLessonText => _firstLossDay > 0 ? FirstLossBlockText : null;
+
+    // ── U30 (§11.14.14): the Proof act's dormant row ─────────────────────────────────────────────
+    //
+    // "The sentence the whole course exists to reach... delivered as a stray toast that names the
+    // engine." The old mechanism (MainUi.ShowProofFirstTouchIfEarned, removed by this unit) polled
+    // Adapter.LastEvents every RefreshAll tick — wherever the player happened to be standing — and
+    // used TutorialFlow.ConsumeFirstTouch's own generic once-ever id, independent of tonight's
+    // act-voice budget and the Ledger entirely. This section gives the beat the SAME dormant-act
+    // shape HeroDeath/WarrantEnded already have: armed off the durable EventLog, gated through
+    // ResolveTonightsActVoices, anchored into the ledger's own beat card.
+
+    /// <summary>
+    /// U30: the Proof act's own once-ever voice — armed on the FIRST <see cref="AttributionBeatEvent"/>
+    /// this campaign ever records, claiming tonight's act-voice slot exactly like <see
+    /// cref="ConsumeFirstLossBlock"/>/<see cref="ConsumeWarrantEndBeat"/> already do (losing the
+    /// slot means staying silent and NOT committing <see cref="_proofBeatDay"/> — the next call,
+    /// ordinarily tomorrow, re-asks fresh and, once it wins, opens <see cref="ProofBeatRow"/>'s own
+    /// FULL one-night-one-day window from whatever day it actually commits on, never a remainder).
+    ///
+    /// <para>Returns the RAW, unattributed mechanism line — the same "TutorialFlow hands back plain
+    /// copy, the caller decides attribution" contract <see cref="ConsumeFirstLossBlock"/>/<see
+    /// cref="ConsumeWarrantEndBeat"/> already keep. <c>MainUi</c> wraps it in <see
+    /// cref="MentorVoice.Speak"/> and shows it through the shared <see cref="MentorBanner"/> at <see
+    /// cref="MentorVoiceRank.Act"/>, anchored via <see cref="ProofBeatAnchor"/> — never a hero's
+    /// name (<see cref="ThreadHero"/>'s own hard rule: the beat may land on someone other than the
+    /// thread hero, and a line naming the wrong person lies). The Ledger's own beat-card rendering
+    /// (<c>LedgerModal.BuildReturnCard</c>'s existing <c>card.Beats</c> loop) is what names the
+    /// hero, the floor and the item — copy asserts the mechanism, the card asserts the hero
+    /// (KTD5).</para>
+    /// </summary>
+    public string? ConsumeProofBeat(GameState state)
+    {
+        if (_proofBeatDay > 0)
+        {
+            return null;
+        }
+
+        if (!state.EventLog.OfType<AttributionBeatEvent>().Any())
+        {
+            return null;
+        }
+
+        if (!ResolveTonightsActVoices(PendingActVoiceCandidates(state)).Contains(ActVoiceKind.Proof))
+        {
+            return null;
+        }
+
+        _proofBeatDay = state.Day;
+        Save();
+        return ProofBeatText;
+    }
+
+    /// <summary>Bryn's own line for the Proof act (U30) — never "the sim" (she is a townsfolk who
+    /// has never heard the word), never a hero's name (this class doc's hard rule), and it keeps the
+    /// old first-touch's own "no participation credit" clause: only forged work ever earns a beat.
+    /// Given personal stake deliberately, per this unit's own direction ("what must change is that
+    /// it names the engine, and that it has no stake in it") — the old line asserted the mechanism
+    /// with no voice behind it at all.</summary>
+    private const string ProofBeatText =
+        "Look at that line. The town told the fight again with your craft pulled back out of it, and "
+        + "the ending changed. Only work you actually forged earns a line like that — nothing else a "
+        + "hero happens to be carrying ever will. I've never had a night like this one.";
+
+    /// <summary>U30: the day <see cref="ConsumeProofBeat"/> actually committed, or 0 (armed-but-
+    /// silent) — the identical "commit day, not fact day" contract <see cref="_firstLossDay"/>
+    /// already established, so a deferred Proof beat still opens its own full window.</summary>
+    private int _proofBeatDay;
+
+    /// <summary>U30: "the beat card being opened" (§11.14.14's own test scenario) — a one-way
+    /// ratchet set by <see cref="NotifyLedgerOpened"/>, never reset. There is no separate verb for
+    /// the proof the way <see cref="HonorMemorialAction"/> is the loss act's own rite (<see
+    /// cref="LossActRow"/>'s Done reads a durable submitted action); this beat is purely
+    /// observational, so simply looking at the Ledger while the row is armed is what "Done"
+    /// means.</summary>
+    private bool _proofBeatCardOpened;
+
+    /// <summary>
+    /// U30: <c>MainUi</c> calls this from the Ledger's OWN <c>VisibilityChanged</c> handler every
+    /// time it becomes visible — the one funnel both the automatic Return-Ritual reveal and a
+    /// manual reopen (the tray's "OpenLedger" button) already share, mirroring <see
+    /// cref="NotifyCampCardShown"/>'s "seeing the stop IS the lesson" idiom. A no-op before the act
+    /// has ever armed or once <see cref="_proofBeatCardOpened"/> already reads true — never a
+    /// repeated <see cref="Save"/> for a fact that has not changed.
+    /// </summary>
+    public void NotifyLedgerOpened()
+    {
+        if (_proofBeatDay > 0 && !_proofBeatCardOpened)
+        {
+            _proofBeatCardOpened = true;
+            Save();
+        }
+    }
+
+    /// <summary>
+    /// U30: the Proof act's own checklist row — "one night, one day, then an honest retire," the
+    /// identical KTD-H shape <see cref="LossActRow"/> already established (its own doc explains why
+    /// this is a hard rule). Null before the act has armed, and null again two dawns after it
+    /// (retired — <see cref="ProofLessonText"/> holds the permanent record from here on, not this
+    /// row). While visible: <see cref="ChecklistRow.Done"/> once the player has opened the Ledger at
+    /// all since arming (<see cref="NotifyLedgerOpened"/>); <see cref="ChecklistRow.Skipped"/> on the
+    /// second day if they still have not.
+    /// </summary>
+    public ChecklistRow? ProofBeatRow(GameState state)
+    {
+        if (_proofBeatDay <= 0)
+        {
+            return null;
+        }
+
+        var dayOffset = state.Day - _proofBeatDay;
+        if (dayOffset is < 0 or > 1)
+        {
+            return null; // before it woke (defensive), or past its one-night-one-day window
+        }
+
+        var done = _proofBeatCardOpened;
+        var skipped = dayOffset == 1 && !done;
+
+        return new ChecklistRow(
+            DisplayIndex: TotalSteps + 2,
+            Label: "Open the Ledger and read the proof",
+            Done: done,
+            Current: !done && !skipped,
+            VisitedAnchor: false,
+            GatingNote: !done && !skipped
+                ? "It's waiting in the Ledger — open it when you're ready." : null,
+            TeachNote: null,
+            Skipped: skipped);
+    }
+
+    /// <summary>U30: the proof lesson's own permanent Lessons-book text — non-null from the moment
+    /// the beat first armed (<see cref="_proofBeatDay"/> &gt; 0) forever after, the same "re-reading
+    /// beats re-running" precedent <see cref="LossLessonText"/> already set. RAW/unattributed, like
+    /// every other Consume* text this class returns — <c>LessonsPanel</c> wraps it in <see
+    /// cref="MentorVoice.Speak"/> before rendering, since the book already shows every OTHER
+    /// Bryn-voiced first-touch lesson attributed the same way.</summary>
+    public string? ProofLessonText => _proofBeatDay > 0 ? ProofBeatText : null;
+
+    /// <summary>
+    /// U30: the Proof act's own anchor — the ledger's beat card once open (<c>LedgerModal</c> names
+    /// the lead card <c>"LedgerCard_0"</c>, and <c>LeadWithAttribution</c> sorts any beat-bearing
+    /// card first, so it always carries the beat on the night this row is freshly armed), or the
+    /// Ledger's own declared way in (<see cref="TutorialSurfaceRegistry"/>'s <c>"OpenLedger"</c> HUD
+    /// button) while it is closed — the identical "point at the way in while closed" rule <see
+    /// cref="AimAnchor"/> already enforces for every <see cref="TutorialAnchorKind.PanelControl"/>
+    /// row, reused rather than reinvented. Pure and static so it can be tested directly, the same
+    /// reason <see cref="AimAnchor"/> itself is.
+    /// </summary>
+    public static TutorialAnchor ProofBeatAnchor(string? openPanelId) =>
+        AimAnchor(TutorialAnchor.ForPanelControl("Ledger", "LedgerCard_0"), openPanelId);
 
     /// <summary>
     /// U25 (§11.14.14, KTD2): the counter's own dormant act — armed the first time EVER a haggle
@@ -2675,6 +2848,10 @@ public sealed partial class TutorialFlow : PanelContainer
             _hasSeenFleeceBeat = data.HasSeenFleeceBeat;
             _hasSeenDemandBoardBeat = data.HasSeenDemandBoardBeat;
             _demandBoardArmedDay = data.DemandBoardArmedDay;
+            // U30: an old save without either property below deserializes to the shared int/bool
+            // defaults (0 / false) — safe, the same "not armed yet" reading a fresh campaign gets.
+            _proofBeatDay = data.ProofBeatDay;
+            _proofBeatCardOpened = data.ProofBeatCardOpened;
             // U-T2-7: an old save without this property deserializes to null — safe, same "widens
             // going forward, never fabricates a false fire" contract VigilCardSeen's own remark set:
             // a pre-existing campaign simply has nothing fired yet, exactly like a fresh one.
@@ -2709,6 +2886,7 @@ public sealed partial class TutorialFlow : PanelContainer
                 HasSeenWarrantEndBeat = _hasSeenWarrantEndBeat, FirstLossDay = _firstLossDay,
                 HasSeenFleeceBeat = _hasSeenFleeceBeat,
                 HasSeenDemandBoardBeat = _hasSeenDemandBoardBeat, DemandBoardArmedDay = _demandBoardArmedDay,
+                ProofBeatDay = _proofBeatDay, ProofBeatCardOpened = _proofBeatCardOpened,
                 FirstTouchFired = new Dictionary<string, string>(FirstTouch.Fired),
                 // U14: the arrived ratchet and the mentor banner's own not-yet-dismissed lines — see
                 // both fields' own docs (_visitedAnchorForStep, PendingMentorLines).
@@ -2987,6 +3165,15 @@ public sealed partial class TutorialFlow : PanelContainer
         /// <summary>U25 (§11.14.14, KTD2): the counter's own fleece dormant act — false (never seen)
         /// is the safe default for a save from before this property existed.</summary>
         public bool HasSeenFleeceBeat { get; set; }
+        /// <summary>U30 (§11.14.14): the Proof act's own place — 0 (not yet armed) is the safe
+        /// default for a save from before this property existed, the identical precedent <see
+        /// cref="FirstLossDay"/> already set for the loss act.</summary>
+        public int ProofBeatDay { get; set; }
+
+        /// <summary>U30: the Proof act's own "has the player opened the Ledger since arming"
+        /// ratchet — false is the safe default for a save from before this property existed (a
+        /// pre-U30 campaign never tracked this fact either).</summary>
+        public bool ProofBeatCardOpened { get; set; }
 
         /// <summary>U26 (§11.14.14): the demand-board beat's own once-ever flag — an old save
         /// without this property deserializes to false, the same safe default every sibling flag

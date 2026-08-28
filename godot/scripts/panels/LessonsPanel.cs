@@ -48,7 +48,12 @@ public partial class LessonsPanel : SimPanel
     /// </summary>
     public static readonly IReadOnlyDictionary<string, string> FirstTouchTitles = new Dictionary<string, string>
     {
-        ["the-proof-taught"] = "The proof, explained",
+        // U30 (§11.14.14): "the-proof-taught" moved off this ConsumeFirstTouch-backed table — the
+        // Proof act is now a dormant act with its own arm-day field (TutorialFlow.ConsumeProofBeat),
+        // the same shape the loss act already uses, and this book's own trailing "Lesson_Proof"
+        // card (below) is its permanent record instead. A stale entry here would fail
+        // LessonsPanelTests.EveryLiveFirstTouchId_HasANonSlugTitleInTheCatalog — no live call site
+        // names this id anymore.
         ["read-only-surfaces"] = "Nothing here is a button",
         ["tomorrow-at-the-counter"] = "Tomorrow's counter",
         ["quick-travel-unlocked"] = "Quick travel unlocked",
@@ -152,6 +157,25 @@ public partial class LessonsPanel : SimPanel
 
             AddLabel(body, "◆ The first loss").AddThemeColorOverride("font_color", GameTheme.WarnColor);
             AddLabel(body, ObjectiveTracker.Plain(lossLesson));
+        }
+
+        // U30 (§11.14.14): the proof lesson — the Proof act's own trailing card, same "not one of
+        // the ten registry rows, dormant until its own fact lands" shape as the loss lesson just
+        // above (it is dormant until the campaign's first AttributionBeatEvent, which can land
+        // before OR after the numbered chain finishes). ProofLessonText is RAW/unattributed (see
+        // its own doc); this book wraps it in MentorVoice.Speak so it reads exactly like every
+        // other Bryn-voiced first-touch card below, since it used to BE one before this unit moved
+        // it onto the dormant-act mechanism.
+        if (Tutorial?.ProofLessonText is { } proofLesson)
+        {
+            var card = Card("Lesson_Proof");
+            _content!.AddChild(card);
+
+            var body = new VBoxContainer();
+            card.AddChild(body);
+
+            AddLabel(body, "◆ The proof, explained").AddThemeColorOverride("font_color", GameTheme.WarnColor);
+            AddLabel(body, ObjectiveTracker.Plain(MentorVoice.Speak(proofLesson)));
         }
 
         // U-T2-7 (Wave A substrate, §11.14.4): the first-touch tier's own permanent record — every
