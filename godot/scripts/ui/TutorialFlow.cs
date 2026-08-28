@@ -984,7 +984,14 @@ public sealed partial class TutorialFlow : PanelContainer
     /// cref="TutorialStepDef.DisplayIndex"/>, not the raw <see cref="TutorialStep"/> — BuyMaterial
     /// and Craft share both a display slot AND an anchor ("forge"), and keying by the raw step
     /// would forget the visit the instant Craft's own completion moved <see cref="Step"/> off
-    /// BuyMaterial, even though the player never left the building.</summary>
+    /// BuyMaterial, even though the player never left the building.
+    ///
+    /// <para>U14 (§11.14.14 defect): persisted alongside <see cref="Step"/> as of this unit — before
+    /// it, this set was declared as a field like any other but never appeared in <see
+    /// cref="PersistedData"/>, <see cref="Save"/>, or <see cref="Load"/>, so a reload mid-step reset
+    /// it to empty and silently re-armed a handoff the player had already completed (the checklist's
+    /// "✓ Arrived" sub-tick would read false again for a building the player had, in fact, already
+    /// walked into this campaign).</para></summary>
     private readonly HashSet<int> _visitedAnchorForStep = new();
 
     /// <summary>U1 (§11.13): true once <see cref="NotifyCampCardShown"/> has fired at least once
@@ -1934,9 +1941,17 @@ public sealed partial class TutorialFlow : PanelContainer
         // the venue key it lives in (see TutorialAnchor's own doc), so walking into that venue is
         // still the "arrived" fact the checklist's sub-tick reads, exactly as it was for Building.
         if (Active && def.Anchor is { Kind: TutorialAnchorKind.Building or TutorialAnchorKind.Station } anchor
-            && anchor.Key == venueKey)
+            && anchor.Key == venueKey
+            // U14 (§11.14.14 defect): Save() ONLY on a genuine new arrival (HashSet.Add's own bool),
+            // never unconditionally — this fires on EVERY building click that matches the current
+            // step's anchor, so an unconditional Save() here would mean re-writing the same file
+            // repeatedly every time a player re-enters a building they already visited this step.
+            // Before this unit there was no Save() call here at all, which is the other half of the
+            // defect this method's own field doc now explains: the ratchet was declared, persisted
+            // nowhere, and silently reset to empty on every reload.
+            && _visitedAnchorForStep.Add(def.DisplayIndex))
         {
-            _visitedAnchorForStep.Add(def.DisplayIndex);
+            Save();
         }
     }
 
@@ -2166,6 +2181,35 @@ public sealed partial class TutorialFlow : PanelContainer
         return fired;
     }
 
+    /// <summary>
+    /// U14 (§11.14.14 defect): everything <see cref="MentorBanner.SnapshotForPersistence"/> returned
+    /// as of the last time it changed — the current on-screen line (if any) plus its whole backlog,
+    /// in display order. <c>MainUi</c> hands this straight back into <see
+    /// cref="MentorBanner.RestoreFromPersistence"/> once, at boot, right after <see cref="Load"/>.
+    /// Empty for a fresh campaign and for any save written before this unit (an old save simply never
+    /// had anything queued at boot time either — this is one more field that only ever WIDENS what a
+    /// reload can recover, never a false restore).
+    /// </summary>
+    public IReadOnlyList<MentorBanner.MentorBannerLine> PendingMentorLines { get; private set; } =
+        Array.Empty<MentorBanner.MentorBannerLine>();
+
+    /// <summary>
+    /// U14: <c>MainUi</c> calls this from <see cref="MentorBanner.QueueChanged"/> — every time that
+    /// banner's own on-screen line or backlog actually changes, this class captures the new snapshot
+    /// and persists it immediately, the identical "changed, so save now" discipline every other flag
+    /// here already follows (<see cref="Dismiss"/>, <see cref="ConsumeFirstTouch"/>, <see
+    /// cref="NotifyEnteredBuilding"/>). This is the fix for "the banner's pending queue is runtime-
+    /// only" — the banner itself stays Godot-adjacent-but-otherwise-pure and ignorant of <c>user://</c>
+    /// (its own class doc's "owns no TutorialFlow reference" contract, unchanged); this class is the
+    /// one that already owns a save file, so it is the one that persists the banner's own snapshot on
+    /// its behalf.
+    /// </summary>
+    public void RecordMentorQueue(IReadOnlyList<MentorBanner.MentorBannerLine> lines)
+    {
+        PendingMentorLines = lines;
+        Save();
+    }
+
     private void Complete()
     {
         Completed = true;
@@ -2268,6 +2312,18 @@ public sealed partial class TutorialFlow : PanelContainer
             // going forward, never fabricates a false fire" contract VigilCardSeen's own remark set:
             // a pre-existing campaign simply has nothing fired yet, exactly like a fresh one.
             FirstTouch = new FirstTouchLessons(data.FirstTouchFired);
+            // U14: an old save without either property below deserializes to null — both widen the
+            // same direction as FirstTouchFired above (an empty ratchet/queue is exactly what a
+            // pre-U14 campaign already had, never a fabricated arrival or a phantom queued lesson).
+            // _visitedAnchorForStep is readonly (mutated in place, never reassigned) — Clear then
+            // refill rather than replacing the reference.
+            _visitedAnchorForStep.Clear();
+            if (data.VisitedAnchorForStep is not null)
+            {
+                _visitedAnchorForStep.UnionWith(data.VisitedAnchorForStep);
+            }
+
+            PendingMentorLines = data.PendingMentorLines ?? new List<MentorBanner.MentorBannerLine>();
         }
         catch (System.Text.Json.JsonException)
         {
@@ -2285,6 +2341,10 @@ public sealed partial class TutorialFlow : PanelContainer
                 VigilCardSeen = _vigilCardSeen,
                 HasSeenWarrantEndBeat = _hasSeenWarrantEndBeat, FirstLossDay = _firstLossDay,
                 FirstTouchFired = new Dictionary<string, string>(FirstTouch.Fired),
+                // U14: the arrived ratchet and the mentor banner's own not-yet-dismissed lines — see
+                // both fields' own docs (_visitedAnchorForStep, PendingMentorLines).
+                VisitedAnchorForStep = _visitedAnchorForStep.ToArray(),
+                PendingMentorLines = new List<MentorBanner.MentorBannerLine>(PendingMentorLines),
             }));
     }
 
@@ -2363,5 +2423,20 @@ public sealed partial class TutorialFlow : PanelContainer
         /// fresh campaign — never a false fire, per <see cref="FirstTouchLessons.Consume"/>'s own
         /// contract).</summary>
         public Dictionary<string, string>? FirstTouchFired { get; set; }
+
+        /// <summary>U14 (§11.14.14 defect): the arrived ratchet (<see
+        /// cref="_visitedAnchorForStep"/>'s own doc) — keyed by <see
+        /// cref="TutorialStepDef.DisplayIndex"/>, exactly what that field already holds. An old save
+        /// without this property deserializes to null, which <see cref="Load"/> treats as an empty
+        /// set — safe: a pre-U14 campaign never persisted an arrival either, so this cannot fabricate
+        /// one that did not happen.</summary>
+        public int[]? VisitedAnchorForStep { get; set; }
+
+        /// <summary>U14 (§11.14.14 defect): the shared <see cref="MentorBanner"/>'s own not-yet-
+        /// dismissed lines (<see cref="PendingMentorLines"/>'s own doc) — the fix for "the banner's
+        /// pending queue is runtime-only." Null for any save from before this unit, which <see
+        /// cref="Load"/> treats as an empty queue — the same safe direction as every other field
+        /// here: nothing was ever queued at boot time for a pre-U14 save either.</summary>
+        public List<MentorBanner.MentorBannerLine>? PendingMentorLines { get; set; }
     }
 }

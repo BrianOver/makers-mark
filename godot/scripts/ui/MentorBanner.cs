@@ -22,6 +22,15 @@ namespace GodotClient.Ui;
 /// until the player presses "Got it," however long that takes. The root and its inner containers
 /// stay <see cref="Control.MouseFilterEnum.Ignore"/> (never blocks a click meant for whatever is
 /// underneath); only the dismiss button itself accepts input — a toast, never a gating modal.</para>
+///
+/// <para><b>U14 (§11.14.14): the queue survives a quit.</b> This class was runtime-only until this
+/// unit — <see cref="_pending"/>, the current line, its rank and its anchor all lived in memory
+/// alone, so a player who quit with beats still queued lost them permanently (<see
+/// cref="TutorialFlow.ConsumeFirstTouch"/> had already marked their ids fired, and that engine never
+/// re-fires an id). <see cref="SnapshotForPersistence"/>/<see cref="RestoreFromPersistence"/> are the
+/// fix — see their own docs — with <see cref="QueueChanged"/> as the hook <c>MainUi</c> uses to keep
+/// <see cref="TutorialFlow"/>'s save file current every time this banner's own state actually
+/// changes.</para>
 /// </summary>
 /// <summary>
 /// U-T9-0 (§11.14.13): how much a line's moment is worth, so a loud night drops the right one.
@@ -62,6 +71,19 @@ public partial class MentorBanner : PanelContainer
     /// <see cref="Enqueue"/> alone: queuing a beat behind the current one changes nothing the player
     /// can see yet.</summary>
     public event Action? Changed;
+
+    /// <summary>
+    /// U14 (§11.14.14, the quit-with-lines-queued fix): raised whenever ANYTHING <see
+    /// cref="SnapshotForPersistence"/> would read differently — every mutation of <see
+    /// cref="_pending"/> or of the currently-shown line, which in practice means every <see
+    /// cref="Show"/> and every <see cref="Dismiss"/> call, including the branch of <see
+    /// cref="Show"/> that only enqueues (unlike <see cref="Changed"/>, which deliberately skips that
+    /// branch because nothing ON SCREEN moved). <c>MainUi</c> hooks this to re-persist the snapshot
+    /// immediately, the same "changed, so save now" discipline every other flag on <see
+    /// cref="TutorialFlow"/> already follows — this is the other half of that discipline, for the ONE
+    /// piece of "what the player is mid-lesson on" that used to live only in this class's own runtime
+    /// fields.</summary>
+    public event Action? QueueChanged;
 
     /// <summary>Build the banner chrome once, hidden. Idempotent-guarded like every other
     /// code-built node on this project.</summary>
@@ -211,6 +233,7 @@ public partial class MentorBanner : PanelContainer
         if (Visible && !preempt)
         {
             Enqueue(plain, rank, anchor);
+            QueueChanged?.Invoke(); // U14: the backlog changed even though the screen did not
             return false;
         }
 
@@ -230,6 +253,7 @@ public partial class MentorBanner : PanelContainer
         CurrentAnchor = anchor; // U10: arrives with the line, same tick — see this property's own doc
         Visible = true;
         Changed?.Invoke(); // U10: same tick as the line/anchor above — see this event's own doc
+        QueueChanged?.Invoke(); // U14: persist the new on-screen line (+ whatever it displaced)
         return true;
     }
 
@@ -251,17 +275,94 @@ public partial class MentorBanner : PanelContainer
             (_label.Text, _currentRank, CurrentAnchor) = _pending[0];
             _pending.RemoveAt(0);
             Changed?.Invoke();
+            QueueChanged?.Invoke(); // U14: the dismissed line is gone for good — persist that now
             return;
         }
 
         Visible = false;
         CurrentAnchor = null;
         Changed?.Invoke();
+        QueueChanged?.Invoke(); // U14: nothing left at all — the next persisted snapshot must be empty
     }
 
     /// <summary>How many consumed-but-not-yet-shown lessons are waiting behind the current one.
     /// Test/inspection surface, the same idiom as <c>ForgePanel.LastFocusedSection</c>.</summary>
     public int PendingLessonCount => _pending.Count;
+
+    /// <summary>
+    /// U14 (§11.14.14): one line's full persisted shape — everything <see
+    /// cref="SnapshotForPersistence"/>/<see cref="RestoreFromPersistence"/> round-trip through <see
+    /// cref="TutorialFlow"/>'s own <c>user://tutorial_flow.json</c>. Plain data (<see
+    /// cref="TutorialAnchor"/> is already Godot-free), so <c>System.Text.Json</c> serializes it with
+    /// zero custom converters, the same contract that file's <c>FirstTouchFired</c> dictionary
+    /// already relies on.
+    /// </summary>
+    public readonly record struct MentorBannerLine(string Text, MentorVoiceRank Rank, TutorialAnchor? Anchor);
+
+    /// <summary>
+    /// U14 (§11.14.14 defect): the fix for "quit the game with lines still queued, and those lessons
+    /// are marked seen forever while the player never saw them." <see
+    /// cref="TutorialFlow.ConsumeFirstTouch"/> marks an id FIRED — and persists that — the instant
+    /// the game decides a lesson is due, well before this banner ever draws it; if the text then sits
+    /// in <see cref="_pending"/> (or is still on screen, undismissed) when the process exits, the
+    /// only remaining copy of it was runtime-only and vanished with the process, while the id stays
+    /// permanently marked fired and can never fire again. This is the other half: everything the
+    /// player has NOT yet dismissed — the current line, if <see cref="Visible"/>, followed by the
+    /// whole backlog behind it, in EXACTLY the order <see cref="Dismiss"/> would walk them.
+    ///
+    /// <para>Deliberately keyed by CONTENT (this banner's own text/rank/anchor), never by the
+    /// first-touch id <see cref="TutorialFlow.ConsumeFirstTouch"/> uses — this class owns no id and
+    /// no <see cref="TutorialFlow"/> reference (class doc), and it does not need either: a line that
+    /// has already been shown and dismissed is simply absent from <see cref="_pending"/> and is not
+    /// the current line either, so it is absent HERE too. That absence is the whole anti-nag
+    /// guarantee this snapshot depends on — there is no separate "shown" flag to get out of sync with
+    /// "fired," because "shown" is exactly "no longer represented in this list."</para>
+    /// </summary>
+    public IReadOnlyList<MentorBannerLine> SnapshotForPersistence()
+    {
+        var lines = new List<MentorBannerLine>();
+        if (Visible)
+        {
+            lines.Add(new MentorBannerLine(_label.Text, _currentRank, CurrentAnchor));
+        }
+
+        lines.AddRange(_pending.Select(p => new MentorBannerLine(p.Text, p.Rank, p.Anchor)));
+        return lines;
+    }
+
+    /// <summary>
+    /// U14: the boot-time inverse of <see cref="SnapshotForPersistence"/> — <c>MainUi</c> calls this
+    /// once, right after <see cref="Build"/>, with whatever <see cref="TutorialFlow.Load"/> found on
+    /// disk. The FIRST entry becomes the line on screen (exactly as if it had just been shown for
+    /// real, <see langword="null"/> anchor and all) and every entry after it becomes the backlog, in
+    /// order — a player who quit with several beats queued sees the SAME beats, in the SAME order, on
+    /// their very next launch. A no-op for an empty snapshot, which is the ordinary case: most quits
+    /// happen with nothing queued at all.
+    ///
+    /// <para>Fires neither <see cref="Changed"/> nor <see cref="QueueChanged"/> — nothing the player
+    /// did caused this restore, and the very next HUD tick reads <see cref="CurrentAnchor"/> straight
+    /// off this instance anyway (<see cref="TutorialAnchorArbiter"/> is pull-based, not event-driven,
+    /// by its own contract), so there is no frame where a listener would need to react.</para>
+    /// </summary>
+    public void RestoreFromPersistence(IReadOnlyList<MentorBannerLine> lines)
+    {
+        if (lines.Count == 0)
+        {
+            return;
+        }
+
+        var first = lines[0];
+        _label.Text = first.Text;
+        _currentRank = first.Rank;
+        CurrentAnchor = first.Anchor;
+        Visible = true;
+
+        _pending.Clear();
+        for (var i = 1; i < lines.Count; i++)
+        {
+            _pending.Add((lines[i].Text, lines[i].Rank, lines[i].Anchor));
+        }
+    }
 
     /// <summary>Lessons consumed while the banner was busy, in the order they will be shown —
     /// highest <see cref="MentorVoiceRank"/> first, insertion order within a rank. U10 (§11.14.14):

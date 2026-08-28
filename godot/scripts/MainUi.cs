@@ -3326,11 +3326,22 @@ public partial class MainUi : Control
         Mentor = new MentorBanner();
         AddChild(Mentor);
         Mentor.Build();
+        // U14 (§11.14.14 defect): reseed whatever Tutorial.Load() (already ran, above) found queued
+        // when this campaign last quit — BEFORE wiring QueueChanged below, so restoring the old
+        // snapshot never triggers a redundant re-save of the identical data. See
+        // MentorBanner.RestoreFromPersistence's own doc for why this is silent (no Changed/
+        // QueueChanged fired) and safe to do unconditionally, even for the (ordinary) empty case.
+        Mentor.RestoreFromPersistence(Tutorial.PendingMentorLines);
         // U10 (§11.14.14): mirrors Forge.MentorSpotlightChanged above — Mentor.CurrentAnchor is now
         // one of TutorialAnchorArbiter's own competing sources (RefreshObjectiveLine), so a Show/
         // Dismiss that changes it must force that arbiter to re-resolve immediately, not wait for
         // whatever unrelated tick next calls RefreshObjectiveLine.
         Mentor.Changed += RefreshObjectiveLine;
+        // U14: the OTHER half of the fix — every time this banner's own on-screen line or backlog
+        // actually changes, persist a fresh snapshot immediately, so a quit mid-queue never again
+        // loses a lesson TutorialFlow already marked fired (class doc, MentorBanner.QueueChanged's
+        // own doc).
+        Mentor.QueueChanged += () => Tutorial.RecordMentorQueue(Mentor.SnapshotForPersistence());
 
         // U-T2 Wave C: the two dilemma lessons that do not live in the Forge (pricing, hold-or-
         // sell) need the SAME live chain + shared banner Forge already got in Wave B — wired here,

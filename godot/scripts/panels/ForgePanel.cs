@@ -2254,6 +2254,24 @@ public partial class ForgePanel : SimPanel
     /// (text only ever reaches the label after <see cref="TutorialFlow.ConsumeFirstTouch"/> already
     /// succeeded) — preempting it costs nothing the Lessons book hasn't already recorded permanently,
     /// it only ends that lesson's time on screen a little early.</para>
+    ///
+    /// <para><b>U14 (§11.14.14 defect): deliberately NOT given the same quit-survives-it persistence
+    /// as the shared <see cref="MentorBanner"/>.</b> That fix exists because the shared banner can
+    /// mark an id fired (<see cref="TutorialFlow.ConsumeFirstTouch"/>) and THEN lose the only copy of
+    /// its text to a runtime-only queue. This method structurally cannot do that: the busy-guard above
+    /// runs BEFORE <see cref="TutorialFlow.ConsumeFirstTouch"/>, not after, so a lesson arriving while
+    /// <see cref="_mentorBanner"/> is up is never consumed at all — it stays un-fired and simply tries
+    /// again on its own next reachability check (see this method's own remark above: "keeps that
+    /// second lesson alive for a later call instead of being silently marked-seen and never shown").
+    /// There is also no backlog to lose — this is a ONE slot, not a queue, by design. The only residual
+    /// gap is a lesson that is genuinely on screen, undismissed, at the moment the process exits; it
+    /// is not restored on the next mount, but it was already fired-and-shown at least once, and its
+    /// exact text lives forever in the Lessons book (<see cref="LessonsPanel"/>) regardless. Adding a
+    /// second persistence mechanism here — for a gap this much smaller than the one the shared banner
+    /// had — would be exactly the kind of duplicated "once ever" bookkeeping this class's own field
+    /// doc already argues against (three-going-on-four bespoke copies before <see
+    /// cref="FirstTouchLessons"/> existed); de-duplicating this banner onto the shared one remains the
+    /// right follow-up, same as the class doc already says.</para>
     /// </summary>
     private bool ShowMentorFirstTouch(string id, string lessonText, TutorialAnchor? spotlight = null, bool preempt = false)
     {
