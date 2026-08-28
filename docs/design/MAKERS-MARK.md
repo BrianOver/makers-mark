@@ -5120,6 +5120,8 @@ changes when it is done. A regression pin now holds that.
 | U39 | Copy cannot outlive its control | `godot/tests/`, `godot/scripts/tools/PlaytestLog.cs` | U33 |
 | U40 | The sixth decision becomes teachable | `godot/scripts/ui/TutorialFlow.cs`, `godot/tests/DilemmaLessonsTests.cs` | U27 |
 | U41 | The clock's own doc stops contradicting the clock | `sim/GameSim/Kernel/PhaseClock.cs` | — |
+| U42 | The off-camera marker stops landing on the objective card | `godot/scripts/ui/TutorialOverlay.cs`, `godot/scripts/ui/ObjectiveTracker.cs` | U15 |
+| U43 | The course can be photographed mid-step | `godot/tools/shot_harness.gd`, `godot/scripts/MainUi.cs` | — |
 
 ---
 
@@ -5607,6 +5609,36 @@ changes when it is done. A regression pin now holds that.
   goes red in primer and adviser copy alike; the fit gate rejects a card that overflows the real budget; the log
   carries step and act on every row.
 - Verification: the never-orders check iterates the whole corpus, and the fit gate matches the rendered width.
+
+#### U42. The off-camera marker stops landing on the objective card
+
+- Goal: a marker pointing east reads as "walk that way", not as one of the card's own arrows.
+- Requirements: R8, R9
+- Files: `godot/scripts/ui/TutorialOverlay.cs`, `godot/scripts/ui/ObjectiveTracker.cs`
+- Approach: **found by photograph, not by test.** U15's marker is correct — measured at screen
+  `(1127, 366)` on day 1 step 2, hard against the right edge at the vertical centre, camera untouched.
+  The objective card owns that entire edge, and from the forge spawn the market, the tavern and the
+  mine gate are **all** east, so on day one every off-camera marker a new player sees lands on the
+  card, 14px wide at 57% alpha, beside the card's own chevrons. Inset the marker from the window edge
+  to the world viewport's own edge, or reserve a lane the card cannot occupy — decide by looking, not
+  by reasoning about rects. The marker's colour and weight also need to separate it from card chrome.
+- Test scenarios: a marker for an eastern target does not intersect the objective card's rect; the
+  marker keeps its direction after the inset; a collapsed card does not change the marker's position.
+- Verification: a `TutorialOffCamera` capture where a human can tell the marker from the card at a glance.
+
+#### U43. The course can be photographed mid-step
+
+- Goal: any pointer unit can be checked by eye, not only by assertion.
+- Requirements: R34
+- Files: `godot/tools/shot_harness.gd`, `godot/scripts/MainUi.cs`
+- Approach: the shot harness could photograph panels and one tutorial step, but nothing mid-chain with
+  a target off screen — which is the only state an off-camera pointer can be judged in. A narrower
+  day-1 bridge (buy and craft, no bell) leaves the walk-to-the-market step current with the player at
+  spawn. Both rendered defects that have reached `main` in this project passed every suite and were
+  caught by a human eye; this is the hook that makes catching them cheap.
+- Test scenarios: the harness still refuses an unknown state name; the new state leaves the chain on
+  the shelve step with the player at spawn and the camera unmoved.
+- Verification: the capture shows the live step and its off-camera target's marker.
 
 #### U41. The clock's own doc stops contradicting the clock
 

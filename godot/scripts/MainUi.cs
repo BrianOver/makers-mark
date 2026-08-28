@@ -758,6 +758,20 @@ public partial class MainUi : Control
         Adapter.Queue(new PostBountyAction(5, 10));
     }
 
+    /// <summary>
+    /// The day-1 ladder's first two rungs only, for the <c>TutorialOffCamera</c> receipt. The full
+    /// ladder (<see cref="Dev_QueueDay1TutorialLadder"/>) runs past the one state worth
+    /// photographing for a pointer: after Stock the chain's anchor is the noticeboard, whereas
+    /// after buy+craft it is the market — 448px from the forge spawn in a 640px-wide viewport,
+    /// i.e. genuinely off camera while the player stands still. Both actions resolve immediately,
+    /// so no bell press is needed and the day never advances.
+    /// </summary>
+    public void Dev_QueueDay1BuyAndCraft()
+    {
+        Adapter.Queue(new BuyMaterialAction("copper", 2));
+        Adapter.Queue(new CraftAction("dagger", "copper"));
+    }
+
     public override void _Process(double delta)
     {
         if (Clock is null)
