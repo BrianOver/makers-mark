@@ -4925,6 +4925,16 @@ screen and promises a day that flows on its own while `PhaseClock` defaults auto
 course fixed that exact defect twice internally, with tests pinning the fix; the followability suite's
 jurisdiction ends one scene before the game begins.
 
+### What every measurement here describes, and does not
+
+Every day-N figure in this section comes from `BaselinePlayer`, which uses exactly **one** of the game's
+four hand-off channels. It stocks a shelf and accepts commissions; it never opens the counter, never posts
+a bounty, and never sends a vigil runner. The proof beat still lands day 4 on 12 of 12 seeds, so that
+number holds — but it holds for a shelf-only smith, and no measurement here says anything about a player
+who haggles or provisions. `CounterPlayer` and `SkilledSmithPlayer` exist for those; nothing in this
+program has measured against them. Treat any day-N claim as a floor for the channels it exercised, not a
+statement about the game as played.
+
 ### The clock, corrected
 
 §11.14.13 and every prior plan reasoned about a player belling through phases. Verified in
@@ -5418,9 +5428,11 @@ changes when it is done. A regression pin now holds that.
   pointer can flash them on the first spend. Name the free set explicitly — the whole counter session,
   every shelf verb, commission answers, camp verbs, the rite. Add a deferred line for the first vigil that
   opens with no slots left, which is where the banked arm finally bites; nothing reports unspent slots today
-  and dawn erases them silently. Move the bounty step from day 1 to day 3 and record the knock-on: the
-  measured day-2 camp depends on a bounty posting, so days 2–3 may now have no vigil to teach and the vigil
-  row must read `Skipped` honestly when they do not. Collapse the doubled warrant reminder to one.
+  and dawn erases them silently. Move the bounty step from day 1 to day 3. **The knock-on first recorded here was wrong** and is
+  corrected: `BaselinePlayer` submits only six action types — accept-commission, buy-ore, craft, stock,
+  unlock-talent, upgrade-forge — and **never posts a bounty at all**, yet the first camp stop still lands
+  day 2 on 12 of 12 seeds. So the vigil does not depend on the bounty and moving the step costs nothing
+  there. The vigil row must still read `Skipped` honestly on a run with no camp, which it already does. Collapse the doubled warrant reminder to one.
 - Test scenarios: the budget copy precedes the first spend; the pip row resolves as an anchor; the free set
   is named and matches the sim's consuming list; the vigil row reads `Skipped` on a run with no camp; the
   warrant reminder appears exactly once.
