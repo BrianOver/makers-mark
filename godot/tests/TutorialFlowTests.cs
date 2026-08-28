@@ -2290,5 +2290,291 @@ public class TutorialFlowTests
             Unmount(ui);
         }
     }
+
+    // ── U29 (§11.14.14, R21/R22): the two-act-voice-per-night budget ────────────────────────────
+    //
+    // ResolveTonightsActVoices is a pure static allocator (no GameState, no clock, no persisted
+    // read) — most of the tests below call it directly rather than driving a mounted campaign
+    // through several in-game days, the same "measure the mechanism, not the whole harness" shape
+    // ActVoiceBudgetCensusTests (sim/GameSim.Tests/Presentation) already uses for the census this
+    // unit answers. The two REAL dormant acts today (HeroDeath/ConsumeFirstLossBlock,
+    // WarrantEnded/ConsumeWarrantEndBeat) are covered separately, further down, against the real
+    // mounted campaign.
+
+    /// <summary>Every pairwise comparison the enum's own declared order claims, proven against the
+    /// ALLOCATOR (<c>budget: 1</c> forces a single winner out of exactly two candidates) rather than
+    /// re-reading the enum's declaration a second time — "not implied by list order" (the task's own
+    /// phrase): a reordering of the enum that broke one of these six lines would be caught here even
+    /// if some OTHER test happened to eyeball the full list and see nothing obviously wrong.</summary>
+    [TestCase]
+    public void Precedence_EachAdjacentPair_HigherRankWinsTheOnlySlot()
+    {
+        AssertThat(TutorialFlow.ResolveTonightsActVoices(
+                [TutorialFlow.ActVoiceKind.HeroDeath, TutorialFlow.ActVoiceKind.Proof], budget: 1))
+            .ContainsExactly(TutorialFlow.ActVoiceKind.HeroDeath);
+
+        AssertThat(TutorialFlow.ResolveTonightsActVoices(
+                [TutorialFlow.ActVoiceKind.Proof, TutorialFlow.ActVoiceKind.Graduation], budget: 1))
+            .ContainsExactly(TutorialFlow.ActVoiceKind.Proof);
+
+        AssertThat(TutorialFlow.ResolveTonightsActVoices(
+                [TutorialFlow.ActVoiceKind.Graduation, TutorialFlow.ActVoiceKind.WarrantEnded], budget: 1))
+            .ContainsExactly(TutorialFlow.ActVoiceKind.Graduation);
+
+        AssertThat(TutorialFlow.ResolveTonightsActVoices(
+                [TutorialFlow.ActVoiceKind.WarrantEnded, TutorialFlow.ActVoiceKind.ActAdvance], budget: 1))
+            .ContainsExactly(TutorialFlow.ActVoiceKind.WarrantEnded);
+
+        AssertThat(TutorialFlow.ResolveTonightsActVoices(
+                [TutorialFlow.ActVoiceKind.ActAdvance, TutorialFlow.ActVoiceKind.CommissionFulfilled], budget: 1))
+            .ContainsExactly(TutorialFlow.ActVoiceKind.ActAdvance);
+
+        AssertThat(TutorialFlow.ResolveTonightsActVoices(
+                [TutorialFlow.ActVoiceKind.CommissionFulfilled, TutorialFlow.ActVoiceKind.RankUp], budget: 1))
+            .ContainsExactly(TutorialFlow.ActVoiceKind.CommissionFulfilled);
+    }
+
+    /// <summary>R21's own corollary, and the one plain top-2-by-precedence would get wrong: a death
+    /// and the proof never share a night, even though both fit the real budget of two. Proof loses
+    /// its slot to the exclusion, not to a numbers crunch — this is what distinguishes the corollary
+    /// from ordinary precedence, and <see cref="Precedence_EachAdjacentPair_HigherRankWinsTheOnlySlot"/>
+    /// above (budget 1) cannot exercise it, since that pair would resolve the same way either way.</summary>
+    [TestCase]
+    public void DeathAndProof_NeverShareANight_EvenThoughBothWouldFitTheBudget()
+    {
+        var resolved = TutorialFlow.ResolveTonightsActVoices(
+            [TutorialFlow.ActVoiceKind.HeroDeath, TutorialFlow.ActVoiceKind.Proof]); // real budget: 2
+
+        AssertThat(resolved).Contains(TutorialFlow.ActVoiceKind.HeroDeath);
+        AssertThat(resolved)
+            .OverrideFailureMessage("R21's own corollary: death and the proof never share a night.")
+            .NotContains(TutorialFlow.ActVoiceKind.Proof);
+        AssertThat(resolved.Count).IsEqual(1); // the freed slot is NOT silently handed to anyone else
+    }
+
+    /// <summary>
+    /// The measured worst night, verbatim from the census this unit answers
+    /// (<c>ActVoiceBudgetCensusTests</c>' own FINDING doc, sim/GameSim.Tests/Presentation): day 4
+    /// carries the attribution beat, a fulfilled commission and the Act II advance on every one of
+    /// twelve seeds, the warrant's end (deterministically day 4 — <see cref="WarrantEndDay"/>), and
+    /// on 4 of 12 seeds the campaign's first hero death too — five candidates. R21's own approach
+    /// text: "this unit therefore has to defer three voices on the worst night, not one." Delivers
+    /// the death first (highest precedence), the warrant's end second (proof excluded by the death
+    /// corollary, so the warrant's end is the strongest of what remains), and defers the other three
+    /// — proof included, and explicitly checked absent rather than merely "not the only survivor.".
+    /// </summary>
+    [TestCase]
+    public void WorstMeasuredNight_DeathAndWarrantEndSpeak_ProofAndTwoOthersDefer()
+    {
+        TutorialFlow.ActVoiceKind[] worstNight =
+        [
+            TutorialFlow.ActVoiceKind.HeroDeath,
+            TutorialFlow.ActVoiceKind.Proof,
+            TutorialFlow.ActVoiceKind.WarrantEnded,
+            TutorialFlow.ActVoiceKind.ActAdvance,
+            TutorialFlow.ActVoiceKind.CommissionFulfilled,
+        ];
+
+        var speaksTonight = TutorialFlow.ResolveTonightsActVoices(worstNight);
+
+        AssertThat(speaksTonight).ContainsExactly(
+            TutorialFlow.ActVoiceKind.HeroDeath, TutorialFlow.ActVoiceKind.WarrantEnded);
+
+        var deferred = worstNight.Where(k => !speaksTonight.Contains(k)).ToList();
+        AssertThat(deferred.Count)
+            .OverrideFailureMessage("R21's own approach text: defer THREE on the worst night, not one.")
+            .IsEqual(3);
+        AssertThat(deferred).Contains(TutorialFlow.ActVoiceKind.Proof);
+        AssertThat(deferred).Contains(TutorialFlow.ActVoiceKind.ActAdvance);
+        AssertThat(deferred).Contains(TutorialFlow.ActVoiceKind.CommissionFulfilled);
+    }
+
+    /// <summary>No beat is ever lost, and none arrives twice: simulate the worst night's own
+    /// cascade across successive in-game nights the way a real campaign would — a kind that loses
+    /// its slot stays a candidate (a dormant act's own Consume method never commits its arm-day
+    /// field on a loss, see <c>ConsumeFirstLossBlock</c>/<c>ConsumeWarrantEndBeat</c>'s own remarks),
+    /// so it re-competes fresh the next night rather than vanishing or re-queueing behind a growing
+    /// backlog. Every one of the seven kinds is accounted for in EXACTLY one night by the end, and
+    /// the budget is never exceeded on any single night along the way.</summary>
+    [TestCase]
+    public void NoBeatIsEverLost_TheWorstNightsCascadeAccountsForEveryKindExactlyOnce()
+    {
+        var waiting = new HashSet<TutorialFlow.ActVoiceKind>(Enum.GetValues<TutorialFlow.ActVoiceKind>());
+        var spoken = new HashSet<TutorialFlow.ActVoiceKind>();
+
+        for (var night = 1; waiting.Count > 0; night++)
+        {
+            AssertThat(night)
+                .OverrideFailureMessage("Seven candidates at budget 2 must clear within 4 nights -- a beat is stuck.")
+                .IsLessEqual(4);
+
+            var tonight = TutorialFlow.ResolveTonightsActVoices(waiting);
+            AssertThat(tonight.Count)
+                .OverrideFailureMessage($"Night {night} exceeded the two-act-voice budget (R21).")
+                .IsLessEqual(2);
+
+            foreach (var kind in tonight)
+            {
+                // HashSet.Add returns false if the kind is already present -- the direct way to
+                // catch "arrived twice" the instant it would happen, not after the fact.
+                AssertThat(spoken.Add(kind))
+                    .OverrideFailureMessage($"{kind} spoke on more than one simulated night.")
+                    .IsTrue();
+                waiting.Remove(kind);
+            }
+        }
+
+        AssertThat(spoken.Count).IsEqual(Enum.GetValues<TutorialFlow.ActVoiceKind>().Length); // none lost
+    }
+
+    /// <summary>"Nothing in the deferral path reads a wall clock or expires on one" (law 2): the
+    /// allocator is pure, so the SAME candidates must resolve to the SAME answer every single call,
+    /// with no dependency on how many times it has been asked before or how much real time passed
+    /// between calls.</summary>
+    [TestCase]
+    public void ResolveTonightsActVoices_IsDeterministic_AcrossRepeatedCalls()
+    {
+        TutorialFlow.ActVoiceKind[] candidates =
+        [
+            TutorialFlow.ActVoiceKind.HeroDeath, TutorialFlow.ActVoiceKind.Proof,
+            TutorialFlow.ActVoiceKind.WarrantEnded, TutorialFlow.ActVoiceKind.ActAdvance,
+        ];
+
+        var first = TutorialFlow.ResolveTonightsActVoices(candidates);
+        for (var i = 0; i < 25; i++)
+        {
+            AssertThat(TutorialFlow.ResolveTonightsActVoices(candidates).SetEquals(first))
+                .OverrideFailureMessage("Repeated calls with identical input must return an identical set -- any drift means a hidden clock or counter.")
+                .IsTrue();
+        }
+    }
+
+    /// <summary>The two REAL dormant acts today share a night for real (day 4:
+    /// <see cref="ApprenticeWarrant.LastGraceDay"/> + 1 is deterministically 4, and this death also
+    /// lands day 4) — budget 2 comfortably fits both, so this is the honest regression check that
+    /// wiring the gate into <see cref="ConsumeFirstLossBlock"/>/<see cref="ConsumeWarrantEndBeat"/>
+    /// did not suppress a real fact neither one actually needed to lose. Forcing an actual DEFERRAL
+    /// of one of these two would need a third real contender, which does not exist until U30-U33
+    /// land theirs (see this section's own class doc) — the pure-allocator tests above already prove
+    /// the deferral path itself.
+    ///
+    /// <para>Mounted at day 1 (<see cref="WarrantEndBeat_FiresOnceEver_OnTheFirstMorningAfterTheWarrant"/>'s
+    /// own isolation fix) rather than directly at day 4 — <c>MainUi</c>'s own boot sequence calls
+    /// <see cref="ConsumeWarrantEndBeat"/> unconditionally, and mounting already past the threshold
+    /// lets THAT call consume the once-ever beat before this test's own explicit call ever runs, which
+    /// this test would otherwise misread as the budget wrongly dropping it.</para></summary>
+    [TestCase]
+    public void RealDeathAndRealWarrantEnd_BothFire_TheSameNight_BudgetOfTwoFitsBoth()
+    {
+        var ui = MountMainUi(); // fresh campaign, day 1 — boot's own ConsumeWarrantEndBeat call is a no-op here
+        try
+        {
+            var state = HeroDiedState(day: ApprenticeWarrant.LastGraceDay + 1);
+            var loss = ui.Tutorial.ConsumeFirstLossBlock(state);
+            var warrant = ui.Tutorial.ConsumeWarrantEndBeat(state);
+
+            AssertThat(loss).IsNotNull();
+            AssertThat(warrant).IsNotNull();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>
+    /// A beat armed late gets its FULL window, never a remainder. <see cref="LossActRow"/>'s own
+    /// window is a day-offset read off <c>_firstLossDay</c> — the day <see
+    /// cref="ConsumeFirstLossBlock"/> actually COMMITS, not the day the underlying death happened —
+    /// so a loss the tutorial does not get a chance to consume until day 6, even though the death
+    /// itself is already two days old in the event log, still opens a full two-day window starting
+    /// day 6, exactly as if the death had happened that night. This is the load-bearing property
+    /// U29's arming rule depends on (a deferred kind commits on whatever LATER day it finally wins
+    /// its slot — see <c>ResolveTonightsActVoices</c>'s own doc); the only kind wired to both a real
+    /// Consume method AND a real window today is the loss act, so this proves the property directly
+    /// against it rather than only against the pure allocator above.
+    /// </summary>
+    [TestCase]
+    public void LossArmedLate_StillGetsTheFullTwoDayWindow_NotARemainder()
+    {
+        var ui = MountMainUi(new SimAdapter(HeroDiedState(day: 4))); // the death is already "old" in the log
+        try
+        {
+            // Nothing consumed it on day 4 or day 5 (the campaign never ticked through that reveal —
+            // stands in for two nights lost to budget contention, until U30-U33 add a real one).
+            AssertThat(ui.Tutorial.LossActRow(ui.Adapter.CurrentState with { Day = 4 })).IsNull();
+            AssertThat(ui.Tutorial.LossActRow(ui.Adapter.CurrentState with { Day = 5 })).IsNull();
+
+            var day6 = ui.Adapter.CurrentState with { Day = 6 };
+            AssertThat(ui.Tutorial.ConsumeFirstLossBlock(day6)).IsNotNull(); // commits on day 6, not day 4
+
+            var nightOf = ui.Tutorial.LossActRow(day6);
+            AssertThat(nightOf).IsNotNull();
+            AssertThat(nightOf!.Value.Skipped).IsFalse(); // day 6: full window, night one
+
+            var dayAfter = ui.Tutorial.LossActRow(ui.Adapter.CurrentState with { Day = 7 });
+            AssertThat(dayAfter).IsNotNull(); // day 7: still inside the FULL window, night two
+            AssertThat(dayAfter!.Value.Skipped).IsTrue(); // never honored -- day two reads Skipped
+
+            AssertThat(ui.Tutorial.LossActRow(ui.Adapter.CurrentState with { Day = 8 }))
+                .OverrideFailureMessage("A window armed on day 6 must retire on day 8 (day 6 + 2), not any earlier -- a remainder window would retire sooner.")
+                .IsNull();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>No beat is lost, and none arrives twice, across a quit and reload. Nothing about a
+    /// deferred beat is committed to <c>user://tutorial_flow.json</c> until the moment it actually
+    /// wins a slot (<c>ConsumeFirstLossBlock</c>/<c>ConsumeWarrantEndBeat</c> only call <c>Save()</c>
+    /// on the branch that fires) — so a quit mid-deferral persists nothing new at all, and the sim's
+    /// own save (the death event, the day counter) is the only durable record, exactly as it already
+    /// was before this unit. A fresh <see cref="TutorialFlow"/> loading that same sim save simply
+    /// re-asks the identical question fresh and, once it wins a slot, fires the once-ever text
+    /// exactly one time — this reconstructs a fresh instance mid-test to prove the reload path
+    /// itself, rather than only trusting that Save/Load were never called.</summary>
+    [TestCase]
+    public void DeferredLoss_SurvivesAQuitAndReload_AndStillFiresExactlyOnce()
+    {
+        TutorialFlow.DeleteForTests(); // start from a clean user://tutorial_flow.json, same as Unmount leaves it
+        var state = HeroDiedState(day: 5);
+
+        // Simulates a quit before this campaign's tutorial ever got a chance to consume the death
+        // (the sim itself has already durably logged it) -- nothing for THIS class to persist yet,
+        // since ConsumeFirstLossBlock was never called.
+        var reloaded = new TutorialFlow();
+        reloaded.Build();
+        reloaded.Load(); // no _firstLossDay written yet -- reads back as 0, same as a fresh campaign
+
+        try
+        {
+            AssertThat(reloaded.LossActRow(state)).IsNull(); // not armed yet
+
+            var firstFire = reloaded.ConsumeFirstLossBlock(state);
+            AssertThat(firstFire).IsNotNull();
+            AssertThat(reloaded.ConsumeFirstLossBlock(state)).IsNull(); // once-ever, same instance
+
+            // A SECOND reload (the "quit again right after" case) must not re-fire the text either --
+            // Save() inside ConsumeFirstLossBlock already persisted _firstLossDay by the time it fired.
+            var reloadedAgain = new TutorialFlow();
+            reloadedAgain.Build();
+            reloadedAgain.Load();
+            try
+            {
+                AssertThat(reloadedAgain.ConsumeFirstLossBlock(state)).IsNull();
+            }
+            finally
+            {
+                reloadedAgain.Free();
+            }
+        }
+        finally
+        {
+            reloaded.Free();
+            TutorialFlow.DeleteForTests(); // leave a clean file for the next test, same discipline as Unmount
+        }
+    }
 }
 #endif
