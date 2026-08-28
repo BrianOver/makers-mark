@@ -572,7 +572,7 @@ public class TutorialFlowTests
             AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.WatchDeparture);
 
             var copy = ui.Tutorial.TopSlotText(ui.Adapter.CurrentState)!;
-            // U-T2-1: WatchDeparture is The Dark's 2nd of 3 beats (PostBounty, WatchDeparture, LookIn).
+            // U-T2-1: WatchDeparture is The Dark's 2nd of 2 beats (PostBounty, WatchDeparture).
             AssertThat(copy).StartsWith("The Dark · 2/3:");
             AssertThat(copy)
                 .OverrideFailureMessage(
@@ -648,7 +648,9 @@ public class TutorialFlowTests
             AssertThat(string.IsNullOrWhiteSpace(copy))
                 .OverrideFailureMessage("The tutorial card rendered BLANK — the surface whose whole job is saying what to do.")
                 .IsFalse();
-            // U-T2-1: LookIn is The Dark's 3rd (and last) of 3 beats.
+            // U21 (§11.14.14): LookIn stays in Dark — on day 1 nothing is proved yet, so a Proof
+            // heading here would lie. See the registry row's own comment.
+            // chapter heading instead of sharing Dark's with the send-off.
             AssertThat(copy).StartsWith("The Dark · 3/3:");
             AssertThat(copy)
                 .OverrideFailureMessage($"The step is still naming the Watch control with nobody out. Copy was: \"{copy}\"")
@@ -1629,6 +1631,7 @@ public class TutorialFlowTests
             AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.PostBounty);
 
             var duringExpedition = ui.Tutorial.TopSlotText(ui.Adapter.CurrentState)!;
+            // U21 (§11.14.14): The Dark now totals 2 beats (PostBounty, WatchDeparture) — LookIn
             AssertThat(duringExpedition).StartsWith("The Dark · 1/3:");
             AssertThat(duringExpedition).Contains("Morning or Evening");
             AssertThat(duringExpedition).NotContains("Walk to");
