@@ -136,5 +136,43 @@ public class SurfaceUnlocksTests
                 .IsFalse();
         }
     }
+
+    /// <summary>
+    /// U13 (§11.14.14): <see cref="SurfaceUnlocks.ForcedOpenByAnchor"/> generalizes the "never hide
+    /// a tutorial anchor" protection past the two Hud-anchored rows (HeroCards/Commissions) it was
+    /// hardcoded to before this unit. Proves it for "Demand" — one of the seven gates neither
+    /// existing tutorial row ever points at — via BOTH naming conventions a future row could use,
+    /// with no live UI or GameState needed: this is a pure function of an anchor and a surface id.
+    /// </summary>
+    [TestCase]
+    public void ForcedOpenByAnchor_ProtectsAGatedSurface_OtherThanTheTwoHardcodedRows()
+    {
+        // A Hud anchor named by MainUi's own "Open{surfaceId}" tray-button convention.
+        AssertThat(SurfaceUnlocks.ForcedOpenByAnchor(TutorialAnchor.ForHud("OpenDemand"), "Demand"))
+            .OverrideFailureMessage(
+                "A Hud anchor named \"OpenDemand\" must force the Demand surface open — this is the " +
+                "exact protection HeroCards/Commissions already get, generalized to a THIRD surface " +
+                "with no new case in SurfaceUnlocks or MainUi.")
+            .IsTrue();
+
+        // A PanelControl anchor scoped directly to the panel by its own registered id — the shape
+        // Wave A shipped with no registry row using it yet (TutorialAnchorKind.PanelControl's own
+        // doc). This is the gap the OLD Hud-only check could not have closed at all.
+        AssertThat(SurfaceUnlocks.ForcedOpenByAnchor(TutorialAnchor.ForPanelControl("Demand", "SomeButton"), "Demand"))
+            .OverrideFailureMessage(
+                "A PanelControl anchor scoped to the \"Demand\" panel must force the Demand surface " +
+                "open too — a future beat pointing a control INSIDE a gated panel needs the identical " +
+                "protection a Hud-anchored beat already gets.")
+            .IsTrue();
+
+        // Neither convention should force open a DIFFERENT surface than the one it names.
+        AssertThat(SurfaceUnlocks.ForcedOpenByAnchor(TutorialAnchor.ForHud("OpenDemand"), "Legends")).IsFalse();
+        AssertThat(SurfaceUnlocks.ForcedOpenByAnchor(TutorialAnchor.ForPanelControl("Demand", "SomeButton"), "Legends")).IsFalse();
+
+        // A Building/Station/None anchor never names a tray surface at all — honestly false, never
+        // a guess (the class doc's "disjoint vocabularies" reasoning).
+        AssertThat(SurfaceUnlocks.ForcedOpenByAnchor(TutorialAnchor.ForBuilding("market"), "Demand")).IsFalse();
+        AssertThat(SurfaceUnlocks.ForcedOpenByAnchor(TutorialAnchor.None, "Demand")).IsFalse();
+    }
 }
 #endif

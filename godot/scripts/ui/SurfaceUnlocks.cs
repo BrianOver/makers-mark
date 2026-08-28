@@ -27,17 +27,28 @@ namespace GodotClient.Ui;
 /// seventh icon exists at all.</para>
 ///
 /// <para><b>The one pin this table must never violate:</b> no gate may ever hide a tutorial
-/// anchor. Two Hud anchors in <see cref="TutorialFlow.Registry"/> point at a gated tray button
-/// ("OpenHeroCards" for <see cref="TutorialStep.MeetHeroes"/>, "OpenCommissions" for <see
-/// cref="TutorialStep.Commission"/>) — neither HeroCards' nor Commissions' own gate is guaranteed
-/// true by the day the tutorial reaches those steps (a player can legally reach day 3 having sold
-/// nothing and having no commission posted), so a gate that hid the very button the tutorial told
-/// the player to press would strand them on that step forever, since pressing it is the ONLY way
-/// <see cref="TutorialFlow.NotifyPanelOpened"/> ever fires for those two steps. <c>MainUi</c>'s own
-/// effective-open check therefore ORs this table's verdict with "the tutorial is actively pointing
-/// its Hud anchor at this exact surface" — see <c>MainUi.SurfaceEffectivelyOpen</c>, not baked in
-/// here so this class stays a pure function of <see cref="GameState"/> alone, testable without a
-/// live <see cref="TutorialFlow"/> instance.</para>
+/// anchor. Two rows in <see cref="TutorialFlow.Registry"/> point straight at a gated tray button
+/// today (a Hud anchor, "OpenHeroCards" for <see cref="TutorialStep.MeetHeroes"/> and
+/// "OpenCommissions" for <see cref="TutorialStep.Commission"/>) — neither HeroCards' nor
+/// Commissions' own gate is guaranteed true by the day the tutorial reaches those steps (a player
+/// can legally reach day 3 having sold nothing and having no commission posted), so a gate that hid
+/// the very button the tutorial told the player to press would strand them on that step forever,
+/// since pressing it is the ONLY way <see cref="TutorialFlow.NotifyPanelOpened"/> ever fires for
+/// those two steps.</para>
+///
+/// <para>U13 (§11.14.14): <see cref="ForcedOpenByAnchor"/> is the general form of that protection —
+/// it recognizes EITHER naming convention a tutorial anchor can carry a gated surface's identity
+/// with (a Hud control named "Open{surfaceId}", or a <see cref="TutorialAnchorKind.PanelControl"/>
+/// scoped directly to the panel by its own id), so a FUTURE row anchored either way onto any of
+/// these seven gates gets the identical protection with no new case here. Before this unit the
+/// protection lived only as an inline Hud-shaped check in <c>MainUi.SurfaceEffectivelyOpen</c> —
+/// correct for the two rows that happened to exist, silent for a PanelControl-anchored row pointing
+/// into a gated panel (Wave A shipped that anchor kind with no registry row using it yet — see
+/// <see cref="TutorialAnchorKind.PanelControl"/>'s own doc). <c>MainUi.SurfaceEffectivelyOpen</c>
+/// still ORs this verdict with live <see cref="GameState"/> and <c>Tutorial.Active</c> — pulled out
+/// here, not there, so the anchor-matching rule itself stays a pure function, testable without a
+/// live <c>MainUi</c> instance (same reasoning <see cref="TutorialFlow.AimAnchor"/>'s own doc
+/// gives for being static).</para>
 /// </summary>
 public static class SurfaceUnlocks
 {
@@ -110,4 +121,32 @@ public static class SurfaceUnlocks
     /// (always open). <c>MainUi</c> reads this for the closed-tooltip/arrival-toast text so the two
     /// surfaces never drift apart from <see cref="Gates"/>' own single declaration.</summary>
     public static Gate? GateFor(string surfaceId) => ById.TryGetValue(surfaceId, out var gate) ? gate : null;
+
+    /// <summary>
+    /// U13 (§11.14.14): whether <paramref name="anchor"/> — the tutorial's own CURRENT (raw,
+    /// unaimed) target, <c>TutorialFlow.CurrentAnchor</c> — is pointing INSIDE the gated surface
+    /// named <paramref name="surfaceId"/>, by either naming convention a target can carry that
+    /// surface's identity with: a <see cref="TutorialAnchorKind.Hud"/> control named by
+    /// <c>MainUi.RegisterGatedTrayButton</c>'s own convention ("Open{surfaceId}" — see
+    /// <c>MainUi</c>'s "OpenHeroCards"/"OpenCommissions" tray buttons), or a <see
+    /// cref="TutorialAnchorKind.PanelControl"/> scoped directly to the panel by its own registered
+    /// id (<see cref="TutorialAnchor.Key"/> IS the panel id for that kind — see its own doc).
+    ///
+    /// <para>Generalizes past the two rows that happened to exist when this table's own "never hide
+    /// a tutorial anchor" pin (class doc above) was first written — a FUTURE row anchored either way
+    /// onto ANY of these seven gates gets the identical protection with no new case here. Pure and
+    /// static, matching <c>TutorialFlow.AimAnchor</c>'s own reason for being so: provable against
+    /// every registry row, not assumed for the ones a test happens to reach by playing.</para>
+    ///
+    /// <para>Any OTHER anchor kind (Building/Station/None) never names a tray surface at all — a
+    /// venue key and a surface id are disjoint vocabularies, so this honestly returns false rather
+    /// than guessing one might match. <c>MainUi.SurfaceEffectivelyOpen</c> ORs this with <see
+    /// cref="IsOpen"/> exactly as before this unit.</para>
+    /// </summary>
+    public static bool ForcedOpenByAnchor(TutorialAnchor anchor, string surfaceId) => anchor.Kind switch
+    {
+        TutorialAnchorKind.Hud => anchor.Key == $"Open{surfaceId}",
+        TutorialAnchorKind.PanelControl => anchor.Key == surfaceId,
+        _ => false,
+    };
 }

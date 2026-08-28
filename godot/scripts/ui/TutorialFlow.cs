@@ -261,7 +261,31 @@ public sealed record TutorialStepDef(
     // plain, behavior-free value type is worth preserving. The row is already the declarative home
     // for every other per-step concern (IsDone, MinDay, TeachNote) — this is one more.
     Func<GameState, bool>? AnchorExists = null,
-    TutorialAnchor? AnchorFallback = null);
+    TutorialAnchor? AnchorFallback = null,
+    // U13 (§11.14.14): the ONE sim-legality source StepActionAvailable defers to, replacing a
+    // hand-mirrored restatement of ActionLegality's phase gates and ActionBudget's slot list that
+    // had ALREADY drifted once in shipped code — Craft spends a slot (ActionBudget.ConsumesSlot
+    // lists CraftAction) but the mirror's own slot check once omitted it, so a player who spent the
+    // day's slots buying material was told "You're at the anvil — craft," pressed, and bounced off
+    // a gate the card never named (fixed by hand, U-T9-11; this unit removes the possibility of it
+    // happening again). This returns the single concrete PlayerAction that stands for "the thing
+    // this step wants you to press right now" — NOT pre-verified legal; StepActionAvailable is the
+    // one place that asks ActionLegality.IsLegal whether it actually is, so a future action type
+    // ActionLegality/ActionBudget already handles correctly is handled correctly here too, with zero
+    // edits to this file.
+    //
+    // Null means "no single PlayerAction stands for this step", and that is two genuinely different
+    // shapes, both deliberate:
+    //   - No PlayerAction represents the step at all. WatchDeparture/EveningClose end a PHASE, which
+    //     the kernel drives directly, never a submitted PlayerAction; LookIn/MeetHeroes are UI-only
+    //     navigation with no sim verb at all (same shape as their IsDone = _ => false).
+    //   - A real PlayerAction exists, but the row's actual gate is "does the target exist yet", not
+    //     "is the verb illegal" — Vigil's SendSupply/RecallParty and Shelve's StockAction both have a
+    //     real action, but Vigil already has its own honest existence check (VigilGatingNote /
+    //     AnyPartyStagedForCheckpointToday) and a freshly-crafted item is always legally stockable —
+    //     forcing either through IsLegal here would answer a question nobody asked while adding a
+    //     failure mode nothing downstream renders.
+    Func<GameState, PlayerAction?>? CanonicalAction = null);
 
 /// <summary>
 /// World-rework U23 (R5/R10/R13): the first-run tutorial chain, the earn-2nd-profession affordance,
@@ -422,7 +446,12 @@ public sealed partial class TutorialFlow : PanelContainer
             TeachNote: "Inside a building you walk up to a station and press E to use it. The material vendor "
                        + "and the crafting station are both stations in your workshop.",
             IsDone: state => state.EventLog.OfType<MaterialPurchased>().Any(),
-            AdvanceFrom: [TutorialStep.BuyMaterial], AdvancesTo: TutorialStep.Craft),
+            AdvanceFrom: [TutorialStep.BuyMaterial], AdvancesTo: TutorialStep.Craft,
+            // U13: one candidate per priced material key, quantity 1 — the SAME loop
+            // ActionLegality.LegalActions itself builds this candidate from, filtered to the one
+            // type this row is about. Any key that clears BuyMaterialLegal (priced pool + gold +
+            // Morning + a slot) proves the step; which specific key wins is not this row's concern.
+            CanonicalAction: state => ActionLegality.LegalActions(state, state.Phase).OfType<BuyMaterialAction>().FirstOrDefault()),
         new(
             // U2: Station, not Building — see BuyMaterial's own row doc. "anvil" is the static
             // blacksmith default; CurrentAnchor substitutes the live profession's own craft
@@ -434,7 +463,24 @@ public sealed partial class TutorialFlow : PanelContainer
             IsDone: state => state.EventLog.OfType<ItemCrafted>().Any(),
             // Shares BuyMaterial's own display slot AND is checked even while Step is still
             // BuyMaterial (class/TutorialStepDef doc) — the starter-kit-skips-buy case.
-            AdvanceFrom: [TutorialStep.BuyMaterial, TutorialStep.Craft], AdvancesTo: TutorialStep.Shelve),
+            AdvanceFrom: [TutorialStep.BuyMaterial, TutorialStep.Craft], AdvancesTo: TutorialStep.Shelve,
+            // U13: NOT built from ActionLegality.LegalActions (deliberately) — that filter is real
+            // legality end to end, so at zero material AND zero slots it returns nothing for EITHER
+            // reason, and StepActionAvailable could no longer tell "no material yet" (fine) apart
+            // from "no slots left" (the one real gate) from an empty result alone. This picks any
+            // recipe belonging to a selected profession UNCONDITIONALLY — material/slots and all —
+            // purely so ActionBudget.ConsumesSlot below has a real CraftAction TYPE to ask about;
+            // its field values are never checked (ConsumesSlot is a type-only predicate) and this
+            // candidate is never run through IsLegal. Material sufficiency is the OTHER half of this
+            // shared display slot's own job (BuyMaterial, or the starter kit) — a player who has not
+            // bought yet is mid-step, not blocked, and the raw instructive copy
+            // (ObjectiveAdvisor.Suggest, appended in StepText) already says so; judging Craft by full
+            // IsLegal silently reconflates that (proven by TutorialCopyIsFollowableTests' own
+            // Day-3/no-purchase fixture, which this unit's first draft broke).
+            CanonicalAction: state => ProfessionRegistry.AllRecipes.Values
+                .Where(r => state.Player.IsSelected(r.Profession))
+                .Select(r => (PlayerAction)new CraftAction(r.RecipeId, r.MaterialKey))
+                .FirstOrDefault()),
         new(
             Step: TutorialStep.Shelve, DisplayIndex: 2, Act: TutorialAct.HandOff,
             Anchor: TutorialAnchor.ForBuilding("market"), MinDay: 1,
@@ -458,7 +504,10 @@ public sealed partial class TutorialFlow : PanelContainer
                        + "steers their whole party that deep, and keeps the gold. Too thin a reward for the "
                        + "floor and every hero refuses. Nobody takes it in three days, the gold comes back.",
             IsDone: state => state.EventLog.OfType<BountyPosted>().Any(),
-            AdvanceFrom: [TutorialStep.PostBounty], AdvancesTo: TutorialStep.WatchDeparture),
+            AdvanceFrom: [TutorialStep.PostBounty], AdvancesTo: TutorialStep.WatchDeparture,
+            // U13: one candidate per legal floor at the smallest positive escrow — the same shape
+            // ActionLegality.LegalActions builds its own PostBounty candidates from.
+            CanonicalAction: state => ActionLegality.LegalActions(state, state.Phase).OfType<PostBountyAction>().FirstOrDefault()),
         new(
             Step: TutorialStep.WatchDeparture, DisplayIndex: 4, Act: TutorialAct.Dark,
             Anchor: TutorialAnchor.ForBuilding("minegate"), MinDay: 1,
@@ -514,9 +563,10 @@ public sealed partial class TutorialFlow : PanelContainer
             //
             // U-T2-16 (#162 defects 3-4): MinDay drops from 2 to 1 — the real gate was never the
             // calendar, it was the counter's own Morning-only legality (CounterHandlers.ApplyOpen,
-            // mirrored in StepActionAvailable below), the SAME shape Vigil's own MinDay 2->1 fix
-            // already established. The old copy told the player to wait for "Day 2" for most of
-            // day 1 and then for "the Morning" for most of day 2 — two wait lines for one gate.
+            // asked of ActionLegality directly via this row's own CanonicalAction — U13), the SAME
+            // shape Vigil's own MinDay 2->1 fix already established. The old copy told the player to
+            // wait for "Day 2" for most of day 1 and then for "the Morning" for most of day 2 — two
+            // wait lines for one gate.
             Step: TutorialStep.OpenCounter, DisplayIndex: 6, Act: TutorialAct.HandOff,
             Anchor: TutorialAnchor.ForStation("market", "counter"), MinDay: 1,
             ShortLabel: "Open the counter and hear out the customer",
@@ -556,7 +606,17 @@ public sealed partial class TutorialFlow : PanelContainer
             // depends on CustomerApproached (a sim-emitted fact keyed on a hero existing at all) the
             // way the dropped variant below did.
             IsDone: CounterAnsweredAtLeastOnce,
-            AdvanceFrom: [TutorialStep.OpenCounter], AdvancesTo: TutorialStep.Vigil),
+            AdvanceFrom: [TutorialStep.OpenCounter], AdvancesTo: TutorialStep.Vigil,
+            // U13: the counter's whole verb family — Open, Present, Suggest, Haggle, Close — folds
+            // into ONE row because they are all Morning-only and share a session, so "the step is
+            // available" means "at least one of them is legal right now," never just Open alone.
+            // That matters mid-session: once a session is open, OpenCounterLegal itself goes false
+            // (a session can't reopen), but CloseCounterLegal is unconditionally true whenever a
+            // session exists — so this family search reproduces the OLD phase-only mirror exactly
+            // (Morning is both necessary and, via Close, always sufficient) without a special case
+            // for "already open" anywhere in this file.
+            CanonicalAction: state => ActionLegality.LegalActions(state, state.Phase).FirstOrDefault(a =>
+                a is OpenCounterAction or PresentItemAction or SuggestItemAction or HaggleResponseAction or CloseCounterAction)),
         new(
             // U1+U2/U3 union (§11.13): MinDay drops to 1 (U2/U3) — re-scoped from "day 2 lesson" to
             // "not day-based at all". The real precondition was never the day — see
@@ -622,6 +682,15 @@ public sealed partial class TutorialFlow : PanelContainer
             // No distinct GameEvent exists for Accept/Decline (CommissionHandlers' own doc) —
             // GameState.ActionLog (the kernel's own submitted-action history) is the durable fact.
             IsDone: state => state.ActionLog.Any(batch => batch.Actions.Any(a => a is AcceptCommissionAction or DeclineCommissionAction)),
+            // U13 (§11.14.14): deliberately no CanonicalAction — GatingNote already carries the
+            // honest "Commissions are answered in the Morning"/"No one is asking today" nuance for
+            // this row (U-T9-11), but the MAIN card's own raw instruction ("press the tray icon,
+            // then Accept or Decline") is meant to keep showing regardless: opening the tray and
+            // reading an empty board is itself informative, never a bounce, unlike walking to a
+            // Morning-only vendor after hours. Gating this row's own StepActionAvailable on a live
+            // Commission actually being open (TutorialCopyIsFollowableTests' own fixture proved
+            // this) would hide the tray-tooltip instruction the moment nobody happens to be asking
+            // — the checklist's own GatingNote is where that nuance belongs, not the card.
             AdvanceFrom: [TutorialStep.Commission], AdvancesTo: null), // terminal — Advance() calls Complete()
     ];
 
@@ -968,10 +1037,10 @@ public sealed partial class TutorialFlow : PanelContainer
     /// action (e.g. the Morning-only vendor mid-Expedition) it kept demanding the impossible
     /// instruction with no "come back later" hint. Each step now names its target building via its
     /// <see cref="TutorialStepDef.Anchor"/> — with a one-time movement hint on step 1 — and, when
-    /// the CURRENT <see cref="GameState.Phase"/> forbids that step's own action (<see
-    /// cref="StepActionAvailable"/>, mirroring <c>ActionLegality.IsLegal</c>'s own phase gates for
-    /// <c>BuyMaterialAction</c>/<c>PostBountyAction</c>), swaps in the deferred/"comes back"
-    /// variant (<see cref="WaitText"/>) instead of the raw actionable copy.</summary>
+    /// <see cref="StepActionAvailable"/> (U13: judged by <c>ActionLegality.IsLegal</c> against the
+    /// row's own <see cref="TutorialStepDef.CanonicalAction"/>, not a restatement of its rules)
+    /// reads false, swaps in the deferred/"comes back" variant (<see cref="WaitText"/>) instead of
+    /// the raw actionable copy.</summary>
     private string StepText(TutorialStepDef def, GameState state, string? openPanelId)
     {
         if (!StepActionAvailable(state, def))
@@ -1205,15 +1274,42 @@ public sealed partial class TutorialFlow : PanelContainer
             : $"Walk to the **{building}**, then press **E**";
     }
 
-    /// <summary>Whether <paramref name="def"/>'s own action is legal THIS phase — mirrors
-    /// <c>ActionLegality.IsLegal</c>'s exact phase gates for <c>BuyMaterialAction</c> (Morning
-    /// only) and <c>PostBountyAction</c> (Morning or Evening); Craft/Stock are phase-unrestricted
-    /// there too, and WatchDeparture has no player action to gate at all. Also mirrors
-    /// <c>CounterHandlers.ApplyOpen</c>'s Morning-only gate for OpenCounter (no action-slot check —
-    /// opening the counter does not spend one), and the LAST guard both those handlers check —
-    /// <c>state.ActionSlotsRemaining &gt; 0</c> (#317: the bounty Post button mirrors
-    /// <c>ActionLegality</c> directly, so the tutorial card must not report a step actionable when
-    /// a real click on a slot-exhausted day would bounce).</summary>
+    /// <summary>
+    /// U13 (§11.14.14): whether <paramref name="def"/>'s own action is legal RIGHT NOW — asked of
+    /// the sim directly (<see cref="ActionLegality.IsLegal"/> against <see
+    /// cref="TutorialStepDef.CanonicalAction"/>) instead of a hand-copied restatement of its rules.
+    /// Before this unit, this method's own switch, <see cref="WaitText"/>'s switch, and <see
+    /// cref="GatingNote"/>'s switch each carried an independent partial copy of the same phase/slot
+    /// gates — three places a future rule change (a new slot-consuming action, a new phase gate)
+    /// could be applied to two of them and silently miss the third. That already happened once in
+    /// shipped code: <c>ActionBudget.ConsumesSlot</c> has always listed <c>CraftAction</c>, but this
+    /// switch's own slot check once named only <c>BuyMaterial</c>/<c>PostBounty</c> (fixed by hand,
+    /// U-T9-11, this unit's own drift test pins it staying fixed without naming a step to do so).
+    ///
+    /// <para><see cref="TutorialStep.LookIn"/> is the one step whose gate is NOT an action-legality
+    /// question at all — opening the Scrying Mirror is UI navigation with no <c>PlayerAction</c>
+    /// behind it, so its own honest predicate (<see cref="WatchWindowOpen"/>, unchanged by this
+    /// unit) stays the answer. <see cref="TutorialStep.Craft"/> is asked a NARROWER question than
+    /// every other gated row (see below); rows with no <see
+    /// cref="TutorialStepDef.CanonicalAction"/> at all read available the moment their day arrives,
+    /// exactly as every un-gated row always has (<see cref="TutorialStep.Commission"/>'s own
+    /// Registry comment explains why that row is one of them).</para>
+    ///
+    /// <para><b>Craft is judged on the slot dimension alone, never full legality.</b> Unlike
+    /// BuyMaterial/PostBounty/OpenCounter — each of which has a genuine phase gate that is entirely
+    /// THIS row's own precondition — Craft has no phase gate at all (legal every phase) and its
+    /// material dimension belongs to the OTHER half of this shared display slot (BuyMaterial, or
+    /// the starter kit), never to Craft's own question. Running Craft's canonical action through
+    /// full <see cref="ActionLegality.IsLegal"/> would silently reconflate the two: a player who has
+    /// not bought material yet is mid-step, not blocked, and the raw instructive copy already tells
+    /// them so (<c>ObjectiveAdvisor.Suggest</c>, appended in <see cref="StepText"/>). This unit's
+    /// first draft did exactly that and broke <c>TutorialCopyIsFollowableTests</c>' own Day-3/
+    /// no-purchase fixture — a real, tested product decision, not an oversight to "fix" back onto
+    /// full IsLegal. So Craft asks only <see cref="ActionBudget.ConsumesSlot"/> against its own
+    /// canonical action's TYPE (never its field values — a candidate built from whichever recipe
+    /// happens to be craftable right now is fine for this alone) and the day's own remaining slots.
+    /// </para>
+    /// </summary>
     private static bool StepActionAvailable(GameState state, TutorialStepDef def)
     {
         if (state.Day < def.MinDay)
@@ -1221,18 +1317,32 @@ public sealed partial class TutorialFlow : PanelContainer
             return false;
         }
 
-        return def.Step switch
+        if (def.Step == TutorialStep.LookIn)
         {
-            TutorialStep.BuyMaterial => state.Phase == DayPhase.Morning && state.ActionSlotsRemaining > 0,
-            // U-T9-11: crafting is legal in every phase (the forge never closes) but it still spends
-            // a slot, so the slot is the whole of its availability.
-            TutorialStep.Craft => state.ActionSlotsRemaining > 0,
-            TutorialStep.PostBounty => (state.Phase is DayPhase.Morning or DayPhase.Evening) && state.ActionSlotsRemaining > 0,
-            TutorialStep.OpenCounter => state.Phase == DayPhase.Morning,
-            TutorialStep.LookIn => WatchWindowOpen(state),
-            _ => true,
-        };
+            return WatchWindowOpen(state);
+        }
+
+        if (def.CanonicalAction is null)
+        {
+            return true;
+        }
+
+        var action = def.CanonicalAction(state);
+
+        if (def.Step == TutorialStep.Craft)
+        {
+            return action is null || !ActionBudget.ConsumesSlot(action) || state.ActionSlotsRemaining > 0;
+        }
+
+        return action is not null && ActionLegality.IsLegal(state, action, state.Phase);
     }
+
+    /// <summary>Test seam for <c>StepActionAvailable</c> — same naming idiom as <see
+    /// cref="GatingNoteForTests"/>, for the same reason: there is no force-the-step hook here (tests
+    /// drive the chain with real actions), so a test that needs a SPECIFIC row's own verdict against
+    /// a constructed <see cref="GameState"/> — not merely whichever row happens to be current — asks
+    /// this directly.</summary>
+    public static bool StepActionAvailableForTests(GameState state, TutorialStepDef def) => StepActionAvailable(state, def);
 
     /// <summary>The raid window: the only phases in which a party is actually out and the Watch
     /// control is therefore on screen. Mirrors <c>MainUi.UpdateClockLabel</c>'s own
@@ -1329,8 +1439,9 @@ public sealed partial class TutorialFlow : PanelContainer
             {
                 // U-T2-16 (#162 defects 3-4): OpenCounter no longer has a day-gate case here — its
                 // MinDay dropped from 2 to 1, because the real precondition was never the day, it
-                // was the counter's own Morning-only legality (CounterHandlers.ApplyOpen, mirrored
-                // in StepActionAvailable). The OLD line here ("it opens once Day 2 begins") is the
+                // was the counter's own Morning-only legality (CounterHandlers.ApplyOpen, asked of
+                // ActionLegality directly via StepActionAvailable's CanonicalAction — U13). The OLD
+                // line here ("it opens once Day 2 begins") is the
                 // exact "wait line for most of day 1, then a SECOND wait line for most of day 2"
                 // shape the owner's brief calls out. This branch (state.Day < def.MinDay) is
                 // therefore unreachable for OpenCounter now — MinDay is 1, so it is never true —
@@ -1355,19 +1466,22 @@ public sealed partial class TutorialFlow : PanelContainer
             };
         }
 
-        // Slot exhaustion explains exactly two steps — the two that spend a slot. It used to be
-        // asked of EVERY unavailable step, and every other one fell through to `string.Empty`: a
-        // blank tutorial card, on the surface whose entire job is telling the player what to do.
-        // OpenCounter could already reach it (its own gate is phase-only, no slot check) and LookIn
-        // now can too, so the guard is narrowed to the steps it is actually about.
+        // Slot exhaustion explains exactly three steps — the ones whose CanonicalAction is one
+        // ActionBudget.ConsumesSlot lists (BuyMaterial/PostBounty/Craft; OpenCounter/Commission's
+        // own verbs are all free — Registry's own comments on those two rows). It used to be asked
+        // of EVERY unavailable step, and every other one fell through to `string.Empty`: a blank
+        // tutorial card, on the surface whose entire job is telling the player what to do.
         //
-        // U-T9-11: Craft was missing from that narrowing, and the old comment here called these "the
-        // two that spend a slot", which was simply false — ActionBudget.ConsumesSlot lists CraftAction
-        // and CraftingHandlers.ApplyCraft decrements ActionSlotsRemaining. A player who spends the
-        // day's slots buying material (a 100g purse and five slots make that reachable without doing
-        // anything strange) then reads "You're at the anvil — craft", presses, and bounces off a gate
-        // the card never mentioned. A course that keeps asking for the impossible is worse than one
-        // that admits it.
+        // U-T9-11: Craft was once missing from this narrowing, and the comment here at the time
+        // called these "the two that spend a slot", which was simply false — ActionBudget.ConsumesSlot
+        // has always listed CraftAction, and CraftingHandlers.ApplyCraft decrements ActionSlotsRemaining.
+        // A player who spends the day's slots buying material (a 100g purse and five slots make that
+        // reachable without doing anything strange) then read "You're at the anvil — craft", pressed,
+        // and bounced off a gate the card never mentioned. Fixed by hand then; U13's own drift test
+        // (TutorialNeverAsksTheImpossibleTests) now pins that this narrowing can never again silently
+        // omit a slot-consuming step, because StepActionAvailable no longer keeps its own copy of
+        // "which steps spend a slot" at all — this `when` clause exists only to print the RIGHT
+        // reason, not to decide availability.
         if (state.ActionSlotsRemaining <= 0 && def.Step is TutorialStep.BuyMaterial or TutorialStep.PostBounty or TutorialStep.Craft)
         {
             return def.Step switch
@@ -1382,18 +1496,41 @@ public sealed partial class TutorialFlow : PanelContainer
                 TutorialStep.PostBounty =>
                     $"{StepPrefix(def)}: No action slots left today — the wide button at the top of the " +
                     "screen moves the day along; the board reopens tomorrow.",
+                // U13: this branch was ALREADY reachable for Craft (the `when` clause above has
+                // always named it) and fell to `_ => string.Empty` — a blank card on a slot-exhausted
+                // day, found while removing the hand-mirror that this switch used to share with
+                // StepActionAvailable. Fixed here, not just in the availability check.
+                TutorialStep.Craft =>
+                    $"{StepPrefix(def)}: No action slots left today — the {_workshopStationNoun} is still there tomorrow.",
                 _ => string.Empty,
             };
         }
 
         return def.Step switch
         {
-            TutorialStep.BuyMaterial =>
+            // U13: `when` guards every branch this switch previously stated unconditionally. Before
+            // this unit, reaching this switch for BuyMaterial/PostBounty/OpenCounter could ONLY mean
+            // a phase mismatch (StepActionAvailable's own hand-mirror checked nothing else), so an
+            // unconditional phase-excuse line was always true. Now that availability asks
+            // ActionLegality.IsLegal directly, a Morning with an empty purse can ALSO land here — and
+            // "only trades in the Morning" would be a lie on a Morning. Each phase-excuse line keeps
+            // its exact wording (still the common case; the code just states which case it is).
+            TutorialStep.BuyMaterial when state.Phase != DayPhase.Morning =>
                 $"{StepPrefix(def)}: The {_workshopNametag}'s material vendor only trades in the Morning — it opens back up next Morning. Nothing to do here until then.",
-            TutorialStep.PostBounty =>
+            TutorialStep.BuyMaterial =>
+                $"{StepPrefix(def)}: Not enough gold for material right now — the vendor's still here once you have some.",
+
+            TutorialStep.PostBounty when state.Phase is not (DayPhase.Morning or DayPhase.Evening) =>
                 $"{StepPrefix(def)}: The Bounties board only takes postings in the Morning or Evening — come back then to post yours.",
+            TutorialStep.PostBounty =>
+                $"{StepPrefix(def)}: Not enough gold to post a bounty right now — even the smallest reward needs some purse behind it.",
+
             // U-T2-16: states the gate as what it actually is — a Morning gate on the counter's own
-            // legality, never a day gate (the branch above is unreachable for this step now).
+            // legality, never a day gate (the branch above is unreachable for this step now). No
+            // unconditional-else case is needed here (unlike BuyMaterial/PostBounty above): Close is
+            // always legal once a session is open (CloseCounterLegal), so this row's own
+            // CanonicalAction search can only fail for the SAME reason it always could — it is not
+            // Morning at all.
             TutorialStep.OpenCounter =>
                 $"{StepPrefix(def)}: The counter only opens in the Morning — it reopens next Morning.",
             // The Watch control is only on the bell row while a party is out (WatchWindowOpen), so
@@ -1401,7 +1538,13 @@ public sealed partial class TutorialFlow : PanelContainer
             // brings it back.
             TutorialStep.LookIn =>
                 $"{StepPrefix(def)}: Nobody is down there right now — ring **Send them off** and the Mirror opens on them as they go.",
-            _ => string.Empty,
+            // U13: the generic net. Deriving availability from ActionLegality.IsLegal means every
+            // dimension a real handler checks (material, gold, session state) can now be the reason a
+            // step reads unavailable, not only the day/phase/slot axes this switch used to enumerate
+            // by hand — naming each one is worth doing as it is actually hit in play, but showing
+            // NOTHING in the meantime (the pre-U13 `_ => string.Empty` here) is the one answer law 7
+            // forbids: the card must always say SOMETHING, even a plain one, never go blank.
+            _ => $"{StepPrefix(def)}: Not available right now — nothing lost by waiting.",
         };
     }
 
