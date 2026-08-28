@@ -80,6 +80,107 @@ public class TutorialRegistryConformanceTests
         }
     }
 
+    // ── U21 (§11.14.14, "five acts"): TutorialAct grew from four values to five — Proof split out
+    // of what used to be a folded Dark (links 3-4 sharing one chapter heading). The four tests
+    // below pin the act-numbering contract this split leans on, generically over whatever acts and
+    // row counts the registry holds today, so a future act (or a row moving between existing acts)
+    // stays covered without anyone having to remember to update a hand-typed count here. ─────────
+
+    /// <summary>Test scenario 1: "every registry row maps to exactly one act." <see
+    /// cref="TutorialStepDef.Act"/> is a single enum field, never a set, so this is automatically
+    /// true PER ROW — the real risk is a SHARED display slot (BuyMaterial/Craft both sit at
+    /// DisplayIndex 1) whose rows disagree about which act that one on-screen slot belongs to.
+    /// <see cref="TutorialFlow"/>'s own <c>BuildActPositions</c> picks one representative row per
+    /// slot and assumes agreement; this pins that assumption against the live registry.</summary>
+    [TestCase]
+    public void Registry_EveryDisplaySlot_MapsToExactlyOneAct()
+    {
+        foreach (var group in TutorialFlow.Registry.GroupBy(d => d.DisplayIndex))
+        {
+            var acts = group.Select(d => d.Act).Distinct().ToList();
+            AssertThat(acts.Count)
+                .OverrideFailureMessage(
+                    $"DisplayIndex {group.Key} has rows disagreeing on Act ({string.Join(", ", acts)}) " +
+                    "— every row sharing a displayed slot must belong to the same act.")
+                .IsEqual(1);
+        }
+    }
+
+    /// <summary>Test scenario 2: "act-scoped numbering is contiguous per act [and starts at 1]."
+    /// Walks every act <see cref="TutorialFlow.Registry"/> actually uses — not a hand-typed list of
+    /// the five names — so this stays correct if a row ever moves acts again.</summary>
+    [TestCase]
+    public void ActPosition_IsContiguousWithinEachAct_StartingAtOne()
+    {
+        var slots = TutorialFlow.Registry
+            .GroupBy(d => d.DisplayIndex)
+            .OrderBy(g => g.Key)
+            .Select(g => g.First())
+            .ToList();
+
+        foreach (var actGroup in slots.GroupBy(d => d.Act).ToList())
+        {
+            var total = actGroup.Count();
+            var positions = actGroup.Select(d => TutorialFlow.ActPosition(d.Step).Position).OrderBy(p => p).ToList();
+
+            AssertThat(positions)
+                .OverrideFailureMessage(
+                    $"{actGroup.Key}'s own positions are [{string.Join(",", positions)}], not a " +
+                    $"contiguous 1..{total} run.")
+                .IsEqual(Enumerable.Range(1, total).ToList());
+
+            foreach (var def in actGroup)
+            {
+                AssertThat(TutorialFlow.ActPosition(def.Step).Total)
+                    .OverrideFailureMessage($"{def.Step}'s own Total does not match {actGroup.Key}'s row count.")
+                    .IsEqual(total);
+            }
+        }
+    }
+
+    /// <summary>Test scenario 3: "no global count changed." <see cref="TutorialFlow.TotalSteps"/> is
+    /// the one countdown that survived U-T2-1's act-scoped rework — no longer PRINTED anywhere (the
+    /// card reads act-scoped numbers now), but still the checklist's own row-count bookkeeping (<see
+    /// cref="Registry_DisplayIndicesSpanOneToTotalSteps_Contiguously"/> above, and <c>TutorialFlowTests</c>'
+    /// checklist-length assertions). Splitting Dark into Dark/Proof moves a row between acts, never
+    /// changes a <c>DisplayIndex</c>, so this must still read 10.</summary>
+    [TestCase]
+    public void TotalSteps_UnchangedByTheActSplit()
+    {
+        AssertThat(TutorialFlow.TotalSteps)
+            .OverrideFailureMessage(
+                "TutorialFlow.TotalSteps changed — splitting an act must only move rows BETWEEN " +
+                "acts, never add/remove a displayed slot.")
+            .IsEqual(10);
+    }
+
+    /// <summary>Test scenario 4: "the display order still matches the order rows are presented in."
+    /// Within any one act, a row's act-scoped position must climb in the same order its own
+    /// <c>DisplayIndex</c> (play order) does — pinned as a derived contract, not just trusted from
+    /// <c>BuildActPositions</c>' own implementation, so a future hand-edit that assigns an Act out of
+    /// DisplayIndex order goes red here.</summary>
+    [TestCase]
+    public void ActPosition_WithinEachAct_AgreesWithDisplayOrder()
+    {
+        var slots = TutorialFlow.Registry
+            .GroupBy(d => d.DisplayIndex)
+            .OrderBy(g => g.Key)
+            .Select(g => g.First())
+            .ToList();
+
+        foreach (var actGroup in slots.GroupBy(d => d.Act).ToList())
+        {
+            var byDisplayOrder = actGroup.OrderBy(d => d.DisplayIndex).Select(d => d.Step).ToList();
+            var byPositionOrder = actGroup.OrderBy(d => TutorialFlow.ActPosition(d.Step).Position).Select(d => d.Step).ToList();
+
+            AssertThat(byPositionOrder)
+                .OverrideFailureMessage(
+                    $"{actGroup.Key}'s act-scoped position order disagrees with its own DisplayIndex " +
+                    "(play) order.")
+                .IsEqual(byDisplayOrder);
+        }
+    }
+
     [TestCase]
     public void Registry_EveryRow_HasNonEmptyLabelsAndNoteAndADurablePredicateAndAValidMinDayAndSelfInclusiveAdvanceFrom()
     {

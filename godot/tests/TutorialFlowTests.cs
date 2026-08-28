@@ -572,8 +572,10 @@ public class TutorialFlowTests
             AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.WatchDeparture);
 
             var copy = ui.Tutorial.TopSlotText(ui.Adapter.CurrentState)!;
-            // U-T2-1: WatchDeparture is The Dark's 2nd of 3 beats (PostBounty, WatchDeparture, LookIn).
-            AssertThat(copy).StartsWith("The Dark · 2/3:");
+            // U-T2-1: WatchDeparture is The Dark's 2nd of 2 beats (PostBounty, WatchDeparture).
+            // U21 (§11.14.14) moved the act's former 3rd beat, LookIn, out into its own Proof act —
+            // see TutorialAct's own doc — so Dark now totals 2, not 3.
+            AssertThat(copy).StartsWith("The Dark · 2/2:");
             AssertThat(copy)
                 .OverrideFailureMessage(
                     $"Step 4 must name the press, not only the sight — the owner's question was literally " +
@@ -648,8 +650,10 @@ public class TutorialFlowTests
             AssertThat(string.IsNullOrWhiteSpace(copy))
                 .OverrideFailureMessage("The tutorial card rendered BLANK — the surface whose whole job is saying what to do.")
                 .IsFalse();
-            // U-T2-1: LookIn is The Dark's 3rd (and last) of 3 beats.
-            AssertThat(copy).StartsWith("The Dark · 3/3:");
+            // U21 (§11.14.14): LookIn moved out of The Dark into its own one-row Proof act — see
+            // TutorialAct's own doc for why the counterfactual "it mattered" beat earns its own
+            // chapter heading instead of sharing Dark's with the send-off.
+            AssertThat(copy).StartsWith("The Proof · 1/1:");
             AssertThat(copy)
                 .OverrideFailureMessage($"The step is still naming the Watch control with nobody out. Copy was: \"{copy}\"")
                 .NotContains("👁 Watch");
@@ -1629,7 +1633,9 @@ public class TutorialFlowTests
             AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.PostBounty);
 
             var duringExpedition = ui.Tutorial.TopSlotText(ui.Adapter.CurrentState)!;
-            AssertThat(duringExpedition).StartsWith("The Dark · 1/3:");
+            // U21 (§11.14.14): The Dark now totals 2 beats (PostBounty, WatchDeparture) — LookIn
+            // moved out into its own Proof act.
+            AssertThat(duringExpedition).StartsWith("The Dark · 1/2:");
             AssertThat(duringExpedition).Contains("Morning or Evening");
             AssertThat(duringExpedition).NotContains("Walk to");
         }

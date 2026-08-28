@@ -130,18 +130,32 @@ public enum TutorialAnchorKind
 /// U-T2-1 (owner ruling, §11.13): the chain numbers within ACTS, never as one global countdown —
 /// "The Hand-Off · 2 of 4", not "Tutorial 7/24". A countdown to ten was never going to survive
 /// becoming a countdown to twenty-four once the pointed chain outgrows day 3 (the owner's own
-/// ruling: the pointed chain now runs through day 7). The four acts ARE the five-link spine
-/// (<c>docs/design/THE-GAME.md</c>), minus the fifth link's own beats (not yet in the registry):
-/// <b>Mark</b> (link 1 — you make a thing, provably yours), <b>HandOff</b> (link 2 — it reaches a
-/// hero through the four honest channels: shelf, counter, commission, vigil runner — and the hero
-/// decides), <b>Dark</b> (links 3-4 — they carry it down on their own judgment, and the raid live
-/// proves it mattered), <b>Memory</b> (link 5 — the town's own record of what happened).
+/// ruling: the pointed chain now runs through day 7). The five acts ARE the five-link spine
+/// (<c>docs/design/THE-GAME.md</c>), one chapter per link: <b>Mark</b> (link 1 — you make a thing,
+/// provably yours), <b>HandOff</b> (link 2 — it reaches a hero through the four honest channels:
+/// shelf, counter, commission, vigil runner — and the hero decides), <b>Dark</b> (link 3 — they
+/// carry it into the mine on their own judgment), <b>Proof</b> (link 4 — the counterfactual replay
+/// that proves it mattered), <b>Memory</b> (link 5 — the town's own record of what happened; still
+/// missing that link's own beats, per U21's own scope note below).
+///
+/// <para>U21 (§11.14.14): <b>Proof</b> is new. It used to be folded into <b>Dark</b> — one chapter
+/// heading, "Dark", covering both "the hero walks into the mine" (link 3) and "the game proves it
+/// mattered" (link 4) — and this enum's own prior doc comment conceded exactly that. Link 4 is the
+/// mechanism no other game has (<see cref="GameSim.Expedition.AttributionEngine"/>'s counterfactual
+/// re-run, surfaced as the Scrying Mirror's ★ attribution beats — see <see
+/// cref="TutorialStep.LookIn"/>'s row), and it is the payoff the whole course exists to reach; it
+/// does not earn that by sharing a heading with the send-off. Splitting the act moves exactly one
+/// row (<see cref="TutorialStep.LookIn"/>, from Dark to Proof); nothing else about the registry
+/// changes, and act-scoped numbering (<see cref="TutorialFlow.ActPosition"/>) absorbs a fifth act
+/// without touching <see cref="TutorialFlow.TotalSteps"/> or any row's own <c>DisplayIndex</c> —
+/// see that method's own doc for why the position math needed no change at all to support this.</para>
 /// </summary>
 public enum TutorialAct
 {
     Mark,
     HandOff,
     Dark,
+    Proof,
     Memory,
 }
 
@@ -155,6 +169,7 @@ public static class TutorialActVocab
         TutorialAct.Mark => "The Mark",
         TutorialAct.HandOff => "The Hand-Off",
         TutorialAct.Dark => "The Dark",
+        TutorialAct.Proof => "The Proof", // U21 (§11.14.14): the new fifth chapter — see TutorialAct's own doc.
         TutorialAct.Memory => "The Memory",
         _ => act.ToString(),
     };
@@ -592,7 +607,12 @@ public sealed partial class TutorialFlow : PanelContainer
             ],
             AdvancesTo: TutorialStep.LookIn),
         new(
-            Step: TutorialStep.LookIn, DisplayIndex: 5, Act: TutorialAct.Dark,
+            // U21 (§11.14.14): Act moved from Dark to Proof. This is the row that opens the Scrying
+            // Mirror, which is where the ★ attribution beats live (ScryingMirror.OnShowProvenance,
+            // backed by AttributionEngine's counterfactual re-run) — link 4, "the game proves it
+            // mattered," not link 3's "carry it into the dark." DisplayIndex is unchanged (still 5,
+            // still the day-1 capstone); only which chapter heading the card prints for it moves.
+            Step: TutorialStep.LookIn, DisplayIndex: 5, Act: TutorialAct.Proof,
             Anchor: TutorialAnchor.ForHud("WatchButton"), MinDay: 1,
             ShortLabel: "Press Watch to look in on them",
             TeachNote: "The Scrying Mirror shows the raid live, floor by floor, including which of your work "
