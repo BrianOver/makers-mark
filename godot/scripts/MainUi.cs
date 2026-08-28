@@ -3510,6 +3510,11 @@ public partial class MainUi : Control
         AddChild(Overlay);
         Overlay.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         Overlay.Build();
+        // U42 (§11.14.14): the objective card owns the whole right edge, which is exactly where a
+        // marker for an eastern target must sit — and from the forge spawn the market, the tavern and
+        // the mine gate are all east. Telling the overlay what to keep clear of here (rather than
+        // letting it reach for the card) keeps it ignorant of the HUD's layout.
+        Overlay.KeepClearOf = Objective;
 
         // --- U-T2 Wave C (§11.14.4, Act II): the shared mentor banner for lessons that live
         //     outside any one panel (the two dilemma call-outs) — mounted after Overlay so it

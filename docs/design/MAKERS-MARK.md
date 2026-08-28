@@ -5133,6 +5133,7 @@ changes when it is done. A regression pin now holds that.
 | U42 | The off-camera marker stops landing on the objective card | `godot/scripts/ui/TutorialOverlay.cs`, `godot/scripts/ui/ObjectiveTracker.cs` | U15 |
 | U43 | The course can be photographed mid-step | `godot/tools/shot_harness.gd`, `godot/scripts/MainUi.cs` | — |
 | U44 | The craft lesson can never be skipped past | `godot/scripts/ui/TutorialFlow.cs` | — |
+| U45 | The teaching strip stops cutting a sentence in half | `godot/scripts/ui/ObjectiveTracker.cs`, `godot/scripts/ui/TutorialFlow.cs` | U11 |
 
 ---
 
@@ -5652,6 +5653,24 @@ changes when it is done. A regression pin now holds that.
 - Test scenarios: the harness still refuses an unknown state name; the new state leaves the chain on
   the shelve step with the player at spawn and the camera unmoved.
 - Verification: the capture shows the live step and its off-camera target's marker.
+
+#### U45. The teaching strip stops cutting a sentence in half
+
+- Goal: a new player never reads a teach note that begins mid-sentence.
+- Requirements: R5
+- Files: `godot/scripts/ui/ObjectiveTracker.cs`, `godot/scripts/ui/TutorialFlow.cs`
+- Approach: **found by photograph.** U11 bottom-anchored the 75px checklist window so the gating note
+  — the warning that matters at that moment — is always visible. Correct trade, and the cost is now
+  visible: on day 1 step 2 the card renders *"shelf. A finished craft sits in your bag, invisible to
+  them, until you stock it"*, the note's opening words hidden above the fold. A sentence that starts
+  mid-word is worse than one that ends early. Two honest doors and they are not exclusive: give the
+  strip more than 75px now that it carries a note plus a gating line plus a trap warning, or shorten
+  the copy so a full note fits. The copy pass is the better half — that step's note explains the shop,
+  the shelf, the Stock button, the drag alternative and what "unsold" means in one card, and the
+  interact prompt now on screen has already made its first sentence redundant.
+- Test scenarios: the visible text of the current row's note begins at the note's own first character;
+  the gating note stays visible when it exists; a note short enough to fit is not scrolled at all.
+- Verification: a `TutorialOffCamera` capture where the card's first visible word is the note's first word.
 
 #### U44. The craft lesson can never be skipped past
 
