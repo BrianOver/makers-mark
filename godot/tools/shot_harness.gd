@@ -107,7 +107,8 @@ const KNOWN_STATES := [
 	"ForgeExit", "ForgeFlavor", "ForgeLadder", "ForgePanel", "ForgeShelf", "GateNight",
 	"HeroCandidateOpen", "HeroCards", "HeroErrand", "Ledger", "Lessons", "MineGateFocus", "Mirror",
 	"OccupancyCorner", "ReturnAtNight", "ReturnEmerge", "ReturnQuestEmpty", "SendOff", "ShopPanel",
-	"SystemMenu", "TavernPanel", "TownOverview", "TutorialLookIn", "Watch",
+	"SystemMenu", "TavernPanel", "TownOverview", "TutorialLookIn", "TutorialOffCamera",
+	"Watch",
 ]
 
 func _initialize() -> void:
@@ -468,6 +469,14 @@ func _process(_delta: float) -> bool:
 			# the tray/ack-toast path this receipt exists to show.
 			if _ui.has_method("OnSecondProfessionPicked"):
 				_ui.call("OnSecondProfessionPicked", "alchemy")
+		elif _state == "TutorialOffCamera":
+			# The receipt for a pointer whose target the player CANNOT see. Buy + craft only, which
+			# leaves Shelve current -- its anchor is the market BUILDING, 448px from the forge spawn
+			# in a 640px viewport. The player is deliberately left standing at spawn: this photograph
+			# is worthless if anything moves them or the camera toward the target, which is also
+			# exactly the law-1 line an off-camera pointer must not cross.
+			if _ui.has_method("Dev_QueueDay1BuyAndCraft"):
+				_ui.call("Dev_QueueDay1BuyAndCraft")
 		elif _state == "TutorialLookIn":
 			# U5 (loop-legibility plan): the receipt for LookIn's own HUD anchor
 			# (WatchButton) -- queue the SAME day-1 ladder TutorialFlowTests.DriveDay1ToLookIn
