@@ -1135,6 +1135,22 @@ public partial class MainUi : Control
         // U23 (fix): reads GameState.EventLog durably now, not just this tick's LastEvents — see
         // TutorialFlow.Advance's own doc for why a per-tick-only read could dead-end the chain.
         Tutorial.Advance(state);
+
+        // U26 (§11.14.14, R19, "a player learns where the game publishes what the town wants"):
+        // Bryn points at the Demand board — the surface that already carries the rolled-up pass
+        // reasons, which exact slot or quality grade is stalling a hero's depth, and the price
+        // floor every bounty gets judged against. Nothing here is built; the board already computes
+        // all three, and nothing before this unit ever pointed at it. Routed through
+        // ConsumeDemandBoardBeat's own arm-today/speak-tomorrow gate (that method's own doc) rather
+        // than the plain ConsumeFirstTouch engine every simpler reactive lesson uses — an immediate
+        // fire on the same tick a refusal lands would hijack TutorialAnchorArbiter's pulse away from
+        // whatever the chain is actually pointing at, in the middle of an ordinary Morning the
+        // player is not looking at the board for.
+        if (Tutorial.ConsumeDemandBoardBeat(state) is { } demandBoardBeat)
+        {
+            Mentor.Show(demandBoardBeat, anchor: TutorialAnchor.ForHud("OpenDemand"));
+        }
+
         RefreshAll();
 
         // Only run the town's phase choreography when a phase ACTUALLY completed.

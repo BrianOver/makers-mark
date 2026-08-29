@@ -1,5 +1,7 @@
 #if GDUNIT_TESTS
 using System.Linq;
+using GameSim;
+using GameSim.Contracts;
 using GameSim.Professions;
 using GdUnit4;
 using Godot;
@@ -191,6 +193,100 @@ public class WaveELessonsTests
             AssertThat(ui.Mentor.Visible)
                 .OverrideFailureMessage("The once-ever lesson fired a second time from a different read-only surface.")
                 .IsFalse();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>U26 (§11.14.14, R19, "a player learns where the game publishes what the town
+    /// wants"): the campaign's first <see cref="HeroPassedOnItem"/> ARMS <see
+    /// cref="TutorialFlow.ConsumeDemandBoardBeat"/> but must never SPEAK the same day — see that
+    /// method's own doc for why an immediate fire would hijack the tutorial's own pulse mid-Morning.
+    /// Driven through the real Mentor banner (a live tick), because this half is exactly the
+    /// regression this unit's own call-site doc names.</summary>
+    [TestCase]
+    public void FirstHeroRefusal_ArmsTheDemandBoardBeat_ButNeverSpeaksTheSameDay()
+    {
+        var baseState = GameComposition.NewCampaign(ScriptedSession.Seed);
+        var state = baseState with
+        {
+            EventLog = baseState.EventLog.Add(new HeroPassedOnItem(new HeroId(1), new ItemId(1), "too pricey")),
+        };
+        var ui = MountMainUi(new SimAdapter(state));
+        try
+        {
+            ui.Adapter.Queue(new BuyMaterialAction(ScriptedSession.CraftMaterial, ScriptedSession.CopperNeeded));
+
+            AssertThat(ui.Mentor.Visible)
+                .OverrideFailureMessage("The demand-board beat spoke the SAME day the refusal landed.")
+                .IsFalse();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>The morning-after half: once armed, the very next day speaks — and names the board
+    /// correctly. Calls <see cref="TutorialFlow.ConsumeDemandBoardBeat"/> directly against a
+    /// Day-advanced projection, the same "hand a modified state to a pure method" idiom
+    /// <c>TutorialFlowTests</c>' own day-2/3 helpers already use, rather than simulating a full real
+    /// day (heroes shopping/mustering) just to watch the calendar turn over.</summary>
+    [TestCase]
+    public void ArmedDemandBoardBeat_SpeaksTheMorningAfter()
+    {
+        var baseState = GameComposition.NewCampaign(ScriptedSession.Seed);
+        var armedState = baseState with
+        {
+            EventLog = baseState.EventLog.Add(new HeroPassedOnItem(new HeroId(1), new ItemId(1), "too pricey")),
+        };
+        var ui = MountMainUi(new SimAdapter(armedState));
+        try
+        {
+            // Arms (silently) on day 1 — the SimAdapter's own current state IS the armed state.
+            AssertThat(ui.Tutorial.ConsumeDemandBoardBeat(ui.Adapter.CurrentState))
+                .OverrideFailureMessage("Setup check: the beat should arm silently on the refusal's own day.")
+                .IsNull();
+
+            var tomorrow = ui.Adapter.CurrentState with { Day = ui.Adapter.CurrentState.Day + 1 };
+            var beat = ui.Tutorial.ConsumeDemandBoardBeat(tomorrow);
+
+            AssertThat(beat)
+                .OverrideFailureMessage("The demand-board beat never spoke on the morning after the refusal.")
+                .IsNotNull();
+            AssertThat(beat).Contains(MentorVoice.Name);
+            AssertThat(beat).Contains("Demand board");
+
+            // Once-ever: a THIRD call, even later, must not speak again.
+            var laterStill = tomorrow with { Day = tomorrow.Day + 1 };
+            AssertThat(ui.Tutorial.ConsumeDemandBoardBeat(laterStill))
+                .OverrideFailureMessage("The once-ever demand-board beat spoke a second time.")
+                .IsNull();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>The other half of R19's own test scenario: nothing fires — not even an arm — before
+    /// a refusal exists.</summary>
+    [TestCase]
+    public void NoRefusalYet_TheDemandBoardBeatStaysSilent()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.Adapter.Queue(new BuyMaterialAction(ScriptedSession.CraftMaterial, ScriptedSession.CopperNeeded));
+
+            AssertThat(ui.Mentor.Visible)
+                .OverrideFailureMessage("The demand-board beat fired with no refusal ever logged.")
+                .IsFalse();
+            AssertThat(ui.Tutorial.ConsumeDemandBoardBeat(ui.Adapter.CurrentState with { Day = 9 }))
+                .OverrideFailureMessage("The demand-board beat spoke with no refusal ever logged.")
+                .IsNull();
         }
         finally
         {

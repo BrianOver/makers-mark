@@ -577,10 +577,17 @@ public sealed partial class TutorialFlow : PanelContainer
             // The old note said a bounty "asks heroes to fetch something specific from the Mine",
             // which is not what the sim does at all: PostBountyAction names a FLOOR, never an item.
             // A teaching line that describes a mechanism the game does not have is worse than none.
+            //
+            // U26 (§11.14.14): the floor-reference clause is new. The board already tells the
+            // player what a hero will demand for a given floor (DemandBoard.BountyFloorMinimums,
+            // rendered by DemandPanel's own "BOUNTY BOARD" section) — this line used to warn that
+            // too thin a reward gets refused without ever saying that number is published anywhere
+            // a player could go check it before posting.
             TeachNote: "A bounty is a paid request to reach one floor of the Mine. The reward leaves your purse "
                        + "the moment you post it; the first hero who judges it worth that floor takes the job, "
                        + "steers their whole party that deep, and keeps the gold. Too thin a reward for the "
-                       + "floor and every hero refuses. Nobody takes it in three days, the gold comes back.",
+                       + "floor and every hero refuses — that floor is published on the Demand board, so you "
+                       + "never have to guess at it. Nobody takes it in three days, the gold comes back.",
             IsDone: state => state.EventLog.OfType<BountyPosted>().Any(),
             AdvanceFrom: [TutorialStep.PostBounty], AdvancesTo: TutorialStep.WatchDeparture,
             // U13: one candidate per legal floor at the smallest positive escrow — the same shape
@@ -2440,6 +2447,60 @@ public sealed partial class TutorialFlow : PanelContainer
     private bool _hasSeenFleeceBeat;
 
     /// <summary>
+    /// U26 (§11.14.14, R19, "a player learns where the game publishes what the town wants"): a
+    /// dormant act, same shape as <see cref="ConsumeWarrantEndBeat"/> — armed the day the campaign's
+    /// first <see cref="HeroPassedOnItem"/> lands, spoken the FIRST MORNING AFTER, never the same
+    /// day. Deliberately deferred rather than routed through the plain <see cref="ConsumeFirstTouch"/>
+    /// engine every simpler reactive lesson uses: the refusal that arms this is a byproduct of the
+    /// SAME shopping tick a player's own action can trigger, so an immediate fire would pop Bryn's
+    /// banner — and hijack <see cref="TutorialAnchorArbiter"/>'s pulse away from whatever the chain
+    /// is actually pointing at (<c>MentorBannerAnchor</c> outranks <c>ChainStep</c>) — in the middle
+    /// of an ordinary Morning the player did not cause and is not looking at the board for. Arming
+    /// today and speaking tomorrow is what "on the morning after a refusal" (this unit's own
+    /// verification line) actually means.
+    /// </summary>
+    public string? ConsumeDemandBoardBeat(GameState state)
+    {
+        if (_hasSeenDemandBoardBeat)
+        {
+            return null;
+        }
+
+        if (_demandBoardArmedDay == 0)
+        {
+            if (!state.EventLog.OfType<HeroPassedOnItem>().Any())
+            {
+                return null; // no refusal has ever happened — stays silent (R19's own test scenario)
+            }
+
+            _demandBoardArmedDay = state.Day; // armed, but silent until a LATER day
+            Save();
+            return null;
+        }
+
+        if (state.Day <= _demandBoardArmedDay)
+        {
+            return null; // still the same day the refusal landed — wait for tomorrow
+        }
+
+        _hasSeenDemandBoardBeat = true;
+        Save();
+        return MentorVoice.Speak(
+            "A hero just passed on something — that reason isn't lost, it's logged. The Demand "
+            + "board rolls up why heroes are walking past your shelf, names the exact slot or "
+            + "quality grade holding a stalled hero's depth back, and lists the price floor every "
+            + "posted bounty gets judged against.");
+    }
+
+    /// <summary>U26: once-ever consumed flag backing <see cref="ConsumeDemandBoardBeat"/> — same
+    /// persisted-flag contract as <see cref="_hasSeenWarrantEndBeat"/>.</summary>
+    private bool _hasSeenDemandBoardBeat;
+
+    /// <summary>U26: the day the campaign's first <see cref="HeroPassedOnItem"/> landed, or 0 before
+    /// that (armed-but-silent) — mirrors <see cref="_firstLossDay"/>'s own shape exactly.</summary>
+    private int _demandBoardArmedDay;
+
+    /// <summary>
     /// U-T2-7 (Wave A substrate, §11.14.4): the first-touch tier's own bookkeeping — "a first-touch
     /// lesson fires the FIRST time an action becomes reachable, once ever, and then lives in the
     /// Lessons book." A generic engine, deliberately, rather than a fourth hand-rolled <c>bool
@@ -2612,6 +2673,8 @@ public sealed partial class TutorialFlow : PanelContainer
             // same "never armed yet" starting point a fresh campaign already has for every dormant
             // act in this file.
             _hasSeenFleeceBeat = data.HasSeenFleeceBeat;
+            _hasSeenDemandBoardBeat = data.HasSeenDemandBoardBeat;
+            _demandBoardArmedDay = data.DemandBoardArmedDay;
             // U-T2-7: an old save without this property deserializes to null — safe, same "widens
             // going forward, never fabricates a false fire" contract VigilCardSeen's own remark set:
             // a pre-existing campaign simply has nothing fired yet, exactly like a fresh one.
@@ -2645,6 +2708,7 @@ public sealed partial class TutorialFlow : PanelContainer
                 VigilCardSeen = _vigilCardSeen,
                 HasSeenWarrantEndBeat = _hasSeenWarrantEndBeat, FirstLossDay = _firstLossDay,
                 HasSeenFleeceBeat = _hasSeenFleeceBeat,
+                HasSeenDemandBoardBeat = _hasSeenDemandBoardBeat, DemandBoardArmedDay = _demandBoardArmedDay,
                 FirstTouchFired = new Dictionary<string, string>(FirstTouch.Fired),
                 // U14: the arrived ratchet and the mentor banner's own not-yet-dismissed lines — see
                 // both fields' own docs (_visitedAnchorForStep, PendingMentorLines).
@@ -2923,6 +2987,17 @@ public sealed partial class TutorialFlow : PanelContainer
         /// <summary>U25 (§11.14.14, KTD2): the counter's own fleece dormant act — false (never seen)
         /// is the safe default for a save from before this property existed.</summary>
         public bool HasSeenFleeceBeat { get; set; }
+
+        /// <summary>U26 (§11.14.14): the demand-board beat's own once-ever flag — an old save
+        /// without this property deserializes to false, the same safe default every sibling flag
+        /// above uses (a save loaded past its own arming day simply fires on the next qualifying
+        /// tick, exactly as a fresh campaign would).</summary>
+        public bool HasSeenDemandBoardBeat { get; set; }
+
+        /// <summary>U26 (§11.14.14): the day the demand-board beat armed, or 0 (not yet armed) for a
+        /// save from before this property existed — mirrors <see cref="FirstLossDay"/>'s own safe
+        /// default exactly.</summary>
+        public int DemandBoardArmedDay { get; set; }
 
         /// <summary>U-T2-7 (Wave A substrate): the first-touch tier's own fired set, id -> the exact
         /// text it fired with — an old save without this property deserializes to <see
