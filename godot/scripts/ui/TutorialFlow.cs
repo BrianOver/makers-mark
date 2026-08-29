@@ -676,7 +676,13 @@ public sealed partial class TutorialFlow : PanelContainer
             // that mechanism actually lives.
             TeachNote: "The counter is a live haggle. **Present** a shelved item, or **Suggest** one first to "
                        + "raise their interest for a stronger opening offer. Once they've named a price, "
-                       + "**Accept** it, **Hold Firm** and wait them out, or name your own with **Counter**. "
+                       + "**Accept** it, **Hold Firm** and wait them out, or name your own with **Counter** — "
+                       // U25 (§11.14.14, KTD2): the one added sentence — naming your own price never
+                       // fails to trade (ResolveCounter's own fleece/pin/plain branches all call
+                       // CloseSale); only Hold Firm's patience can lose the customer outright, so the
+                       // real question a Counter answers is never whether it sells, only what it costs.
+                       + "naming your own price always closes the sale, at whatever it costs you after; "
+                       + "only **Hold Firm**'s patience can lose the customer outright. "
                        + "Walking away empty — theirs or yours — is a real answer too, not a mistake. "
                        + "**Tomorrow at the Counter**, bottom-left, lists who is coming next — keep it open "
                        + "while you craft. Answer them well and the price is remembered kindly, warming "
@@ -2406,6 +2412,34 @@ public sealed partial class TutorialFlow : PanelContainer
     public string? LossLessonText => _firstLossDay > 0 ? FirstLossBlockText : null;
 
     /// <summary>
+    /// U25 (§11.14.14, KTD2): the counter's own dormant act — armed the first time EVER a haggle
+    /// closes as a fleece. <see cref="CounterSaleClosed"/> carries no explicit "fleeced" flag (only
+    /// <c>Pinned</c>), so a fleece is read the same way <see cref="Panels.CounterPanel"/>'s own
+    /// Counter-button handler already does: off the one field a fleece actually moves, <see
+    /// cref="Counter.CounterState.GoodwillPermille"/> dropping (<c>WillingnessModel
+    /// .FleeceGoodwillPenaltyPermille</c>, internal, not cref-able from here). That panel calls this
+    /// with the before/after Goodwill it already reads for its own consequence line, so this never
+    /// re-derives the ceiling a second time. Fires once ever, after the sale already closed — never
+    /// a scold, just the honest note that the price just named will be remembered.
+    /// </summary>
+    public string? ConsumeFirstFleeceBeat()
+    {
+        if (_hasSeenFleeceBeat)
+        {
+            return null;
+        }
+
+        _hasSeenFleeceBeat = true;
+        Save();
+        return "That price will be remembered, not scolded — a fair close warms every offer this "
+            + "hero makes you after; this one just cost you some of that instead.";
+    }
+
+    /// <summary>Once-ever flag backing <see cref="ConsumeFirstFleeceBeat"/> — same "never again"
+    /// contract as <see cref="_hasSeenWarrantEndBeat"/>.</summary>
+    private bool _hasSeenFleeceBeat;
+
+    /// <summary>
     /// U-T2-7 (Wave A substrate, §11.14.4): the first-touch tier's own bookkeeping — "a first-touch
     /// lesson fires the FIRST time an action becomes reachable, once ever, and then lives in the
     /// Lessons book." A generic engine, deliberately, rather than a fourth hand-rolled <c>bool
@@ -2574,6 +2608,10 @@ public sealed partial class TutorialFlow : PanelContainer
             _vigilCardSeen = data.VigilCardSeen;
             _hasSeenWarrantEndBeat = data.HasSeenWarrantEndBeat;
             _firstLossDay = data.FirstLossDay;
+            // U25 (§11.14.14): an old save without this property deserializes to false — safe, the
+            // same "never armed yet" starting point a fresh campaign already has for every dormant
+            // act in this file.
+            _hasSeenFleeceBeat = data.HasSeenFleeceBeat;
             // U-T2-7: an old save without this property deserializes to null — safe, same "widens
             // going forward, never fabricates a false fire" contract VigilCardSeen's own remark set:
             // a pre-existing campaign simply has nothing fired yet, exactly like a fresh one.
@@ -2606,6 +2644,7 @@ public sealed partial class TutorialFlow : PanelContainer
                 Completed = Completed, Dismissed = Dismissed, HasSeenLedgerTip = HasSeenLedgerTip, Step = Step,
                 VigilCardSeen = _vigilCardSeen,
                 HasSeenWarrantEndBeat = _hasSeenWarrantEndBeat, FirstLossDay = _firstLossDay,
+                HasSeenFleeceBeat = _hasSeenFleeceBeat,
                 FirstTouchFired = new Dictionary<string, string>(FirstTouch.Fired),
                 // U14: the arrived ratchet and the mentor banner's own not-yet-dismissed lines — see
                 // both fields' own docs (_visitedAnchorForStep, PendingMentorLines).
@@ -2880,6 +2919,10 @@ public sealed partial class TutorialFlow : PanelContainer
         /// <see cref="ConsumeLedgerTip"/>'s own pre-existing limitation, can miss the one-time
         /// reveal. Accepted here on the same precedent, not a new gap this unit introduces.</summary>
         public int FirstLossDay { get; set; }
+
+        /// <summary>U25 (§11.14.14, KTD2): the counter's own fleece dormant act — false (never seen)
+        /// is the safe default for a save from before this property existed.</summary>
+        public bool HasSeenFleeceBeat { get; set; }
 
         /// <summary>U-T2-7 (Wave A substrate): the first-touch tier's own fired set, id -> the exact
         /// text it fired with — an old save without this property deserializes to <see

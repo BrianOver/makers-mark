@@ -44,6 +44,18 @@ public partial class CounterPanel : SimPanel
     private Label? _feedback;
     private VBoxContainer? _body;
 
+    /// <summary>U25 (§11.14.14, KTD2): the counter's own fleece dormant act needs a way to speak —
+    /// set by <see cref="ShopPanel"/> right alongside its own <see cref="ShopPanel.Bind"/>-time
+    /// re-wire (the same "hand the collaborator in after construction" pattern that class's own
+    /// Tutorial/Mentor pair already uses), since this panel is built and owned by <see
+    /// cref="ShopPanel"/> rather than mounted directly by <c>MainUi</c>. Null-tolerant: a caller
+    /// with no <see cref="Tutorial"/> wired (most existing tests) never fires the beat.</summary>
+    public TutorialFlow? Tutorial { get; set; }
+
+    /// <summary>The shared "Bryn speaks" banner (<see cref="MentorBanner"/>) — owned by
+    /// <c>MainUi</c>, forwarded here alongside <see cref="Tutorial"/>.</summary>
+    public MentorBanner? Mentor { get; set; }
+
     public override void _Ready() => EnsureBuilt();
 
     public override void Refresh()
@@ -504,13 +516,22 @@ public partial class CounterPanel : SimPanel
                 // fleece actually moves (Goodwill drops — WillingnessModel.FleeceGoodwillPenaltyPermille,
                 // internal, not cref-able from here) rather than re-deriving the ceiling ourselves.
                 var goodwillAfter = Adapter!.CurrentState.Counter?.GoodwillPermille ?? goodwillBefore;
+                var fleeced = !closed.Pinned && goodwillAfter < goodwillBefore;
                 var flavor = closed.Pinned
                     ? "you read them exactly right — they're delighted"
-                    : goodwillAfter < goodwillBefore
+                    : fleeced
                         ? "but that price felt like a fleece — their goodwill dropped"
                         : "sale closed";
                 consequence = $"sold {itemName} to {heroName} for {closed.Price}g ({flavor}) — " +
                               DescribeNextCustomer();
+
+                // U25 (§11.14.14, KTD2): the counter's own dormant act — see
+                // TutorialFlow.ConsumeFirstFleeceBeat's own doc. Fires once ever, after the sale
+                // itself already closed, never a scold.
+                if (fleeced && Tutorial?.ConsumeFirstFleeceBeat() is { } fleeceBeat)
+                {
+                    Mentor?.Show(MentorVoice.Speak(fleeceBeat));
+                }
             }
             else
             {

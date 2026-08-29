@@ -133,6 +133,12 @@ public partial class ShopPanel : SimPanel
 
         var state = Adapter.CurrentState;
         _counter!.Bind(Adapter); // PA7: re-bind (idempotent) so the counter body tracks this tick
+        // U25 (§11.14.14, KTD2): the counter's own fleece dormant act needs the SAME Tutorial/Mentor
+        // collaborators this panel already carries — re-assigned every refresh (idempotent, same
+        // precedent as Bind above) rather than once at construction, since ShopPanel's own
+        // Tutorial/Mentor setters can be called after _counter already exists.
+        _counter!.Tutorial = Tutorial;
+        _counter!.Mentor = Mentor;
         Clear(_content!);
 
         var passesToday = PassesToday(state);
