@@ -201,15 +201,13 @@ public class WaveELessonsTests
     }
 
     /// <summary>U26 (§11.14.14, R19, "a player learns where the game publishes what the town
-    /// wants"): the FIRST time a hero ever passes on an item (<see cref="HeroPassedOnItem"/>, the
-    /// durable fact <see cref="GameSim.Drama.DemandBoard.Snapshot"/> itself rolls up into pass
-    /// reasons), Bryn points at the Demand board — nothing here is built, the board already
-    /// computes the pass reasons, the depth stalls, and the published bounty floor; nothing pointed
-    /// at it before this unit. Any real tick re-checks the durable EventLog fact, so a plain,
-    /// side-effect-light Morning buy (the same trigger <c>DilemmaLessonsTests</c>' own fixtures use
-    /// to force a tick) is enough — the refusal itself was logged before this test ever mounted.</summary>
+    /// wants"): the campaign's first <see cref="HeroPassedOnItem"/> ARMS <see
+    /// cref="TutorialFlow.ConsumeDemandBoardBeat"/> but must never SPEAK the same day — see that
+    /// method's own doc for why an immediate fire would hijack the tutorial's own pulse mid-Morning.
+    /// Driven through the real Mentor banner (a live tick), because this half is exactly the
+    /// regression this unit's own call-site doc names.</summary>
     [TestCase]
-    public void FirstHeroRefusal_TeachesTheDemandBoardLesson()
+    public void FirstHeroRefusal_ArmsTheDemandBoardBeat_ButNeverSpeaksTheSameDay()
     {
         var baseState = GameComposition.NewCampaign(ScriptedSession.Seed);
         var state = baseState with
@@ -222,14 +220,8 @@ public class WaveELessonsTests
             ui.Adapter.Queue(new BuyMaterialAction(ScriptedSession.CraftMaterial, ScriptedSession.CopperNeeded));
 
             AssertThat(ui.Mentor.Visible)
-                .OverrideFailureMessage("The demand-board lesson never showed after the campaign's first-ever refusal.")
-                .IsTrue();
-            var text = Find<Label>(ui.Mentor, "MentorBannerText").Text;
-            AssertThat(text).Contains(MentorVoice.Name);
-            AssertThat(text).Contains("Demand board");
-            AssertThat(ui.Mentor.CurrentAnchor)
-                .OverrideFailureMessage("The demand-board lesson does not point at the board's own tray button.")
-                .IsEqual(TutorialAnchor.ForHud("OpenDemand"));
+                .OverrideFailureMessage("The demand-board beat spoke the SAME day the refusal landed.")
+                .IsFalse();
         }
         finally
         {
@@ -237,9 +229,52 @@ public class WaveELessonsTests
         }
     }
 
-    /// <summary>The other half of R19's own test scenario: nothing fires before a refusal exists.</summary>
+    /// <summary>The morning-after half: once armed, the very next day speaks — and names the board
+    /// correctly. Calls <see cref="TutorialFlow.ConsumeDemandBoardBeat"/> directly against a
+    /// Day-advanced projection, the same "hand a modified state to a pure method" idiom
+    /// <c>TutorialFlowTests</c>' own day-2/3 helpers already use, rather than simulating a full real
+    /// day (heroes shopping/mustering) just to watch the calendar turn over.</summary>
     [TestCase]
-    public void NoRefusalYet_TheDemandBoardLessonStaysSilent()
+    public void ArmedDemandBoardBeat_SpeaksTheMorningAfter()
+    {
+        var baseState = GameComposition.NewCampaign(ScriptedSession.Seed);
+        var armedState = baseState with
+        {
+            EventLog = baseState.EventLog.Add(new HeroPassedOnItem(new HeroId(1), new ItemId(1), "too pricey")),
+        };
+        var ui = MountMainUi(new SimAdapter(armedState));
+        try
+        {
+            // Arms (silently) on day 1 — the SimAdapter's own current state IS the armed state.
+            AssertThat(ui.Tutorial.ConsumeDemandBoardBeat(ui.Adapter.CurrentState))
+                .OverrideFailureMessage("Setup check: the beat should arm silently on the refusal's own day.")
+                .IsNull();
+
+            var tomorrow = ui.Adapter.CurrentState with { Day = ui.Adapter.CurrentState.Day + 1 };
+            var beat = ui.Tutorial.ConsumeDemandBoardBeat(tomorrow);
+
+            AssertThat(beat)
+                .OverrideFailureMessage("The demand-board beat never spoke on the morning after the refusal.")
+                .IsNotNull();
+            AssertThat(beat).Contains(MentorVoice.Name);
+            AssertThat(beat).Contains("Demand board");
+
+            // Once-ever: a THIRD call, even later, must not speak again.
+            var laterStill = tomorrow with { Day = tomorrow.Day + 1 };
+            AssertThat(ui.Tutorial.ConsumeDemandBoardBeat(laterStill))
+                .OverrideFailureMessage("The once-ever demand-board beat spoke a second time.")
+                .IsNull();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>The other half of R19's own test scenario: nothing fires — not even an arm — before
+    /// a refusal exists.</summary>
+    [TestCase]
+    public void NoRefusalYet_TheDemandBoardBeatStaysSilent()
     {
         var ui = MountMainUi();
         try
@@ -247,8 +282,11 @@ public class WaveELessonsTests
             ui.Adapter.Queue(new BuyMaterialAction(ScriptedSession.CraftMaterial, ScriptedSession.CopperNeeded));
 
             AssertThat(ui.Mentor.Visible)
-                .OverrideFailureMessage("The demand-board lesson fired with no refusal ever logged.")
+                .OverrideFailureMessage("The demand-board beat fired with no refusal ever logged.")
                 .IsFalse();
+            AssertThat(ui.Tutorial.ConsumeDemandBoardBeat(ui.Adapter.CurrentState with { Day = 9 }))
+                .OverrideFailureMessage("The demand-board beat spoke with no refusal ever logged.")
+                .IsNull();
         }
         finally
         {

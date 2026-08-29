@@ -1137,25 +1137,18 @@ public partial class MainUi : Control
         Tutorial.Advance(state);
 
         // U26 (§11.14.14, R19, "a player learns where the game publishes what the town wants"):
-        // the FIRST time a hero ever passes on an item (HeroPassedOnItem, the durable fact
-        // DemandBoard.PassReasons itself rolls up), Bryn points at the Demand board — the surface
-        // that already carries the rolled-up pass reasons, which exact slot or quality grade is
-        // stalling a hero's depth, and the price floor every bounty gets judged against
-        // (DemandBoard.BountyFloorMinimums). Nothing here is built; the board already computes all
-        // three, and nothing before this unit ever pointed at it. Keyed on the durable EventLog
-        // fact (never LastEvents alone) so a refusal logged on an earlier tick is still caught the
-        // next time this runs, the same durability TutorialFlow.Advance's own fix above relies on.
-        if (state.EventLog.OfType<HeroPassedOnItem>().Any())
+        // Bryn points at the Demand board — the surface that already carries the rolled-up pass
+        // reasons, which exact slot or quality grade is stalling a hero's depth, and the price
+        // floor every bounty gets judged against. Nothing here is built; the board already computes
+        // all three, and nothing before this unit ever pointed at it. Routed through
+        // ConsumeDemandBoardBeat's own arm-today/speak-tomorrow gate (that method's own doc) rather
+        // than the plain ConsumeFirstTouch engine every simpler reactive lesson uses — an immediate
+        // fire on the same tick a refusal lands would hijack TutorialAnchorArbiter's pulse away from
+        // whatever the chain is actually pointing at, in the middle of an ordinary Morning the
+        // player is not looking at the board for.
+        if (Tutorial.ConsumeDemandBoardBeat(state) is { } demandBoardBeat)
         {
-            Mentor.ShowFirstTouch(
-                Tutorial.ConsumeFirstTouch(
-                    "demand-board-taught",
-                    MentorVoice.Speak(
-                        "A hero just passed on something — that reason isn't lost, it's logged. The Demand "
-                        + "board rolls up why heroes are walking past your shelf, names the exact slot or "
-                        + "quality grade holding a stalled hero's depth back, and lists the price floor every "
-                        + "posted bounty gets judged against.")),
-                anchor: TutorialAnchor.ForHud("OpenDemand"));
+            Mentor.Show(demandBoardBeat, anchor: TutorialAnchor.ForHud("OpenDemand"));
         }
 
         RefreshAll();

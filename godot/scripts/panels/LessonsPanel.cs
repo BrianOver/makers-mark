@@ -69,7 +69,6 @@ public partial class LessonsPanel : SimPanel
         ["tanning-frame"] = "Working the tanning frame",
         ["first-talent-unlock"] = "Unlocking a talent",
         ["foundry-four-verbs"] = "The Foundry's four verbs",
-        ["demand-board-taught"] = "What the town wants",
     };
 
     /// <summary>Copy for <paramref name="id"/>'s card heading — see <see cref="FirstTouchTitles"/>'s
