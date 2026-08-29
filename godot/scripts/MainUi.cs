@@ -884,7 +884,32 @@ public partial class MainUi : Control
                 // OnLedgerVisibilityChanged's forecast chain) never re-asks for it. §11.13 amendment
                 // (U6): ConsumeFirstLossBlock rides the SAME automatic-reveal-only wiring — it
                 // returns non-null exactly once, on the night of the campaign's first HeroDied.
-                Ledger.ShowFor(_pendingLedgerDay, Tutorial.ConsumeLedgerTip(), Tutorial.ConsumeFirstLossBlock(Adapter.CurrentState));
+                var lossBlock = Tutorial.ConsumeFirstLossBlock(Adapter.CurrentState);
+                Ledger.ShowFor(_pendingLedgerDay, Tutorial.ConsumeLedgerTip(), lossBlock);
+
+                // U31 (§11.14.14): Bryn's own voice for the loss act — fires the SAME tick
+                // ConsumeFirstLossBlock actually commits (never re-asked independently, since her
+                // line is the same once-ever fact, just a second surface for it), anchored at the
+                // Legends tray the same way TutorialAnchorArbiter's own LossRow source already is.
+                if (lossBlock is not null && Tutorial.LossVoiceLine(Adapter.CurrentState) is { } lossVoice)
+                {
+                    Mentor.Show(
+                        MentorVoice.Speak(lossVoice), rank: MentorVoiceRank.Act,
+                        anchor: TutorialAnchor.ForHud("OpenLegends"));
+                }
+
+                // U30 (§11.14.14): the Proof act's own dormant voice — rides the SAME automatic-
+                // reveal-only wiring as ConsumeLedgerTip/ConsumeFirstLossBlock just above (all three
+                // facts land at the identical Evening-reveal moment). Bryn speaks at act rank,
+                // anchored into the ledger card she is naming: CurrentOpenSurfaceId() already reads
+                // "Ledger" here (Ledger.ShowFor just set Visible = true), so ProofBeatAnchor resolves
+                // straight to the card rather than the way-in.
+                if (Tutorial.ConsumeProofBeat(Adapter.CurrentState) is { } proofBeat)
+                {
+                    Mentor.Show(
+                        MentorVoice.Speak(proofBeat), rank: MentorVoiceRank.Act,
+                        anchor: TutorialFlow.ProofBeatAnchor(CurrentOpenSurfaceId()));
+                }
 
                 // Only the automatic Return-Ritual reveal speaks. Reopening the ledger from the tray
                 // re-reads the same night, and a narrator that recites on every re-read is the
@@ -1291,9 +1316,6 @@ public partial class MainUi : Control
         Ledger.Refresh();
         Camp.Refresh();
         Watch.Refresh(Adapter.CurrentState, Adapter.LastEvents); // U9: refreshed regardless of host
-        // U-T2 Wave D (§11.14.4, Act III, link 4): the proof taught the first time it lands — see
-        // ShowProofFirstTouchIfEarned's own doc. Checked right alongside the watch it flares on.
-        ShowProofFirstTouchIfEarned();
         Mirror.Refresh();
         Pip.Refresh(Adapter.CurrentState, Adapter.LastEvents); // U16/KTD11: rebuild the PiP's cards once per tick
     }
@@ -1375,8 +1397,13 @@ public partial class MainUi : Control
         // one-day window — see TutorialFlow.LossActRow's own doc for the "silent while armed, retires
         // honestly" contract (KTD-H).
         var lossRow = Tutorial.Active ? null : Tutorial.LossActRow(state);
+        // U30 (§11.14.14): the Proof act's own row, same "only once the numbered chain is done
+        // pointing" gate as the loss row just above — see TutorialFlow.ProofBeatRow's own doc.
+        var proofRow = Tutorial.Active ? null : Tutorial.ProofBeatRow(state);
+        var dormantRows = new[] { proofRow, lossRow }.Where(row => row is not null)
+            .Select(row => row!.Value).ToArray();
         var checklist = Tutorial.Active ? Tutorial.Checklist(state)
-            : lossRow is { } row ? new[] { row } : null;
+            : dormantRows.Length > 0 ? dormantRows : null;
 
         Objective.Refresh(
             state,
@@ -2593,39 +2620,6 @@ public partial class MainUi : Control
         var itemName = state.Items.TryGetValue(first.Item.Value, out var item) ? item.Name : $"Item #{first.Item.Value}";
         var extra = boughtFromShelf.Count > 1 ? $" (+{boughtFromShelf.Count - 1} more)" : string.Empty;
         return $"{HeroDisplayName(state, first.Buyer)} marches carrying your {itemName}, bought for {first.Price}g{extra}";
-    }
-
-    /// <summary>
-    /// U-T2 Wave D (§11.14.4, Act III, link 4, "the proof taught the first time it lands"): the
-    /// FIRST time ever an <see cref="AttributionBeatEvent"/> reaches this tick — the counterfactual
-    /// replay (<see cref="GameSim.Expedition.AttributionEngine"/>) naming a player-crafted item that
-    /// mattered — Bryn explains the MECHANISM once, through the same shared banner Wave C
-    /// introduced. Never fires on a re-render with no new beat (<see cref="SimAdapter.LastEvents"/>
-    /// is THIS tick's own batch); never restates which item or hero earned it — that specific,
-    /// sim-decided fact is <see cref="Panels.MineWatch"/>'s own bark's job
-    /// (<c>BarkFor</c>, fixed alongside this unit to actually name the item via <see
-    /// cref="AttributionBeatEvent.Detail"/> instead of discarding it). Without this lesson a player
-    /// who reaches the proof having never been told what it is reads the flash as unexplained
-    /// decoration — the coordinator's own framing for why this is the wave's most important unit.
-    /// </summary>
-    private void ShowProofFirstTouchIfEarned()
-    {
-        if (!Adapter.LastEvents.OfType<AttributionBeatEvent>().Any())
-        {
-            return;
-        }
-
-        // U3 (§11.14.14, register check): used to say "the sim just replayed this fight" — Bryn
-        // is a townsfolk who has never heard the word, and the town's own counterfactual replay
-        // (AttributionEngine) is exactly what the docket lesson below already calls "what the
-        // town has already decided." Same fix, same file, same voice.
-        Mentor.ShowFirstTouch(Tutorial.ConsumeFirstTouch(
-            "the-proof-taught",
-            MentorVoice.Speak(
-                "That flash is the proof: the town just replayed this fight with your craft taken back "
-                + "out of it, and found it would have gone differently. Only something you actually "
-                + "forged can ever earn a beat like that — nothing else a hero happens to be carrying "
-                + "counts.")));
     }
 
     /// <summary>U-T2 Wave E ("the read-only surfaces", the long tail), widened in Wave F: HeroCards,
@@ -4498,6 +4492,11 @@ public partial class MainUi : Control
             _resumePlayOnLedgerClose = Clock.Playing;
             Clock.Pause();
             LedgerDelayRemaining = 0; // a manual open satisfies the pending Return Ritual
+            // U30 (§11.14.14): "the beat card being opened" — this fires for BOTH the automatic
+            // reveal and a manual reopen (the tray's "OpenLedger" button), since both funnel
+            // through LedgerModal.ShowFor setting Visible = true. A no-op while the Proof act's
+            // own row is not armed (TutorialFlow.NotifyLedgerOpened's own guard).
+            Tutorial.NotifyLedgerOpened();
         }
         else if (_showForecastOnLedgerClose)
         {
