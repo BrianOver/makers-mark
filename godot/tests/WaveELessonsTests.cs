@@ -1,5 +1,7 @@
 #if GDUNIT_TESTS
 using System.Linq;
+using GameSim;
+using GameSim.Contracts;
 using GameSim.Professions;
 using GdUnit4;
 using Godot;
@@ -190,6 +192,62 @@ public class WaveELessonsTests
 
             AssertThat(ui.Mentor.Visible)
                 .OverrideFailureMessage("The once-ever lesson fired a second time from a different read-only surface.")
+                .IsFalse();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>U26 (§11.14.14, R19, "a player learns where the game publishes what the town
+    /// wants"): the FIRST time a hero ever passes on an item (<see cref="HeroPassedOnItem"/>, the
+    /// durable fact <see cref="GameSim.Drama.DemandBoard.Snapshot"/> itself rolls up into pass
+    /// reasons), Bryn points at the Demand board — nothing here is built, the board already
+    /// computes the pass reasons, the depth stalls, and the published bounty floor; nothing pointed
+    /// at it before this unit. Any real tick re-checks the durable EventLog fact, so a plain,
+    /// side-effect-light Morning buy (the same trigger <c>DilemmaLessonsTests</c>' own fixtures use
+    /// to force a tick) is enough — the refusal itself was logged before this test ever mounted.</summary>
+    [TestCase]
+    public void FirstHeroRefusal_TeachesTheDemandBoardLesson()
+    {
+        var baseState = GameComposition.NewCampaign(ScriptedSession.Seed);
+        var state = baseState with
+        {
+            EventLog = baseState.EventLog.Add(new HeroPassedOnItem(new HeroId(1), new ItemId(1), "too pricey")),
+        };
+        var ui = MountMainUi(new SimAdapter(state));
+        try
+        {
+            ui.Adapter.Queue(new BuyMaterialAction(ScriptedSession.CraftMaterial, ScriptedSession.CopperNeeded));
+
+            AssertThat(ui.Mentor.Visible)
+                .OverrideFailureMessage("The demand-board lesson never showed after the campaign's first-ever refusal.")
+                .IsTrue();
+            var text = Find<Label>(ui.Mentor, "MentorBannerText").Text;
+            AssertThat(text).Contains(MentorVoice.Name);
+            AssertThat(text).Contains("Demand board");
+            AssertThat(ui.Mentor.CurrentAnchor)
+                .OverrideFailureMessage("The demand-board lesson does not point at the board's own tray button.")
+                .IsEqual(TutorialAnchor.ForHud("OpenDemand"));
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>The other half of R19's own test scenario: nothing fires before a refusal exists.</summary>
+    [TestCase]
+    public void NoRefusalYet_TheDemandBoardLessonStaysSilent()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.Adapter.Queue(new BuyMaterialAction(ScriptedSession.CraftMaterial, ScriptedSession.CopperNeeded));
+
+            AssertThat(ui.Mentor.Visible)
+                .OverrideFailureMessage("The demand-board lesson fired with no refusal ever logged.")
                 .IsFalse();
         }
         finally

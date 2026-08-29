@@ -577,10 +577,17 @@ public sealed partial class TutorialFlow : PanelContainer
             // The old note said a bounty "asks heroes to fetch something specific from the Mine",
             // which is not what the sim does at all: PostBountyAction names a FLOOR, never an item.
             // A teaching line that describes a mechanism the game does not have is worse than none.
+            //
+            // U26 (§11.14.14): the floor-reference clause is new. The board already tells the
+            // player what a hero will demand for a given floor (DemandBoard.BountyFloorMinimums,
+            // rendered by DemandPanel's own "BOUNTY BOARD" section) — this line used to warn that
+            // too thin a reward gets refused without ever saying that number is published anywhere
+            // a player could go check it before posting.
             TeachNote: "A bounty is a paid request to reach one floor of the Mine. The reward leaves your purse "
                        + "the moment you post it; the first hero who judges it worth that floor takes the job, "
                        + "steers their whole party that deep, and keeps the gold. Too thin a reward for the "
-                       + "floor and every hero refuses. Nobody takes it in three days, the gold comes back.",
+                       + "floor and every hero refuses — that floor is published on the Demand board, so you "
+                       + "never have to guess at it. Nobody takes it in three days, the gold comes back.",
             IsDone: state => state.EventLog.OfType<BountyPosted>().Any(),
             AdvanceFrom: [TutorialStep.PostBounty], AdvancesTo: TutorialStep.WatchDeparture,
             // U13: one candidate per legal floor at the smallest positive escrow — the same shape
