@@ -270,6 +270,14 @@ public class TeachingCoverageCensusTests
         [typeof(BuyForgeSupplyAction)] = "foundry-four-verbs",
         [typeof(MasterworkAttemptAction)] = "foundry-four-verbs",
         [typeof(CommissionLegendaryWorkAction)] = "foundry-four-verbs",
+        // U23 (§11.14.14, "the shelf is a public place"): U6's own re-ruling below (see
+        // ActionUntaught's history in git — this entry moved OUT of that bucket, not merely
+        // edited in place) named this OWED, not excused. Shares "hold-or-sell" rather than
+        // minting a second id: CommissionBoard.ShowHoldOrSellLesson now teaches Unstock BY NAME
+        // as the one verb that reverses both halves of the shelf's publicness (public to buy,
+        // illegal to send) in the same breath it names the dilemma -- the "foundry-four-verbs"
+        // precedent for one id covering more than one action already exists on this same dict.
+        [typeof(UnstockAction)] = "hold-or-sell",
     };
 
     /// <summary>Taught by the scripted 3-day apprenticeship chain (<see cref="TutorialFlow.Registry"/>,
@@ -292,33 +300,15 @@ public class TeachingCoverageCensusTests
         [typeof(DeclineCommissionAction)] = TutorialStep.Commission,
     };
 
-    /// <summary>U6 (§11.14.14) RE-RULING of <see cref="UnstockAction"/>. The prior verdict here read
-    /// "a deliberate, low-stakes gap, not an oversight" — measurement contradicts that on two counts,
-    /// so it is corrected rather than kept (rule 8: a doc caught asserting what evidence contradicts
-    /// is corrected, or deleted, not preserved).
-    ///
-    /// <para><b>It is the executing verb behind the first of the six dilemmas CLAUDE.md's own header
-    /// names</b> — "sell the good one or hold it for the hero who needs it." Reconsidering a shelf
-    /// choice IS taking the item back off the shelf; there is no other verb that does it.</para>
-    ///
-    /// <para><b>It is also a hard precondition for the vigil.</b> <c>ActionLegality.SendSupplyLegal</c>
-    /// (sim/GameSim/Advisor/ActionLegality.cs, ~line 595) rejects <see cref="SendSupplyAction"/>
-    /// outright while the item still sits on <c>state.Player.Shelf</c>. A player who shelved
-    /// everything has no legal supply to send, and nothing anywhere tells them Unstock is the way
-    /// out of that trap.</para>
-    ///
-    /// <para>So this is re-ruled OWED, not excused — it stays in this bucket, not first-touch or a
-    /// numbered step, because building the lesson is explicitly NOT this unit's job; a later unit
-    /// teaches it. What changed is the verdict, not the code.</para>
-    /// </summary>
+    /// <summary>U6 (§11.14.14) re-ruled <see cref="UnstockAction"/> here OWED, not deliberate --
+    /// the prior verdict ("a deliberate, low-stakes gap, not an oversight") did not survive
+    /// measurement (rule 8: a doc caught asserting what evidence contradicts is corrected, or
+    /// deleted, not preserved). U23 is the "later unit" that re-ruling promised: <see
+    /// cref="UnstockAction"/> now lives in <see cref="ActionFirstTouch"/> under "hold-or-sell", not
+    /// here -- see that entry's own doc for what changed and why the two rulings are not in
+    /// tension (the verdict moved because the code did, not the other way round).</summary>
     private static readonly Dictionary<Type, string> ActionUntaught = new()
     {
-        [typeof(UnstockAction)] =
-            "OWED, not deliberate (U6 re-ruling, see doc comment above ActionUntaught): Unstock is " +
-            "the executing verb behind dilemma 1 (sell the good one or hold it for the hero who " +
-            "needs it) AND a precondition for SendSupplyLegal -- a shelved item cannot be sent on " +
-            "vigil, so a player with a full shelf and no Unstock lesson has no legal supply and no " +
-            "idea why. No first-touch lesson and no numbered step exist yet; a later unit builds one.",
         [typeof(CloseCounterAction)] =
             "CounterAnsweredAtLeastOnce (TutorialFlow.cs) recognizes CloseCounterAction as an optional " +
             "fast-path AFTER an answer, but never REQUIRES it -- a player can finish the OpenCounter " +

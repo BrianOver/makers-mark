@@ -140,6 +140,45 @@ public class CampPanelTests
         }
     }
 
+    // ── 1b. U23 (§11.14.14, "the shelf is a public place"): a shelved-only player is told why ──
+
+    /// <summary>The SAME fixture as <see cref="ExpeditionWorld"/>, except the one player-crafted
+    /// consumable is ON the shelf instead of loose — <c>ActionLegality.SendSupplyLegal</c>'s own
+    /// shelf exclusion (sim/GameSim/Advisor/ActionLegality.cs:595) makes it exactly as un-sendable
+    /// as if it had never been crafted, which is the trap this fixture reproduces.</summary>
+    private static GameState ExpeditionWorldWithSalveShelved() => ExpeditionWorld() with
+    {
+        Player = ExpeditionWorld().Player with
+        {
+            Shelf = ImmutableList.Create(new ShelfEntry(new ItemId(SalveId), 8)),
+        },
+    };
+
+    [TestCase]
+    public void CampSend_WhenTheOnlyConsumableIsShelved_NamesTheShelfAsTheReason()
+    {
+        var ui = MountMainUi(new SimAdapter(ExpeditionWorldWithSalveShelved()));
+        try
+        {
+            ui.Adapter.AdvancePhase(); // Expedition -> Camp: the party parks, the hook opens the slate
+            var party = ui.Adapter.CurrentState.InFlight.Single();
+            var lead = party.Party[0];
+
+            var send = Find<Button>(ui.Camp, $"CampSend_{lead.Value}");
+            AssertThat(send.Disabled)
+                .OverrideFailureMessage("Setup check: Send should be disabled — the only consumable is shelved, not held.")
+                .IsTrue();
+            AssertThat(send.TooltipText)
+                .OverrideFailureMessage($"A fully-shelved player was left with the generic \"nothing in your hands\" line instead of being told why. Got: \"{send.TooltipText}\"")
+                .Contains("shelf");
+            AssertThat(send.TooltipText).Contains("Unstock");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
     // ── 2. Not Camp / empty InFlight → slate hidden ──────────────────────────────────────────
 
     [TestCase]

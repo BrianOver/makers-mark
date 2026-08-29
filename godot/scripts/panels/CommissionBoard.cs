@@ -180,13 +180,29 @@ public partial class CommissionBoard : Control
     /// rather than sell freely off the shelf. Fires once per campaign through the SAME first-touch
     /// engine and shared banner Wave C's pricing lesson uses (<see cref="TutorialFlow.ConsumeFirstTouch"/>,
     /// <see cref="MentorBanner"/>) — never a third mechanism. Null-tolerant.
+    ///
+    /// <para>U23 (§11.14.14, "the shelf is a public place"): one fact makes three others
+    /// derivable, so it is taught here, once, rather than three times over. Verified against the
+    /// real gate before writing this: <c>ActionLegality.SendSupplyLegal</c>
+    /// (sim/GameSim/Advisor/ActionLegality.cs:595) rejects a <see cref="GameSim.Contracts.SendSupplyAction"/>
+    /// outright while the item still sits on <see cref="GameSim.Contracts.PlayerState.Shelf"/> — so a
+    /// shelved item is genuinely public (any hero's <c>ShoppingAi.EvaluateItem</c> may buy it) and
+    /// genuinely un-sendable, and <see cref="ShopPanel.RemoveFromShelf"/> (the <b>Unstock</b> button)
+    /// is the one verb that reverses either fact. <see cref="CampPanel"/>'s own vigil card now
+    /// REFERENCES this paragraph — a specific, honest "why nothing's in your hands" answer for a
+    /// player who shelved everything — instead of re-deriving it (see
+    /// <see cref="CampPanel.AnySendableConsumableIsShelved"/>'s own doc).
+    /// </para>
     /// </summary>
     private void ShowHoldOrSellLesson() =>
         Mentor?.ShowFirstTouch(Tutorial?.ConsumeFirstTouch(
             "hold-or-sell",
             MentorVoice.Speak(
                 "Sell the good one, or hold it for the hero who needs it — the shelf pays now, while "
-                + "a commission pays more, later, to a named person, if they live that long.")));
+                + "a commission pays more, later, to a named person, if they live that long. One fact "
+                + "ties them together: anyone may buy off the shelf, and a shelved item can never be "
+                + "sent to a camped party. Press **Unstock** to take it back — that is how you hold a "
+                + "piece for someone instead of selling it.")));
 
     private void EnsureBuilt()
     {
