@@ -2755,8 +2755,8 @@ public sealed partial class TutorialFlow : PanelContainer
     /// qualitatively).</summary>
     private const string CommissionDeliveryLessonText =
         "A commission is filled from your own shelf: forge the slot they named at or above the "
-        + "grade they asked, stock it, and the counter reads the board before it reads anyone "
-        + "else's order — the hero takes it at your list price plus their premium, guaranteed, the "
+        + "grade they asked, and stock it — their own morning shopping checks the board before "
+        + "anything else, and takes it at your list price plus their premium, guaranteed, the "
         + "moment they can afford both. Price it past their reach and that guarantee fails "
         + "quietly, with no warning. Nothing reserves the piece, either: an earlier shopper can "
         + "still buy it out from under the hero it was held for. Miss the deadline on an accepted "
