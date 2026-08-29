@@ -141,9 +141,13 @@ public class MentorVoiceTests
         "A second profession adds a new craft alongside your first — it never replaces what "
         + "you already know. Both share the same forge and the same day's action slots.",
 
-        // CommissionBoard.cs
+        // CommissionBoard.cs — U23 (§11.14.14, "the shelf is a public place"): widened to name
+        // the shelf's publicness and the Unstock control, not just the sell-or-hold choice.
         "Sell the good one, or hold it for the hero who needs it — the shelf pays now, while "
-        + "a commission pays more, later, to a named person, if they live that long.",
+        + "a commission pays more, later, to a named person, if they live that long. One fact "
+        + "ties them together: anyone may buy off the shelf, and a shelved item can never be "
+        + "sent to a camped party. Press **Unstock** to take it back — that is how you hold a "
+        + "piece for someone instead of selling it.",
 
         // ForgePanel.cs (fixed-prose lessons only — the mark-read line is excluded, see class doc)
         "The material you choose sets a hard ceiling on what this craft can become — bring less "

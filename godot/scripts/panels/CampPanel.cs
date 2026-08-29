@@ -244,8 +244,18 @@ public partial class CampPanel : SimPanel
             // bell short-circuits a send, and the runner's fee must be payable (step 8).
             GateButton(send,
                 legal: !party.SupplySent && !held.IsEmpty && !party.Recalled && state.Player.Gold >= fee,
+                // U23 (§11.14.14, "the shelf is a public place"): a full shelf and an empty pack
+                // read identically here (HeldConsumables below excludes anything on Player.Shelf,
+                // the same SendSupplyLegal gate — sim/GameSim/Advisor/ActionLegality.cs:595 —
+                // enforces), so the plain "nothing in your hands" line used to leave a player who
+                // shelved everything with no legal supply and no idea why. References the
+                // hold-or-sell lesson's own fact (CommissionBoard.ShowHoldOrSellLesson) instead of
+                // re-explaining it.
                 whyNot: party.SupplySent ? "One runner per party per day — this delivery is spent."
-                    : held.IsEmpty ? "Nothing in your hands to send."
+                    : held.IsEmpty
+                        ? (AnySendableConsumableIsShelved(state)
+                            ? "Nothing in your hands — what you've got is on the shelf, and the shelf can't send. Press Unstock to hold it back."
+                            : "Nothing in your hands to send.")
                     : party.Recalled ? "The recall bell has rung — the runner won't chase them."
                     : $"You can't pay the {fee}g runner yet.");
         }
@@ -338,6 +348,23 @@ public partial class CampPanel : SimPanel
             .Where(i => state.RivalShelf.All(e => e.Item != i.Id))
             .Where(i => state.Heroes.Values.All(h => !h.Pack.Contains(i.Id)))
             .ToImmutableList();
+
+    /// <summary>
+    /// U23 (§11.14.14, "the shelf is a public place"): whether a player-crafted consumable that
+    /// COULD be sent exists right now, just not in hand — sitting on <see cref="PlayerState.Shelf"/>
+    /// instead. The one difference from <see cref="HeldConsumables"/>'s own filter is the shelf
+    /// exclusion, deliberately removed, so the two can never silently disagree about what
+    /// "sendable" means. Drives the honest "why is nothing in your hands" answer for a player who
+    /// shelved everything — before this, that state and "never crafted a consumable at all" read
+    /// as the identical blank "Nothing in your hands to send." Names, never re-derives, the
+    /// hold-or-sell lesson's own fact (<see cref="CommissionBoard.ShowHoldOrSellLesson"/>): a
+    /// shelved item is public (any hero may buy it) and un-sendable (<c>ActionLegality
+    /// .SendSupplyLegal</c>, sim/GameSim/Advisor/ActionLegality.cs:595) until <b>Unstock</b>
+    /// reverses both.
+    /// </summary>
+    private static bool AnySendableConsumableIsShelved(GameState state) =>
+        state.Player.Shelf.Any(entry =>
+            state.Items.TryGetValue(entry.Item.Value, out var item) && item.Effect is not null && item.PlayerCrafted);
 
     private void EnsureBuilt()
     {

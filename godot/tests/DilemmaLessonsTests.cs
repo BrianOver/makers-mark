@@ -202,6 +202,12 @@ public class DilemmaLessonsTests
             AssertThat(text).Contains(MentorVoice.Name);
             AssertThat(text).Contains("shelf");
             AssertThat(text).Contains("commission");
+
+            // U23 (§11.14.14, "the shelf is a public place"): one fact makes three others
+            // derivable -- taught here, once, by naming the verb that performs it.
+            AssertThat(text)
+                .OverrideFailureMessage($"The hold-or-sell lesson never names the Unstock control. Copy: \"{text}\"")
+                .Contains("Unstock");
         }
         finally
         {
