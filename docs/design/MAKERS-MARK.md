@@ -5134,6 +5134,8 @@ changes when it is done. A regression pin now holds that.
 | U43 | The course can be photographed mid-step | `godot/tools/shot_harness.gd`, `godot/scripts/MainUi.cs` | — |
 | U44 | The craft lesson can never be skipped past | `godot/scripts/ui/TutorialFlow.cs` | — |
 | U45 | The teaching strip stops cutting a sentence in half | `godot/scripts/ui/ObjectiveTracker.cs`, `godot/scripts/ui/TutorialFlow.cs` | U11 |
+| U46 | An ordinary lesson stops stealing the chain's pointer | `godot/scripts/ui/TutorialAnchorArbiter.cs`, `godot/tests/` | U10 |
+| U47 | The banked slot is named where it bites | `godot/scripts/ui/TutorialFlow.cs` | U28 |
 
 ---
 
@@ -5653,6 +5655,40 @@ changes when it is done. A regression pin now holds that.
 - Test scenarios: the harness still refuses an unknown state name; the new state leaves the chain on
   the shelve step with the player at spawn and the camera unmoved.
 - Verification: the capture shows the live step and its off-camera target's marker.
+
+#### U46. An ordinary lesson stops stealing the chain's pointer
+
+- Goal: adding an anchored lesson on a common verb cannot silently break the course's own pointer.
+- Requirements: R10
+- Files: `godot/scripts/ui/TutorialAnchorArbiter.cs`, `godot/tests/`
+- Approach: U10's precedence ranks the mentor banner's anchor **above** the chain's current step. That
+  is right for a **beat** — when Bryn speaks about the proof, the pointer should follow her voice. It is
+  wrong for an **incidental lesson**: U26 and U28's first implementations each fired on an ordinary
+  action of a fresh campaign and hijacked the pulse mid-step, breaking a registry conformance test twice
+  and four stuck-player tests. Both were worked around (one became a dormant act speaking the next
+  morning; the other dropped its pointer), and the edge is still there for the next author. The arbiter
+  needs to distinguish a voice that **owns** a pointer from one that merely speaks — most likely by rank,
+  since act-rank voices are exactly the beats that should steer and lesson-rank ones are not.
+- Test scenarios: an act-rank voice with an anchor takes the pointer; a lesson-rank voice with an anchor
+  does not displace the chain's current step; the existing conformance test that caught this stays green
+  without either workaround in place.
+- Verification: re-point U28's slot-pip lesson, which was dropped only because of this edge, and the
+  conformance test stays green.
+
+#### U47. The banked slot is named where it bites
+
+- Goal: the "bank it" arm of the slot decision stops being invisible.
+- Requirements: R20, R15
+- Files: `godot/scripts/ui/TutorialFlow.cs`
+- Approach: U28 taught the budget and the free set in copy, and deliberately did **not** build the
+  deferred line for the first vigil that opens with no slots left — said so plainly rather than dropping
+  it quietly. That moment is the only place the banked arm is legible: crafting is legal in every phase,
+  so a slot declined at dawn is the slot that forges the salve inside the vigil stop, and a slot spent at
+  dawn is a camped party you cannot answer. Nothing else in the game reports an unspent slot; dawn erases
+  them silently.
+- Test scenarios: the line fires the first time a vigil opens with zero slots remaining; it fires once
+  ever; it never fires on a night with slots left.
+- Verification: a player who spends all five slots before the vigil is told what it cost them.
 
 #### U45. The teaching strip stops cutting a sentence in half
 
