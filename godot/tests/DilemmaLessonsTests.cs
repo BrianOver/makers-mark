@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using GameSim;
 using GameSim.Contracts;
+using GameSim.Factions;
 using GdUnit4;
 using Godot;
 using GodotClient.Ui;
@@ -242,6 +243,75 @@ public class DilemmaLessonsTests
     }
 
     // ============================================================================================
+    // U40 (§11.14.14, dilemma #5 "buy the ore, or buy the faction's favour" -- THE-GAME.md §3.5,
+    // amended by owner ruling KTD8, register #170): the tariff fork.
+    // ============================================================================================
+
+    /// <summary>The FIRST TariffApplied event is the moment the player's own standing first moves
+    /// what an ore buy costs them (OreMarketHandlers only ever emits it once the tariff actually
+    /// moved the price -- a neutral-standing first buy is silent). Fires plainly through
+    /// ConsumeFirstTouch, the same as "pricing-as-a-decision"/"hold-or-sell" -- never deferred like
+    /// U26's demand-board beat, because a tariff only ever moves as the direct, immediate
+    /// consequence of the player's OWN BuyOreAction, never a background AI tick.</summary>
+    [TestCase]
+    public void FirstTariffApplied_TeachesTheTariffForkDilemma()
+    {
+        var baseState = GameComposition.NewCampaign(ScriptedSession.Seed);
+        var state = baseState with
+        {
+            EventLog = baseState.EventLog.Add(
+                new TariffApplied(FactionRegistry.DeepveinId, "copper", BaseLineCost: 100, PlayerCost: 90, Delta: -10)),
+        };
+        var ui = MountMainUi(new SimAdapter(state));
+        try
+        {
+            // Any real tick re-checks the durable EventLog fact — a plain, side-effect-light
+            // Morning buy, the same trigger this file's own fixtures use elsewhere to force a tick.
+            ui.Adapter.Queue(new BuyMaterialAction(ScriptedSession.CraftMaterial, ScriptedSession.CopperNeeded));
+
+            AssertThat(ui.Mentor.Visible)
+                .OverrideFailureMessage("The tariff-fork dilemma never showed after the campaign's first-ever tariff.")
+                .IsTrue();
+            var text = Find<Label>(ui.Mentor, "MentorBannerText").Text;
+            AssertThat(text).Contains(MentorVoice.Name);
+            AssertThat(text).Contains("favour");
+
+            // R1/R15 ("the copy names no price the player can offer, because none exists"):
+            // BuyOreAction carries no price parameter at all -- the hero always receives the base
+            // ask -- so the lesson must never invent an overpay/haggle mechanism for ore.
+            AssertThat(text.Contains("pay more", System.StringComparison.OrdinalIgnoreCase))
+                .OverrideFailureMessage($"The tariff-fork lesson invents a price the player can offer: \"{text}\"")
+                .IsFalse();
+            AssertThat(text.Contains("overpay", System.StringComparison.OrdinalIgnoreCase))
+                .OverrideFailureMessage($"The tariff-fork lesson invents an overpay mechanism: \"{text}\"")
+                .IsFalse();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>A player who never buys ore never triggers a tariff, and never sees this lesson.</summary>
+    [TestCase]
+    public void NoTariffEver_TheTariffForkDilemmaStaysSilent()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.Adapter.Queue(new BuyMaterialAction(ScriptedSession.CraftMaterial, ScriptedSession.CopperNeeded));
+
+            AssertThat(ui.Mentor.Visible)
+                .OverrideFailureMessage("The tariff-fork dilemma fired with no tariff ever applied.")
+                .IsFalse();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    // ============================================================================================
     // U-T2 Wave F ("census hygiene"): the six dilemmas THE-GAME.md §3.5 says the game is actually
     // made of, in ONE place, each pinned to its real status -- taught (a live first-touch id,
     // verified in source, same idiom TeachingCoverageCensusTests uses) or honestly blocked/missing
@@ -310,12 +380,16 @@ public class DilemmaLessonsTests
         // the copy against drifting back.
         (4, "spend-the-slot-or-bank-it",
             new DilemmaStatus(DilemmaOutcome.Taught, "first-talent-unlock")),
+        // U40 (§11.14.14): Taught at last, on an amended dilemma. The design doc used to promise a
+        // player could overpay a hero for goodwill -- the sim has no such mechanism (BuyOreAction
+        // carries no price parameter, and the hero always receives the base ask) -- so THE-GAME.md
+        // §3.5 #5 was corrected, by owner ruling (KTD8), to the fork the sim actually ships: every
+        // purchase raises the SUPPLYING FACTION's standing, which discounts every future load from
+        // them, so the real choice is whose ore to buy. "the-tariff-fork" fires on the first
+        // TariffApplied event -- the moment a standing-earned discount first moves what the player
+        // pays -- MainUi's own call site cites register #170 for why this used to be impossible.
         (5, "buy-the-ore-or-buy-the-goodwill",
-            new DilemmaStatus(DilemmaOutcome.Missing,
-                "Issue #170 / docs/playtests/2026-08-16-owner-playtest-register.md: OreMarketHandlers " +
-                "always pays the hero the base ask; a player paying more feeds a faction sink, not the " +
-                "hero, and the surcharge branch is commented dormant. The goodwill half of the dilemma " +
-                "has no mechanism behind it -- teaching it would make the game lie about its own choices.")),
+            new DilemmaStatus(DilemmaOutcome.Taught, "the-tariff-fork")),
         (6, "send-the-runner-or-trust-their-judgment",
             new DilemmaStatus(DilemmaOutcome.TaughtByNumberedStep, "TutorialStep.Vigil", TutorialStep.Vigil)),
     ];
@@ -427,20 +501,24 @@ public class DilemmaLessonsTests
             .OverrideFailureMessage(string.Join("\n", problems))
             .IsEqual(0);
 
-        // ONE of six is honestly not-yet-taught. Was two until #4 ("spend the slot or bank it") was
+        // U40 (§11.14.14): ZERO of six is now untaught. Was one (#5, "buy the ore or buy the
+        // goodwill") until THE-GAME.md §3.5 #5 was amended by owner ruling (KTD8) to the fork the
+        // sim actually ships -- whose ore, not how much -- and "the-tariff-fork" first-touch lesson
+        // was wired to teach it. Was two before that, until #4 ("spend the slot or bank it") was
         // taught by fixing the lesson that already existed for its mechanic and had gone false --
-        // see that row's own note and Dilemma4_LessonNamesTheSlotCost_NeverDeniesIt. If this count
-        // ever drops to zero this test itself should be revisited (the corpus stops needing an
-        // "honest gap" branch at all), but a COUNT INCREASE -- a dilemma silently regressing to
-        // blocked/missing -- is exactly the erosion this pin exists to catch.
+        // see that row's own note and Dilemma4_LessonNamesTheSlotCost_NeverDeniesIt. This is a
+        // deliberate, reviewed drop to zero (the task that landed it cites this exact assertion) --
+        // the corpus no longer needs an "honest gap" branch, but the branch itself stays live: a
+        // COUNT INCREASE -- a dilemma silently regressing to blocked/missing -- is exactly the
+        // erosion this pin exists to catch, going forward.
         var untaught = SixDilemmas.Count(d => d.Status.Outcome is DilemmaOutcome.Blocked or DilemmaOutcome.Missing);
         AssertThat(untaught)
             .OverrideFailureMessage(
-                $"Expected exactly 1 of the six dilemmas (#5, the ore gift -- register #170, no " +
-                $"mechanism behind the goodwill half) to be honestly blocked/missing today; found " +
-                $"{untaught}. If this grew, a dilemma silently lost its teaching without a citation; " +
-                "if it shrank, update this pin to match the fix that landed.")
-            .IsEqual(1);
+                $"Expected all six dilemmas to be honestly taught today (the last one, #5, closed by " +
+                $"U40's tariff-fork lesson); found {untaught} still blocked/missing. If this grew, a " +
+                "dilemma silently lost its teaching without a citation; if it shrank further, this " +
+                "assertion is already wrong on its face -- fix it in the same diff.")
+            .IsEqual(0);
     }
 }
 #endif
