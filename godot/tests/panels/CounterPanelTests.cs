@@ -739,6 +739,45 @@ public class CounterPanelTests
         }
     }
 
+    /// <summary>
+    /// U25 (§11.14.14, KTD2): the counter's own dormant act — same deterministic fleece fixture as
+    /// <see cref="CounterVerb_PriceAboveTheRoundCeiling_ReportsTheFleeceAndTheNextCustomer"/>, this
+    /// time proving <see cref="ShopPanel"/> forwards its own Tutorial/Mentor pair down to the
+    /// nested <see cref="CounterPanel"/> and the dormant act actually reaches the screen.
+    /// </summary>
+    [TestCase]
+    public void CounterVerb_FirstFleece_SpeaksTheDormantActOnce()
+    {
+        var itemA = new ItemId(801);
+        var itemB = new ItemId(802);
+        var itemC = new ItemId(803);
+        var state = ThreeCustomerGuaranteedBuyState(itemA, itemB, itemC);
+        var ui = MountMainUi(new SimAdapter(state));
+        try
+        {
+            ui.OpenPanel("Shop");
+            PressEnabled(ui.Shop, "OpenCounter");
+            PressEnabled(ui.Shop, $"Present_{itemA.Value}");
+
+            Find<CoinStack>(ui.Shop, "CounterPrice").SetValue(8); // list price, above round-1 ceiling
+            PressEnabled(ui.Shop, "Counter");
+
+            AssertThat(ui.Mentor.Visible)
+                .OverrideFailureMessage("The first-ever fleece should speak the dormant act.")
+                .IsTrue();
+            var text = Find<Label>(ui.Mentor, "MentorBannerText").Text;
+            AssertThat(text).Contains("remembered");
+
+            // Once ever — dismissing and re-reading the tutorial flag directly proves it never
+            // re-arms, the same pin every other once-ever act in this file already carries.
+            AssertThat(ui.Tutorial.ConsumeFirstFleeceBeat()).IsNull();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
     // ── Customer voice (U2, plan 2026-08-03-001-feat-loop-structure-plan.md, KTD-B) ─────────────
     // Owner playtest: "Counter worked - person buying but really unsure WHAt to do after?" and
     // "i hit suggest and interest went up but nothing happened lol" — the customer never said
