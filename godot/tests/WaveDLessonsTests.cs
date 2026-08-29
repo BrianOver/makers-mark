@@ -54,6 +54,33 @@ public class WaveDLessonsTests
         };
     }
 
+    /// <summary>
+    /// U30: drive the Return Ritual's own delayed Evening reveal to completion.
+    ///
+    /// <para>Before U30 the proof spoke through a first-touch polled every RefreshAll tick, so a bare
+    /// <c>AdvancePhase()</c> was enough to see it — wherever the player happened to be standing. U30
+    /// moved it onto the automatic ledger reveal, anchored into the very beat card it describes, which
+    /// is the whole improvement: the line now arrives on the screen it is talking about. That reveal is
+    /// gated behind <see cref="MainUi.LedgerDelayRemaining"/> and driven by <c>_Process</c>, so these
+    /// tests must drive it rather than assert one tick early.</para>
+    ///
+    /// <para>Waits on the CONDITION (the ledger actually revealed), never a guessed frame count, and
+    /// fails loudly rather than letting a silent non-reveal read as "the lesson did not fire".</para>
+    /// </summary>
+    private static void DriveTheEveningLedgerReveal(GodotClient.MainUi ui)
+    {
+        for (var i = 0; i < 600 && ui.LedgerDelayRemaining > 0; i++)
+        {
+            ui._Process(0.016);
+        }
+
+        AssertThat(ui.LedgerDelayRemaining)
+            .OverrideFailureMessage(
+                "Setup check: the Evening ledger never revealed, so nothing here can say whether the " +
+                "proof lesson fires. The reveal itself is broken, not the lesson.")
+            .IsEqual(0.0);
+    }
+
     /// <summary>Link 4's whole payload, end to end: the sim's own counterfactual beat both teaches
     /// itself (first-touch, once) AND finally reaches the one screen the player is watching with
     /// the item actually named.</summary>
@@ -71,12 +98,24 @@ public class WaveDLessonsTests
                 .OverrideFailureMessage("Setup check: the parked ExpeditionResult never produced an AttributionBeatEvent this tick.")
                 .IsTrue();
 
+            DriveTheEveningLedgerReveal(ui);
+
             AssertThat(ui.Mentor.Visible)
                 .OverrideFailureMessage("The proof lesson never showed on the campaign's first-ever attribution beat.")
                 .IsTrue();
             var lessonText = Find<Label>(ui.Mentor, "MentorBannerText").Text;
             AssertThat(lessonText).Contains(MentorVoice.Name);
-            AssertThat(lessonText).Contains("proof");
+
+            // U30: identify the lesson by WHERE IT POINTS, not by a word in its prose. This assertion
+            // used to require the literal "proof" and broke the moment the copy was rewritten to stop
+            // naming the engine — a lexical proxy for "is this the right lesson" that fails on every
+            // future copy pass. The anchor is the durable fact: only the Proof act's own voice aims at
+            // the ledger's beat card.
+            AssertThat(ui.Mentor.CurrentAnchor)
+                .OverrideFailureMessage(
+                    $"The banner is showing something, but not aimed at the ledger's beat card " +
+                    $"(anchor: {ui.Mentor.CurrentAnchor}) — so this is not the proof beat.")
+                .IsEqual(TutorialFlow.ProofBeatAnchor("Ledger"));
 
             // The bark fix: the watch's own flare must name the item (b.Detail), not just the hero
             // and a generic verb — the exact defect this unit found and fixed.
@@ -124,13 +163,22 @@ public class WaveDLessonsTests
             AssertThat(ui.Adapter.LastEvents.OfType<AttributionBeatEvent>().Count())
                 .OverrideFailureMessage("Setup check: this fixture did not produce two attribution beats in one tick.")
                 .IsEqual(2);
+
+            DriveTheEveningLedgerReveal(ui);
             AssertThat(ui.Mentor.Visible)
                 .OverrideFailureMessage("The proof lesson never showed despite two qualifying beats landing this tick.")
                 .IsTrue();
             var text = Find<Label>(ui.Mentor, "MentorBannerText").Text;
             AssertThat(text)
-                .OverrideFailureMessage($"The banner shows something other than a single, coherent proof lesson: \"{text}\"")
-                .Contains("proof");
+                .OverrideFailureMessage($"The banner shows something other than Bryn's own voice: \"{text}\"")
+                .Contains(MentorVoice.Name);
+
+            // U30: see the sibling test — identified by anchor, not by a word in the copy.
+            AssertThat(ui.Mentor.CurrentAnchor)
+                .OverrideFailureMessage(
+                    $"Two beats landed, but the banner is not aimed at the ledger's beat card " +
+                    $"(anchor: {ui.Mentor.CurrentAnchor}) — so this is not the proof beat firing once.")
+                .IsEqual(TutorialFlow.ProofBeatAnchor("Ledger"));
         }
         finally
         {
