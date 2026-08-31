@@ -1,8 +1,7 @@
 ---
 type: design
 title: "Maker's Mark — the central document: what it is, how it plays, why it is built this way, and the plan"
-updated: 2026-08-06
-status: THE living central document of record — the one place to look; update it in the same PR as the work
+updated: 2026-08-29
 origin: >
   owner brief 2026-08-06 — "pause and regroup about how the core game mechanic plays…
   document a full idea of how the player interacts with the game. The idea behind the game,
@@ -58,7 +57,7 @@ never blurs the two.
 | Piece | Status | Verify at |
 |---|---|---|
 | Five-phase deterministic kernel; golden replay + 100-day balance gates; save/load + autosave | **BUILT** | `GameKernel.cs:188-198`; `godot/scripts/CampaignSave.cs` |
-| 24 player actions, typed rejections everywhere | **BUILT** — but only 20 reachable on screen | `Contracts/Actions.cs:10-35`; Appendix A §1 has the per-action table |
+| 25 player actions, typed rejections everywhere | **BUILT** — every one has a recorded Godot surface (a *decision* census, not a clickability proof) | `Contracts/Actions.cs` (25 `JsonDerivedType` rows); `godot/tests/ActionReachabilityCensusTests.cs:59`; Appendix A §1 has the per-action table |
 | The two-bell day: conducted middle, untimed vigil stop, camp verbs, craft-and-send round trip | **BUILT** (#388, #392) | `godot/scripts/RaidConductor.cs`, `panels/CampPanel.cs` |
 | Camp-phase *systems* — anything the vigil actually simulates | **NOT BUILT** — zero registered systems run in Camp | `GameComposition.cs:57-77` |
 | Four professions, four interactive crafts, all `ActiveCraft: true` | **BUILT** | `CraftingHandlers.cs:92-120` |
@@ -71,12 +70,12 @@ never blurs the two.
 | Three venues, banded draw-free routing, per-venue ore ladders (14 of 21 materials priced) | **BUILT** | `VenueRegistry.cs:62-66` |
 | Emberfall Foundry | **BUILT AND LIVE** — in `LiveRotation` with committed art and a priced ore ladder (firebrick..heartcoal) | `VenueRegistry.cs:50-64`, `MaterialRegistry.cs:94-105`; shipped by #453 (rung live) + #462 (Foundry art) |
 | Economy heartbeats: rent, Guild assessment + Confidence, rival share, destitution floor, bounty D_q + board minimums | **BUILT** | `RentSystem.cs`, `GuildAssessmentSystem.cs`, `BountyRules.cs` |
-| The four endgame gold sinks: UpgradeForge, BuyForgeSupply, MasterworkAttempt, CommissionLegendaryWork | **BUILT — and SHIPPED 2026-08-07** (wave U3/U4, R2 ruled build). All four now have buttons; all 24 actions are reachable. *Corrected: this row previously said "3 of 4 have bell-tray strings waiting" — it was **2 of 4**. The third `PendingVerbVocab` entry is `SetProfessions`, not a sink, and the other two sinks resolve immediately so they never needed a tray entry — which is precisely why nothing flagged them.* | `godot/scripts/panels/ForgePanel.cs` (Foundry section); `godot/tests/ActionReachabilityCensusTests.cs` |
+| The four endgame gold sinks: UpgradeForge, BuyForgeSupply, MasterworkAttempt, CommissionLegendaryWork | **BUILT** (wave U3/U4, 2026-08-07, R2 ruled build). All four now have buttons; all 25 actions have a surface. *Corrected: this row previously said "3 of 4 have bell-tray strings waiting" — it was **2 of 4**. The third `PendingVerbVocab` entry is `SetProfessions`, not a sink, and the other two sinks resolve immediately so they never needed a tray entry — which is precisely why nothing flagged them.* | `godot/scripts/panels/ForgePanel.cs` (Foundry section); `godot/tests/ActionReachabilityCensusTests.cs` |
 | Three-act arc: act flips, ending screen (world stays open) | **BUILT** — the ending renders *when it fires*; reachability is unasserted (defect below) and unconfirmed on a real screen | `ArcDirectorSystem.cs`; `panels/ChronicleScroll.cs` |
 | The climax's *content* (Final Commission / Warden of the Heart) | **DESIGNED** — `ClimaxReached` fires as a bare seam, by its own admission | `Contracts/Events.cs:293-297`; §9.7 |
 | Title/system menus, tutorial, audio pass one, machine playtest harness | **BUILT** | |
 | Night leads with the mark (reveal ordering — beats first, sale-and-deed grouped) | **DESIGNED** (loop-plan U5/H3) — cheapest unshipped piece of the answer half | |
-| Send-off slate (H4) | **SHIPPED 2026-08-07** (wave U2). *Correction: this row was stale — `MineWatch.RumoredLines` and `JourneyStream.DepartureLine` already rendered "X carries your Y" at departure, so the headline passed at HEAD with zero code. What was actually owed, and is now done: the manifest was capped at 2 lines (a party of three each carrying your work silently dropped one), it was buried in a scrolling strip rather than staged as a moment, and it had no honest empty state.* | `godot/scripts/panels/MineWatch.cs` |
+| Send-off slate (H4) | **BUILT** (wave U2, 2026-08-07). *Correction: this row was stale — `MineWatch.RumoredLines` and `JourneyStream.DepartureLine` already rendered "X carries your Y" at departure, so the headline passed at HEAD with zero code. What was actually owed, and is now done: the manifest was capped at 2 lines (a party of three each carrying your work silently dropped one), it was buried in a scrolling strip rather than staged as a moment, and it had no honest empty state.* | `godot/scripts/panels/MineWatch.cs` |
 | Deep-stakes slate (H5), vigil hero-chips (V-3) | **DESIGNED** (hero-facing-day) — H5 still behind P5/R1, V-3 still behind R1 | |
 | Tavern's two acts (commission handshake AM / ore handshake PM) | **DESIGNED — in flight** as PR #393 at this writing | |
 | Building-minigames wave (alchemy Draw, tanning Dip, engineering act split) | **DESIGNED** — sequenced after the loop work by its own doc | |
@@ -532,14 +531,14 @@ full argument). Silence now means (c); a one-line veto restores (a) or (b).
 Until R1 lands, **no further vigil work ships** (this is the plan's one amendment to
 §9.6's blessed order — V-3 waits here, not first).
 
-**R2 — the unreachable endgame (§9.10). RULED 2026-08-07: BUILD. ✅ DONE.** The owner's
+**R2 — the unreachable endgame (§9.10). RULED 2026-08-07: BUILD.** The owner's
 instruction — *"get all current recommendations from the docs and items that CLI, but somehow not
 in the actually game into the playable game"* — is this ruling, spoken. P6 shipped the same day as
 the reachability wave (P6a the Foundry, P6b Masterwork + Legendary), godot-only, no re-baseline.
-**All 24 player actions are now reachable from the Godot client**, enforced from here on by a
+**All 25 player actions now have a recorded Godot surface**, enforced from here on by a
 reflection census (`godot/tests/ActionReachabilityCensusTests.cs`) that fails by name on any
 action without a surface or a reasoned exclusion. The alternative — defer past v1 — is no longer
-live. Subordinate wave doc: `docs/plans/2026-08-07-001-feat-reachability-wave-plan.md`.
+live.
 
 **R3 — Emberfall (§9.1).** Default: **park draft #346 explicitly, past v1.** Record
 EntryPower 79 as the ruled routing point on the branch; note that the flip is art-blocked,
@@ -565,12 +564,12 @@ tally-ending.
 
 | # | Item | Size | Blocked by | §10 filter line | Status |
 |---|------|------|-----------|-----------------|--------|
-| P1 | **Night leads with the mark** (loop U5 / H3): the reveal opens with the attribution beat; sale-and-deed grouped by item | session, godot-only | nothing | Hero: tonight's bearer of your marked item. Ledger line: *is* the item — the beat becomes the opening card | **DONE** 2026-08-07 (wave U1) |
-| P2 | **The send-off names your work** (H4 / Q-1): the departure slate captions which marchers carry your items | session, godot-only | nothing (reads better after P1) | Hero: the named marchers. Ledger line: the antecedent Night points back to | **DONE** 2026-08-07 (wave U2) — and see the §8 correction: the naive version was already shipped; what was owed was the 2-line cap, the staging, and an honest empty state |
-| P3 | **Protect the finale**: two-sided balance assertions (floor 5 *reached* by day ≤N on the main seed; ending *fires* within 100 days) + one scripted full-length client run confirming Act III on the real HUD | session, tests-only | nothing | Invariant: the campaign has an end. (Chain-test clause 3 — protect the substrate) | **DONE** 2026-08-10 (forward-ladder L0-L7, closes draft #413). Venues are a forward ladder now; routing keys on `Hero.LadderRank`, not the power latch that stranded parties. Two-sided and green on the main seed (rung-0 clear day 18, Act III day 18, Climax day 26, Ending day 31) and on the 10-seed sweep (Ending ≤ day 36). See §11.8. The scripted full-length client-HUD run remains open |
+| P1 | **Night leads with the mark** (loop U5 / H3): the reveal opens with the attribution beat; sale-and-deed grouped by item | session, godot-only | nothing | Hero: tonight's bearer of your marked item. Ledger line: *is* the item — the beat becomes the opening card | Landed 2026-08-07 (wave U1) |
+| P2 | **The send-off names your work** (H4 / Q-1): the departure slate captions which marchers carry your items | session, godot-only | nothing (reads better after P1) | Hero: the named marchers. Ledger line: the antecedent Night points back to | Landed 2026-08-07 (wave U2) — and see the §8 correction: the naive version was already shipped; what was owed was the 2-line cap, the staging, and an honest empty state |
+| P3 | **Protect the finale**: two-sided balance assertions (floor 5 *reached* by day ≤N on the main seed; ending *fires* within 100 days) + one scripted full-length client run confirming Act III on the real HUD | session, tests-only | nothing | Invariant: the campaign has an end. (Chain-test clause 3 — protect the substrate) | Landed 2026-08-10 (forward-ladder L0-L7, closes draft #413). Venues are a forward ladder now; routing keys on `Hero.LadderRank`, not the power latch that stranded parties. Two-sided and green on the main seed (rung-0 clear day 18, Act III day 18, Climax day 26, Ending day 31) and on the 10-seed sweep (Ending ≤ day 36). See §11.8. The scripted full-length client-HUD run remains open |
 | P4 | **The human feel-test** (§9.8): `play.ps1`, one real evening, the five written questions — with the fifth (the boredom day) checked against the measured day-11 wall | an evening (owner) | P1+P2 merged — *with a deadline, not a dependency* (see ties) | Not a build item — the gate that rules 9.3, 9.5, 9.7, confirms R4/R6, and re-dates day-11 | OPEN — **put it on the calendar now** (§12, review C: the bottleneck is the owner, not the agents) |
 | P5 | **The vigil branch**: (a) surface the irony, or (b) retune wave, or (c) damp compensation — V-3's hero-chips ride whichever branch wins | (a) session / (b) wave + **re-baseline** / (c) session-wave + **re-baseline** | **R1** | Hero: the camped party. Ledger line: the delivery's `Provisioned`/`PotionLifesave` beat — or the death delta, depending on the branch | BLOCKED (R1) |
-| P6 | **Endgame surfaces**: buttons + bell-tray wiring for UpgradeForge, BuyForgeSupply, MasterworkAttempt, CommissionLegendaryWork | ~2 sessions, godot-only | R2 — **RULED: build** | Hero: whoever carries the guaranteed Masterwork. Ledger line: the attempt's cost and the resulting item's beats | **DONE** 2026-08-07 (wave U3/U4). Dominance measured before shipping the buttons: 17.0% of crafted value flows through purchased attempts at Tier II with a 5000g reserve — hand-work keeps the field. `BaselinePlayer` untouched, no re-baseline |
+| P6 | **Endgame surfaces**: buttons + bell-tray wiring for UpgradeForge, BuyForgeSupply, MasterworkAttempt, CommissionLegendaryWork | ~2 sessions, godot-only | R2 — **RULED: build** | Hero: whoever carries the guaranteed Masterwork. Ledger line: the attempt's cost and the resulting item's beats | Landed 2026-08-07 (wave U3/U4). Dominance measured before shipping the buttons: 17.0% of crafted value flows through purchased attempts at Tier II with a 5000g reserve — hand-work keeps the field. `BaselinePlayer` untouched, no re-baseline |
 | P7 | **The day-11 program**: demand-hazard engine + demand-gated profession debuts (five-pillars Wave 2) | **wave + Contracts micro-PRs + re-baseline** — the expensive one; needs its own plan doc written against this section | P4 (re-confirm the question shortage before the biggest spend) | Hero: the one who needs what only a Tanner or Engineer makes this week. Ledger line: the typed demand fulfilled; `BeatType.ToolAssist` finally gets its emitter | BLOCKED (P4) |
 | P8 | **Finish the hero-facing day**: H5 stakes slate → H6 morning aims → H7 survivor's handshake | 3 sessions, godot-side | P1/P2 (slate patterns) | Each carries the hero-facing-day doc's own per-item ledger lines | OPEN after P1/P2 |
 | P9 | **The Final Commission climax** (§9.7) | wave; likely **Contracts + re-baseline** | P4 (sequencing only — **R6 rules it owed**; P4 can waive it only with an unexpectedly strong verdict on the tally-ending) | Hero: the chosen bearer at the Heart. Ledger line: the commission fulfilled at the climax | OWED (R6), after P4 |
@@ -1386,14 +1385,14 @@ that was worth the asking.
 | **Bounty** | Escrowed gold posted against a floor; heroes weigh it by greed/reputation/distance and choose. |
 | **Heirloom** | An item reforged from a fallen hero's worn gear, carrying their lineage line forward. |
 | **Signed work** | A rare craft that earned a legend name; its history reads as a growing inscription. |
-| **Built-inert** | Complete, registered, tested content deliberately not switched live (a determinism-gated flip away). Emberfall is the standing example. |
+| **Built-inert** | Complete, registered, tested content deliberately not switched live (a determinism-gated flip away). Emberfall was the standing example until #453 flipped it live and #462 gave it art — cite a current example or none. |
 | **Golden replay** | The build-failing test asserting same seed + same actions = byte-identical world. |
 | **Re-baseline** | The deliberate ceremony of re-recording goldens when a change legitimately moves the RNG stream (content flips, new draw sites). |
 | **PKD7 / "influence, never orders"** | The design law: no player verb commands a hero or touches resolution through mood. |
 | **Bounty theater** | The named failure class: a verb or surface that occupies the player without changing any outcome. Banned. |
 | **BUILT / BUILT, CLI-ONLY / BUILT-INERT / DESIGNED / WISHED-FOR** | The five status labels (defined in the preamble, ledger in §8). CLI-only is *not shipped* — DEPLOYED means the Godot client. |
-| **P1…P9 / the path** | Items of the plan of record (§11.4) — the sequencing authority for v1 work. R1…R6 are its Phase-0 rulings. |
-| **The ground truth / Appendix A** | The source-only control pass at the end of this document — the same game described from code alone, every claim line-cited; the arbiter for any mechanical dispute. Absorbed from `docs/design/2026-08-06-mechanics-ground-truth.md` on 2026-08-06. |
+| **P1…P9 / the path** | Items of §11.4's critical path; R1…R6 are its Phase-0 rulings. §11.4 is the fallback queue a session takes from when nothing else is takeable, not the sequencing authority — §11.14.14 declares itself the plan of record for the work in flight. |
+| **The ground truth / Appendix A** | The source-only control pass at the end of this document — the same game described from code alone, every claim line-cited; the arbiter for any mechanical dispute — but its line numbers are stale, see the warning at its head. Absorbed on 2026-08-06 from a source-only pass whose own file is now only in git history. |
 | **The dominance test** | §10 test 8, adopted from the external-review lap: hand-work must beat passive systems, or the passive system must not exist. |
 | **Review A / B / C** | The three external model reviews evaluated in §12; raw texts preserved in git history at the consolidation's staging commit. |
 
@@ -1404,8 +1403,8 @@ that was worth the asking.
 This document stands alone, but it compresses a real paper trail. Where you want the full
 argument:
 
-- **Mechanics arbiter:** **Appendix A** of this document (absorbed intact from
-  `docs/design/2026-08-06-mechanics-ground-truth.md` on 2026-08-06) — the same game
+- **Mechanics arbiter:** **Appendix A** of this document (absorbed intact on 2026-08-06 from a
+  source-only pass whose own file is now only in git history) — the same game
   described from source only, `docs/` deliberately unread, every claim line-cited. Written
   as an independent control pass against this document and collided with it; the
   source-only pass won every factual dispute the collision found (this version carries
@@ -1414,17 +1413,7 @@ argument:
 - **External reviews:** the three raw review texts (§12) are preserved verbatim in git
   history — the consolidation's staging commit adds them under `docs/design/`, the
   consolidation commit removes them; §12 carries every recommendation with its verdict.
-- **Loop authority:** `docs/design/2026-08-04-hero-facing-day.md` (the phase-by-phase verb
-  program and the formal withdrawal of "two bells completes the loop");
-  `docs/plans/2026-08-03-001-feat-loop-structure-plan.md` (the two-bell diagnosis and units);
-  `docs/design/2026-08-04-all-building-minigames.md` (the minigame layer, sequenced second).
-- **Measurement:** `docs/design/2026-07-27-how-you-play.md` and
-  `2026-07-27-gameplay-loop-analysis.md` (fifteen instrumented playthroughs);
-  `docs/design/2026-07-25-core-interaction-audit.md` (+ EXECSUMMARY).
-- **Strategy:** `docs/plans/2026-07-28-003-roadmap-post-skeleton.md` (sequencing authority);
-  `docs/design/2026-07-27-five-pillars-design-synthesis.md` (the demand-map program);
-  `docs/design/2026-07-21-operating-model.md` (the 3-tier work engine and Completeness Bar);
-  `docs/design/tone-register.md` (the voice).
+- **The voice:** `docs/design/tone-register.md`.
 - **Asset ledger:** `docs/design/ASSETS.md` — every image, animation, sound and voice line, what
   draws or plays it, and what is orphaned or missing. (The former `docs/registry/SYSTEMS.md` /
   `CONTENT.md` ledgers cited here never existed in this tree; reference removed 2026-08-12.)
@@ -1450,18 +1439,23 @@ cites lines, not intentions.*
 > 2026-08-06: headings demoted one level to fit this document, not a word otherwise touched.
 > This appendix is the mechanical arbiter — it was written from source only, with `docs/`
 > deliberately unread, and it wins any factual dispute with the body of this document.
-> Section references inside it (§1–§8) refer to the appendix's own sections. Line numbers
-> are pinned at commit `0dfe3a8`; when the code moves, re-verify here first.
+> Section references inside it (§1–§8) refer to the appendix's own sections.
+>
+> **Its line numbers are stale and must be re-verified before any of them is cited.** They were
+> pinned at commit `0dfe3a8`; `main` is 250 commits past that as of this PR and the pin has never
+> been refreshed. Re-verifying the whole appendix against source is its own job, not a correction
+> anyone should make in passing. Until it is done, treat every `file.cs:line` below as a pointer to
+> the right *file* and the right *claim*, and grep for the symbol rather than trusting the number.
 
-**Method.** This document was written by reading the CODE ONLY — `sim/GameSim/`, `sim/GameSim.Tests/`, `sim/GameSim.Cli/`, and `godot/scripts/` — with `docs/` deliberately unread. It is the control arm against the documentation-derived design account: where the two disagree, the disagreement is the finding. Every claim carries a `path/file.cs:line` citation so it can be checked. Line numbers are as of commit `0dfe3a8` on this branch.
+**Method.** This document was written by reading the CODE ONLY — `sim/GameSim/`, `sim/GameSim.Tests/`, `sim/GameSim.Cli/`, and `godot/scripts/` — with `docs/` deliberately unread. It is the control arm against the documentation-derived design account: where the two disagree, the disagreement is the finding. Every claim carries a `path/file.cs:line` citation so it can be checked — as of commit `0dfe3a8`, and see the stale-pin warning above before citing one.
 
-**One-paragraph summary of what the game actually is, per the code.** A deterministic, integer-only, five-phase-per-day simulation (`sim/GameSim/Kernel/GameKernel.cs:188-198`) in which the player runs a craft shop (24 action types, `sim/GameSim/Contracts/Actions.cs:10-35`), six-or-fewer autonomous heroes shop each Morning by a pure gear-score-per-gold rule (`sim/GameSim/Heroes/HeroShoppingSystem.cs`), form parties and raid one of three live venues each day (`sim/GameSim/Expedition/ExpeditionSystem.cs`), and the entire raid is resolved as a pure function at departure and merely *revealed* at Evening (`sim/GameSim/Drama/ExpeditionRevealSystem.cs`). The player's craft reaches the heroes only through prices and shelves — "influence, never orders" is enforced structurally, not aspirationally. A counterfactual attribution engine proves, from recorded dice, whether a specific player item saved a specific hero's life (`sim/GameSim/Expedition/AttributionEngine.cs`).
+**One-paragraph summary of what the game actually is, per the code.** A deterministic, integer-only, five-phase-per-day simulation (`sim/GameSim/Kernel/GameKernel.cs:188-198`) in which the player runs a craft shop (25 action types, `sim/GameSim/Contracts/Actions.cs`), six-or-fewer autonomous heroes shop each Morning by a pure gear-score-per-gold rule (`sim/GameSim/Heroes/HeroShoppingSystem.cs`), form parties and raid one of three live venues each day (`sim/GameSim/Expedition/ExpeditionSystem.cs`), and the entire raid is resolved as a pure function at departure and merely *revealed* at Evening (`sim/GameSim/Drama/ExpeditionRevealSystem.cs`). The player's craft reaches the heroes only through prices and shelves — "influence, never orders" is enforced structurally, not aspirationally. A counterfactual attribution engine proves, from recorded dice, whether a specific player item saved a specific hero's life (`sim/GameSim/Expedition/AttributionEngine.cs`).
 
 ---
 
 ### 1. The complete action inventory
 
-There are exactly 24 `PlayerAction` types (`sim/GameSim/Contracts/Actions.cs:10-35`). Phase legality is decided **only** by each handler's `CanHandle` (`sim/GameSim/Kernel/GameKernel.cs:30-31`); timing (instant vs. bell) is decided **only** by `ActionTiming.ResolvesImmediately` (`sim/GameSim/Kernel/ActionTiming.cs:75-129`); whether it costs one of the day's 5 action slots is decided by an `ActionSlotsRemaining` gate inside each handler (see §6). The Godot client submits everything through `SimAdapter.Queue`, which routes instant actions to `GameKernel.ApplyNow` and queues bell-riders for the next `Tick` (`godot/scripts/SimAdapter.cs:119-148`).
+There are exactly 25 `PlayerAction` types (`sim/GameSim/Contracts/Actions.cs`, one `JsonDerivedType` row each). **The table below lists 24**: it predates `ConcludeApprenticeshipAction`, the 25th — walking out of the apprenticeship, legal in every phase, resolving immediately (`Kernel/ActionTiming.cs`), costing no slot, and surfaced by the graduation confirm's "End it" button (`ObjectiveTracker.TutorialDismissConfirmYes`). Phase legality is decided **only** by each handler's `CanHandle` (`sim/GameSim/Kernel/GameKernel.cs:30-31`); timing (instant vs. bell) is decided **only** by `ActionTiming.ResolvesImmediately` (`sim/GameSim/Kernel/ActionTiming.cs:75-129`); whether it costs one of the day's 5 action slots is decided by an `ActionSlotsRemaining` gate inside each handler (see §6). The Godot client submits everything through `SimAdapter.Queue`, which routes instant actions to `GameKernel.ApplyNow` and queues bell-riders for the next `Tick` (`godot/scripts/SimAdapter.cs:119-148`).
 
 | # | Action | Effect | Legal phases (handler) | Timing | Slot? | Godot surface |
 |---|--------|--------|------------------------|--------|-------|---------------|
@@ -1490,11 +1484,11 @@ There are exactly 24 `PlayerAction` types (`sim/GameSim/Contracts/Actions.cs:10-
 | 23 | `MasterworkAttemptAction` | 3 coal + 1 flux + 100 g×tier + materials → guaranteed Superior (Masterwork if material outgrades recipe); requires Forge Tier II; ZERO RNG (`Economy/MasterworkAttemptHandlers.cs:30-158`) | ALL (`MasterworkAttemptHandlers.cs:47`) | Now | Yes (`:126,152`) | ForgePanel recipe card (`ForgePanel.cs:1277`); instant, so no tray entry needed |
 | 24 | `CommissionLegendaryWorkAction` | 3000 g×tier + 2× materials → guaranteed Masterwork; capped 4/campaign (`Economy/LegendaryCommissionHandlers.cs:23-38`) | ALL (`LegendaryCommissionHandlers.cs:40`) | **Bell** (`ActionTiming.cs:127`) | Yes (`:127`) | ForgePanel recipe card (`ForgePanel.cs:1293`); bell-rider, tray vocab `PendingVerbVocab.cs:33,43` |
 
-**Reachability verdict (updated 2026-08-07).** **All 24 actions are reachable from the Godot client.** The four Phase-D gold sinks (#21-24) were surfaced in the reachability wave; the table above records where each now lives. This is no longer checked by reading — `godot/tests/ActionReachabilityCensusTests.cs` reflection-enumerates every concrete `PlayerAction` and fails BY NAME on any that has neither a named surface nor a pinned exclusion with a reason. Its exclusions map is currently empty. Note the census is a *decision* census: it proves a surfacing decision was recorded for every action, not that any given button is clickable — that proof lives in the `PressEnabled` tests in `ForgeCraftTests`, `LegendsWallTests` and `LedgerModalTests`.
+**Reachability verdict.** **All 25 actions have a recorded Godot surface.** The four Phase-D gold sinks (#21-24) were surfaced in the reachability wave; the table above records where each now lives. This is no longer checked by reading — `godot/tests/ActionReachabilityCensusTests.cs` reflection-enumerates every concrete `PlayerAction` and fails BY NAME on any that has neither a named surface nor a pinned exclusion with a reason. Its exclusions map is currently empty. Note the census is a *decision* census: it proves a surfacing decision was recorded for every action, not that any given button is clickable — that proof lives in the `PressEnabled` tests in `ForgeCraftTests`, `LegendsWallTests` and `LedgerModalTests`.
 
 No Godot panel is orphaned. Roughly half of the panels are pure read-only displays by design (HeroesPanel, TavernPanel, DepthsPanel, DemandPanel, HeroCards, ProgressionPanel, MineWatch, RaidForecastBoard, BestiaryPanel, ChronicleScroll, ScryingMirror, DelveStage, ProvenanceCard) — they submit nothing and exist to make the sim legible. The CLI (`sim/GameSim.Cli/Program.cs`) is a strict superset of the Godot client's action reach.
 
-**Timing model.** 21 of 24 actions resolve instantly via `ApplyNow` (`GameKernel.cs:59-103`), which applies the one action, persists RNG + action log, and does NOT advance the phase or reset budgets. Exactly three ride the bell as deliberate ceremony: `UpgradeForgeAction`, `SetProfessionsAction`, `CommissionLegendaryWorkAction` (`ActionTiming.cs:121-128`). The list is deny-by-default: any future action type queues until someone opts it in (`ActionTiming.cs:60-62`).
+**Timing model.** 22 of 25 actions resolve instantly via `ApplyNow` (`GameKernel.cs:59-103`), which applies the one action, persists RNG + action log, and does NOT advance the phase or reset budgets. Exactly three ride the bell as deliberate ceremony: `UpgradeForgeAction`, `SetProfessionsAction`, `CommissionLegendaryWorkAction` (`ActionTiming.cs:121-128`). The list is deny-by-default: any future action type queues until someone opts it in (`ActionTiming.cs:60-62`).
 
 ---
 
@@ -1548,7 +1542,7 @@ That is the complete list. The player cannot re-gear, heal, redirect, or reinfor
 
 **The floor loop** (`ExpeditionResolver.cs:247-397`), per floor:
 1. Standing fighters (not dead, not retreated); none left → `PartyWiped`.
-2. **Structural gate**: `PartyAveragePower < venue.Gate(floor)` → `GateHeld`, no roll (`ExpeditionResolver.cs:288-292`). Mine gates: 0/15/35/60/100 (`VenueRegistry.cs:100-109`). The rival catalog's best loadout sums to 54, so rival-only gear can never clear floor 5 (`Economy/RivalCatalog.cs:25-29`).
+2. **Structural gate**: `PartyAveragePower < venue.Gate(floor)` → `GateHeld`, no roll (`ExpeditionResolver.cs:288-292`). Mine gates: 0/15/35/60/70 (`Venues/VenueRegistry.cs:20` — floor 5 re-gated from 100 on 2026-08-10). The rival catalog's best loadout sums to 54, so rival-only gear can never clear floor 5 (`Economy/RivalCatalog.cs:25-29`).
 3. Each fighter fights the floor's monster 1-v-1 in HeroId order (`ExpeditionResolver.cs:297-313`). Per round (`FightMonster`, `:459-577`): flee check FIRST (below 25% MaxHp, no salve cancels it — the 2026-08-01 owner ruling, `:479-501`); then quaff if wounded (below 50% or one worst-case blow from death, `CombatMath.cs:37-38`, at most one heal per round, only if actually below MaxHp `:512-516`); then hero d6 attack, monster d6 counter if alive. Damage = `max(1, atk + roll − def)` (`Expedition/CombatMath.cs:70-75`). A hero death or flee leaves the floor uncleared (`:303-311`).
 4. Cleared floor: post-floor "too hurt to continue" check at the 50% drink line — drink first, re-check; still under → banks the clear and the run ends `TooHurt` (`:341-354,379-384`).
 5. Ore loot: every standing survivor draws 1–3 units of the floor's ore (+Lodestone bonus) (`:371-377`).
@@ -1614,7 +1608,7 @@ Hero autonomy is real but narrow: it is five deterministic, RNG-free decision ru
 
 **Materials** (`Materials/MaterialRegistry.cs:49-102`): priced pool of 14 (mine: copper 3 g/g1 … adamant 18 g/g5; gloomwood g8–11 at 36–54 g; sunken-crypt g1–5 at 3–18 g). Vendor markup +25% ceil (`Economy/MaterialVendorHandlers.cs:31,39-43`); hero ore offers sell at base — always cheaper than the vendor.
 
-**Combat** (`Expedition/CombatMath.cs`, `Venues/VenueRegistry.cs:94-137`): d6 rolls (0–5); hero atk = classBase + 2×level + weapon; def = level + shield + armor. Class bases: Vanguard 29 HP/4 atk, Striker 24/6, Mystic 20/3 (weight cap 4) (`Classes/ClassRegistry.cs:26-56`). Mine floor f: HP 12+10f, atk 5+6f, def 2+2f, gold 5+3f, gates 0/15/35/60/100. Flee <25%, drink <50%.
+**Combat** (`Expedition/CombatMath.cs`, `Venues/VenueRegistry.cs:94-137`): d6 rolls (0–5); hero atk = classBase + 2×level + weapon; def = level + shield + armor. Class bases: Vanguard 29 HP/4 atk, Striker 24/6, Mystic 20/3 (weight cap 4) (`Classes/ClassRegistry.cs:26-56`). Mine floor f: HP 12+10f, atk 5+6f, def 2+2f, gold 5+3f, gates 0/15/35/60/70 (floor 5 re-gated from 100 on 2026-08-10). Flee <25%, drink <50%.
 
 **XP/Level** (`Heroes/HeroXp.cs:18-30,42-50,75-89`): 10 survive + 5/floor + 15/credited beat; ladder 0/50/150/300/500/800 = Novice→Legend = Level 1→6; Level feeds combat directly (U-C6 flip).
 
@@ -6145,9 +6139,12 @@ discovered them. The branch was reverted and deleted rather than parked (rule 9)
   the RNG-position pin asserted unchanged. Everything else in this program is golden-neutral.
 - **No `sim/GameSim/Contracts/` change is required by T1, T3 or T5.** T6 needs exactly one contract
   micro-PR, orchestrator-authored, merged before its dependents.
-- **The engine suite is the gate and only the orchestrator runs it.** Healthy pass count on
-  `023c960` is **1245**. Compare the count, never the verdict — two concurrent gdUnit runs each
-  report "Failed: 0" while silently losing about 400 tests.
+- **The engine suite is the gate and only the orchestrator runs it.** The floor is
+  `ENGINE_MIN_PASSED` in `.github/workflows/ci.yml`; the healthy pass count is whatever the last
+  green run on `main` printed. Read both — do not quote a remembered number, because this bullet
+  has carried two that contradicted each other. Compare the count against the floor, never the
+  runner's verdict: two concurrent gdUnit runs each report "Failed: 0" while silently losing
+  hundreds of tests.
 - **Several stale figures in §11.12 are corrected by this program's PRs** per rule 8: its venue
   colour table predates the 2026-08-15 re-render, and its screen-size arithmetic assumes a canvas
   shrink of 3 where the code resolves 2.
