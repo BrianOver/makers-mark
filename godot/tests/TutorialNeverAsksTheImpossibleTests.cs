@@ -219,7 +219,6 @@ public class TutorialNeverAsksTheImpossibleTests
             AssertThat(fullBudget.ActionSlotsRemaining)
                 .OverrideFailureMessage("Fixture guard: the day should still have slots left after one purchase.")
                 .IsGreater(0);
-            var exhausted = fullBudget with { ActionSlotsRemaining = 0 };
 
             var slotConsumingStepsChecked = 0;
             foreach (var def in TutorialFlow.Registry)
@@ -230,11 +229,19 @@ public class TutorialNeverAsksTheImpossibleTests
                     continue; // this row has no verb, or its verb does not compete for the day's budget.
                 }
 
+                // U28 (§11.14.14): per-row Day, not the shared fullBudget's own Day 1 — PostBounty's
+                // MinDay rose 1 -> 3, and StepActionAvailable's own day-gate check would otherwise
+                // read it unavailable regardless of slots, proving nothing about THIS test's own
+                // question. Reads def.MinDay itself rather than hand-listing PostBounty, so this
+                // drift-proofing test needs no edit the next time some OTHER row's own MinDay moves.
+                var dayCleared = fullBudget with { Day = Math.Max(fullBudget.Day, def.MinDay) };
+                var exhausted = dayCleared with { ActionSlotsRemaining = 0 };
+
                 // The fixture guard asks StepActionAvailable itself (the PUBLIC contract), not raw
                 // ActionLegality.IsLegal — Craft's own row deliberately never calls IsLegal at all
                 // (its own Registry comment), so a guard written against IsLegal directly would be
                 // the wrong question for that row and right for every other one.
-                AssertThat(TutorialFlow.StepActionAvailableForTests(fullBudget, def))
+                AssertThat(TutorialFlow.StepActionAvailableForTests(dayCleared, def))
                     .OverrideFailureMessage(
                         $"Fixture guard: {def.Step} must read available with a full budget, or the " +
                         "zero-slots comparison below proves nothing.")

@@ -174,8 +174,9 @@ public class TutorialFlowTests
         // own gate silently dropped that BountyPosted event: the sim kept the bounty, but the
         // tutorial had no memory of it once that tick ended. Advance now reads
         // `state.EventLog.OfType<BountyPosted>().Any()` — a durable "has this ever happened" fact —
-        // so the early post is banked and credited the moment Shelve finally catches up, with no
-        // second bounty required.
+        // so the early post is banked and never needs a second one: once Shelve catches up AND the
+        // row's own day gate opens (U28 raised PostBounty's MinDay to 3 — see that row's own
+        // comment), the single early post is what satisfies it, with no re-post required.
         //
         // Explicit profession-selecting campaign (mirrors StarterKitCraft/PartyDeparting_...
         // above) — the plain MountMainUi() default starts with EMPTY materials (see
@@ -205,13 +206,20 @@ public class TutorialFlowTests
             var craftedItem = ScriptedSession.CraftedItem(ui.Adapter.CurrentState);
             ui.Adapter.Queue(new StockAction(craftedItem, 50));
 
-            // The already-posted bounty is credited the SAME instant Shelve completes — no re-post.
+            // U28 (§11.14.14): PostBounty's own MinDay rose 1 -> 3, so a day-1 post no longer
+            // advances the chain off THIS row by itself — Step now lands on PostBounty (not
+            // WatchDeparture) and stays there until either a real party departs (the
+            // anti-stranding sweep, unconditional across the whole day-1 ladder) or day 3 arrives.
+            // The credit itself is still banked, not lost: BountyPosted stays in the durable
+            // EventLog, so the day-3 (or the sooner departure) transition still finds it true —
+            // the original regression this test protects (an out-of-order post is never dropped)
+            // still holds, just gated on the row's own new day, same as the row is for everyone.
             AssertThat(ui.Tutorial.Step)
                 .OverrideFailureMessage(
-                    "Shelve just completed and a bounty was already posted earlier — the chain should " +
-                    "have cascaded straight to WatchDeparture instead of sitting on PostBounty waiting " +
-                    "for a SECOND post that the player has no reason to make.")
-                .IsEqual(TutorialStep.WatchDeparture);
+                    "Shelve just completed with a bounty already posted earlier — Step should be " +
+                    "PostBounty, banked and ready to advance the moment its own Day-3 gate (or a " +
+                    "real departure) lets it, never stranded further back.")
+                .IsEqual(TutorialStep.PostBounty);
             AssertThat(ui.Tutorial.Completed).IsFalse(); // the party hasn't departed yet
         }
         finally
@@ -227,6 +235,11 @@ public class TutorialFlowTests
         // legal that same phase — PostBountyAction included, per ActionLegality's own Morning-
         // or-Evening gate) must cascade every step this SAME tick regardless of the kernel's own
         // internal event ordering (the ladder-of-ifs contract, see TutorialFlow.Advance).
+        //
+        // U28 (§11.14.14): the cascade now stops one row earlier than it used to. PostBounty's own
+        // MinDay rose 1 -> 3 (that row's own comment), so a day-1 post no longer satisfies its OWN
+        // row's advance check — Step lands on PostBounty, banked, rather than sailing straight
+        // through to WatchDeparture the way Buy/Craft/Stock still do in this same batch.
         var ui = MountMainUi();
         try
         {
@@ -241,7 +254,7 @@ public class TutorialFlowTests
             ui.Adapter.Queue(new PostBountyAction(ScriptedSession.BountyFloor, ScriptedSession.BountyReward));
             ui.Adapter.AdvancePhase(); // Morning -> Expedition: all four land in one tick
 
-            AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.WatchDeparture);
+            AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.PostBounty);
             AssertThat(ui.Tutorial.Completed).IsFalse(); // PartyDeparted needs the NEXT tick
         }
         finally
@@ -569,7 +582,20 @@ public class TutorialFlowTests
             ui.Adapter.Queue(new BuyMaterialAction(ScriptedSession.CraftMaterial, ScriptedSession.CopperNeeded));
             ui.Adapter.Queue(new CraftAction(ScriptedSession.CraftRecipeId, ScriptedSession.CraftMaterial));
             ui.Adapter.Queue(new StockAction(ScriptedSession.CraftedItem(ui.Adapter.CurrentState), 50));
-            ui.Adapter.Queue(new PostBountyAction(ScriptedSession.BountyFloor, ScriptedSession.BountyReward));
+
+            // U28 (§11.14.14): PostBounty's own MinDay rose 1 -> 3 (that row's own comment), so a
+            // same-tick day-1 post no longer carries Step past it by itself. Force the day forward
+            // the same "hand a modified state to Advance" idiom TutorialFlowTests' own day-2/3
+            // helpers already use (CraftedAdvance) — this test is about WatchDeparture's OWN copy,
+            // not about reaching it, so simulating three real days just to get here would test
+            // nothing this row cares about.
+            var postedAndDay3 = ui.Adapter.CurrentState with
+            {
+                Day = 3,
+                EventLog = ui.Adapter.CurrentState.EventLog.Add(
+                    new BountyPosted(new BountyId(1), ScriptedSession.BountyFloor, ScriptedSession.BountyReward)),
+            };
+            ui.Tutorial.Advance(postedAndDay3);
             AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.WatchDeparture);
 
             var copy = ui.Tutorial.TopSlotText(ui.Adapter.CurrentState)!;
@@ -1558,7 +1584,15 @@ public class TutorialFlowTests
             ui.Adapter.Queue(new StockAction(craftedItem, 50));
             AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.PostBounty);
 
-            var closed = ui.Tutorial.TopSlotText(ui.Adapter.CurrentState, openPanelId: null)!;
+            // U28 (§11.14.14): PostBounty's own MinDay rose 1 -> 3 (that row's own comment), so its
+            // live, actionable copy only renders once Day >= 3 — the SAME projection
+            // TutorialCopyIsFollowableTests' own ActionableFor already uses for every day-3 row.
+            // This test is about the WORDS the step uses (the board, not the Gate), never about
+            // when it opens, so a `with { Day = 3 }` projection is the honest way to read them
+            // without simulating three real days.
+            var day3 = ui.Adapter.CurrentState with { Day = 3 };
+
+            var closed = ui.Tutorial.TopSlotText(day3, openPanelId: null)!;
             AssertThat(closed)
                 .OverrideFailureMessage($"PostBounty copy still names the Gate (the mine), not the bounty board: \"{closed}\"")
                 .Contains("Bounties");
@@ -1566,7 +1600,7 @@ public class TutorialFlowTests
 
             // Standing at the REAL panel this step means (per MainUi.OnTownBuildingClicked,
             // "noticeboard"/"Bounties" -> "Bounties") must read as arrival, not as still walking.
-            var atBoard = ui.Tutorial.TopSlotText(ui.Adapter.CurrentState, openPanelId: "Bounties")!;
+            var atBoard = ui.Tutorial.TopSlotText(day3, openPanelId: "Bounties")!;
             AssertThat(atBoard)
                 .OverrideFailureMessage($"Standing at the Bounties board is not acknowledged: \"{atBoard}\"")
                 .Contains("You're at");
@@ -1631,7 +1665,13 @@ public class TutorialFlowTests
             ui.Adapter.AdvancePhase(); // Morning -> Expedition
             AssertThat(ui.Tutorial.Step).IsEqual(TutorialStep.PostBounty);
 
-            var duringExpedition = ui.Tutorial.TopSlotText(ui.Adapter.CurrentState)!;
+            // U28 (§11.14.14): PostBounty's own MinDay rose 1 -> 3, so at the real Day-1 state this
+            // test is otherwise driving, the day gate would dominate WaitText's own precedence
+            // ("Comes on Day 3", not the phase excuse this test exists to prove) — see that row's
+            // own comment. This test is specifically about the PHASE gate (F6's own gap), so project
+            // Day 3 the same way TutorialCopyIsFollowableTests' ActionableFor already does, isolating
+            // the one dimension this test means to exercise.
+            var duringExpedition = ui.Tutorial.TopSlotText(ui.Adapter.CurrentState with { Day = 3 })!;
             // U21 (§11.14.14): The Dark now totals 2 beats (PostBounty, WatchDeparture) — LookIn
             AssertThat(duringExpedition).StartsWith("The Dark · 1/3:");
             AssertThat(duringExpedition).Contains("Morning or Evening");

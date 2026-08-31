@@ -520,9 +520,22 @@ public sealed partial class TutorialFlow : PanelContainer
             // own TeachNote never becomes current at all (TutorialStepDef's own doc, "the shared
             // display slot"). A lesson that depends on the player having bought material first is not
             // "before" anything.
-            TeachNote: "Inside a building you walk up to a station and press E to use it. The material vendor "
-                       + "and the crafting station are both stations in your workshop. Every room has a way "
-                       + "back out, too — press Escape to step outside when you're ready to move on.",
+            //
+            // U28 (§11.14.14, R20, "a player learns which actions spend the day's budget and which
+            // are free"): the two leading sentences are new, named here because this row is the ONE
+            // guaranteed to render before the player has spent anything at all (the same guarantee
+            // the paragraph above already leans on). Qualitative on purpose — no client-restated
+            // constant (law: copy never repeats a sim number back at the player) — ActionBudget's
+            // own ten-type list and free list are cited, not counted, so this line can never drift
+            // from the sim it describes.
+            TeachNote: "Each day gives you a limited run of action slots — buying material, crafting, posting "
+                       + "a bounty, and the forge's bigger upgrades each spend one, so the pips beside your "
+                       + "gold count down as you go and refill fresh at dawn, spent or not. The shelf, the "
+                       + "whole counter session, answering a commission, the camp's send and recall, and "
+                       + "honoring the memorial never touch that budget at all. Inside a building you walk up "
+                       + "to a station and press E to use it. The material vendor and the crafting station "
+                       + "are both stations in your workshop. Every room has a way back out, too — press "
+                       + "Escape to step outside when you're ready to move on.",
             IsDone: state => state.EventLog.OfType<MaterialPurchased>().Any(),
             AdvanceFrom: [TutorialStep.BuyMaterial], AdvancesTo: TutorialStep.Craft,
             // U13: one candidate per priced material key, quantity 1 — the SAME loop
@@ -571,8 +584,17 @@ public sealed partial class TutorialFlow : PanelContainer
             IsDone: state => state.Player.Shelf.Count > 0 || state.EventLog.OfType<ItemSold>().Any(s => s.FromPlayerShop),
             AdvanceFrom: [TutorialStep.Shelve], AdvancesTo: TutorialStep.PostBounty),
         new(
+            // U28 (§11.14.14): MinDay rises 1 -> 3, the one direction every other MinDay fix in
+            // this file has gone the OTHER way (OpenCounter/Vigil dropped 2->1 because the real
+            // gate was never the calendar). This one is: on day 1 a bounty competes for scarce
+            // day-1 gold and slots with the buy-craft-shelve spine, and aims a targeting lever at
+            // heroes the player has not met yet. Measured before moving it: BaselinePlayer never
+            // posts a bounty at all, yet the first camp stop still lands day 2 on 12 of 12 seeds —
+            // so Vigil does not depend on this row, and moving it costs nothing there (the
+            // anti-stranding sweep on WatchDeparture's own row already carries the chain past an
+            // unanswered PostBounty the moment a party departs, same as it always could).
             Step: TutorialStep.PostBounty, DisplayIndex: 3, Act: TutorialAct.Dark,
-            Anchor: TutorialAnchor.ForBuilding("noticeboard"), MinDay: 1,
+            Anchor: TutorialAnchor.ForBuilding("noticeboard"), MinDay: 3,
             ShortLabel: "Post a bounty at the Bounties board",
             // The old note said a bounty "asks heroes to fetch something specific from the Mine",
             // which is not what the sim does at all: PostBountyAction names a FLOOR, never an item.
@@ -758,14 +780,13 @@ public sealed partial class TutorialFlow : PanelContainer
             Step: TutorialStep.MeetHeroes, DisplayIndex: 9, Act: TutorialAct.Memory,
             Anchor: TutorialAnchor.ForHud("OpenHeroCards"), MinDay: 3,
             ShortLabel: "Open Renown and read a hero's card",
+            // U28 (§11.14.14): the warrant reminder that used to close THIS row's own TeachNote is
+            // gone — it was the identical sentence Commission's own row (the day's, and the
+            // course's, actual last step) already carried, and R20's own "doubled warrant reminder"
+            // finding is exactly that: naming the same closing news twice before the player has
+            // even reached the last of the two day-3 steps. Commission keeps the one copy.
             TeachNote: "Hero Cards show standing, gear, and deeds — the roster behind every raid. They are the "
-                       + "tray's Renown book; the tray's buttons carry no words, only icons and tooltips. "
-                       // §11.13 amendment (U5): the closing reminder, named a second time before the
-                       // warrant ends (the first was WatchDeparture's own TeachNote) — TeachNote is a
-                       // fixed string (never a function of GameState), so this reads unconditionally
-                       // rather than gating on ApprenticeWarrant.Covers; both day-3 steps are only ever
-                       // Current inside the warrant's own window in practice.
-                       + "Tomorrow the warrant ends — what they carry down is what keeps them.",
+                       + "tray's Renown book; the tray's buttons carry no words, only icons and tooltips.",
             // UI-only, same shape as LookIn — NotifyPanelOpened advances this directly.
             IsDone: _ => false,
             AdvanceFrom: [TutorialStep.MeetHeroes], AdvancesTo: TutorialStep.Commission),
@@ -776,7 +797,12 @@ public sealed partial class TutorialFlow : PanelContainer
             TeachNote: "A commission is a hero asking you directly for one thing: a named slot, at a minimum "
                        + "quality, by a deadline, for a premium over the shelf price. Declining is a real "
                        + "answer — it costs you the premium, not the hero. "
-                       // §11.13 amendment (U5): see MeetHeroes' own row for why this is unconditional.
+                       // §11.13 amendment (U5), collapsed to one occurrence by U28 (§11.14.14): the
+                       // closing reminder — this is now the ONLY row that carries it, since it is
+                       // the day's (and the course's) actual last step. TeachNote is a fixed string
+                       // (never a function of GameState), so this reads unconditionally rather than
+                       // gating on ApprenticeWarrant.Covers; this row is only ever Current inside
+                       // the warrant's own window in practice.
                        + "Tomorrow the warrant ends — what they carry down is what keeps them.",
             // No distinct GameEvent exists for Accept/Decline (CommissionHandlers' own doc) —
             // GameState.ActionLog (the kernel's own submitted-action history) is the durable fact.
@@ -1588,6 +1614,12 @@ public sealed partial class TutorialFlow : PanelContainer
                     $"{StepPrefix(def)}: Meeting your heroes is a Day {def.MinDay} lesson — nothing to do here yet; it opens once Day {def.MinDay} begins.",
                 TutorialStep.Commission =>
                     $"{StepPrefix(def)}: Your first commission choice is a Day {def.MinDay} lesson — nothing to do here yet; it opens once Day {def.MinDay} begins.",
+                // U28 (§11.14.14): newly reachable now that PostBounty's own MinDay rose to 3 (see
+                // that row's own comment) — this branch used to be dead for this step (MinDay 1 is
+                // never less than the day), and law 7 forbids the blank card the OLD unconditional
+                // fallthrough (`_ => string.Empty`) would otherwise print here for most of days 1-2.
+                TutorialStep.PostBounty =>
+                    $"{StepPrefix(def)}: Posting a bounty is a Day {def.MinDay} lesson — nothing to do here yet; it opens once Day {def.MinDay} begins.",
                 _ => string.Empty,
             };
         }
