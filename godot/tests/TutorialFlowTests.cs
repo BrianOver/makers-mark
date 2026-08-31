@@ -2880,6 +2880,35 @@ public class TutorialFlowTests
         }
     }
 
+    // ── U24 (§11.14.14, KTD2): the commission-delivery dormant act ─────────────────────────────
+    // "Days 4-7 carry no numbered steps... Commission delivery is a dormant act armed on an
+    // accepted commission, not a numbered row" (KTD2). Reads the tracked commission's own ask off
+    // its CommissionPosted event, never off state.Commissions (which only holds LIVE commissions —
+    // see ConsumeCommissionDeliveryLesson's own doc), so these fixtures need no Commissions entry.
+
+    private static GameState CommissionAcceptedState(int deadlineDay = 10) =>
+        GameComposition.NewCampaign(ScriptedSession.Seed) with
+        {
+            EventLog = ImmutableList.Create<GameEvent>(
+                new CommissionPosted(new HeroId(1), ItemSlot.Weapon, QualityGrade.Fine, DeadlineDay: deadlineDay, PremiumGold: 30)),
+            ActionLog = ImmutableList.Create(
+                new LoggedBatch(1, DayPhase.Morning, ImmutableList.Create<PlayerAction>(new AcceptCommissionAction(new HeroId(1))))),
+        };
+
+    [TestCase]
+    public void CommissionDelivery_NeverAccepted_NeverArms()
+    {
+        var ui = MountMainUi(); // fresh campaign — nobody has ever accepted anything
+        try
+        {
+            AssertThat(ui.Tutorial.ConsumeCommissionDeliveryLesson(ui.Adapter.CurrentState)).IsNull();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
     /// <summary>KTD5's split, proven both ways: the variant is chosen on whether the FALLEN hero
     /// carried the player's own work, read off the sim's own recorded <see
     /// cref="HeroDied.WornGear"/> — never a guess.</summary>
@@ -2902,6 +2931,27 @@ public class TutorialFlowTests
     }
 
     [TestCase]
+    public void CommissionDelivery_DeclineOnly_NeverArms()
+    {
+        var state = GameComposition.NewCampaign(ScriptedSession.Seed) with
+        {
+            EventLog = ImmutableList.Create<GameEvent>(
+                new CommissionPosted(new HeroId(1), ItemSlot.Weapon, QualityGrade.Fine, DeadlineDay: 10, PremiumGold: 30)),
+            ActionLog = ImmutableList.Create(
+                new LoggedBatch(1, DayPhase.Morning, ImmutableList.Create<PlayerAction>(new DeclineCommissionAction(new HeroId(1))))),
+        };
+        var ui = MountMainUi(new SimAdapter(state));
+        try
+        {
+            AssertThat(ui.Tutorial.ConsumeCommissionDeliveryLesson(state)).IsNull();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
     public void LossVoiceLine_SaysNothingOfYours_WhenTheFallenHeroCarriedNone()
     {
         var ui = MountMainUi(new SimAdapter(HeroDiedState(day: 5))); // GearSet.Empty — carries nothing at all
@@ -2911,6 +2961,26 @@ public class TutorialFlowTests
             var line = ui.Tutorial.LossVoiceLine(ui.Adapter.CurrentState);
             AssertThat(line).IsNotNull();
             AssertThat(line!.Contains("Nothing of yours went down with them", StringComparison.Ordinal)).IsTrue();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    public void CommissionDelivery_Accepted_ArmsAndSpeaksOnce_NamesThePriceAndSharedShelfRisk()
+    {
+        var state = CommissionAcceptedState();
+        var ui = MountMainUi(new SimAdapter(state));
+        try
+        {
+            var lesson = ui.Tutorial.ConsumeCommissionDeliveryLesson(state);
+            AssertThat(lesson).IsNotNull();
+            AssertThat(lesson).Contains("shelf");
+            AssertThat(lesson).Contains("afford");
+            AssertThat(lesson).Contains("under the hero");
+
+            AssertThat(ui.Tutorial.ConsumeCommissionDeliveryLesson(state)).IsNull(); // once ever
         }
         finally
         {
@@ -2979,6 +3049,93 @@ public class TutorialFlowTests
             AssertThat(block!.Contains("roster refills", StringComparison.OrdinalIgnoreCase)).IsFalse();
             AssertThat(block.Contains("permadeath", StringComparison.OrdinalIgnoreCase)).IsTrue();
             AssertThat(block.Contains("the rite is yours", StringComparison.OrdinalIgnoreCase)).IsTrue();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void CommissionDelivery_Done_OnQualifyingStockAction_APlayerCausedDurableFact()
+    {
+        var state = CommissionAcceptedState();
+        var ui = MountMainUi(new SimAdapter(state));
+        try
+        {
+            ui.Tutorial.ConsumeCommissionDeliveryLesson(state);
+            AssertThat(ui.Tutorial.CommissionDeliveryDone(state)).IsFalse();
+
+            var stockedItemId = new ItemId(9001);
+            var stocked = state with
+            {
+                Items = state.Items.Add(
+                    stockedItemId.Value,
+                    new Item(
+                        stockedItemId, "test-recipe", "Test Sword", ItemSlot.Weapon, QualityGrade.Fine,
+                        new ItemStats(8, 0, 2), null, ImmutableList<ItemHistoryEntry>.Empty)),
+                ActionLog = state.ActionLog.Add(
+                    new LoggedBatch(2, DayPhase.Morning, ImmutableList.Create<PlayerAction>(new StockAction(stockedItemId, 20)))),
+            };
+
+            AssertThat(ui.Tutorial.CommissionDeliveryDone(stocked)).IsTrue();
+            AssertThat(ui.Tutorial.CommissionDeliverySkipped(stocked)).IsFalse();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void CommissionDelivery_Skipped_AtWindowEnd_SpeaksOnce_NeverAScold()
+    {
+        var state = CommissionAcceptedState(deadlineDay: 10);
+        var ui = MountMainUi(new SimAdapter(state));
+        try
+        {
+            ui.Tutorial.ConsumeCommissionDeliveryLesson(state);
+
+            var pastDeadline = state with { Day = 11 };
+            AssertThat(ui.Tutorial.CommissionDeliverySkipped(pastDeadline)).IsTrue();
+            AssertThat(ui.Tutorial.CommissionDeliveryDone(pastDeadline)).IsFalse();
+
+            var beat = ui.Tutorial.ConsumeCommissionDeliveryOutcomeBeat(pastDeadline);
+            AssertThat(beat).IsNotNull();
+            AssertThat(beat).Contains("closed unanswered");
+
+            AssertThat(ui.Tutorial.ConsumeCommissionDeliveryOutcomeBeat(pastDeadline)).IsNull(); // once ever
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void CommissionDelivery_OutcomeBeat_NeverFiresWhenDelivered()
+    {
+        var state = CommissionAcceptedState(deadlineDay: 10);
+        var ui = MountMainUi(new SimAdapter(state));
+        try
+        {
+            ui.Tutorial.ConsumeCommissionDeliveryLesson(state);
+
+            var stockedItemId = new ItemId(9002);
+            var doneState = state with
+            {
+                Day = 11, // past the deadline, but delivered in time
+                Items = state.Items.Add(
+                    stockedItemId.Value,
+                    new Item(
+                        stockedItemId, "test-recipe", "Test Sword", ItemSlot.Weapon, QualityGrade.Fine,
+                        new ItemStats(8, 0, 2), null, ImmutableList<ItemHistoryEntry>.Empty)),
+                ActionLog = state.ActionLog.Add(
+                    new LoggedBatch(2, DayPhase.Morning, ImmutableList.Create<PlayerAction>(new StockAction(stockedItemId, 20)))),
+            };
+
+            AssertThat(ui.Tutorial.CommissionDeliverySkipped(doneState)).IsFalse();
+            AssertThat(ui.Tutorial.ConsumeCommissionDeliveryOutcomeBeat(doneState)).IsNull();
         }
         finally
         {

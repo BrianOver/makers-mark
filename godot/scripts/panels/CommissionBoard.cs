@@ -74,6 +74,20 @@ public partial class CommissionBoard : Control
         }
 
         Visible = true;
+
+        // U24 (§11.14.14, KTD2): the commission channel's dormant act — see
+        // TutorialFlow.ConsumeCommissionDeliveryLesson's own doc. Checked every time this board
+        // opens, never on the Accept press itself (that click already spends its own first-touch
+        // banner — ShowHoldOrSellLesson, below). At most one of the two fires per open: the forward
+        // lesson consumes itself once ever, so a later open falls through to the honest close.
+        if (Tutorial?.ConsumeCommissionDeliveryLesson(state) is { } deliveryLesson)
+        {
+            Mentor?.Show(MentorVoice.Speak(deliveryLesson));
+        }
+        else if (Tutorial?.ConsumeCommissionDeliveryOutcomeBeat(state) is { } outcomeBeat)
+        {
+            Mentor?.Show(MentorVoice.Speak(outcomeBeat));
+        }
     }
 
     public void Close() => Visible = false;

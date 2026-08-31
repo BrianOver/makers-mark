@@ -2699,6 +2699,134 @@ public sealed partial class TutorialFlow : PanelContainer
     /// contract as <see cref="_hasSeenWarrantEndBeat"/>.</summary>
     private bool _hasSeenFleeceBeat;
 
+    /// U24 (§11.14.14, KTD2): the commission channel's missing back half, built as a dormant act —
+    /// "Days 4-7 carry no numbered steps... Commission delivery is a dormant act armed on an
+    /// accepted commission, not a numbered row" (KTD2's own words). A numbered row would strand a
+    /// player who declines: declining costs nothing, but a row insisting the player owes a delivery
+    /// would teach the opposite. Armed the first time EVER an <see cref="AcceptCommissionAction"/>
+    /// lands in <see cref="GameState.ActionLog"/> — a decline never reaches this line, so a
+    /// campaign that only ever declines never arms it. <see cref="Panels.CommissionBoard.ShowOpen"/>
+    /// consumes this the next time the board opens — dormant, not instant: the Accept press itself
+    /// already spends its own first-touch banner (<c>CommissionBoard.ShowHoldOrSellLesson</c>), and
+    /// stacking a second lesson on the same click would bury one under the other.
+    ///
+    /// <para>Reads the commission's own Slot/MinQuality/DeadlineDay off its <see
+    /// cref="CommissionPosted"/> event rather than <see cref="GameState.Commissions"/> — that list
+    /// only holds LIVE commissions, and both resolutions (<see
+    /// cref="Heroes.CommissionHandlers.TryFulfillFromShelf"/> on delivery, <see
+    /// cref="Heroes.CommissionSystem"/>'s own expiry sweep) remove the entry, so a state read after
+    /// either one has already happened would find nothing to arm from. The event log never loses
+    /// it.</para>
+    /// </summary>
+    public string? ConsumeCommissionDeliveryLesson(GameState state)
+    {
+        if (_deliveryLessonHero != 0)
+        {
+            return null; // already armed once ever (or never will be — a decline never arms this)
+        }
+
+        var accepted = state.ActionLog
+            .SelectMany(batch => batch.Actions)
+            .OfType<AcceptCommissionAction>()
+            .FirstOrDefault();
+        if (accepted is null)
+        {
+            return null;
+        }
+
+        var posted = state.EventLog.OfType<CommissionPosted>().LastOrDefault(p => p.Hero == accepted.Hero);
+        if (posted is null)
+        {
+            return null; // defensive — an accept is never legal without a prior posting
+        }
+
+        _deliveryLessonHero = accepted.Hero.Value;
+        _deliveryLessonSlot = posted.Slot;
+        _deliveryLessonMinQuality = posted.MinQuality;
+        _deliveryLessonDeadlineDay = posted.DeadlineDay;
+        Save();
+        return CommissionDeliveryLessonText;
+    }
+
+    /// <summary>U24's own copy — teaches the four facts nothing else in the game says out loud: the
+    /// shelf IS the delivery channel, the guarantee needs the hero to afford list plus premium, the
+    /// shared shelf means nothing reserves the piece, and the two costs are not symmetric (a miss
+    /// costs mood; a decline costs nothing). No sim constant is quoted (law: stakes named
+    /// qualitatively).</summary>
+    private const string CommissionDeliveryLessonText =
+        "A commission is filled from your own shelf: forge the slot they named at or above the "
+        + "grade they asked, and stock it — their own morning shopping checks the board before "
+        + "anything else, and takes it at your list price plus their premium, guaranteed, the "
+        + "moment they can afford both. Price it past their reach and that guarantee fails "
+        + "quietly, with no warning. Nothing reserves the piece, either: an earlier shopper can "
+        + "still buy it out from under the hero it was held for. Miss the deadline on an accepted "
+        + "commission and it costs mood; decline one outright and it costs nothing at all.";
+
+    /// <summary>Which hero's FIRST-EVER accepted commission this dormant act is watching — 0 before
+    /// arming, and forever for a campaign that only ever declines. Persisted so a reload mid-window
+    /// never loses the act's own place, the same discipline <see cref="_firstLossDay"/> already
+    /// follows.</summary>
+    private int _deliveryLessonHero;
+
+    /// <summary>The tracked commission's own ask, captured at arm time (see <see
+    /// cref="ConsumeCommissionDeliveryLesson"/>'s own doc for why this is captured rather than
+    /// re-read live).</summary>
+    private ItemSlot _deliveryLessonSlot;
+
+    private QualityGrade _deliveryLessonMinQuality;
+    private int _deliveryLessonDeadlineDay;
+
+    /// <summary>The player-caused half of the tracked commission's outcome: a qualifying <see
+    /// cref="StockAction"/> (slot and quality at or above the ask) anywhere in <see
+    /// cref="GameState.ActionLog"/>. Mirrors <see cref="LossActRow"/>'s own "Done is a player
+    /// action, never a sim outcome" convention — whether the hero actually walks out with it
+    /// afterward is the shared-shelf risk <see cref="CommissionDeliveryLessonText"/> already names,
+    /// not this method's question.</summary>
+    public bool CommissionDeliveryDone(GameState state) =>
+        _deliveryLessonHero != 0
+        && state.ActionLog
+            .SelectMany(batch => batch.Actions)
+            .OfType<StockAction>()
+            .Any(a => state.Items.TryGetValue(a.Item.Value, out var item)
+                      && item.Slot == _deliveryLessonSlot
+                      && item.Quality >= _deliveryLessonMinQuality);
+
+    /// <summary>True once the tracked commission's own deadline has passed with nothing qualifying
+    /// ever stocked — the honest `Skipped` half (law 7: the cost is named in copy, never engineered
+    /// away).</summary>
+    public bool CommissionDeliverySkipped(GameState state) =>
+        _deliveryLessonHero != 0 && state.Day > _deliveryLessonDeadlineDay && !CommissionDeliveryDone(state);
+
+    /// <summary>
+    /// U24: the dormant act's own honest close — fires ONCE, and only down the `Skipped` path. A
+    /// kept promise already speaks for itself (the hero walks out with the piece, the mood bonus
+    /// lands); adding a line here would only repeat news the player already saw. Never a scold —
+    /// the window simply closed and this names what it cost, the same after-the-fact, un-scolding
+    /// register <see cref="ConsumeFirstLossBlock"/> already uses for the game's harsher facts.
+    /// </summary>
+    public string? ConsumeCommissionDeliveryOutcomeBeat(GameState state)
+    {
+        if (_deliveryLessonHero == 0 || _deliveryOutcomeSpoken)
+        {
+            return null;
+        }
+
+        if (!CommissionDeliverySkipped(state))
+        {
+            return null;
+        }
+
+        _deliveryOutcomeSpoken = true;
+        Save();
+        return "That commission's window closed unanswered — the promise broke, and it cost "
+            + "standing with the hero who made it. Declining costs nothing; this is what missing "
+            + "does instead.";
+    }
+
+    /// <summary>Once-ever flag backing <see cref="ConsumeCommissionDeliveryOutcomeBeat"/> — same
+    /// "never again" contract as <see cref="_hasSeenWarrantEndBeat"/>.</summary>
+    private bool _deliveryOutcomeSpoken;
+
     /// <summary>
     /// U26 (§11.14.14, R19, "a player learns where the game publishes what the town wants"): a
     /// dormant act, same shape as <see cref="ConsumeWarrantEndBeat"/> — armed the day the campaign's
@@ -2932,6 +3060,14 @@ public sealed partial class TutorialFlow : PanelContainer
             // defaults (0 / false) — safe, the same "not armed yet" reading a fresh campaign gets.
             _proofBeatDay = data.ProofBeatDay;
             _proofBeatCardOpened = data.ProofBeatCardOpened;
+            // U24 (§11.14.14): an old save without any of these four properties deserializes to
+            // the shared-across-C# defaults (0/false) — safe, the same "never armed yet" starting
+            // point a fresh campaign already has for every dormant act in this file.
+            _deliveryLessonHero = data.DeliveryLessonHero;
+            _deliveryLessonSlot = data.DeliveryLessonSlot;
+            _deliveryLessonMinQuality = data.DeliveryLessonMinQuality;
+            _deliveryLessonDeadlineDay = data.DeliveryLessonDeadlineDay;
+            _deliveryOutcomeSpoken = data.DeliveryOutcomeSpoken;
             // U-T2-7: an old save without this property deserializes to null — safe, same "widens
             // going forward, never fabricates a false fire" contract VigilCardSeen's own remark set:
             // a pre-existing campaign simply has nothing fired yet, exactly like a fresh one.
@@ -2967,6 +3103,10 @@ public sealed partial class TutorialFlow : PanelContainer
                 HasSeenFleeceBeat = _hasSeenFleeceBeat,
                 HasSeenDemandBoardBeat = _hasSeenDemandBoardBeat, DemandBoardArmedDay = _demandBoardArmedDay,
                 ProofBeatDay = _proofBeatDay, ProofBeatCardOpened = _proofBeatCardOpened,
+                DeliveryLessonHero = _deliveryLessonHero, DeliveryLessonSlot = _deliveryLessonSlot,
+                DeliveryLessonMinQuality = _deliveryLessonMinQuality,
+                DeliveryLessonDeadlineDay = _deliveryLessonDeadlineDay,
+                DeliveryOutcomeSpoken = _deliveryOutcomeSpoken,
                 FirstTouchFired = new Dictionary<string, string>(FirstTouch.Fired),
                 // U14: the arrived ratchet and the mentor banner's own not-yet-dismissed lines — see
                 // both fields' own docs (_visitedAnchorForStep, PendingMentorLines).
@@ -3265,6 +3405,15 @@ public sealed partial class TutorialFlow : PanelContainer
         /// save from before this property existed — mirrors <see cref="FirstLossDay"/>'s own safe
         /// default exactly.</summary>
         public int DemandBoardArmedDay { get; set; }
+        /// <summary>U24 (§11.14.14, KTD2): the commission-delivery dormant act's own place — 0 (never
+        /// armed) is the safe default for a save from before this property existed, exactly the same
+        /// precedent <see cref="FirstLossDay"/> already set.</summary>
+        public int DeliveryLessonHero { get; set; }
+
+        public ItemSlot DeliveryLessonSlot { get; set; }
+        public QualityGrade DeliveryLessonMinQuality { get; set; }
+        public int DeliveryLessonDeadlineDay { get; set; }
+        public bool DeliveryOutcomeSpoken { get; set; }
 
         /// <summary>U-T2-7 (Wave A substrate): the first-touch tier's own fired set, id -> the exact
         /// text it fired with — an old save without this property deserializes to <see
