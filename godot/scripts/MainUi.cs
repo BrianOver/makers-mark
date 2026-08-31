@@ -1176,6 +1176,28 @@ public partial class MainUi : Control
             Mentor.Show(demandBoardBeat, anchor: TutorialAnchor.ForHud("OpenDemand"));
         }
 
+        // U40 (§11.14.14, dilemma #5 "buy the ore, or buy the faction's favour" — THE-GAME.md
+        // §3.5, register #170): the FIRST TariffApplied event is the moment the player's OWN
+        // standing first moves what an ore buy costs them (OreMarketHandlers only ever emits this
+        // when the tariff actually moved the price, i.e. a SECOND buy from a faction whose standing
+        // the FIRST buy already raised). Fired plainly through ConsumeFirstTouch, same as
+        // "pricing-as-a-decision"/"hold-or-sell" — never deferred, unlike U26's demand-board beat:
+        // a tariff only ever moves as the direct, immediate consequence of the player's OWN
+        // BuyOreAction, never a background AI tick the player did not cause, so there is no
+        // mid-Morning-surprise risk to defer past. No spotlight anchor: the fork this teaches is
+        // WHOSE ore to buy, not a control to walk to.
+        if (state.EventLog.OfType<TariffApplied>().Any())
+        {
+            Mentor.ShowFirstTouch(Tutorial.ConsumeFirstTouch(
+                "the-tariff-fork",
+                MentorVoice.Speak(
+                    "Every hero gets the same ask for their ore, no matter who buys it — there's no "
+                    + "haggling that trade. What moves is the standing you've been building with "
+                    + "whichever faction supplied it: buy from the same one again and their price to "
+                    + "you keeps easing. The choice was never how much to pay — it's whose favour "
+                    + "you're banking.")));
+        }
+
         RefreshAll();
 
         // Only run the town's phase choreography when a phase ACTUALLY completed.
