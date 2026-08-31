@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Text.RegularExpressions;
 using GameSim.Contracts;
 using GameSim.Drama;
 using GameSim.Flavor;
@@ -104,6 +105,35 @@ public class FactionPackTests
             Assert.True(
                 seen.Count == variants.Count,
                 $"'{key}': {seen.Count}/{variants.Count} variants reached over 160 event ids");
+        }
+    }
+
+    // ---------------------------------------------------------------- P2-MEMORY-09: cooled tells the truth
+
+    /// <summary>
+    /// P2-MEMORY-09: no cooled variant (nor the cooled fallback) may advertise a price RISE.
+    /// Standing is discount-only (KTD8: <c>FactionDriftSystem.StepTowardZero</c> floors at 0) and
+    /// <c>Cooled</c> stamps on the favored-EXIT crossing — typically while standing is still well
+    /// above zero — so ore never costs more than the plain base ask. The honest consequence is a
+    /// FADING DISCOUNT; <c>AdventureTicker</c>'s <c>FactionStandingShifted</c> arm carries the same
+    /// rule. A 72-variant surcharge fiction shipped once; this pins the vocabulary shut.
+    /// </summary>
+    [Fact]
+    public void CooledVariants_NeverAdvertiseAPriceRise()
+    {
+        var priceRise = new Regex("dearer|costs more|climb|surcharge|costlier|toll|up a coin", RegexOptions.IgnoreCase);
+
+        var cooledLines = FactionPack.Pack.Variants
+            .Where(kv => FlavorEngine.BaseKey(kv.Key) == FactionPack.Cooled)
+            .SelectMany(kv => kv.Value.Select(variant => (kv.Key, Line: variant)))
+            .Append(($"{FactionPack.Cooled} (fallback)", FactionPack.Pack.Fallbacks[FactionPack.Cooled]))
+            .ToList();
+
+        Assert.NotEmpty(cooledLines);
+        foreach (var (key, line) in cooledLines)
+        {
+            Assert.False(priceRise.IsMatch(line),
+                $"'{key}' advertises a price rise the discount-only sim cannot charge: \"{line}\"");
         }
     }
 
