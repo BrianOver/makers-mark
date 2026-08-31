@@ -18,8 +18,9 @@
          it redirects to a log and reads $LASTEXITCODE itself.
 
       3. A TRUNCATED RUN LOOKS GREEN. When the runtime dies mid-session the suite still prints
-         "Passed!" for whatever finished. CI's floor (ENGINE_MIN_PASSED=300) is far below the real
-         suite size, so a run that silently drops half of itself clears it. This script fails when
+         "Passed!" for whatever finished. CI's floor (ENGINE_MIN_PASSED, set in
+         `.github/workflows/ci.yml` — 900 at this writing) is still below the real suite size, so a
+         run that silently drops a third of itself clears it. This script fails when
          Total is under -MinTests, and fails on the runtime's own death signatures regardless of
          what the summary line claims.
 

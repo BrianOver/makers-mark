@@ -12,8 +12,8 @@ the repo, so re-run the commands before quoting any of them.
 ```bash
 ls godot/assets/art/*.png | wc -l          # 355 after the 2026-08-14 variation pools (was 227)
 ls godot/assets/icons/*.svg | wc -l        # 28 icons (9 glyphs + 19 ore)
-ls godot/assets/audio/*.mp3 | wc -l        # 4 music tracks
-find godot/assets -name "*.ogg" | wc -l    # 49 narrator lines
+ls godot/assets/audio/*.ogg | wc -l        # 4 music beds
+ls godot/assets/audio/narrator/*.ogg | wc -l  # 49 narrator lines
 ls art/build/*.json | wc -l                # 92 provenance records: 84 SDXL + 8 backfilled by U9
 ```
 
@@ -99,15 +99,16 @@ swap, and the ForgePanel focus flash.
 
 ## 3. Audio
 
-**Music** — 4 committed MP3s, one per phase, crossfading over 2.5s. Bed level `-22dB` plus a
-per-track trim. Missing files degrade to a synthesized `MusicBed` with a loud warning, never silence.
+**Music** — 4 committed Ogg Vorbis beds, one per phase, crossfading over 2.5s. Bed level `-22dB`
+plus a per-track trim. Missing files degrade to a synthesized `MusicBed` with a loud warning,
+never silence.
 
 | Phase | Track | Trim |
 |---|---|---|
-| Morning | `day-first-light.mp3` | -6.9dB |
-| Evening | `town-dusk.mp3` | -3.8dB |
-| Camp | `night-still.mp3` | 0dB |
-| Expedition (+ Deep) | `quest-wait.mp3` | -7.5dB |
+| Morning | `day-first-light.ogg` | -6.9dB |
+| Evening | `town-dusk.ogg` | -3.8dB |
+| Camp | `night-still.ogg` | 0dB |
+| Expedition (+ Deep) | `quest-wait.ogg` | -7.5dB |
 
 No track carries a positive trim, and `AudioTests.NoComposedTrack_EverCarriesAPositiveTrimDb` makes
 that permanent. See §7 for why that test exists.
