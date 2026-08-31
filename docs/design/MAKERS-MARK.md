@@ -4613,32 +4613,57 @@ Provisioned flee-line verdict, dead-only kin, starters-deep-before-recruits-wide
 shopping stays on, seasons touch rank-0 from day 8, the Heartpiece purchasable, re-offer until
 departure, the Quiet Morning over render-only, the storyteller deferred to The Mark Endures, the
 Progress unlock unsplit, and the rest). The full arguments lived in the 2026-08-31 dossier round;
-what binds is here, and the PR landing this section is the record. **Five forks change what gets
-built and are the owner's:**
+what binds is here, and the PR landing this section is the record.
 
-- **P2-OQ1. The wake's no-march day.** (a) Full town rest — *recommended*: the fiction is "the
+**Four of the five forks were ruled by the owner on 2026-08-31, the day this section landed.** They
+are recorded below as rulings, not questions, and the units they gate are unblocked. The fifth is
+deliberately still open and says why.
+
+- **P2-OQ1. The wake's no-march day — RULED 2026-08-31: (a) full town rest.** The re-baseline is
+  granted; `P2-PEOPLE-12` is unblocked and carries its golden re-record, its balance re-baseline, and
+  the two-sided re-pin of P3's windows. Re-measure the death rate against the current baselines
+  before pinning the new windows — the ~1.8-deaths-per-10-days figure the estimate rests on came from
+  the old `BaselinePlayer` harness, which is documented to under-craft. The original options, kept
+  for the record: (a) Full town rest — *recommended*: the fiction is "the
   town buries its own before it hunts", and the day after a death stops being mechanically
   identical to every other day, which is the original complaint. Costs a golden re-record, a
   balance re-baseline, ~5–7 raid days per campaign, and P3's pinned windows move and are
   re-pinned two-sided. (b) Party-mates only — same re-record, weaker fiction. (c) Presentation
   only — free, and ships a wake that watches heroes march past the coffin. 80% of the Wake ships
   before this fork either way (P2-PEOPLE-05..07, 12's staging half).
-- **P2-OQ2. How wrong Bryn gets to be.** (a) Full — her rule costs the player one likely sale and
+- **P2-OQ2. How wrong Bryn gets to be — RULED 2026-08-31: (a) full.** Bryn's greedy rule stands as
+  written; `P2-ONBOARD-08` builds it and `P2-PEOPLE`'s arc lines carry her correction. The discipline
+  that makes this legal is not optional and is restated here so no later session softens it: **her
+  mechanism copy is unattributed and true; only her opinion is wrong, and she says it is an
+  opinion.** Every correction arrives from the sim — a logged pass reason, a remembered fleece —
+  never from copy telling the player she was wrong. The original options: (a) Full — her rule costs
+  the player one likely sale and
   one goodwill hit before the sim corrects her; discovery is the player's first act of mastery,
   and every correction comes from the sim, not from copy — *recommended*. (b) Shelf-only —
   following her never costs remembered goodwill. (c) Not at all — T10's honest Bryn stands, and
   the one beat that makes her a person is forfeited. This is the mentor's identity, not a knob.
-- **P2-OQ3. Deleting the ticker.** A shipped surface, and one of the five links currently lives
+- **P2-OQ3. The ticker — RULED 2026-08-31: (a) delete the form.** `AdventureTicker`'s marquee dies;
+  its `FormatLine` switch survives as the composer for the book's day pages, which own retention.
+  The deletion may not land before the day pages exist — `P2-MEMORY`'s book units gate it, or the
+  event tail has no home for a wave. If the bottom edge reads dead afterwards, the sanctioned
+  fallback is a single fading latest-line label, never a second marquee. The original argument: a
+  shipped surface, and one of the five links currently lives
   only there — that is the argument *for* deletion, since its only vessel is a 28px strip at
   48px/s that never pauses. (a) Delete; day pages own retention; the fallback if the bottom edge
   feels dead is a fading latest-line label, recoverable in an afternoon — *recommended*.
   (b) Keep-and-fix with fade masks and pause-on-hover — genuinely cheaper, and keeps the
   unreadability permanently.
-- **P2-OQ4. The book's export.** One self-contained HTML file, written client-side, same model as
+- **P2-OQ4. The book's export — RULED 2026-08-31: yes, ship it.** One self-contained HTML file,
+  written client-side so file IO stays out of the sim, composed from the same model as the in-game
+  book so the two cannot diverge. Two constraints ride the ruling: the export names what it omitted
+  when an asset is missing rather than degrading silently, and it is stamped with the day it was
+  composed, because the world stays open after binding and a file that claims to be final would be a
+  lie. The original framing: one self-contained HTML file, written client-side, same model as
   the in-game book so divergence is structurally impossible — *recommended*: a real file the
   player keeps is half the idea's power. It is also the one place this game writes to disk on the
   player's behalf, which is the owner's call, not a default.
-- **P2-OQ5. The faction cut.** Only askable after `P2-MEMORY-09` makes the layer's copy honest,
+- **P2-OQ5. The faction cut — STILL OPEN, deliberately.** Only askable after `P2-MEMORY-09` makes
+  the layer's copy honest,
   and only as an explicit reversal of the 2026-08-24 OQ1 ruling ("buy the ore, or buy the
   faction's favour" — the gift declined). The ideation's case: factions have no faces, no memory
   a player can love or wrong, and their expressive range is a discount — a reputation costume on
