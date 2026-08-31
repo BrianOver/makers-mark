@@ -2913,8 +2913,10 @@ U1/U2 landed in #495; its U3–U5 were dead, because `SkilledSmithPlayer` is ref
 test and is wired into neither `GameSim.Cli` nor the Balance suite, and its U6 `AutoCraftGrade` change was
 overtaken by a different ruling on 2026-08-09. The honesty-riders plan's U2 landed 2026-08-14 in
 `7547c733` (#499) — this question used to assert **all four** of its units were unshipped, which was
-false — U3 landed a quarter, and its U1 and U4 are booked above as U48 and U49. Nothing is queued, so a
-future wave may take a slot without displacing anything.
+false — U3 landed a quarter, and its U1 and U4 are booked above as U48 and U49. The deletion pass
+(#653) emptied both slots and removed the `docs/plans/` directory itself. Nothing is queued in the
+slots today; Phase 2 (§11.15) books its waves at index level and each takes a slot by a rule-4 name
+grant when it starts.
 
 ### What must survive, named so this rework cannot quietly discard it
 
@@ -3113,3 +3115,1581 @@ discovered them. The branch was reverted and deleted rather than parked (rule 9)
   has carried two that contradicted each other. Compare the count against the floor, never the
   runner's verdict: two concurrent gdUnit runs each report "Failed: 0" while silently losing
   hundreds of tests.
+
+---
+
+# §11.15 — Phase 2: the guided rework and the five programs beside it (2026-08-31)
+
+**This is a program spanning seven unit prefixes, not a wave.** One substrate domain (the screen),
+the full rework of the guided course, and five programs beside it: the proof staged, the memory
+bound, the heroes made people, the long game given a middle and an end, and the honesty sweep.
+Its waves take `docs/plans/` slots by rule-4 name grants when they start (§11.6); until a wave is
+granted, its units exist only as index rows here — **on purpose**. §11.14.14 (T10) keeps executing
+in its own U-number namespace and nothing here renames or displaces its remaining units.
+
+## Why this section exists
+
+Phase 2 exists because the game now earns its sentence and delivers it badly. The counterfactual
+proof — the moat — prints as one ledger line under a marquee that scrolls it off the screen
+mid-word. The campaign's closing ceremony is the one modal in the game with no ownership at all
+(`ChronicleScroll` is absent from `MainUi.OverlaySurfaces()`, so the clock runs and the interact
+prompt draws over the ending). The course teaches links 1–3 and stops the day before the game
+starts proving itself. And the day-11 wall ends playthroughs before any of it matters.
+
+The evidence base, and what kind of evidence each piece is:
+
+- **Measured, in-repo:** three censuses on `main` — `docs/reference/rules-census.md` (1,370
+  lines: every decision the sim makes), `docs/reference/surfaces-census.md` (458 lines: every
+  screen, input, and wire), `docs/reference/text-census.md` (2,561 lines, ~2,100 distinct
+  strings — every word the game says). The text census convicted 5 lies, 12 jargon leaks,
+  8 voice breaks, 4 silences.
+- **Measured, rendered:** a six-frame pass via `tools/shoot.ps1` that found what no code-reading
+  pass could — a sentence physically severed by a button row, a modal with the world's interact
+  prompt drawn on top of it, a ticker clipped mid-word at both edges. Visual defects need rendered
+  pixels; that lesson is already paid for in this repo.
+- **Researched, external:** an onboarding research pass (Factorio's skippability standard,
+  Recettear's wrong-on-purpose mentor, the XCOM 2 hidden-assist backlash, the scrapped-prologue
+  case). Two of its sources rest on search summaries and are flagged as such where they bind.
+- **Designed, this round:** seven dossiers (onboarding, the screen, the telling, the memory, the
+  people, the long game, honesty) and an integration round that resolved twelve cross-dossier
+  collisions. Every dossier verified its own claims against `main` by reading and, where possible,
+  by measurement; claims a dossier flagged as inference are carried below **as inference**, never
+  laundered into fact. The dossiers are session artifacts; everything from them that binds is in
+  this section, and the PR landing it is the record.
+
+One collision from that round is this section's founding rule. The onboarding dossier proposed
+units U48–U59, continuing T10's numbering "from U47". The doc-truth pass (#653) had **already**
+booked U48–U52 the same way, hours earlier. Both continued from U47; they collided — the fourth
+generation of the exact numbering disease #653 spent 3,038 deleted lines curing, reproducing
+itself within hours of the cure. Hence P2-KTD1: Phase 2 has its own namespace and T10's U-numbers
+are never continued by anyone again.
+
+What Phase 2 is *for* is the product sentence's three undersupplied parts, named in the ideation
+round and standing up under every dossier's independent findings: ***Torvald*** (a person to care
+about — the six starters are mechanically individual and legible as none), ***provably*** (a proof
+witnessed, not read — the replay exists, the staging does not), and the implied ***and then*** (a
+campaign the sentence accumulates into — the middle asks one question for ten days and the ending
+is received, not made).
+
+## The shape — one substrate, the rework, five programs
+
+| Prefix | What it is | Link served | Strengthens or decorates | Cost class | Proof it worked |
+|---|---|---|---|---|---|
+| `P2-SCREEN` | The layout arbiter and the surfaces it disciplines | substrate | Neither — it is the floor the links stand on. Without it, links 4–5 are *delivered broken* | ~14 godot-only units, zero sim | Rendered frames: no surface draws over an owner; every disabled control reads disabled |
+| `P2-ONBOARD` | The full guided rework: the teaching lease, The Warrant, Bryn's arc | links 1–5, taught | Strengthens — the course currently stops at day 3, the day before link 4 first fires (measured: day 4, 12 of 12 seeds) | 8 units, one sim-side harness policy | A pinned 8-day replay of the curated seed; the tab-through lane green |
+| `P2-PROOF` | The Telling — the counterfactual staged, twice through | link 4 | Strengthens — the proof is the moat and it is currently one line | 7 units, one Contracts micro-PR + golden | The staged verdict provably never contradicts `ComputeBeats` |
+| `P2-MEMORY` | One book, the channel named, the ticker's job reassigned | link 5 | Strengthens — link 5's only vessel for a dozen event types is a 28px marquee that forgets after 3 days | 16 units, two Contracts micro-PRs | Full retention, queryable by actor and day; the beat says how the item reached the hand |
+| `P2-PEOPLE` | The Regulars, Kin of the Fallen, the Wake | the *Torvald* in the sentence | Strengthens links 2 and 5 through the person they are about | 13 units, mostly authored content; two Contracts micro-PRs, one owner-gated re-baseline | The owner can name three heroes by personality after one evening (review C's test) |
+| `P2-LONG` | The middle (hazard seasons), the Final Commission, failure, The Mark Endures | links 3–5's *availability* | Strengthens by existing at all — the wall ends playthroughs on day ~11 and a player who leaves never meets any link twice | 22 units, the expensive domain: 5 golden re-records, 5 balance re-baselines across four waves | The day-11 question changes (re-measured); the ending is made of the game's own decisions |
+| `P2-HONEST` | Twenty-three untruths fixed and the four families that produce them tripwired | all five | Strengthens — a proof chain the copy lies about is a chain the player cannot trust | 10 units, almost all fast-lane | The censuses run in the fast lane and deny by default |
+
+### P2-SCREEN — who owns the pixels
+
+All 14 `.tscn` files are a single node with a script attached; the whole UI tree is built at
+runtime by an append-only 5,000-line method, so stacking order is an *emergent property*, not a
+decision anyone made. Measured top-down: `TabFade` (layer 100) · `CompanionDock` (layer 40) ·
+`BuildStamp` (layer 5) · `_interactPrompt` (`MainUi.cs`, the highest layer-0 node in the game) ·
+… · the `Layout` VBox with the toast strip as child #2, below every panel. Five of the eight
+rendered-frame defects fall straight out of that table. None are bugs in the ordinary sense; each
+is the correct consequence of the order that was written. **The defect is that there is no place
+where the order is a decision.**
+
+The fix is an arbiter: surfaces declare claims, one owner per region per tick, modal ownership as
+a property of the region rather than a hand-listed roster. The hand-written eight-row
+`OverlaySurfaces()` array is missing exactly one row — `Chronicle`, so the ending ceremony runs
+unowned — and the derivation source already shipped: `TutorialSurfaceRegistry` (U9, #626) carries
+a live content-root resolver per surface, `Chronicle` included. `OverlaySurfaces()` becomes a
+projection over it and the class of defect dies rather than the instance.
+
+Two corrections from the honesty pass are carried here so this section does not repeat refuted
+claims: the three dead theme keys (`GameTheme.cs:414-416`, Godot-3 spellings; plus per-node
+repeats at `MainUi.cs:4035-4036` — five sites) are **cosmetic, not catastrophic**: Godot falls
+through to the default theme, so disabled labels dim to the default grey rather than the chosen
+50%-alpha Bone. Three intended colours do nothing, silently, in a hand-typed string API with zero
+coverage — that is the defect. And the "8 vs 18 vs 20 rosters" framing was a red herring: the
+three lists answer three different questions and are correctly different sizes; the real defect is
+the one missing row above.
+
+Applied defaults from the screen dossier's question list (each reversible cheaply): the advisor
+becomes a peer surface and the Today card belongs to the course alone; rent and dues demote to one
+worded line each with no new verb (a pay button would be a deadline dressed as a verb — see
+`P2-LONG-17` for the half that gets a face); the strip carries no death tally (a tally next to
+your gold trains a death to read as a decrement); the Heroes roster gets a door on the Depths
+panel, because it is currently unreachable exactly while its subjects are underground; modal
+dimming is per-surface, declared in the claim; the arbiter is UI-scale aware, **but the scale
+slider is not promised working until someone has looked at a rendered frame at 1.25 and 1.5**.
+
+### P2-ONBOARD — the guided rework and The Warrant
+
+T10 built the substrate — anchor vocabulary, voice budget, honesty machinery — and this rework
+keeps all of it. What T10 lacks is an owned screen (P2-SCREEN's job), a curated first campaign,
+and a mentor with an arc that includes being wrong.
+
+**The catch that reshaped beat 0:** the research draft opened on "someone else's mark — a finished
+chain that is not yours." `Contracts/Items.cs:106` — `Item.PlayerCrafted => Mark is not null` — so
+a live item authored with a predecessor's mark would *earn attribution beats*, corrupting link 4's
+"no participation credit" at the exact moment the game is teaching it. **Beat 0 is told, not
+simulated**: Bryn tells the Stonewake story through a face, which is ruling 11.7.3 applied.
+
+**The Warrant** (days 1–7) is the curated first campaign, and nearly all of it is already the
+shipped default: `HeroRoster.StartingSix()` is pure data with no RNG (Torvald, Brunhilde, Kael,
+Sable, Elowen, Moss), 100 gold, 6 copper. What is added: a pinned seed found by search —
+`BatchRunner` already has the `--policy` axis built forward-fit for exactly this — against seven
+criteria (day-1 muster with Torvald marching; day-2 camp; day-3 answerable commission; day-4 first
+beat with no death sharing its night; one death days 4–6, not Torvald's, not a wipe; a deep-bound
+camp day 5–6; never destitute). Deliberately **not** authored: the first commission's content and
+the ore price — both are sim outputs; the seed search selects for their *shape*. Left to the sim,
+untouched: every price, every hero decision, every death, every beat.
+
+**Flagged inference, carried:** how much of the day-1–7 event stream is invariant to player-action
+divergence is *not measured* — it is reasoned from the deliberate stream-position stabilisation in
+`GameComposition.cs`. The pin test therefore phrases its promises as what the replay proves, the
+player-facing fiction promises only what survives divergence (the cast, the warrant, the
+calendar), and the seed search must additionally run perturbed scripts (skip the bounty, skip the
+counter) and trim the intended-beat set to what holds across them. That check is part of
+`P2-ONBOARD-04`, not an afterthought.
+
+**Bryn's beats are deliverables.** Beat 0, at the bench:
+
+> Bryn. Journeyman — the last smith's, and now yours, if you'll have me.
+> Sixty years back a smith at this bench quenched a blade called Stonewake. Floor two of the Mine,
+> it turned the blow that should have ended a digger named Petra Coalhand. She lived to be old and
+> loud about it. The wall still keeps the line, and the smith's name is in it — because the mark on
+> the steel proved whose work it was.
+> The smith I served after never stamped a thing anyone checked. Good hands. Nobody remembers them.
+> Six of them go down into the Mine now. You don't — the ladder isn't yours, and no one in this town
+> takes an order from you. Not them. Not me. What's yours is what they carry, and carrying it is
+> always their choice.
+> So. One piece today, with your mark on it. I'd like to watch.
+
+Beat 3, her rule, wrong on purpose (Recettear's lesson: a mentor who gives an *opinion* can never
+be caught lying about what the sim decided):
+
+> My rule, since you're asking the shelf to do your haggling: cost, then half again on top. Coin is
+> the only thing this bench eats, and a hero who wants it will find the gold. That's my rule, anyway.
+> You're the one with the stamp.
+
+The elegant half is that both arms are real and neither is rigged: if the player follows her rule,
+the item likely passes unbought, the pass reason is logged, and the Demand board's own unlock
+condition ("a hero's passed on your goods", `SurfaceUnlocks.cs`) fires — **her bad advice causes
+the discovery surface to open**. If the player ignores her, the sale lands at the bell and the
+proof pays immediately.
+
+Beat 6, the null-proof line — the standard stated before it is met:
+
+> Nothing tonight carries your mark. The ledger writes only what the retelling proves — no line is
+> ever owed, and none is ever borrowed. When one comes, it will have earned its ink.
+
+Beat 7, she names tomorrow and leaves the bench:
+
+> That's a day, and you kept the whole shape of it. Tomorrow someone comes to the counter and talks
+> to you with their own mouth — the shelf is where they find you; the counter is where they know you.
+> Morning, then. I'll be at the bench.
+
+Her arc runs six lines — cold open, the greedy number, the proof night (existing line kept), the
+death night (existing pair kept verbatim), **eating her rule** on the first pinned counter close
+whose goodwill rose:
+
+> That premium — that's your fair price from the other day, coming back with interest. My rule never
+> once earned me one of those. Keep yours; I'll be over here revising mine.
+
+— and the goodbye at graduation:
+
+> That's the week, and the bench was only ever borrowed — it's yours. The Lessons book keeps
+> everything I taught you, including the one thing I taught you wrong; you caught it faster than I
+> did. Price them fair. Watch the wall.
+
+She returns exactly once, when the player's mark first lands in a wall legend:
+
+> I came back to read the wall. Your line's on it. That's the whole reason I stayed a journeyman this
+> long — so I'd know the real thing when I saw it. Don't let me keep you.
+
+Skippability holds Factorio's standard mechanically: no completion predicate reads comprehension,
+the day-8 backstop stands (`TutorialFlow.ChainBackstopDay`), unread dormant beats retire `Skipped`
+— never falsely `Done` — and the skip door names its cost in one sentence: *"The first week was
+set out for you — skipping it trades the guided shape for the open one. The warrant holds either
+way."* That sentence and ruling R12 do not collide: the **skip door at New Game** keeps the
+warrant (T10's R30, the returning smith's door), while **dismissing the course mid-week** forfeits
+it (R12, ruled) — two different doors, both costs named.
+
+The rework carries nine deletions, because a rework that only adds is not a rework: the
+`first-morning` cold open (beat 0 replaces it); all WHERE copy in cards (the pointer owns WHERE);
+the card's second text block; the four open-timed banner lessons *as banners* (fire-on-open dies
+as a trigger category — trigger plus centered position jointly guarantee the covered-panel
+collision); the duplicate "The Mark · 1 of 1" card; the unreachable Bryn string in
+`MentorVoice.cs`; the build stamp from the play frame; the primer's five-line phase legend; and
+the generic wait fallback, which becomes a test assertion — under refusal-on-the-control, a
+surviving generic refusal means a legality case the route missed.
+
+### P2-PROOF — The Telling
+
+The flagship staging: after a beat-carrying night, one button on the beat's own ledger row —
+**"Ask how it happened."** The survivor tells the recorded fight as an abstract reconstruction
+driven entirely by recorded rolls; the frame holds, desaturates, and plays again from the
+divergence round with the item removed — same recorded dice against the counterfactual numbers.
+This time Torvald falls, and stays down: *"The rest of that night never happens."* Then the mark
+stamps the frame, colour floods back — the saturated world is the real one, because the item is
+real — and the verdict prints:
+
+> **Emberbite turned the killing blow on floor 3. Torvald lives.**
+> *The blow read 15. Emberbite drank 6 of it. He stood at 3.*
+
+Five findings from the dossier's own verification pass reshaped the design, and the first one
+re-prices it:
+
+1. **The recorded fight does not survive the night.** `ExpeditionRevealSystem.cs:60` clears
+   `GameState.PendingExpeditions` at the reveal; the only survivor is
+   `SimAdapter.LastRevealedExpeditions` — client-side, replaced at the next Evening, lost on
+   relaunch. The ideation's "zero new sim data" claim was wrong: the record *exists*; it does not
+   *persist*. So the Telling needs a Contracts micro-PR and a golden re-baseline (`P2-PROOF-01`),
+   and it is the program's cheapest one — trailing init members, no draws.
+2. **The counterfactual's inputs do not survive either.** Beats were computed against the heroes
+   *as they marched*; the reveal then applies XP and levels. A telling recomputing against live
+   heroes could contradict the beat it explains — a hero who levelled overnight no longer dies to
+   the recorded blow. Raid-time facts are snapshotted at result-build time (`PartyAtDeparture`);
+   item stats are safe to read live (verified: nothing in `sim/GameSim` writes `Stats` after
+   minting).
+3. **KillingBlow is a recorded fact, not a counterfactual** — the flagship "turned the killing
+   blow" sentence is actually a `LethalSave`. Different beat types get different stagings;
+   pretending all five support the same second pass would be a lie.
+4. **There is no initiative to strip.** Heroes fight the floor's monster alone, sequentially, in
+   HeroId order (`ExpeditionResolver`). The honest form is a round strip of one duel, the rest of
+   the party present as dimmed context — an initiative strip would fabricate a fight structure the
+   sim does not have.
+5. **The PotionLifesave edge is a dishonesty trap:** the engine's sum ignores later heals, so a
+   strict replay might not cross zero. The query detects this and downgrades to a margin card.
+   Never soften, never contradict.
+
+Each beat type's staging is written to its epistemics. KillingBlow gets no dishonest second pass —
+the stamp lands on the kill frame, then one honest epilogue: *"Without it, the beast still stands
+at 7 — and there the record ends. No one rolled what comes next."* That refusal to invent an
+outcome **is the game showing its work**. Provisioned is the no-drama beat honoured as such:
+*"It would have run the same without it — this time."* — the "did not matter" case said out loud,
+because there is no participation credit and the telling is where that principle gets its voice.
+The composite (beat earned, bearer died deeper): *"{item} turned the blow on floor {floor2}. Floor
+{floor4} took {hero} even so. Two floors are not nothing. They are two floors."* A wiped party's
+teller becomes the book: *"Nobody came up to tell it. The winch-keeper reads the ledger the way
+the ledger wrote it."*
+
+If never used: nothing. No toast, no counter, no nag — the existing ledger line stays complete,
+and the telling competes on desire, never necessity. The 1,287×-nag failure mode is structurally
+unreachable because the initiating party is never the game: one button, inside a modal the player
+opened, creation-site count == 1, pinned by test.
+
+**The rival's mirror is ruled out and should not be re-sought.** Removing an object that existed
+and participated is a fact about the player's work; *inserting* one that never existed ("a Fine
+shield would have held") elevates one member of an unbounded hypothetical family to chronicle
+truth — law 4 losing its teeth at the surface where they matter most — and it converts Spiritfarer
+grief into Darkest Dungeon guilt, a soft order aimed at the player. The honest substitute ships
+instead: the memorial states the *recorded* facts of the fatal blow — *"The blow read 15. Her
+shield drank 2."* — and the player's own head does the counterfactual.
+
+### P2-MEMORY — one memory, five readers, one book
+
+The memory is already unified: every remembered fact is a stamped `GameEvent` in
+`GameState.EventLog` plus three projections and the item's own `History` — sound, deterministic,
+append-only. **The sprawl lives entirely at the reader layer**: five separately-built panels with
+private widget helpers, plus a marquee rendering another reader's output verbatim. The "five
+memory systems" framing dissolves on inspection: the ledger is news at the threshold of memory;
+gossip is a voice that quotes the record (R14 already enforces the citation); the player-facing
+chronicle is six tally rows wearing a chronicle's name; and the memorial was never a surface at
+all — it is a record rendered inside LegendsWall. Conflating news with memory is how the memorial
+came to nag 1,287 times: a permanent fact re-presented nightly as if it were news.
+
+What remains: **one book** — browsable by actor, existing from day one, growing all campaign,
+hosting Honor and Reforge on the pages of the fallen, absorbing the ticker's tail as day pages,
+and bound at campaign end. The ending is not a different surface from the campaign's memory; it is
+the same book, finished. `LegendsWall.cs` is refit rather than rebuilt (it already owns the verbs,
+the way-ins and the tutorial lessons); `ProvenanceCard` becomes the book's item-page renderer;
+`ChronicleScroll.cs` is deleted when the book takes the ending. Nothing in the sim moves for the
+merge — pure composition over existing data, which is R4's licence ("retire the module, keep the
+promise") taken literally.
+
+**The highest-value single change in the whole phase is one composed sentence.**
+`CounterSaleClosed` (`Contracts/Events.cs:193`) is read by `GoldLedger`, `RelationshipSystem`,
+`MarketLife2D` and `TutorialFlow` — and by no ticker case, no gossip subject, no night mention.
+The game's most personal channel is its only silent one. The fix is a pure read over the existing
+log: when an item earns a beat, say how it reached the hand that held it —
+
+> *Emberbite turned the killing blow on floor 3. Torvald lives.*
+> *He haggled it off your counter two days ago.*
+
+Clauses per channel, all recoverable from the log today: counter — *"He haggled it off your
+counter {N} days ago."* · pinned — *"You named the fair price at the counter, and she paid it —
+{N} days ago."* · shelf — *"She took it off your shelf, day {N} — you never met over it."* ·
+commission — *"The piece she asked you for, delivered day {N}."* · runner — *"You put it in the
+runner's hands yourself, at the vigil."* · heirloom — *"Forged from what {FallenHero} carried."*
+This turns the product sentence from a link-4 receipt into the whole chain said at once, and it
+closes the counter-sale silence at the strongest possible place.
+
+The death card gains two pure reads: the pack line, filtered to consequence (*"The {item} you sent
+was still in her pack, unopened."*; non-player consumables render silence, because the town's
+memory is about your hand; an empty pack with the `Reckless` stocking trait — *"She carried no
+salve. She never did."* — the one place that trait becomes grief instead of shopping colour), and
+the last-blow line from `CombatEvent.KillingItem` (*"Her last blow felled the {monster}. The blade
+was not yours; the arm was hers."* — honest attribution, no credit taken). The night card can only
+compose these while `LastRevealedExpeditions` lives; `P2-PROOF-01`'s retention makes them
+composable from persistent state — **one Contracts change paying for two features**, which is why
+the proof's first unit sequences ahead of the wake page.
+
+The book's closing spread evaluates fifteen characterisation predicates — all integer-computable
+from the log — and prints the three most specific. Among them: *"You priced for people, not for
+coin."* · *"You took the coin that was offered. Every time."* · *"You let the shelf do your
+talking."* · *"You never once reached into the dark."* · *"You held {Item} {N} days for {Hero}.
+It mattered when it left."* · *"Every name on the wall heard you say goodbye."* · *"The wall keeps
+{N} names. You never said one of them aloud."* · *"The wall stayed bare. That is the rarest line
+in this book."* · *"Your gold pointed at floor {N}. {Hero} followed it down and stayed."* · *"No
+work of yours turned a fight this season. The Mine neither knows nor cares. The town does."* The
+fixed closer is never scored:
+
+> **You never went down. Everything in this book happened anyway, because of you.**
+
+The shipped "Your craft wrote their legends" line survives as the cover's verso. A bad ending is
+handled by composition, not special cases — zero beats earns its epithet plus one line, not a
+lecture: *"This chapter is short. The next campaign's doesn't have to be."*
+
+**The ticker dies as a form, and its jobs are reassigned, every one.** The argument to keep on
+record: *a scrolling strip is reading on a timer — it decides when you may start a sentence and
+when you must stop, in a game whose laws forbid timers on anything that matters.* Its retention is
+3 days — a memory surface that forgets — and for a dozen event types it is the only sentence the
+game ever says. The event tail moves into the book's day pages, with the ticker's own `FormatLine`
+switch (`AdventureTicker.cs:133`) surviving as their composer — full retention, queryable by day,
+in the surface that is already link 5's home. The genuinely urgent 0–2 lines a day are already
+covered by the ledger, the narrator and `WorldNotice`. If the feel-test misses the bottom-edge
+ambience, the cheap re-add is a single latest-line label that fades after read — not a marquee.
+Deletion of a shipped surface is an owner fork (P2-OQ3); the day pages ship regardless.
+
+Honesty riders that live in this domain because the packs do: the six joking death lines are
+rewritten **in place, same variant count** — the count is the hash divisor, and a count change
+re-rolls every unrelated line (*"Turns out floor {floor} bites. Who's next?"* becomes *"Floor
+{floor} is quieter tonight. So is this room."*; *"{hero} had one job on floor {floor}: not that."*
+becomes *"{hero} owed nobody here a thing. Settle your own tabs tonight."*). `{cause}` gets a
+grammar **contract**, not per-line whack-a-mole: it is minted as a lowercase predicate completing
+"was …", templates may place it only where that is grammatical, and a pack test asserts no death
+variant starts a sentence with it. And all 72 `cooled` FactionPack variants advertise a surcharge
+the sim cannot charge — standing is discount-only (`FactionDriftSystem.StepTowardZero` floors at
+zero) — so the pool is rewritten to discount-fades framing, same counts. The ticker and the tavern
+currently contradict each other on the same event, on the same night; after this they agree.
+
+### P2-PEOPLE — the person the sentence is about
+
+**Governance first:** §11.5 records deeper hero attachment as the named post-v1 queue leader that
+explicitly does not displace P7, reopening on P4's evening. This domain honours that: its opening
+unit is pure-Godot 11.7.3/11.7.4 staging (extend the shipped tavern thread; scenes read the sim
+and never steer it) and **doubles as the probe that produces the evidence the ruling needs**.
+Everything sim-touching — Kin's mood inflection, the Wake's no-march day — waits behind its ruling
+or its named owner fork.
+
+What measurement says about the six (computed via a StableHash replica validated against the five
+golden pins in `FlavorEngineTests`, not executed in-repo): **Brunhilde and Moss derive the same
+shop-personality pair** (Discerning, Prepared), and because traits are a pinned pure function of
+`(Id, Name)` with no stored field, this cannot be patched — the arcs must differentiate in prose
+(her wariness turned outward into a written list of everyone the Mine has taken; his turned inward
+into disbelief that the mark matters). From the twelve ten-day chronicles in `runs/`: ~1.8 deaths
+per 10 days, all post-warrant, none a Vanguard or Striker; **Moss died in 10 of 12 seeds inside
+ten days, Elowen in 7 of 12, Torvald never** — so Torvald anchors the long arc, and the Mystics'
+arcs must land their durable facts by scene 2. *(Old `BaselinePlayer` harness, known to
+under-craft; re-measure before pinning the Wake's windows on it.)* And the triple-cursed Moss is
+three honest rules composing into a cruelty nobody wrote: shopping is a strictly sequential
+ascending-HeroId pass, so Torvald gets first pick every morning of every campaign and Moss gets
+the leavings; he is the poorest starter and carries a +1 quality bar he can rarely afford. The sim
+emits his refusals every morning; no surface has ever composed them into a sentence.
+
+The six get want / fear / belief / durable fact, each legible in shipped mechanics — Torvald's
+brother Halvar died on floor 3 before the game began (the muster board's "Torvald — floor 3" row
+gains the caption "Halvar's floor" after his scene fires: **the same sentence on the same board
+becomes a different sentence**); Kael sends coin home to a sister every week, and Wren is already
+in the shipped recruit name pool (`HeroRoster.cs`) — the Kin pre-plant; Sable counts her exits and
+*is* the shipped competence-retreat rule with a philosophy; Elowen is saving to leave, and her
+death reads as the town costing her the exit; Moss believes the mark doesn't matter, and his death
+completes the argument he was making — the wall takes his name for free, the first thing in this
+town that didn't cost him anything.
+
+Scale, honestly: eight scenes per starter (not twelve — a 12-scene arc is a mausoleum for a hero
+who dies in week one), 15 trigger types, all true recorded events, order ~150 authored pieces
+total across starters, recruits, kin and wake. The register gate is mechanical: trigger ids
+validated against the taxonomy, no engine words (the text census's jargon list is the banned-word
+seed), no punchlines in any scene whose trigger involves a death, and a human reads every batch
+before it freezes (11.7.6's generate → curate → freeze, unchanged). One constraint shapes the
+fiction permanently: **arc facts never appear in sim-generated prose** — gossip lines serialize
+into saves and the sim cannot know what the adapter has shown; Halvar can be named on the muster
+caption, the vigil slate, the wake and the memorial, never by `GossipGenerator`.
+
+**Kin of the Fallen** honours the roster freeze exactly. `HeroRoster.CreateRecruit`'s contract —
+"Draw order is fixed and contractual: name, class, gold — three draws from the kernel stream,
+always" — stands untouched, because the connection is *derived* via `StableHash`, never drawn, and
+a test proves the draw count per recruit is still exactly 3. Four kinds — Sibling, Apprentice,
+Debtor, Rival — each implying a different first scene and a different sign of feeling. The
+inflection rides `MoodPermille`, which is already contractually influence-only, so **Kin inherits
+law-compliance from the field it rides**; traits stay pure. Warm +80 (your work earned a beat on
+the relative, or you honoured their memorial), neutral kin +40 (replacing the blanket
+`RecruitSystem.KinOfDeadMoodBonus = 60`, which dies), cold −40 (the relative died wearing your
+Poor/Common make, or a recorded fleece against them) — *"fleece Kael and his sister knows"* is
+literally the cold row. Wren's counter line, warm variant, every slot resolving from the
+chronicle and no generic fallback:
+
+> She carried this before me. Make the next one lighter on the purse.
+
+The heir's commission answered with the heirloom reforged from the fallen's own piece gives the
+reforge verb its natural customer — the memory dossier's payoff framing, carried in the copy
+rather than as a second mechanism.
+
+**The Wake.** A muted dawn requires a sim change and the grep that found nothing found nothing
+because there is nothing: `PartyFormation.FormParties` parties every living hero, always. But the
+phase machine already contains the plumbing — the Morning→Evening collapse fires whenever
+`FormParties` returns empty, so the entire sim change is one rule in one function: return empty
+when any hero's `DiedOnDay == day − 1`. The price, honestly: golden re-record plus balance
+re-baseline, ~5–7 raid days per campaign, and P3's pinned windows move and must be re-pinned
+two-sided. Second-order costs named so nobody finds them later: no commissions posted on a wake
+morning; bounty judging skips the day, effectively shortening the 3-day expiry (name it in copy —
+*"the town buries its own before it hunts"* — rather than extending it); needs streaks lengthen by
+a day. That is owner fork P2-OQ1 — and the Wake ships in two stages deliberately, so ~80% of it
+(the fallen's page, all three verbs, the death-night staging) exists with no behavioural
+re-baseline even if the fork is refused.
+
+The three wake verbs: **forge the grave-marker** — a real craft, slot, materials, quality roll,
+your mark, rendered on the wall permanently (link 1 literally embossed into link 5) · **choose the
+remembrance** — validated against events that truly name the fallen, the unchosen default scored
+by `PresentationScheduler`'s existing stakes grammar so no new judgment is invented · **the
+heirloom question** — the existing reforge verb staged at its fictional moment. Skipping stays
+legal, cost named: *"The wall keeps what you'd have chosen. The morning doesn't."* Copy renders
+only real facts — a missing fact renders nothing, never a generic line: *"Her ask is still pinned
+to your board — a {quality} {slot} by day {N}. Nobody is coming to collect it."* (the dead hero's
+open commission is currently recorded and actively hidden — see `P2-HONEST-03` for the sim-side
+voiding). Why it cannot become the 1,287× nag, structurally: the render predicate is derived and
+self-extinguishing; wakes cannot chain (deaths come only from expeditions, and expeditions don't
+run on wake days); bounded by deaths; the verbs are swept on the pointer, never the verb; and the
+old advisor nag is deleted, not accompanied.
+
+**The commendation** — attribution said out loud, once per hero per campaign, when a living hero's
+lifetime beat count crosses `LegendQuery.FamousBeatThreshold` (3), the exact moment the arc
+director already counts them a living legend. Thanks with one reason is a transaction; thanks with
+three is a history, and the three reasons are the hero's own three beats, whose `Detail` strings
+the log holds verbatim:
+
+> **Torvald, at the bar, loud enough for the room:**
+> *"Three things kept me standing down there, and the smith made every one.*
+> *Emberbite landed the killing blow on the Cave Rat — floor 3.*
+> *The buckler turned what should have ended me — floor 4.*
+> *And the salve the runner brought was the reason there was a floor 4 at all.*
+> *First round's mine. The smith drinks free."*
+
+It is presentation staging of recorded facts — no new event, no golden movement — and it registers
+as a client of the scene engine (P2-KTD7), not as its own tavern mechanism.
+
+### P2-LONG — the middle, the end, what crosses over
+
+**The orienting discovery: the final boss is already named.** `EmberfallFoundryVenue.cs:106` —
+floor 5's monster is **"The Undying Forge-Heart"**, the fight whose fall fires the Climax. "A
+piece worthy of the Heart" is not a metaphor waiting for a mechanism; it exists, has a name, and
+is a furnace-core that will not go out, waiting for a blacksmith. The Final Commission does not
+need new fiction; it needs the game to notice its own.
+
+The campaign's measured skeleton (rung 0 clears ~day 18, Act III ~18, Climax ~26, Ending 31–36
+on every seed) contains **two** flat stretches, and only one had a name. Days 8–18 are the wall,
+properly defined: not "nothing happens" but *the player's question stops changing* — every morning
+asks the identical question at a slowly rising number. And days 26–31 are the coda nobody had
+named: `ArcDirectorSystem.EndingDelayDays = 5` is five days in which the director is literally
+waiting for an integer. The ending is received, not made. A structural note the acts hide: Act II
+fires day 3–4 and Act III ~18, so the act machinery calls ~80% of the campaign "Act II" — the acts
+are thresholds, not felt turns, so the middle must supply its own internal turns, because the arc
+director never will.
+
+**The middle: hazard seasons, and the engine is already half-built and running unread.**
+`DirectorSystem`'s den escalation already steps a per-venue `InfectionPerMille` every Morning,
+tiers it into `ThreatTier`, surges it on incidents and decays it on clears — and the rules census
+records that nothing reads any of it back. The game has been rolling weather for weeks and
+throwing it away. A season is the span while a venue's existing `ThreatTier` ≥ 2, typed by the
+venue — no new state machine. The hard pin is a **redistribution rule**: while a season runs, the
+venue's monsters hit for −Y in-fight and each standing hero takes a typed after-bite of ~+Y at
+floor's end unless a ward is in pack. Total expected harm holds flat; the harm's *shape* moves
+from "mitigated by armor" to "mitigated only by the ward". The question changes; the punishment
+does not spike — and a new Balance assertion pins that sweep mortality stays within tolerance
+across the flip. Attribution follows automatically: the ward's counterfactual is the same replay
+grammar, so `BeatType.ToolAssist` — declared in `Contracts/Enums.cs`, pinned untold since the tone
+doc — **finally gets its emitter**, and the beat vocabulary the Chronicle Night reads back gets
+its missing word. Surfaced only through consequence, never a forecast: typed cause lines, gossip
+(*"{hero} came back from {venue} the colour of the moss there. Says it's fashion. Buys antidotes
+now, though."*), a typed demand-board row (11.7.7's story-beat sentence verbatim), commissions
+gaining a ward-in-pack gap test so named heroes start *asking*, and a legible sixth rule: a hero
+personally bitten last delve raises their ward stock target by 1 — heroes learn the way heroes
+learn everything here, from their own true memories.
+
+**Flagged inference, and the gate on the whole wave:** nothing on record re-measured the day-11
+wall after the forward ladder shipped. `P2-LONG-01` exists to close that before the expensive
+re-baseline, and if the wall moved past day 14, the scope is re-argued before `P2-LONG-02` spends
+a golden.
+
+**The Final Commission (R6, ruled owed, never designed).** Design stance: not a scripted quest —
+the game's six existing decisions asked one final time, at maximum stakes, about one object.
+Nothing orders a hero, times a decision, or scripts an outcome; the climax delve stays a
+completely ordinary delve, and only the object in it is extraordinary. The delegation assembles
+from real state, CustomerVoice-style, and asks:
+
+> *"You know what stands at the bottom of Emberfall. The ones who are going will go whether or not
+> we're ready — that has always been their way, and we would not change it. What we can change is
+> what they carry. The town is asking you for one piece, smith. Not a good one. The one the Heart
+> will remember."*
+
+The terms card, plainly, because the game never hides a number it produced:
+
+> *The Final Commission. One piece, any slot. Materials worthy of every rung of the ladder. The
+> town pays on delivery. No deadline — but the delvers won't wait on your say-so. They never have.*
+
+That last sentence is the law-7 line: no timer — the window is ~8 days *by construction*, because
+heroes push one floor past their best per trip on their own judgment. The materials replay
+decision 5 three times (one ore from each rung; `BuyOreAction`, the tariff math and the factions
+all exist; the recipe is data); the **town** pays the premium, preserving the pin that buying ore
+is the game's only sanctioned gift. The forging is the ordinary Anvil Map with the ordinary rules
+— if your hands produce Fine:
+
+> *It is Fine work. The town watched you make it, and the town saw what it saw. Nobody asked the
+> Heart to be fair; nobody gets to ask that of a smith's morning either. It carries your mark. That
+> is what was asked for.*
+
+The bearer is offered, never assigned — acceptance runs `ShoppingAi.EvaluateItem`'s existing
+verdict chain with affordability skipped, and the storied-gear refusal is the best one, because it
+is the game's own thesis pointed back at the player:
+
+> *{hero} turned it in the light for a long moment and handed it back. "It's the best thing you've
+> ever made. But {worn_item} has pulled me out of {deeds} bad mornings, and I'm not walking down
+> there without it. Give yours to someone it hasn't met yet."*
+
+The four outcomes, all honest, all reachable by construction because the delve is unscripted:
+
+> 1. **It turned it** — *"The Forge-Heart is out. {item} turned the killing blow on the fifth floor
+>    of Emberfall — the town's piece, your hands, {hero}'s arm. {hero} lives. Somewhere below, a
+>    furnace that would not go out has finally been told otherwise, and it was told in your
+>    handwriting."*
+> 2. **Carried and did not matter** — *"…{hero} carried {item} the whole way down and never needed
+>    it — the replay says the blow would have landed with any iron in that hand. The town will hang
+>    {item} above the tavern door anyway. Not everything a smith makes has to save a life to be
+>    worth making; but tonight, the truth is that it didn't, and you were owed the truth."*
+> 3. **The bearer refused and went anyway** — *"{hero} went down with {worn_item} — the old one, the
+>    one with the dents. You offered better and were told no, and the no held to the bottom floor.
+>    …The town has decided this is a story about {hero}; the town is probably right."*
+> 4. **Someone else's ordinary work turned it** — *"…{item}, the {quality} {slot} {hero} bought off
+>    your shelf on day {day} for {price} gold, turned the killing blow. You made it on an ordinary
+>    morning between a rent payment and a haggle. The Heart could not tell the difference between
+>    your masterpiece and your Tuesday. That is either humbling or the finest thing anyone has ever
+>    said about your Tuesdays."*
+
+Outcome 2 is the one most designs flinch from and it is load-bearing: no participation credit is
+the law, and this is where it costs the most and therefore proves the most. Never soften outcome 4
+either. A refusal is not a fail state — free, repeatable, gossip the next morning; if everyone
+refuses, the piece can go to the shelf, and a Heartpiece bought at the counter for coin is still
+your mark in the dark. The heirloom mint is Superior-capped, so a lost Heartpiece cannot be
+resurrected at full grade — loss stays loss.
+
+**Failure: the Quiet Morning, and a ruling against the Quiet Season — the arithmetic decides it
+before the aesthetics do.** In a no-march town the only confidence income left is rent and
+assessments against −10/day decay: net ≈ +58 a week, so the climb from the latch at 0 back to 400
+is **seven weeks — twice the length of the whole campaign**. Not devastating-in-the-right-register;
+a lock the player cannot pick inside the game they are playing. What ships instead: on the Morning
+after `TownConfidenceCollapsed`, no party forms, once, deterministically. The square empties.
+*"Nobody is marching today."* In a game about watching, one morning with nothing to watch is the
+punch the Quiet Season pitch wanted, at a price the campaign can pay. Recovery becomes content —
+the Rekindling gives confidence playable income (+25‰ per commission fulfilled, +10‰ per pinned
+counter sale, +30‰ per memorial honoured), so the town's confidence answers the relationship half
+of the game, not just the mine's dice. The guild master names it:
+
+> *"No one is going down today. I won't pretend that's your fault alone, and I won't pretend your
+> counter had nothing to do with it either. Here is what this town believes in, smith, in order:
+> dues paid, depths named, dead honored, and proof. You supply three of the four from where you're
+> standing. Start anywhere."*
+
+The latch stays latched as the campaign's scar: *"There was a morning nobody marched. The town
+remembers that you were still at the forge when they looked."* Above the latch, the gradient
+renders to the thresholds that exist (below 400: the rival's stall gains a queue and gossip shifts
+register; below 200: the tavern thins and the considering-leaving hero gets a face — *"I keep
+thinking about the roads out of here, smith. That's all. Thinking."*).
+
+**Rent and dues:** measured ~105g and ~264g across a campaign, felt days 7–14, trivial by 25 — two
+permanent HUD chips for numbers that stop mattering halfway through. Rent demotes to a Morning
+line (a manual pay button would manufacture only a trap — a deadline dressed as a verb). Dues keep
+the automatic heartbeat, the assessment gets a face, and one verb is added — the pledge: a crafted
+piece whose appraised value covers the dues, taken and hung where the town can see it, with the
+game's sharpest cost named at the moment of pledging:
+
+> *"The guild will take the piece instead of the coin, and hang it where the town can see what a
+> smith is worth. Understand what you're trading: nothing on our wall ever turns a blow. Your name,
+> displayed — or your name, proven. The coin buys neither."*
+
+Is the pledge a seventh decision? No — it is decision 1 with a third destination, priced by
+decision 5's currency. It re-asks two of the six at a new address; it does not ask a new question.
+
+**The rival is not the antagonist and never should be.** The dark is the antagonist; the rival is
+the counterfactual made visible — the shop the town would have if your hands didn't matter. Its
+gear can never earn a beat, and that is not a limitation, it is its entire dramatic function. It
+gets a face and a name (*"Sells a fair sword at a fair price. Nobody has ever crossed the square
+to thank him for one."*), it speaks the absence of proof where it hurts, once per death in
+unmarked gear, with dignity (*"{hero} fell wearing store-bought iron. It did what iron does.
+Nobody's name was on it."*), and it breathes within a hard cap that must never let it finish the
+campaign for the town. The only victory the game offers over it: not destruction, irrelevance.
+The improving mirror-smith is rejected — a rival you can lose to on a leaderboard fights the
+thesis; a rival that merely thrives in your absence *is* the thesis.
+
+**The ending, and after.** The five coda days stop being a timer and become the composition — the
+Chronicle Night, a composer pass over the event log (R4's ruled fix applied to the campaign
+itself), six movements all from recorded data, tallies landing last, as arithmetic after the story
+instead of instead of it. Then the seventh decision: **The Mark Endures** — one choice at the
+Chronicle Night's end, *what one thing deserves to outlive everything?* What crosses is a
+provenance object — name, mark, recipe id, material family, history prose — **no stat block,
+ever**. The carried piece seeds a commission-chain echo (*"one like the one above your door"*,
+recipe and material family pinned, minimum Fine), so the memory creates demand your campaign-two
+hands must answer: the past is a question, never an answer. What breaks if the no-stats line
+slips, named so nobody relitigates it politely: campaign two's balance forks against gates
+characterized on fresh-start gear; the golden input surface bloats into a save-migration hazard;
+and worst, the thesis cracks — a beat earned by last campaign's item is credit for last campaign's
+hands, and the product sentence's present tense stops being true. The pin gets a tripwire:
+campaign-two combat reading any carried stat is a red build. Is the seventh decision a problem for
+a six-decision identity? No — the six are the daily grammar; the seventh is asked once, about
+everything at once. The moment someone proposes a *daily* legacy verb, the identity really would
+be seven.
+
+**The storyteller — ruled, and deferred.** The named, chosen, constant storyteller is the only
+honest form this game could ever host, because the counterfactual proof is only worth anything
+while the dice are indifferent: an adaptive director easing the mine would make every beat it
+touched unfalsifiable. Three honesty tests — consented, constant, owned in the record — which the
+apprenticeship warrant already passes. Deferred because it multiplies the balance corpus by the
+regime count; regime choice earns its cost when players start second campaigns, which is exactly
+when The Mark Endures ships. Sequence it there, not before.
+
+### P2-HONEST — the four families, and the tripwires that outlive the fixes
+
+Twenty-three places the game says something untrue, and the root is one sentence: **a fact was
+written down by hand in a second place instead of being read from the place that owns it.** Copy
+is a hand-written second copy of a mechanism; a roster, of a tree; a comment, of the code beneath
+it; a test that names one node, of production's own list. Both copies were correct the day they
+were typed, and only one was maintained.
+
+The finding that outranks most of the list: **the `Progress` surface can never unlock, and the
+second profession can never be earned through its stated path.** `SurfaceUnlocks.cs:105` gates
+`Progress` on `TutorialFlow.SecondProfessionMilestoneReached` (`TutorialFlow.cs:2963`:
+`state.Bounties.Any(b => b.Paid)`) — and `Bounty.Paid` is set `false` at its only construction
+site while `BountyPayoutSystem` *removes* the paid bounty instead of flipping it. The predicate is
+permanently false; the tray button's tooltip promises a moment the code cannot deliver; the whole
+`ProgressionPanel` is unreachable in real play. And the harness believes otherwise, because
+`FullPlaytest` calls `ui.OpenPanel("Progress")` directly, bypassing the player's door — so the
+automated playtest reports coverage of a surface no player can reach. The fix is one line
+(`state.EventLog.OfType<BountyPaid>().Any()` — the event is emitted and the log is append-only,
+preserving the gate's monotonicity contract), and the *family* fix is P2-R28 and P2-R29.
+
+The four families, each with its tripwire:
+
+- **A — copy that outlived its mechanism.** Mostly not mechanically catchable, but two sub-shapes
+  are: an event type with no state transition behind it (reflect every `GameEvent`; require a
+  moved field or a warning-ledger entry citing its ruling), and a gate predicate no reachable
+  state can satisfy (drive a 30-day campaign plus a scripted payout; assert each gate opens at
+  least once or is listed deliberately-late — catches the Progress gate outright, in the fast
+  lane, no Godot needed). For the rest, a discipline: a PR deleting a mechanism greps for that
+  mechanism's vocabulary in copy.
+- **B — a hand-maintained list that stopped covering its family.** The tripwire is nearly free
+  because the repo owns the pattern twice: `DecisionReasonCensusTests` reflects the live
+  declaration, derives the required set, **denies by default**, and names the unclassified member
+  in the failure; `ClientAuthorityCensusTests` adds the pinned exception ledger with a pinned
+  count. Both live in the sim test project and text-scan `godot/scripts/`, so this whole family's
+  tripwires run in the fast lane.
+- **C — a guard that tests the one thing it names.** The rule: **a guard must be phrased against
+  the property, never the instance.** Where production names one node, the test names the rule
+  that node was chosen to satisfy. Where a harness reaches a surface, it reaches it through the
+  player's door — that single change would have failed loudly on the Progress gate months ago.
+  The screen dossier found the same shape independently at n=1: `TutorialOverlay.KeepClearOf`
+  names one obstacle in a column with two claimants, and its test asks the same single node
+  production asks, so it is tautologically green.
+- **D — a stale comment that becomes an instruction.** The proven kill chain: PR #583 changed
+  `QualityRoller`'s `AutoCraftGrade` to 800 and not the doc comment above it, which still reads
+  `effective = clamp(performanceGrade ?? 550, …)` (`QualityRoller.cs:121` vs `:112`); a later
+  session read the comment, believed it, and wrote 200 lines of implementation-ready plan on the
+  stale constant — three generations of a comment becoming an instruction. Three narrow scans
+  cover the family, and the highest-value one is ~40 lines: **a doc comment restating a
+  `const int` from its own file with a different value.**
+
+Honest score, kept honest: the derive-or-deny rule closes 8 of the 23; the rest need the three
+narrow censuses plus two disciplines. Better to say that than sell one rule as the answer.
+
+**The jargon rule** — the check discovers its own scope:
+
+> Player copy names only things the player can see. No enum member, registry id, CLI verb, surface
+> id, plan-unit citation, raw permille or formula. Where a display name exists it is the only
+> spelling that may render. Where one does not, declare one — do not interpolate the id.
+
+A banned-word list alone is worthless because the thirteenth leak is a word that does not exist
+yet. So the check owns **generators, not words** — enum members via reflection over
+`GameSim.Contracts`, registry ids with a `DisplayName` sibling, the CLI's own dispatch arms (so a
+new verb bans itself), surface ids, and a regex family for minted identifiers. It lives in the
+fast lane tagged `LAW:show-only-sim-decided`. And the first unit is budgeted as "build the check
+**and** triage its first run into fixes-or-ledger" — budgeted as just "build the check", it gets
+built with the generators disabled to go green, and then it is a banned-word list again.
+
+Two things this domain deliberately does not do. It touches **no counter rules**: the counter's
+honesty rider is closed on `main` (the copy no longer implies a walk risk the resolver does not
+roll), and the real asymmetry — the price control caps at the hero's whole purse, so
+counter-at-the-purse dominates for a flat 80-mood fleece penalty — is *already ruled* into a
+tuning wave behind P4 (§9.5's 2026-08-06 amendment). It is booked with its measurement on the
+board so it is not rediscovered a fourth time, and nothing more. And it does **not** author
+`ToolAssist` gossip or voice: a reserved enum member with a deliberately empty arm and a test
+asserting the emptiness is a documented absence — the opposite of every failure in this domain.
+Its lines ship with its emitter (`P2-LONG-03`), not before.
+
+### How this section sits beside §11.14.14 (T10)
+
+T10 keeps executing in its own namespace, and its remaining units keep their U-numbers — renaming
+live plan rows is exactly the churn rule 8 forbids. The interlocks, named:
+
+- **Supersessions.** `P2-SCREEN-06` (the card diet) absorbs unbuilt U45's scope (the teaching
+  strip cutting a sentence in half) — the PR landing `P2-SCREEN-06` says so, and U45 is not built
+  separately. `P2-ONBOARD-07` supersedes U33's *line list*, never its mechanism — the arc-line
+  machinery U33 specifies is the delivery vehicle for the six lines quoted above.
+  `P2-SCREEN-10` replaces U42's residual: U42 landed (#639), and the screen pass found the design
+  residual it left — `KeepClearOf` names one obstacle in a column with two claimants.
+- **Order.** T10's U27 (five decisions become forks), U31 (the loss gets a voice) and U32 (the
+  memory row and event-shaped graduation) should merge before `P2-ONBOARD-06` rewrites final
+  text, so the course's copy is rewritten once. U40 already landed (#648, 2026-08-29). The Bryn
+  wave (U33–U37) and wave 6 (U38–U39) remain T10's to finish; where this program's units make one
+  of them redundant, the Phase 2 PR names it in its body and the next doc-truth pass carries the
+  diff here.
+- **OQ5 is updated in this PR** to point its empty-slot answer at this section: Phase 2's waves
+  take the `docs/plans/` slots by rule-4 name grants when they start.
+
+## Owner rulings carried forward — this program does not re-litigate them
+
+Standing rulings that bind Phase 2, with their ids. Where a dossier's recommendation brushes one,
+the brush is named here rather than discovered later.
+
+| Ruling | What it holds | Where Phase 2 touches it |
+|---|---|---|
+| §11.3 R1 (default (c), 2026-08-06) | The provisioning irony: damp risk-compensation only; **no further vigil work ships until R1 lands** | Nothing here touches vigil tuning. The Warrant's day-5 runner beat teaches the shipped verb as-is |
+| §11.3 R4 | Retire the Legend Engine, keep the promise — the fix is a composer pass over existing data | The book and the Chronicle Night **are** that composer pass; this program is R4 being paid |
+| §11.3 R6 | The Final Commission is owed | `P2-LONG-08..14` design it; R6 rules the *act* owed, the book is the *artifact* that records it — they compose, and the book sequences first so the payoff lands in a finished frame |
+| §11.4 P4 amendment (§12, review C) | The human feel-test goes on the calendar and **no document-writing lap may displace it** | This section is a document-writing lap; it is written, and P4 is still the next owner evening. `P2-PEOPLE-01` and the three cheap fixes are what that evening should be played on |
+| §11.4 P7 | The day-11 program is blocked on P4 ("re-confirm the question shortage before the biggest spend") | `P2-LONG-01` *is* that re-confirmation, sequenced first in its domain; `P2-LONG-02` onward spends nothing until it and P4's evening have both spoken |
+| §11.5 | Deeper hero attachment is the named post-v1 queue leader that **does not displace P7**; reopens on P4's evening | **Brush, resolved:** `P2-PEOPLE-01..04` run now as 11.7.3/11.7.4 staging — zero sim, extends the shipped tavern pattern — and double as the probe producing the evidence the ruling needs. Everything sim-touching in the domain (kin derivation, the no-march day) waits behind the reopening or its named fork |
+| §11.7.3 | No important information without a face | The delegation, the assessor, the rival, the wake, the teller — every new surface here delivers through a face; the Telling's teller is carried inside the modal rather than demanding new town wiring |
+| §11.7.5 | More windows, never live delivery; camp speaks first | The Telling is a window onto a *finished* record — nothing here reaches into a live raid |
+| §11.7.6 | The narrator: sparse, triggered, generate → curate → freeze | The scene pipeline and every new pack in this program ship under the same freeze discipline |
+| §11.7.7 | Unlocks are demand-gated story beats; the hazard engine is a prerequisite | `P2-LONG-03..07` are this ruling's execution — the profession debut is a story beat the season causes |
+| §11.7.8 | The seven laws | Every unit below; the tripwire tests are the enforcement, and no unit softens one |
+| §11.8 | Venues are a forward ladder on `Hero.LadderRank` | The Final Commission's ~8-day window exists *because* of this ruling — heroes push one floor past their best per trip |
+| §11.14.1 R14.6 / R14.7 | The pointed chain runs through day 7; the six dilemmas are named out loud, both sides, no recommendation | The Warrant is R14.6 honoured with content instead of a constant; U27/U40 carry R14.7 and the course rework keeps them |
+| §11.14.1 R9 / R12 | The death grace is a taught mechanic; dismissing the course ends the warrant | The skip **door** keeps the warrant (T10 R30); the dismiss **press** forfeits it (R12). Both costs stay named |
+| §11.14.14 OQ1 (ruled 2026-08-24) | Decision #5 is "buy the ore, or buy the faction's favour"; building the gift was declined | **Brush, named:** the ideation proposed cutting the faction layer — that is a re-litigation, not a proposal. What ships without a ruling is `P2-MEMORY-09`, because the layer's own copy lies about its mechanism (72 `cooled` variants advertise a surcharge the sim cannot charge). The cut question waits for P2-OQ5, framed against *fixed* copy rather than lying copy |
+| §11.14.14 OQ2 / OQ3 | Bryn gets her own body; the timing-skill gate is deliberate and stated | `P2-ONBOARD` builds on both. The Heartpiece's purchased-route legality (`P2-LONG-12`) is OQ3's ruling applied — gating the ending's best outcome on minigame skill would quietly contradict it |
+| §11.14.14 OQ4 | `CLAUDE.md`'s six-decision line still reads "buy the ore or buy the goodwill" — deny-listed, owner-only | Carried forward as an owner action. No session edits it, including this one |
+| §11.14.14 OQ6 | The Bestiary is unreachable and a shipped comment says otherwise | `P2-SCREEN-14` holds the fork: wire the one data row or delete the panel; the three lying comments die either way (`P2-HONEST-08`) |
+
+## Requirements
+
+Numbered in the Phase 2 namespace; each traces to the dossier evidence above.
+
+**The screen**
+
+- P2-R1. Exactly one owner per screen region per tick, ownership queryable, and no surface draws
+  over a modal it does not own — the ending ceremony included.
+- P2-R2. A disabled control is visibly disabled, and the blocker is in its **label**, never only a
+  tooltip.
+- P2-R3. A refused control stays pressable and answers with the fix, not the failure — the harness
+  must never get a better explanation than the human.
+- P2-R4. Absent is not refused: a gate is not a shortage, and the two render differently.
+- P2-R5. The pointer draws only in unclaimed space; an avoidance rule may not name a node; when no
+  unclaimed space exists it does not draw, the card says the direction in words, and the
+  suppression logs at the draw site.
+- P2-R6. Disabling an input node empties its outputs within one physics frame — no stale field
+  reads as live to any of its readers.
+
+**The course**
+
+- P2-R7. The first campaign is curated by initial conditions only — pinned seed, authored premise,
+  stated end, real rules. No hidden assistance, no outcome edits, ever.
+- P2-R8. Beat 0 is told, never simulated: no live item carries a mark that is not the player's.
+- P2-R9. A player who reads nothing still finishes the course, and every skip's cost is named in
+  copy at the door where it is paid.
+- P2-R10. Bryn's pricing rule is an opinion the sim contradicts, never a fact the sim falsifies —
+  and both arms of following or ignoring it are real, neither rigged.
+- P2-R11. The pointer owns WHERE; the card owns WHY; no fact is stated by both.
+- P2-R12. The curated week's intended beats are pinned by a fast-lane replay test; a rules change
+  that shifts the stream goes red there, and the re-pin is a named ceremony (re-run the search,
+  re-pin, quote the new seed in the PR body).
+
+**The proof**
+
+- P2-R13. The telling stages only recorded facts: numbers snap, unwritten moments render as
+  absence, kill rounds draw no monster roll, and nothing continues past the record's end.
+- P2-R14. The staged verdict never contradicts `ComputeBeats`, pinned by a seed-sweep property
+  test; a disagreement outside the named later-heal edge is a red build, and the fix is in the
+  query, never the engine.
+- P2-R15. The telling is pure surplus: one player-opened button, creation-site count == 1, no
+  prompt surface, and a player who never uses it loses nothing.
+
+**The memory**
+
+- P2-R16. Every attribution beat names its channel — how the item reached the hand that held it.
+- P2-R17. The town's memory has full retention, queryable by actor and by day; no player-facing
+  memory surface forgets by scrolling or by a rolling window.
+- P2-R18. A permanent fact is presented as news exactly once, then read as a fact: advisor
+  memorial suggestions ≤ deaths over any scripted run.
+- P2-R19. Death copy is wry about loss and never at the dead's expense; `{cause}` is grammatical
+  everywhere it renders, pinned by a pack conformance test.
+- P2-R20. Pack rewrites preserve variant counts — the count is the hash divisor, and a count
+  change re-rolls every unrelated line.
+
+**The people**
+
+- P2-R21. Scenes fire only on true recorded events; ordering is by prerequisite facts, never by
+  index; an unearned scene stays unshown and nothing ever summarises it.
+- P2-R22. Authored arc facts never enter sim-generated prose.
+- P2-R23. Kin is derived via `StableHash`, never drawn: the recruit draw count stays exactly 3,
+  proven by test, and kin inflects `MoodPermille` only — traits stay a pure function of
+  `(Id, Name)`.
+- P2-R24. Wake copy renders only real facts — a missing fact renders nothing, never a generic
+  line.
+
+**The long game**
+
+- P2-R25. A season redistributes harm and never raises it: sweep mortality stays within tolerance
+  across the hazard flip, pinned in the Balance category.
+- P2-R26. The Final Commission orders no hero, times no decision, and scripts no outcome; all four
+  outcomes are reachable, and outcomes 2 and 4 are never softened.
+- P2-R27. Failure is legible above the latch and the latch costs one morning, not a season;
+  recovery has playable income through the relationship verbs.
+- P2-R28. What crosses a campaign boundary is memory, never power: campaign-two combat reading any
+  carried stat is a red build.
+
+**Honesty**
+
+- P2-R29. Player copy names only what the player can see; the vocabulary census owns generators,
+  not words, and runs in the fast lane.
+- P2-R30. Every unlock-gate predicate is satisfiable by reachable state or listed as
+  deliberately-late, asserted in the fast lane.
+- P2-R31. A harness reaches every surface through the player's door — no direct `OpenPanel`
+  bypasses.
+- P2-R32. No doc comment restates a constant from its own file with a different value, and no
+  event type exists without a state transition or a ruled ledger entry.
+
+## Key technical decisions
+
+- **P2-KTD1. The namespace.** Every Phase 2 unit is `P2-<DOMAIN>-<nn>`, domains
+  `SCREEN / ONBOARD / PROOF / MEMORY / PEOPLE / LONG / HONEST`. T10's units keep their U-numbers
+  and are not renamed; **nobody continues a U-number again** — two independent continuations from
+  U47 collided inside one day, the fourth generation of that disease. A domain prefix also makes
+  the week's merged list greppable by domain, which rule 12's census wants anyway.
+- **P2-KTD2. The layout arbiter is the prerequisite, and registration is a property of the
+  region, never a hand-registered class.** No copy, teaching, or new-surface unit lands before
+  the ten named screen units. The arbiter claims the *surface*, not the class — when the book
+  replaces `ChronicleScroll`, it declares the same claim and the deletion costs nothing. This is
+  the difference between the arbiter being a list and the arbiter being a rule.
+- **P2-KTD3. Derive the roster, or deny by default — and a guard must be phrased against the
+  property, never the instance.** A hand-maintained roster is replaced by a projection over the
+  declaration that owns it; where a list must stay hand-written, a census reflects the live
+  declaration, denies by default, and names the unclassified member. A named-obstacle avoidance
+  rule is the same defect shape as a hand-listed fixture: green because it tests the one thing it
+  names, blind the moment a second claimant appears.
+- **P2-KTD4. The jargon census owns generators, not words.** Seven generators, each reading a
+  live declaration, so the next leak bans itself. The first unit's budget includes triaging the
+  first run into fixes-or-ledger.
+- **P2-KTD5. Every re-baseline is a serialized ceremony PR.** Contracts micro-PRs are
+  orchestrator-authored and land one at a time, dependent PRs rebase; a golden re-record or
+  balance re-baseline is named in its PR body, said out loud, never ridden in silently; prose-pack
+  re-baselines batch together and serialize with everything else. Two ceremonies never fly
+  concurrently.
+- **P2-KTD6. Raid-time facts are snapshotted at result-build time.** The telling, the wake page,
+  and every memory surface read `PartyAtDeparture` and the retained night — never live
+  `state.Heroes` — pinned by a test that levels the bearer after the reveal and asserts the
+  script is byte-identical.
+- **P2-KTD7. One scene engine owns the tavern thread.** The Regulars, the commendation, and
+  Bryn's post-course appearances register as scene sources with ranks — one trigger reader, one
+  seen-state, one at-most-one-offer-per-day budget town-wide — or the tavern acquires its own
+  version of the voice pile-up U29 just fixed.
+- **P2-KTD8. The watch and the telling never share a renderer.** The watch is suspense over a
+  censored pre-reveal record; the telling is arithmetic over a public post-reveal one — three
+  properties inverted. Idiom reuse (pose curves, damage numbers, the gold-★ register), never
+  instance reuse. New staging surfaces are plain `Control` trees — no SubViewport (the
+  two-viewport headless hang is a named repo hazard), no Tween (there are none in this codebase),
+  and every drawn element names the recorded field it reads.
+- **P2-KTD9. Scenes and kin write no sim state.** The scene engine is a pure reader; kin rides
+  `MoodPermille`, which is contractually influence-only, so the feature inherits law-compliance
+  from the field it rides.
+- **P2-KTD10. Measure before the expensive re-baseline.** `P2-LONG-01` re-dates the wall before
+  wave A spends a golden; the wake's windows are not pinned on the old `BaselinePlayer` death
+  rate without a re-measure; and a unit that discovers its premise moved stops and reports
+  instead of re-pinning.
+
+## Sequencing
+
+```mermaid
+flowchart TB
+  CHEAP["The three cheap fixes<br/>P2-SCREEN-01 · P2-MEMORY-03 · P2-MEMORY-04"]
+  SCRIT["The screen's critical path<br/>P2-SCREEN-02..10"]
+  SREST["The strip, hygiene, doors<br/>P2-SCREEN-11..14"]
+  ONB["The guided rework<br/>P2-ONBOARD-01..08"]
+  PROOF0["P2-PROOF-01 retain the night<br/>[C][GOLD]"]
+  PROOF["The Telling<br/>P2-PROOF-02..07"]
+  MEMA["Memory pure reads<br/>P2-MEMORY-01..02, 05..06"]
+  MEMB["Prose truth passes<br/>P2-MEMORY-08..09"]
+  BOOK["The book<br/>P2-MEMORY-10..14"]
+  PEOPLE1["P2-PEOPLE-01 the probe"]
+  PEOPLE["Arcs, wake, kin<br/>P2-PEOPLE-02..13"]
+  LONG1["P2-LONG-01 re-date the wall"]
+  P4GATE(["P4 — the owner's evening"])
+  LONGA["Wave A the seasons<br/>P2-LONG-02..07"]
+  LONGB["Wave B the Final Commission<br/>P2-LONG-08..14"]
+  LONGC["Wave C failure, rent, rival<br/>P2-LONG-15..20"]
+  LONGD["Wave D The Mark Endures<br/>P2-LONG-21..22"]
+  HON["Honesty<br/>P2-HONEST-01..10"]
+
+  CHEAP --> SCRIT
+  SCRIT --> ONB
+  SCRIT --> SREST
+  PROOF0 --> PROOF
+  PROOF0 --> MEMA
+  SCRIT --> BOOK
+  MEMA --> BOOK
+  MEMB --> BOOK
+  PEOPLE1 --> PEOPLE
+  LONG1 --> P4GATE
+  PEOPLE1 --> P4GATE
+  P4GATE --> LONGA
+  LONGA --> LONGB
+  BOOK --> LONGB
+  LONGB --> LONGC
+  LONGC --> LONGD
+  PEOPLE1 --> HON
+```
+
+In prose, because the diagram cannot carry the argument:
+
+- **The three cheap fixes ship first, alone, this week.** Each fixes a measured defect, needs no
+  ruling, no re-baseline, no prerequisite: the theme keys (`P2-SCREEN-01`), the memorial predicate
+  (`P2-MEMORY-04`), and the beat naming its channel (`P2-MEMORY-03`) — the single highest-value
+  sentence-level change any dossier proposed.
+- **The critical path is the screen, and it is not negotiable.** Ten units must land before the
+  onboarding rework starts: a full guided course built on a screen where nothing owns the pixels
+  will break exactly the way the current one breaks — and the onboarding dossier's architecture
+  section arrived at the same conclusion independently from the other side.
+- **`P2-PROOF-01` goes early because it pays twice:** it is the smallest Contracts ceremony in
+  the program, it unblocks the whole Telling, and it converts the death card's last-blow line from
+  night-only to persistent (`P2-MEMORY-02` sequences after it on purpose).
+- **The wall ends playthroughs, so the middle funds everything downstream of it — the ending is
+  worthless to a player who left on day 11.** But `P2-LONG` waits at two gates this plan does not
+  own: `P2-LONG-01`'s re-measurement (the wall has not been re-dated since the forward ladder
+  shipped) and P4's evening (§11.4: re-confirm the question shortage before the biggest spend).
+  Wave A → B → C → D within the domain; the book lands before wave B so the Final Commission's
+  payoff prints into a finished frame.
+- **`P2-PEOPLE-01` is the cheapest unit that tests the whole People thesis.** If Torvald's three
+  scenes don't land with the owner on one evening's play, the remaining ~140 pieces of content are
+  not written, and the program stops having cost one session — the same shape as the art
+  programme's gate, on purpose.
+- **Honesty runs beside everything** — almost all of it is fast-lane, and its tier-0 unit
+  (`P2-HONEST-01`) un-strands a shipped panel tonight.
+- **Serialization:** the program contains six Contracts micro-PRs (`P2-PROOF-01`,
+  `P2-MEMORY-15/16`, `P2-PEOPLE-05/08`, `P2-LONG-02/08/21` as their waves arrive) and several
+  balance re-baselines. Per P2-KTD5 they land one at a time, orchestrator-authored, and never
+  concurrently with each other or with a prose-golden batch.
+
+## Unit index
+
+Flags: **[G]** pure-Godot · **[S]** sim · **[C]** Contracts micro-PR · **[GOLD]** golden
+re-record · **[BAL]** balance re-baseline. Units marked ⚑ carry a body below; the rest are booked
+at index level on purpose and get their bodies when their wave is granted a `docs/plans/` slot by
+name (§11.6 rule 4).
+
+| Unit | Title | Key files | Depends on | Flags |
+|---|---|---|---|---|
+| ⚑ P2-SCREEN-01 | The three dead theme keys, five sites | `godot/scripts/ui/GameTheme.cs`, `godot/scripts/MainUi.cs` | — | [G] |
+| ⚑ P2-SCREEN-02 | Sync and shoot — the rendered baseline | `tools/shoot.ps1`, `tools/receipt.ps1` | — | [G] |
+| ⚑ P2-SCREEN-03 | `SurfaceClaim` + `SurfaceArbiter`, observing only | new `godot/scripts/ui/SurfaceArbiter.cs`, `godot/scripts/MainUi.cs` | P2-SCREEN-02 | [G] |
+| ⚑ P2-SCREEN-04 | Modal ownership moves to the arbiter; `OverlaySurfaces()` becomes a projection | `godot/scripts/MainUi.cs`, `godot/scripts/ui/TutorialSurfaceRegistry.cs` | P2-SCREEN-03 | [G] |
+| ⚑ P2-SCREEN-05 | The interact prompt stops lying | `godot/scripts/town2d/WorldInput2D.cs`, `godot/scripts/MainUi.cs` | — | [G] |
+| ⚑ P2-SCREEN-06 | The card diet — one instruction, one prose slot | `godot/scripts/ui/ObjectiveTracker.cs`, `godot/scripts/panels/LessonsPanel.cs` | P2-SCREEN-03 | [G] |
+| ⚑ P2-SCREEN-07 | The TeachNote becomes Bryn's three lessons | `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/ui/MentorVoice.cs` | P2-SCREEN-06 | [G] |
+| ⚑ P2-SCREEN-08 | Gating copy folds into the instruction | `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/ui/ObjectiveTracker.cs` | P2-SCREEN-06 | [G] |
+| ⚑ P2-SCREEN-09 | Honest control state — the verdict in the label | `godot/scripts/ui/SimPanel.cs` (`AddButton`), `godot/scripts/panels/ForgePanel.cs`, `sim/GameSim/Kernel/ActionLegality.cs` (read-only) | P2-SCREEN-01 | [G] |
+| ⚑ P2-SCREEN-10 | The pointer's free-space query; `KeepClearOf` deleted | `godot/scripts/ui/TutorialOverlay.cs`, `godot/tests/` | P2-SCREEN-03 | [G] |
+| P2-SCREEN-11 | The strip decodes — delete, relabel, reclaim the height | `godot/scripts/MainUi.cs` | P2-SCREEN-03 | [G] |
+| P2-SCREEN-12 | The Books tray becomes a shelf with gate reasons as text | `godot/scripts/MainUi.cs`, `godot/scripts/ui/SurfaceUnlocks.cs` | P2-SCREEN-11 | [G] |
+| P2-SCREEN-13 | Hygiene — the stamp gated, the orphans deleted, `HANDOFF.md` dies | `godot/scripts/MainUi.cs`, `godot/assets/art/`, repo root | — | [G] |
+| P2-SCREEN-14 | The Bestiary gets its door, or the panel dies (OQ6) | `godot/scripts/town2d/InteriorLayout2D.cs`, `godot/scripts/panels/BestiaryPanel.cs` | — | [G] |
+| ⚑ P2-ONBOARD-01 | The teaching lease — one owner per tick | `godot/scripts/ui/TutorialAnchorArbiter.cs`, `godot/scripts/ui/MentorBanner.cs` | P2-SCREEN-03, P2-SCREEN-04 | [G] |
+| P2-ONBOARD-02 | The voice docks bottom-left, and fire-on-open dies as a category | `godot/scripts/ui/MentorBanner.cs`, `godot/scripts/MainUi.cs` | P2-ONBOARD-01 | [G] |
+| P2-ONBOARD-03 | `ApprenticePlayer` — the course as a pure policy | `sim/GameSim/Harness/ApprenticePlayer.cs`, `sim/GameSim.Cli/BatchRunner.cs` | — | [S] |
+| P2-ONBOARD-04 | The seed search, the pin, the perturbed scripts | `sim/GameSim.Tests/` (`OpeningCampaignPinTests`), `sim/GameSim.Cli/` | P2-ONBOARD-03 | [S] |
+| P2-ONBOARD-05 | The Warrant ships — the curated first campaign | `godot/scripts/NewGameSelect.cs`, `godot/scripts/ui/TutorialFlow.cs` | P2-ONBOARD-04, P2-SCREEN-02..10 | [G] |
+| P2-ONBOARD-06 | The beat-sheet registry and the nine deletions | `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/ui/MentorVoice.cs` | P2-ONBOARD-05; T10 U27/U31/U32 merged | [G] |
+| P2-ONBOARD-07 | Bryn wrong on purpose (P2-OQ2) | `godot/scripts/ui/MentorVoice.cs`, `godot/scripts/ui/TutorialFlow.cs` | P2-ONBOARD-06 | [G] |
+| P2-ONBOARD-08 | The tab-through lane — skipping proven mechanically | `godot/tests/` | P2-ONBOARD-06 | [G] |
+| ⚑ P2-PROOF-01 | Retain the night — `PartyAtDeparture` + `LastNightExpeditions` | `sim/GameSim/Contracts/Expedition.cs`, `sim/GameSim/Contracts/GameState` records, `sim/GameSim/Drama/ExpeditionRevealSystem.cs` | — | [S][C][GOLD] |
+| P2-PROOF-02 | `TellingQuery` — pure, no RNG parameter to draw from | `sim/GameSim/Expedition/TellingQuery.cs`, `sim/GameSim.Tests/` | P2-PROOF-01 | [S] |
+| P2-PROOF-03 | The stage, pass one — one duel, recorded rolls | new `godot/scripts/panels/TellingPanel.cs` (+`.uid`) | P2-PROOF-01 | [G] |
+| P2-PROOF-04 | The fork — rewind, desaturation, the fall that stays down, the stamp | `godot/scripts/panels/TellingPanel.cs` | P2-PROOF-02, P2-PROOF-03 | [G] |
+| P2-PROOF-05 | The other shapes — every `TellingScript.Shape` staged or downgraded, reflectively enumerated | `godot/scripts/panels/TellingPanel.cs`, `godot/tests/` | P2-PROOF-04 | [G] |
+| P2-PROOF-06 | The copy pack — deterministic pick, tone guards | `godot/scripts/panels/TellingPanel.cs` corpus | P2-PROOF-04 | [G] |
+| P2-PROOF-07 | The wiring and the deletion — "Ask how it happened", Full-tale dies | `godot/scripts/panels/LedgerModal.cs`, `docs/debugging.md` | P2-PROOF-05, P2-PROOF-06 | [G] |
+| ⚑ P2-MEMORY-01 | Beat rows lose the enum; one short-label vocabulary | `godot/scripts/panels/LedgerModal.cs` | — | [G] |
+| P2-MEMORY-02 | The death card reads the pack and the last blow | `godot/scripts/panels/LedgerModal.cs` | P2-PROOF-01 | [G] |
+| ⚑ P2-MEMORY-03 | The beat names its channel | `godot/scripts/panels/LedgerModal.cs` | — | [G] |
+| ⚑ P2-MEMORY-04 | The memorial advisor suggests exactly once | `sim/GameSim/Advisor/ObjectiveAdvisor.cs`, `sim/GameSim.Tests/` | — | [S] |
+| P2-MEMORY-05 | The Signed Work speaks; the idle line varies | `godot/scripts/panels/ForgePanel.cs`, advisor idle copy | — | [G] |
+| P2-MEMORY-06 | Provenance derives sales instead of omitting them | `godot/scripts/panels/ProvenanceCard.cs` | — | [G] |
+| P2-MEMORY-07 | The commendation — three reasons at the bar | scene-engine client registration | P2-PEOPLE-01 | [G] |
+| P2-MEMORY-08 | The death-pool rewrite in place + the `{cause}` grammar contract | `sim/GameSim/Flavor/Packs/TavernPack.cs`, pack tests | — | [S] |
+| P2-MEMORY-09 | The cooled-pool truth pass — 72 variants stop advertising a surcharge | `sim/GameSim/Flavor/Packs/FactionPack.cs` | P2-MEMORY-08 (same serialized batch) | [S] |
+| P2-MEMORY-10 | The book shell — `LegendsWall` refit, verbs and anchors migrated | `godot/scripts/panels/LegendsWall.cs` | P2-SCREEN-04 | [G] |
+| P2-MEMORY-11 | The fallen's pages and the item pages | `godot/scripts/panels/LegendsWall.cs`, `godot/scripts/panels/ProvenanceCard.cs` | P2-MEMORY-10, P2-PROOF-01 | [G] |
+| P2-MEMORY-12 | Day pages absorb the ticker's composer; the marquee dies (P2-OQ3) | `godot/scripts/ui/AdventureTicker.cs` (`FormatLine` survives), `godot/scripts/MainUi.cs` | P2-MEMORY-10 | [G] |
+| P2-MEMORY-13 | `ChronicleComposer` and the fifteen predicates | `sim/GameSim/Chronicle/ChronicleComposer.cs`, `sim/GameSim.Tests/` | — | [S] |
+| P2-MEMORY-14 | The bind and the export; `ChronicleScroll.cs` deleted (P2-OQ4) | `godot/scripts/panels/LegendsWall.cs`, `godot/scripts/panels/ChronicleScroll.cs` | P2-MEMORY-11, P2-MEMORY-13 | [G] |
+| P2-MEMORY-15 | `BountyRefunded` — the silent refund gets an event | `sim/GameSim/Contracts/Events.cs`, `sim/GameSim/Bounties/BountySystems.cs` | — | [S][C][GOLD] |
+| P2-MEMORY-16 | `Fleeced` on the close event; fleece and pinned gossip | `sim/GameSim/Contracts/Events.cs`, `sim/GameSim/Counter/HaggleResolver.cs`, `sim/GameSim/Drama/GossipGenerator.cs` | P2-MEMORY-15 (serialize) | [S][C][GOLD] |
+| ⚑ P2-PEOPLE-01 | The scene engine and Torvald's first three | `godot/scripts/panels/TavernPanel.cs`, new scene registry | — | [G] |
+| P2-PEOPLE-02 | The register gate — a lint that fails on a planted violation of each rule | `godot/tests/`, scene corpus | P2-PEOPLE-01 | [G] |
+| P2-PEOPLE-03 | The remaining arcs — Torvald 4–8, Brunhilde, Kael, Sable, Elowen, Moss | scene corpus | P2-PEOPLE-01/02 + the probe's verdict | [G] |
+| P2-PEOPLE-04 | Durable-fact read-back — "Halvar's floor" on the muster board | `godot/scripts/panels/RaidForecastBoard.cs`, vigil slate | P2-PEOPLE-01 | [G] |
+| P2-PEOPLE-05 | Wake contracts — `Memorial.MarkerItem`, remembrance action | `sim/GameSim/Contracts/` | — | [S][C] |
+| P2-PEOPLE-06 | The fallen's page and the three verbs, on the death night | `sim/GameSim/Drama/`, `sim/GameSim/Heroes/` | P2-PEOPLE-05 | [S] |
+| P2-PEOPLE-07 | Death-night staging | `godot/scripts/panels/LegendsWall.cs`, `godot/scripts/panels/LedgerModal.cs` | P2-PEOPLE-06 | [G] |
+| P2-PEOPLE-08 | Kin contracts — `KinKind`, `KinLink`, `Hero.Kin`, null default | `sim/GameSim/Contracts/Heroes.cs` | §11.5 reopening | [S][C] |
+| P2-PEOPLE-09 | Kin derivation and mood — the blanket +60 dies | `sim/GameSim/Drama/RecruitSystem.cs`, `sim/GameSim/Heroes/HeroRoster.cs` (read-only) | P2-PEOPLE-08 | [S][GOLD][BAL] |
+| P2-PEOPLE-10 | Kin surfaces — Wren at the counter, warm and cold | `godot/scripts/panels/CounterPanel.cs`, scene corpus | P2-PEOPLE-09 | [G] |
+| P2-PEOPLE-11 | The no-march day (P2-OQ1) | `sim/GameSim/Heroes/PartyFormation.cs` | P2-PEOPLE-06, P2-OQ1 | [S][GOLD][BAL] |
+| P2-PEOPLE-12 | Wake staging and the deletions — the advisor nag retires, render ownership fixed | `godot/scripts/`, `sim/GameSim/Advisor/ObjectiveAdvisor.cs` | P2-PEOPLE-07, P2-PEOPLE-11 | [G] |
+| P2-PEOPLE-13 | Recruit micro-arcs — starters and kin first, the rest later | scene corpus | P2-PEOPLE-03 | [G] |
+| ⚑ P2-LONG-01 | Re-date the wall on the current build | `sim/GameSim.Cli/`, one instrumented sweep | — | [S] |
+| P2-LONG-02 | Typed consumable kinds; hazard type on `VenueDefinition` | `sim/GameSim/Contracts/`, `sim/GameSim/Venues/VenueDefinition.cs` | P2-LONG-01, P4 | [S][C][GOLD] |
+| P2-LONG-03 | The teeth — the venom week, the redistribution rule, the ToolAssist emitter | `sim/GameSim/Drama/DirectorSystem.cs`, `sim/GameSim/Expedition/` | P2-LONG-02 | [S][BAL] |
+| P2-LONG-04 | Demand reads the hazard; named heroes start asking | `sim/GameSim/Economy/`, `sim/GameSim/Heroes/` | P2-LONG-03 | [S][GOLD] |
+| P2-LONG-05 | The town tells it — typed cause lines, gossip, the board row | `godot/scripts/`, flavor packs | P2-LONG-03 | [G] |
+| P2-LONG-06 | Season cadence characterized; the profession debut beat | `sim/GameSim.Tests/`, `sim/GameSim/Progression/` | P2-LONG-03 | [S] |
+| P2-LONG-07 | Harness honesty — a policy that crafts wards | `sim/GameSim/Harness/` | P2-LONG-03 | [S][BAL] |
+| P2-LONG-08 | Final Commission contracts | `sim/GameSim/Contracts/` | P4 | [S][C][GOLD] |
+| P2-LONG-09 | The delegation — the arc calls it, the scene delivers it | `sim/GameSim/Arc/ArcDirectorSystem.cs`, `godot/scripts/` | P2-LONG-08 | [S] |
+| P2-LONG-10 | The forging — the town present, the ordinary rules | `godot/scripts/panels/ForgePanel.cs` | P2-LONG-09 | [G] |
+| P2-LONG-11 | The offer and the refusal — `EvaluateItem` with affordability skipped | `sim/GameSim/Heroes/ShoppingAi.cs`, `godot/scripts/` | P2-LONG-09 | [S] |
+| P2-LONG-12 | The four outcomes, written and reachable | `godot/scripts/`, copy corpus | P2-LONG-11 | [G] |
+| P2-LONG-13 | The Chronicle Night — the coda becomes the composition | `sim/GameSim/Chronicle/ChronicleComposer.cs`, `godot/scripts/` | P2-MEMORY-13, P2-LONG-12 | [G] |
+| P2-LONG-14 | A harness policy plays the commission; the ending stays ≤36, two-sided | `sim/GameSim/Harness/`, Balance suite | P2-LONG-11 | [S][BAL] |
+| P2-LONG-15 | The failure gradient renders — 400 and 200 get faces | `godot/scripts/town2d/`, `godot/scripts/panels/TavernPanel.cs` | — | [G] |
+| P2-LONG-16 | The latch lands — the Quiet Morning and the Rekindling | `sim/GameSim/Drama/`, `sim/GameSim/Heroes/PartyFormation.cs` | P2-LONG-15 | [S][GOLD][BAL] |
+| P2-LONG-17 | Rent demoted; the assessor gets a face | `godot/scripts/MainUi.cs`, `godot/scripts/` | P2-SCREEN-11 | [G] |
+| P2-LONG-18 | The pledge — dues paid in proven work, the cost named | `sim/GameSim/Economy/`, `godot/scripts/` | P2-LONG-17 | [S] |
+| P2-LONG-19 | The rival's face, and the spoken absence of proof | `godot/scripts/town2d/`, flavor packs | — | [G] |
+| P2-LONG-20 | The rival breathes, capped — irrelevance is the victory | `sim/GameSim/Economy/` | P2-LONG-19 | [S][BAL] |
+| P2-LONG-21 | The Mark Endures — the carryover contract and the no-stats tripwire | `sim/GameSim/Contracts/`, `sim/GameSim/Kernel/GameFactory.cs` | P2-LONG-13 | [S][C][GOLD] |
+| P2-LONG-22 | The seventh decision — the choice, the door, the commission echo | `godot/scripts/`, `sim/GameSim/Economy/` | P2-LONG-21 | [G] |
+| ⚑ P2-HONEST-01 | The Progress book can be opened, and the harness uses the door | `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/tools/FullPlaytest.cs` | — | [G] |
+| P2-HONEST-02 | Four dead-mechanism sentences die; `Gate.Reason` splits closed/opened | `godot/scripts/ui/SurfaceUnlocks.cs`, copy | — | [G] |
+| P2-HONEST-03 | The dead hero's commission voids silently — the mood dock on a corpse dies | `sim/GameSim/Heroes/CommissionSystem.cs` | — | [S] |
+| P2-HONEST-04 | The queued suffix dies; eight panels stop teaching a console command | `godot/scripts/ui/SimPanel.cs`, `godot/scripts/panels/` | — | [G] |
+| P2-HONEST-05 | Classes and materials get display names | `sim/GameSim/Materials/MaterialDefinition.cs`, `sim/GameSim/Classes/` | — | [S] |
+| P2-HONEST-06 | The vocabulary census — seven generators, first run triaged | `sim/GameSim.Tests/` (`PlayerVocabularyCensusTests`) | P2-HONEST-04, P2-HONEST-05 | [S] |
+| P2-HONEST-07 | The satisfiable-gate census | `sim/GameSim.Tests/` | P2-HONEST-01 | [S] |
+| P2-HONEST-08 | The comment sweep and the comment census | `sim/GameSim/`, `godot/scripts/`, `sim/GameSim.Tests/` | — | [S] |
+| P2-HONEST-09 | `SkilledSmithPlayer` and `SmithSkill` die — 123 lines held alive by their own tests | `sim/GameSim/Harness/` | — | [S] |
+| P2-HONEST-10 | Guards rephrase against the property — `RejectionUxTests` literals die | `godot/tests/`, `sim/GameSim.Tests/` | — | [S] |
+
+Ninety units: 14 screen, 8 onboarding, 7 proof, 16 memory, 13 people, 22 long game, 10 honesty.
+Six carry a Contracts micro-PR; five carry a golden re-record; seven carry a balance re-baseline —
+and per P2-KTD5 those ceremonies serialize. Two units already booked elsewhere are deliberately
+**absent** from this index: the worn-trinket fix and the honest-input price test are T10's U48 and
+U49 (§11.14.14 Wave 7), and re-booking them here would be the numbering disease in a new costume.
+
+## Unit bodies — the critical path, the cheap fixes, and each domain's first unit
+
+Eighteen bodies: the ten screen units that must land before the onboarding rework starts, the
+three cheap fixes, and the first unit of each remaining domain. **The other seventy-two rows stay
+index-level on purpose** — writing bodies for units two gates away is how plans outrun shipping,
+and rule 6 exists because that has happened here four times.
+
+### The screen's critical path
+
+#### P2-SCREEN-01. The three dead theme keys, five sites
+
+- Goal: the three intended control-state colours actually apply, so a disabled control dims the
+  way the theme chose rather than the way the default theme happens to.
+- Requirements: P2-R2
+- Files: `godot/scripts/ui/GameTheme.cs`, `godot/scripts/MainUi.cs`, `godot/tests/`
+- Approach: `GameTheme.cs:414-416` sets `font_color_hover` / `font_color_pressed` /
+  `font_color_disabled` — Godot 3 spellings; Godot 4 wants `font_hover_color` /
+  `font_pressed_color` / `font_disabled_color`. `MainUi.cs:4035-4036` repeats two of the wrong
+  names per-node. Zero Godot-4-style keys exist anywhere in the tree (verified by grep), and
+  nothing in `godot/tests/` references either spelling. **Replace, never keep both** — keeping
+  both is a doc asserting what the engine contradicts. Severity is corrected on the record: the
+  fallback is the default theme's ~50%-alpha grey, so labels do dim — to a colour chosen for no
+  panel of ours. The first act of this unit is a rendered before-frame, not a code change,
+  because the one thing the finding could not verify in-repo was the engine-side fallback.
+- Test scenarios: a census over `GameTheme.Build()` and every `AddThemeColorOverride` call site
+  asserts no key matches the Godot-3 `font_color_*` family; a disabled and an enabled button
+  rendered side by side differ in label colour by a pinned minimum delta.
+- Verification: before/after frames of the Forge panel with an unaffordable recipe, attached to
+  the PR; the engine suite compared on its pass count.
+
+#### P2-SCREEN-02. Sync and shoot — the rendered baseline
+
+- Goal: a current-main set of reference frames, correctly attributed, so every later screen unit
+  has a before-picture nobody argues with.
+- Requirements: P2-R1 (evidence base)
+- Files: `tools/shoot.ps1`, `tools/receipt.ps1`
+- Approach: re-run the six-frame pass against `main`'s HEAD. One trap is already documented:
+  `build_info.txt` is stamped by `receipt.ps1`, not by `shoot.ps1`, so a stale watermark reflects
+  whenever receipt last ran in that worktree, **not the compiled code** — run receipt first, then
+  shoot, and quote the SHA in the artifact names. The eight defect classes the first pass found
+  are the checklist; each later unit strikes its own line by attaching its after-frame.
+- Test scenarios: none — this unit produces evidence, not behaviour.
+- Verification: the frames exist, watermarked with the current SHA, linked from the PR body.
+
+#### P2-SCREEN-03. `SurfaceClaim` and `SurfaceArbiter`, observing only
+
+- Goal: every drawing surface declares what region it claims; the arbiter records and exposes the
+  claims and changes **nothing**.
+- Requirements: P2-R1
+- Files: new `godot/scripts/ui/SurfaceArbiter.cs` (+`.uid`), `godot/scripts/MainUi.cs`
+- Approach: claims are declared where surfaces are built, derived wherever a roster already
+  exists (`TutorialSurfaceRegistry` first). Observing-only is the point: the unit's pass
+  condition is **zero pixel delta** — a byte-compare of before/after PNGs from P2-SCREEN-02's
+  harness, the cheapest assertion in the plan. The arbiter earns enforcement rights wave by wave;
+  the `*Wrap` scar-tissue controls (each carries a comment naming the defect it closed) are not
+  deleted in this unit or the next — the arbiter proves it owns the width for a wave before any
+  belt comes off.
+- Test scenarios: every mounted full-rect surface has a claim; claims serialize into the playtest
+  log; the frame byte-compare is identical before and after.
+- Verification: the byte-compare, quoted in the PR body.
+
+#### P2-SCREEN-04. Modal ownership moves to the arbiter
+
+- Goal: "is a modal open" has one answer, derived, and the ending ceremony is finally owned.
+- Requirements: P2-R1
+- Files: `godot/scripts/MainUi.cs`, `godot/scripts/ui/TutorialSurfaceRegistry.cs`
+- Approach: `MainUi.OverlaySurfaces()` is a hand-written eight-row array; nine full-rect modals
+  exist, and `Chronicle` is the exact and only omission — so while the campaign's closing
+  ceremony is on screen, `AnOverlayOwnsTheScreen()` is false: the clock runs, world input stays
+  live, PiP is not suppressed, and the interact prompt draws on top. The derivation source
+  already landed (U9, #626): the registry carries a live content-root resolver per surface,
+  Chronicle included. `OverlaySurfaces()` becomes a projection over it; `ProvenanceCard` — which
+  *cannot* be hand-listed, being instantiated per hosting panel — claims by region property
+  (P2-KTD2), which is also what makes the book's later replacement of `ChronicleScroll` free.
+  Per-surface dim behaviour is declared in the claim (the `MentorBanner` un-dim fix proves
+  "always dim" is wrong for at least one surface — a teacher must not blank what she points at).
+- Test scenarios: opening the Chronicle holds the clock, blocks world input, and suppresses PiP;
+  a full-rect modal absent from the projection fails by name; a provenance card opened from any
+  of its five hosts registers a claim.
+- Verification: a rendered frame of the ending with no interact prompt on it — the exact frame
+  the census convicted.
+
+#### P2-SCREEN-05. The interact prompt stops lying
+
+- Goal: a disabled input node leaves no stale field that reads as live.
+- Requirements: P2-R6
+- Files: `godot/scripts/town2d/WorldInput2D.cs`, `godot/scripts/MainUi.cs`
+- Approach: two stacked bugs, input first. `WorldInput2D._PhysicsProcess` early-returns on
+  `!Enabled` **above** `SetTarget`, and `PromptText` is written only inside `SetTarget` — so the
+  instant a modal opens, the field freezes at whatever it last said, and both readers (the chip
+  and the playtest bridge) believe it. Clear the field on the disable edge; then the chip's
+  every-frame mirror is honest by construction. The prompt also stops being the highest layer-0
+  node in the game: under P2-SCREEN-04 it yields to any modal claim.
+- Test scenarios: a **field-level** assertion that toggling `Enabled` false empties `PromptText`
+  within one physics frame — asserted on the field, not the chip, because the field has two
+  readers; opening any modal hides the chip; closing restores it within a frame at the same
+  station.
+- Verification: the vigil-modal frame re-shot without "E · Forge" floating over it.
+
+#### P2-SCREEN-06. The card diet — one instruction, one prose slot
+
+- Goal: the Today card carries exactly one message at a time, and no sentence is ever severed by
+  chrome.
+- Requirements: P2-R11
+- Files: `godot/scripts/ui/ObjectiveTracker.cs`, `godot/scripts/panels/LessonsPanel.cs`
+- Approach: the card is four surfaces wearing one box — literal child order: header →
+  `ObjectiveReason` → the ▾ ✕ ↻ glyph row → dismiss-confirm → a 75px scroll → the ranked list —
+  and the two text blocks are populated by different accessors writing complete independent
+  strings, so the "severed sentence" is two messages a reader cannot tell apart, which is worse.
+  Four jobs, four homes: the instruction stays as the card's only prose; the controls move to a
+  worded title row (one of those glyphs ends a feature and forfeits gold, and it is a bare ✕
+  today); the checklist leaves entirely for `LessonsPanel`, which already renders every row
+  chapter-numbered and survives dismiss (~115 lines deleted with `_checklistScroll` and
+  `RefreshTutorialChecklist`); the TeachNote leaves in P2-SCREEN-07. The honest third state —
+  "— skipped / didn't come up this time" — survives the move. This absorbs unbuilt T10 U45.
+- Test scenarios: a tripwire asserting **no `Button` sits between two `Label`s in the card's
+  VBox** — the literal shape of the defect; the card's prose is at most one string from one
+  accessor; the Lessons book shows the checklist rows with their three states after a dismiss.
+- Verification: the 01-town frame re-shot; the severed sentence gone.
+
+#### P2-SCREEN-07. The TeachNote becomes Bryn's three lessons
+
+- Goal: the ~640-character paragraph bolted onto step 1 splits back into the three lessons it is,
+  each delivered where it applies.
+- Requirements: P2-R11; ruling 11.7.3
+- Files: `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/ui/MentorVoice.cs`
+- Approach: the length is a routing decision with its own confession in the comments — U20
+  appended the room-exit sentence and U28 the two action-budget sentences, both citing the same
+  reason: this is "the ONE row guaranteed to reach the screen on every path." Two units
+  independently concluded the only reliable teacher was step 1's note; that is an indictment of
+  the address, not the copy. The three lessons become Bryn lines plus Lessons-book entries. A
+  copy census caps TeachNote length — the tripwire that stops the next unit appending a fourth
+  sentence for the same reason.
+- Test scenarios: the census fails on any TeachNote above the cap; each of the three lessons
+  fires at its own surface; the Lessons book carries all three.
+- Verification: the fast lane and the corpus census green; the card's rendered height noted in
+  the PR.
+
+#### P2-SCREEN-08. Gating copy folds into the instruction
+
+- Goal: the card's gating note stops being a second text block and becomes part of the one
+  sentence.
+- Requirements: P2-R11
+- Files: `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/ui/ObjectiveTracker.cs`
+- Approach: `GatingNote` today renders in the checklist's second block — the same box the diet
+  just emptied. Fold the gate reason into the instruction line itself when the step is gated
+  ("… — opens at Morning"), keeping the phase-honest wait copy that already tells the truth
+  about *today*. Wait-variant strings relocate to the refusing control (P2-SCREEN-09's S3 rule);
+  their honesty is the point, their address was the defect.
+- Test scenarios: a gated step renders one line containing its reason; no `GatingNote` renders in
+  a second block anywhere; the honest wait-copy corpus survives verbatim (string-set equality
+  before/after, addresses excepted).
+- Verification: rendered frame of a gated step.
+
+#### P2-SCREEN-09. Honest control state — the verdict in the label
+
+- Goal: three states, one vocabulary, everywhere: Available / Refused (dimmed, blocker **in the
+  label**, still pressable, answers with the fix) / Absent (not a button at all).
+- Requirements: P2-R2, P2-R3, P2-R4
+- Files: `godot/scripts/ui/SimPanel.cs`, `godot/scripts/panels/ForgePanel.cs`, every
+  `SimPanel.AddButton` caller
+- Approach: `ForgePanel` gates every verb correctly and the gating is invisible (P2-SCREEN-01's
+  colours were dead) or dishonest (`Masterwork Attempt (guaranteed)` renders enabled-looking
+  while refused; the material chip prints the **raw** `recipe.MaterialQuantity` while the gate
+  uses the efficiency-adjusted quantity, so it says `2x (have 1)` on a legal craft). Fold the
+  verdict into `SimPanel.AddButton` so **a button with no verdict is a compile error** — the
+  instrument the constitution already uses. The boolean routes through `ActionLegality` (one
+  authority; the client recomputing it is a third copy of a rule that has two); the reason prose
+  stays client-side, because reason is presentation and moving it into the sim is the forbidden
+  move. A refused control answers a press with the fix — today `Disabled = true` swallows the
+  event, so the harness (which reads `.Disabled` and quotes the tooltip) gets a better
+  explanation than the human. Note what this is **not**: no legality rule changes; the sim's
+  verdicts are rendered, never edited.
+- Test scenarios: a compile-shape test that `AddButton` requires a verdict; a census over a
+  scripted day asserting enabled ⇔ legal for every rendered verb; pressing a refused control
+  produces its fix line; the material chip prints the effective quantity; `(guaranteed)` and
+  `(N of 4 left)` never render on a refused control without the blocker.
+- Verification: the ForgeAnvil frame re-shot with zero copper: every verb visibly refused with
+  its reason, none silent.
+
+#### P2-SCREEN-10. The pointer's free-space query
+
+- Goal: the pointer layer is the world region minus every claimed rect; an avoidance rule may not
+  name a node.
+- Requirements: P2-R5
+- Files: `godot/scripts/ui/TutorialOverlay.cs`, `godot/tests/`
+- Approach: U42 landed and left the design residual: `KeepClearOf` names **one** obstacle
+  (`Overlay.KeepClearOf = Objective`) in a column where `MainUi` docks a second card 16px below
+  it, and `SlideClearOfHud` slides *along* the edge into the gap between the two. The test asks
+  the same single node production asks, so it is tautologically green — the named-obstacle rule
+  is a hand-listed fixture with n=1 (P2-KTD3's second clause, in the wild). Replace with a query
+  against the arbiter's free region; delete `KeepClearOf` and `SlideClearOfHud`; rotation always
+  encodes true bearing while position encodes only "over there". If the whole boundary is
+  claimed, **do not draw** — the card says the direction in words, and the suppression logs at
+  the draw site, because this repo has a scar exactly where degradation went silent. Two known
+  gaps get their answers: a target inside a collapsed section aims at the disclosure control, and
+  an unreachable target (four surfaces declare no live way in) keeps the throw while the card
+  answers what makes the surface appear.
+- Test scenarios: the rewritten test asks the arbiter's free region **with both top-right cards
+  visible** — a case the old test cannot express; a fully-claimed boundary draws nothing and
+  logs; a collapsed-section target aims at the disclosure; `ScrollIntoView` still waits on the
+  condition, not a frame count.
+- Verification: the TutorialOffCamera frame re-shot with both cards visible and the marker in
+  free space.
+
+### The three cheap fixes (P2-SCREEN-01 above, plus these two)
+
+#### P2-MEMORY-03. The beat names its channel
+
+- Goal: the product sentence says how the item reached the hand that held it.
+- Requirements: P2-R16
+- Files: `godot/scripts/panels/LedgerModal.cs`
+- Approach: a pure read over the existing log. For the beat's `ItemId`, the most recent of
+  `CounterSaleClosed` / `ItemSold{FromPlayerShop:true}` / `CommissionFulfilled` /
+  `SupplyDelivered` naming it is the channel, and the day gap is free. The six clauses are quoted
+  in this section's memory domain and ship verbatim. The heirloom clause reads lineage. No new
+  event, no sim change — `CounterSaleClosed` already carries hero, item, price, and `Pinned`.
+- Test scenarios: one beat per channel on a hand-built log renders its clause; an item with no
+  qualifying event renders no channel line (never a generic one); the day arithmetic is exact
+  across a save/load.
+- Verification: fast lane green; a rendered ledger card with the two-line sentence, attached.
+
+#### P2-MEMORY-04. The memorial advisor suggests exactly once
+
+- Goal: the rite is suggested on the first Evening it is legal and never again; thereafter the
+  un-honored state is a fact on the book page, not a prompt.
+- Requirements: P2-R18
+- Files: `sim/GameSim/Advisor/ObjectiveAdvisor.cs`, `sim/GameSim.Tests/Advisor/`
+- Approach: the mechanism of the 1,287-fire defect is on screen at
+  `ObjectiveAdvisor.cs:57-69` — every Evening, `Memorials.FirstOrDefault(m => !m.Honored)`
+  re-suggests unconditionally. `Memorial` already carries `Day` (`Contracts/World.cs:11`), so the
+  once-only predicate is `state.Day == memorial.Day + 1` — stateless, deterministic, no new
+  state, no golden movement (suggestions are derived, not stored). The cost is named in the one
+  line it keeps: *"Honor {Hero}'s memorial — the rite keeps, and it will wait as long as you
+  do."* The gossip and event lines were always correct — they fire on the event, once. If the
+  Wake's `P2-PEOPLE-12` later retires the advisor line entirely, it deletes what this narrowed —
+  a clean supersession; the 1,287 never waits on that ruling.
+- Test scenarios: a 100-day scripted run asserts advisor memorial suggestions ≤ deaths; the
+  suggestion fires on day `Day+1` and not on `Day+2`; an honored memorial never fires it.
+- Verification: fast lane green, with the runner's own `Failed: N, Passed: N` line quoted.
+
+### Each domain's first unit
+
+#### P2-ONBOARD-01. The teaching lease
+
+- Goal: the tuple (objective, voice line, pointer target) is granted to exactly one owner per
+  tick, so R10 ("a beat's line and its pointer arrive and leave together") becomes structural
+  instead of disciplinary.
+- Requirements: P2-R11; T10 R10
+- Files: `godot/scripts/ui/TutorialAnchorArbiter.cs`, `godot/scripts/ui/MentorBanner.cs`
+- Approach: one arbiter exists and arbitrates one resource — the pulse. Generalize it from "who
+  owns the pulse" to "who owns the teaching screen": same precedence order as today plus U46's
+  rule (an ordinary lesson never steals the chain's pointer — this unit lands that rule's
+  structural form). Lesson-rank voices get the voice surface only, never the objective or the
+  pointer. Sits directly on P2-SCREEN-03/04's claims.
+- Test scenarios: a lesson and a chain step contending for one tick resolve to one owner, both
+  halves together; no voice without its pointer and none without its line; U46's scenario passes
+  against the lease rather than a special case.
+- Verification: the engine suite compared on its pass count; one frame with a beat's line and
+  pointer visibly paired.
+
+#### P2-PROOF-01. Retain the night
+
+- Goal: the recorded fight and the party-as-they-marched survive the reveal, so the telling — and
+  the death card's persistent lines — read state instead of a client-side snapshot that dies on
+  relaunch.
+- Requirements: P2-R13, P2-R14 (their data), P2-KTD6
+- Files: `sim/GameSim/Contracts/Expedition.cs`, the `GameState` record,
+  `sim/GameSim/Drama/ExpeditionRevealSystem.cs`
+- Approach: `ExpeditionRevealSystem.cs:60` clears `PendingExpeditions` at the reveal; the roll
+  stream then exists nowhere in `GameState`, and the only survivor is
+  `SimAdapter.LastRevealedExpeditions` — client-side, day-guarded, lost on relaunch (the "silent
+  fallback hides finished work" wound, third time). `ExpeditionResult` gains trailing
+  `ImmutableList<HeroAtDeparture> PartyAtDeparture` (default empty — the save-compat precedent
+  `VenueId`/`Halt` already set on that record), populated in `BuildResult`, which already holds
+  the party: five lines, **no draws**. `GameState` gains trailing
+  `ImmutableList<ExpeditionResult> LastNightExpeditions`; the reveal **moves** results there
+  instead of dropping them, bounded to one night. No RNG anywhere — but the state shape changes,
+  so **the golden re-hashes and this unit carries a re-baseline, said out loud in its PR.**
+  Balance untouched. Old saves default empty and simply have no tellable night until their next
+  reveal. Contracts micro-PR, orchestrator-authored, merged before every dependent unit
+  (CLAUDE.md multi-agent rules).
+- Test scenarios: the reveal moves rather than drops; `PartyAtDeparture` captures level, MaxHp
+  and gear ids at result-build time — a hero levelled after the reveal leaves the snapshot
+  byte-identical; a fresh save round-trips the retained night; an old save loads with an empty
+  retained list and no throw.
+- Verification: fast lane green with the golden re-record named in the PR body; the balance gate
+  run and quoted unchanged.
+
+#### P2-MEMORY-01. Beat rows lose the enum
+
+- Goal: the ledger's beat rows speak the shared short-label vocabulary instead of `KillingBlow:`.
+- Requirements: P2-R29 (its worst instance), P2-R16's vocabulary
+- Files: `godot/scripts/panels/LedgerModal.cs`
+- Approach: the raw prefix is not just jargon, it is redundant — `Detail` already carries the
+  full sentence. Drop the prefix; define the one short-label vocabulary once (`the killing blow`,
+  `a life saved`, `the way opened`, `kept them standing`, `saved by the draught`, `the tool that
+  turned it`) and make it the only spelling any surface renders — the Chronicle Night and the
+  commendation read the same table later. `ToolAssist`'s label ships inert; its emitter is
+  `P2-LONG-03`'s and its voice ships there (D10's pin).
+- Test scenarios: no rendered beat row contains a `BeatType` member name; every member has a
+  label (reflectively enumerated, deny-by-default — a new beat type without a label is a red
+  build).
+- Verification: fast lane green; one rendered ledger frame.
+
+#### P2-PEOPLE-01. The scene engine and Torvald's first three
+
+- Goal: the cheapest unit that tests the whole People thesis — a pure-reader scene engine on the
+  shipped tavern thread, and Torvald's first three scenes ("The weigh", "Floor three",
+  "The trade").
+- Requirements: P2-R21, P2-R22; rulings 11.7.3/11.7.4; §11.5's boundary
+- Files: `godot/scripts/panels/TavernPanel.cs`, a new scene registry beside the tutorial's,
+  `godot/tests/`
+- Approach: delivery is the shipped "WORK THE ROOM" thread plus the counter opener — extend that
+  pattern, do not invent a second mechanism. Scenes write no sim state (KTD-G adopted verbatim:
+  the engine owns meaning, never fate). Triggers are recorded events only; ordering is by
+  prerequisite **facts**, never index, so out-of-order firing is impossible by construction; at
+  most one scene offer per day town-wide (P2-KTD7); an unclaimed scene waits indefinitely; a hero
+  dead at scene three leaves revealed facts persisted for the wake and kin, and unrevealed scenes
+  die unshown — nothing ever summarises them. After "Floor three" fires, the muster board's
+  "Torvald — floor 3" row gains the caption "Halvar's floor" (`P2-PEOPLE-04` generalizes this).
+  This is the probe: if these three scenes do not land with the owner on one evening's play, the
+  remaining ~140 pieces are not written, and the program stops having cost one session.
+- Test scenarios: a scene whose prerequisite fact is absent never offers; two eligible scenes on
+  one day offer once; scene state survives save/load; a planted engine-word in a scene fails the
+  register gate's seed check (the full gate is `P2-PEOPLE-02`); no sim field changes across a
+  scene (state fingerprint equality, whole state — a hand-listed field set silently lies).
+- Verification: engine suite compared on its pass count; a rendered tavern frame with the thread
+  row; the owner's verdict, which gates `P2-PEOPLE-03`.
+
+#### P2-LONG-01. Re-date the wall on the current build
+
+- Goal: the day-11 wall is re-measured before the expensive wave spends a golden on it.
+- Requirements: P2-KTD10; §11.4 P7's own gate
+- Files: `sim/GameSim.Cli/` (one instrumented sweep), no shipped code
+- Approach: nothing on record re-measured the wall after the forward ladder shipped — the claim
+  driving the whole middle wave is dated evidence. One instrumented batch sweep (existing
+  `batch` + the `decisions` tooling) re-dates where the player's question stops changing:
+  legal-verb variety, demand-slot variety, and first-occurrence days per seed. If the wall moved
+  past day 14, scope is re-argued **before** `P2-LONG-02`; if it stands, the measurement is the
+  wave's opening exhibit and P4's evening confirms it from the human side.
+- Test scenarios: none shipped — this unit produces a measurement, and its artifact is the PR
+  body's table plus chronicles in `runs/`.
+- Verification: the sweep's numbers quoted in the PR body; the plan amended in the same PR if the
+  finding contradicts it (§11.6 rule 5).
+
+#### P2-HONEST-01. The Progress book can be opened
+
+- Goal: the permanently-false unlock predicate becomes satisfiable, and the harness stops
+  covering the surface through a hole in the wall.
+- Requirements: P2-R30, P2-R31
+- Files: `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/tools/FullPlaytest.cs`
+- Approach: `TutorialFlow.cs:2963` reads `state.Bounties.Any(b => b.Paid)`, and `Bounty.Paid` is
+  false at its only construction site while `BountyPayoutSystem` removes the paid bounty instead
+  of flipping it — no `with { Paid = … }` exists anywhere in `sim/` or `godot/`. One line:
+  `state.EventLog.OfType<BountyPaid>().Any()` — the event is emitted at payout and the log is
+  append-only, preserving the gate's monotonicity. Per the applied default, this unlocks the
+  Progress board **and** the second profession at the same moment — the tooltip already promises
+  exactly that, and splitting the predicate would create a new hand-written second copy of a
+  fact. Delete `FullPlaytest`'s direct `OpenPanel("Progress")` bypass in the same PR: the harness
+  reaches the surface through the player's door or reports that it cannot.
+- Test scenarios: a scripted bounty payout opens the gate; the fresh-campaign gate is closed; the
+  harness's route to Progress goes through `OpenGatedSurface`; no other caller of
+  `OpenPanel("Progress")` exists (creation-site census).
+- Verification: fast lane green; `BaselinePlayer` never submits `SetProfessionsAction`, so no
+  balance number can move — assert the balance gate untouched by running it once and quoting it.
+
+## The verification contract
+
+| Gate | Command | Applies to |
+|---|---|---|
+| Fast lane | `dotnet test sim/GameSim.Tests/GameSim.Tests.csproj --filter Category!=Balance` | every unit |
+| Balance | `dotnet test sim/GameSim.Tests/GameSim.Tests.csproj --filter Category=Balance` | every [BAL] unit, and any unit touching sim content |
+| Engine suite | `dotnet test godot/tests --settings .runsettings` | every [G] unit |
+| Chronicle census | `dotnet run --project sim/GameSim.Cli -- batch --seeds 20 --days 100` then the fast lane | P2-PROOF-01, P2-LONG-03, P2-PEOPLE-09/11, P2-LONG-16 |
+| Rendered frames | `tools/receipt.ps1` then `tools/shoot.ps1` | every visual unit — see below |
+| Deploy | `play.bat verify` | every wave's last unit |
+
+The engine gate is the **pass count**, never the runner's verdict: two concurrent runs each
+report success while losing hundreds of tests, so engine tests are never run from two worktrees
+at once, and a completion report quotes the runner's own `Failed: N, Passed: N` line — a wrapper
+computing PASS from an exit code is itself the defect (rule 10).
+
+**Rendered verification is required, not optional**, for every P2-SCREEN unit, the Telling's
+staging units (P2-PROOF-03/04/05), the book (P2-MEMORY-10..14), the wake staging, and the town
+units in P2-LONG — both tutorial defects that reached `main` passed every suite and were found by
+looking at pixels, and the first-run visual pass found six defect classes no code-reading pass
+could. A visual unit's PR attaches its after-frame beside P2-SCREEN-02's before-frame.
+
+Per-domain proof, stated once:
+
+- **SCREEN** proves itself with frames and two censuses: no surface draws over an owner
+  (byte-compare where the claim is zero-delta, frames where it is not), and enabled ⇔ legal
+  across a scripted day.
+- **ONBOARD** proves itself with the pinned seed's fast-lane replay (each intended beat by day,
+  under `ApprenticePlayer` and the perturbed scripts) and the tab-through lane: a run that reads
+  nothing still graduates, and any completion predicate that required a read word fails the lane.
+- **PROOF** proves itself with the consistency pin (the staged verdict never contradicts
+  `ComputeBeats` across a seed sweep), the level-up-immunity pin, and the reflection assertion
+  that `TellingQuery` has no RNG parameter to draw from.
+- **MEMORY** proves itself with retention (the book's day pages equal the event log's tail for
+  the same days), the channel clause per channel on a hand-built log, and the pack conformance
+  tests (variant counts unchanged; `{cause}` never opens a sentence).
+- **PEOPLE** proves itself with the register gate (a planted violation of each rule fails), the
+  whole-state fingerprint across every scene, the three-draw proof on recruits, and — for the
+  thesis itself — the owner's evening on P2-PEOPLE-01.
+- **LONG** proves itself in the Balance category: mortality flat across a hazard flip, the ending
+  ≤36 two-sided with a commission-playing policy, and the no-stats tripwire on campaign two.
+- **HONEST** proves itself by its censuses running deny-by-default in the fast lane — and by the
+  first run of each being triaged into fixes-or-ledger inside the unit that builds it.
+
+## Open questions
+
+Twenty-six questions came back across the dossiers. Twenty-one had a clear recommendation and a
+cheap reversal; **their defaults are applied**, stated inline in the domain text above where each
+binds (the advisor's peer surface, no death tally, the Depths-panel roster door, per-surface
+dimming, one-night telling retention, ledger-only telling trigger, no rival's mirror, the
+Provisioned flee-line verdict, dead-only kin, starters-deep-before-recruits-wide, wake-morning
+shopping stays on, seasons touch rank-0 from day 8, the Heartpiece purchasable, re-offer until
+departure, the Quiet Morning over render-only, the storyteller deferred to The Mark Endures, the
+Progress unlock unsplit, and the rest). The full arguments lived in the 2026-08-31 dossier round;
+what binds is here, and the PR landing this section is the record. **Five forks change what gets
+built and are the owner's:**
+
+- **P2-OQ1. The wake's no-march day.** (a) Full town rest — *recommended*: the fiction is "the
+  town buries its own before it hunts", and the day after a death stops being mechanically
+  identical to every other day, which is the original complaint. Costs a golden re-record, a
+  balance re-baseline, ~5–7 raid days per campaign, and P3's pinned windows move and are
+  re-pinned two-sided. (b) Party-mates only — same re-record, weaker fiction. (c) Presentation
+  only — free, and ships a wake that watches heroes march past the coffin. 80% of the Wake ships
+  before this fork either way (P2-PEOPLE-05..07, 12's staging half).
+- **P2-OQ2. How wrong Bryn gets to be.** (a) Full — her rule costs the player one likely sale and
+  one goodwill hit before the sim corrects her; discovery is the player's first act of mastery,
+  and every correction comes from the sim, not from copy — *recommended*. (b) Shelf-only —
+  following her never costs remembered goodwill. (c) Not at all — T10's honest Bryn stands, and
+  the one beat that makes her a person is forfeited. This is the mentor's identity, not a knob.
+- **P2-OQ3. Deleting the ticker.** A shipped surface, and one of the five links currently lives
+  only there — that is the argument *for* deletion, since its only vessel is a 28px strip at
+  48px/s that never pauses. (a) Delete; day pages own retention; the fallback if the bottom edge
+  feels dead is a fading latest-line label, recoverable in an afternoon — *recommended*.
+  (b) Keep-and-fix with fade masks and pause-on-hover — genuinely cheaper, and keeps the
+  unreadability permanently.
+- **P2-OQ4. The book's export.** One self-contained HTML file, written client-side, same model as
+  the in-game book so divergence is structurally impossible — *recommended*: a real file the
+  player keeps is half the idea's power. It is also the one place this game writes to disk on the
+  player's behalf, which is the owner's call, not a default.
+- **P2-OQ5. The faction cut.** Only askable after `P2-MEMORY-09` makes the layer's copy honest,
+  and only as an explicit reversal of the 2026-08-24 OQ1 ruling ("buy the ore, or buy the
+  faction's favour" — the gift declined). The ideation's case: factions have no faces, no memory
+  a player can love or wrong, and their expressive range is a discount — a reputation costume on
+  a coupon. The standing ruling's case: it is ruled, recently, and decision 5 ships taught
+  (U40, #648). Recommendation: **do not ask until the copy is fixed and P4's evening has
+  spoken**; a cut question framed against lying copy would be answered about the lie, not the
+  layer.
+
+## What must survive, named so this program cannot quietly discard it
+
+Everything in §11.14.14's own survival list binds here unchanged — the `Skipped` third state, the
+throw-on-unresolvable-anchor contract, the once-ever first-touch engine, the queue drained only by
+the player's own press, the vocabulary joins. On top of it, Phase 2 adds its own:
+
+- **The ledger's collapsed line stays the complete no-cost alternative to the Telling.** The
+  telling competes on desire, never on necessity, and the pride payload keeps serving beatless
+  nights and the halt closer.
+- **The dormant-act pattern** — armed and silent, bounded window, `Done` or honestly `Skipped`,
+  retire into the book — is the template for every new beat in every domain. The 1,287× finding
+  is why the retire is a hard rule and not a preference.
+- **The mark is beyond doubt.** No forgery plot, no counterfeit mechanic, ever — link 1 is the
+  axiom the proof chain keys on, and a game that teaches players marks can lie has traded its
+  constitution for one plot.
+- **The mine's indifference.** No adaptive director, no scheming dungeon, no difficulty hand.
+  *Emberbite turned the killing blow* is a theorem precisely because nothing wanted Torvald to
+  live.
+- **No participation credit, nowhere, including at the ending.** The Final Commission's outcome 2
+  and the Provisioned telling's "this time" are the principle at its most expensive, and they are
+  never softened.
+- **Six decisions stay six.** The pledge is decision 1 at a third address; the seventh decision
+  is asked once, about everything at once. The moment someone proposes a daily legacy verb, the
+  identity really would be seven — that proposal is dead on arrival.
+- **The counter's rules stay untouched by this program.** The copy is honest on `main`; the
+  purse-cap asymmetry is booked with its measurement behind P4 (§9.5's amendment), not
+  rediscovered.
+- **`ToolAssist` stays silent until its emitter ships.** The pin and the test asserting the
+  emptiness are a documented absence — the opposite of the failure family — and its gossip and
+  voice land with `P2-LONG-03`, not before.
+- **The kernel stream is sacred.** Kin derives via `StableHash`; the three-draw recruit contract
+  holds with a test; no unit adds a draw anywhere outside a ruled ceremony.
+- **The watch stays censored.** The telling never lends it a renderer, and no unit "unifies" them
+  — one leaks deaths, the other re-censors the proof.
+- **Scar tissue outlives its defect by a wave.** The `*Wrap` controls and their kin are deleted
+  only after the arbiter has owned the width for a full wave — never in the unit that introduces
+  it.
+
+## One thing this program does not touch, and one thing only the owner can
+
+It does not touch vigil tuning (§11.3 R1's freeze stands until the owner writes R1's line), and
+it does not tune the counter (§9.5, behind P4). And `CLAUDE.md`'s six-decision list still reads
+"buy the ore or buy the goodwill" where the 2026-08-24 ruling says "the faction's favour" — the
+file is deny-listed and owner-only, so it is recorded here, again, as the standing owner action
+(T10 OQ4). Until it is changed by hand, the repo's most-read file contradicts `THE-GAME.md` §3.5,
+and rule 8 says a doc git contradicts is an instruction the next session obeys.
