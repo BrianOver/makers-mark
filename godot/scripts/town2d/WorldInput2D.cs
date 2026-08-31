@@ -60,6 +60,18 @@ public partial class WorldInput2D : Node2D
     {
         if (!Enabled)
         {
+            // P2-SCREEN-05: this early return used to sit above SetTarget, so the instant a modal
+            // disabled world input, PromptText froze at whatever it last said — and both readers
+            // (MainUi's chip, the playtest bridge) took the stale string as live. Clearing the
+            // target on every disabled tick (SetTarget is a same-target no-op once cleared, so
+            // this costs nothing after the first frame) makes "disabled" read exactly like
+            // "nothing in range", which is what the player should see either way. Kept as a
+            // property-free field mutation in the same _PhysicsProcess this whole class already
+            // drives its state through, rather than a side effect hidden in an Enabled setter —
+            // Enabled is a plain public field Town2D flips directly, and every other stateful edge
+            // here (SetTarget's own no-op guard, the interact/cancel presses below) already lives
+            // in this method, not scattered across property setters.
+            SetTarget(null);
             return;
         }
 
