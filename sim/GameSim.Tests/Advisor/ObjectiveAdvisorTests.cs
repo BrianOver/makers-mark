@@ -444,4 +444,79 @@ public class ObjectiveAdvisorTests
         Assert.Contains("5g", match.Reason, StringComparison.Ordinal);
         Assert.Contains("20g", match.Reason, StringComparison.Ordinal);
     }
+
+    // ---------------------------------------------------------------- P2-MEMORY-04: the rite fires once
+
+    /// <summary>
+    /// P2-MEMORY-04: the memorial rite is suggested on the FIRST Evening it is legal — the Evening
+    /// after the memorial's Day — and never on any later Evening. An honored memorial never fires
+    /// it at all. The un-honored state thereafter is a fact the wall carries, not a nightly prompt.
+    /// </summary>
+    [Fact]
+    public void MemorialSuggestion_FiresOnDayAfterMemorial_AndNeverAgain()
+    {
+        var fresh = GameComposition.NewCampaign(Seed);
+        var hero = fresh.Heroes.Values.First();
+        var memorial = new Memorial(hero.Id, hero.Name, Day: 5, GearNamed: "an Iron Sword");
+
+        GameState AtDay(int day, bool honored) => fresh with
+        {
+            Day = day,
+            Phase = DayPhase.Evening,
+            Drama = fresh.Drama with
+            {
+                Memorials = ImmutableList.Create(memorial with { Honored = honored }),
+            },
+        };
+
+        // Day 6 — the first Evening the rite is legal: exactly one memorial suggestion, and its
+        // copy names the cost of skipping (the rite keeps) per the skipping law.
+        var firstEvening = ObjectiveAdvisor.Suggest(AtDay(6, honored: false))
+            .Where(s => s.Action is HonorMemorialAction).ToList();
+        var suggestion = Assert.Single(firstEvening);
+        Assert.Contains(hero.Name, suggestion.Reason, StringComparison.Ordinal);
+        Assert.Contains("the rite keeps", suggestion.Reason, StringComparison.Ordinal);
+
+        // Day 7 and beyond — never again, honored or not.
+        Assert.DoesNotContain(ObjectiveAdvisor.Suggest(AtDay(7, honored: false)),
+            s => s.Action is HonorMemorialAction);
+        Assert.DoesNotContain(ObjectiveAdvisor.Suggest(AtDay(60, honored: false)),
+            s => s.Action is HonorMemorialAction);
+
+        // An honored memorial never fires it, even on its own first legal Evening.
+        Assert.DoesNotContain(ObjectiveAdvisor.Suggest(AtDay(6, honored: true)),
+            s => s.Action is HonorMemorialAction);
+    }
+
+    /// <summary>
+    /// P2-MEMORY-04 tripwire: across a scripted ~100-day run, the advisor's memorial suggestions
+    /// never exceed the deaths — one first-legal-Evening suggestion per memorial, not one per
+    /// Evening per un-honored memorial (the 1,287-fires-in-one-campaign defect this unit killed;
+    /// the old top-priority re-derive would trip this the moment anyone re-reads it back in).
+    /// Suggest is polled once per tick, the way a driving surface reads it.
+    /// </summary>
+    [Fact]
+    public void MemorialSuggestions_NeverExceedDeaths_AcrossAScriptedHundredDayRun()
+    {
+        var kernel = GameComposition.BuildKernel();
+        var state = GameComposition.NewCampaign(DeathHeavySeed);
+        var deaths = 0;
+        var memorialSuggestions = 0;
+
+        for (var tick = 0; tick < 100 * 5; tick++)
+        {
+            memorialSuggestions += ObjectiveAdvisor.Suggest(state)
+                .Count(s => s.Action is HonorMemorialAction);
+
+            var result = kernel.Tick(state, BaselinePlayer.ActionsFor(state));
+            deaths += result.Events.OfType<HeroDied>().Count();
+            state = result.NewState;
+        }
+
+        Assert.True(deaths >= 1, $"Seed {DeathHeavySeed} produced no deaths in 100 days — the scenario is vacuous.");
+        Assert.True(memorialSuggestions >= 1,
+            "No memorial suggestion fired at all across 100 days with deaths on record — the rite bridge is dead.");
+        Assert.True(memorialSuggestions <= deaths,
+            $"{memorialSuggestions} memorial suggestion(s) for {deaths} death(s) — the rite must be suggested at most once per memorial.");
+    }
 }

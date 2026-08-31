@@ -19,8 +19,14 @@ namespace GameSim.Flavor.Packs;
 /// faction's DISPLAY name, carried in on the event so the renderer needs no registry lookup, KTD7)
 /// and <c>{direction}</c> (the crossing word — "warmed" for favored, "cooled" for cooled). The
 /// engine's validation requires every provided value verbatim in the output, so every variant below
-/// mentions both slots. Prose leans on the price consequence the player actually feels (R7): a warmer
-/// guild sells ore cheaper, a cooler one dearer.</para>
+/// mentions both slots. Prose leans on the price consequence the player actually feels (R7) — and
+/// only the one the sim can charge: a warmer guild sells ore cheaper; a cooling one lets that earned
+/// discount fade back toward the plain base ask. Standing is discount-only (KTD8:
+/// <c>FactionDriftSystem.StepTowardZero</c> floors at 0, and <c>Cooled</c> stamps on the
+/// favored-EXIT crossing — typically while standing is still well above zero), so ore NEVER costs
+/// more than the neutral base price and no <see cref="Cooled"/> variant may claim it does.
+/// <c>AdventureTicker</c>'s <c>FactionStandingShifted</c> arm carries the same rule and the long-form
+/// reasoning; <c>FactionPackTests</c> tripwires the price-rise vocabulary (P2-MEMORY-09).</para>
 ///
 /// <para><b>Fallbacks:</b> one per base key, in the same plain register — new drama with no prior
 /// hardcoded line. Simple enough to always pass validation (pack conformance tests assert this).</para>
@@ -34,8 +40,8 @@ namespace GameSim.Flavor.Packs;
 /// superstitious warm-wry register (omens/salt/the-turning-tide/never-on-a-Thirdday). Because
 /// <c>{faction}</c> is a slot, these stay generic — permit- and superstition-flavored, never Warden- or
 /// Salvor-specific — so all four factions read cleanly, in the deadpan register (no puns, no fourth wall,
-/// no modern slang). Every added line stays pinned to the cheaper/dearer-ore consequence
-/// the player actually feels (R7). Breadth lives in this existing pack file: additive same-surface packs
+/// no modern slang). Every added line stays pinned to the price consequence the player actually feels
+/// (R7): a rising discount on favored, a fading one on cooled. Breadth lives in this existing pack file: additive same-surface packs
 /// are unsupported (the generator binds one faction pack, and
 /// <c>Pack_VariantKeys_AreExactlyBaseKeysCrossVoices</c> pins the exact key set), so ruling R8 grows it
 /// in place.</para>
@@ -145,86 +151,89 @@ public static class FactionPack
                 "I read dear iron in the dust. The {faction} {direction} and made it a lie — cheaper ore, and a portent left red-faced."),
 
             // ------------------------------------------------------------- cooled (direction = "cooled")
+            // P2-MEMORY-09: cooled prose is DISCOUNT-FADING, never price-rise — standing is
+            // discount-only (KTD8), so ore never costs more than the plain base ask. Same rule,
+            // same reasoning as AdventureTicker's FactionStandingShifted arm.
             [$"{Cooled}/gruff"] = ImmutableList.Create(
-                "The {faction} {direction} on you. Ore costs more now. Should've kept trading.",
-                "The {faction} have {direction} — neglect does that. The picks come dearer.",
-                "Word is the {faction} {direction} toward your shop. Prices climb. That's the trade.",
-                "The {faction} {direction}. Stop buying, they stop caring. Ore's up a coin.",
-                "The {faction} {direction} toward your shop. Dearer iron now. That's neglect.",
-                "Word is the {faction} {direction}. Prices climb. Nobody's fault but the empty ledger.",
-                "The {faction} {direction} on your account. Pay more or mend it. Your call.",
-                "The {faction} {direction}. The picks bite deeper now. Simple arithmetic.",
-                "Guild's cold — the {faction} {direction}, and the ore knows it.",
-                "The {faction} {direction} toward you. Dearer ore, colder welcome.",
-                "The {faction} {direction}. Should've fed the guild. Now it feeds on you.",
-                "The {faction} {direction} on your custom. Costs more to make good than to keep good.",
-                "The {faction} {direction} on you. Reclassified your account 'neglectful.' Ore's up a coin. Appeals go in the usual bin.",
-                "The {faction} {direction}. Marked the file 'lapsed,' dearer ore attached. Mend it or pay the surcharge. Your ledger.",
-                "Permit expired — the {faction} {direction}. Ore's up a coin. Renew it or pay the difference.",
-                "The {faction} {direction}. Marked 'overdue,' dearer ore attached. Should've filed on time.",
-                "The {faction} {direction}. Salt spilled toward the door, the old hands say. Dearer ore, and no arguing it.",
-                "They don't forgive on a Thirdday, they say — and the {faction} {direction}. Dearer ore. Mend it on a kinder one."),
+                "The {faction} {direction} on you. The cheap ore's going. Should've kept trading.",
+                "The {faction} have {direction} — neglect does that. The discount's draining.",
+                "Word is the {faction} {direction} toward your shop. The discount thins. That's the trade.",
+                "The {faction} {direction}. Stop buying, they stop caring. The coin off goes first.",
+                "The {faction} {direction} toward your shop. Kind prices don't keep. That's neglect.",
+                "Word is the {faction} {direction}. The discount fades. Nobody's fault but the empty ledger.",
+                "The {faction} {direction} on your account. Mend it or lose the rate. Your call.",
+                "The {faction} {direction}. The good rate wears off. Simple arithmetic.",
+                "Guild's cold — the {faction} {direction}, and the discount knows it.",
+                "The {faction} {direction} toward you. Fading discount, colder welcome.",
+                "The {faction} {direction}. Should've fed the guild. Now it forgets you.",
+                "The {faction} {direction} on your custom. Cheaper to keep a discount than to earn it twice.",
+                "The {faction} {direction} on you. Reclassified your account 'neglectful.' The discount's under review. Appeals go in the usual bin.",
+                "The {faction} {direction}. Marked the file 'lapsed,' discount to follow it out. Mend it or watch it go. Your ledger.",
+                "Permit expired — the {faction} {direction}. The cheap-ore stamp fades with it. Renew it or pay the plain ask.",
+                "The {faction} {direction}. Marked 'overdue,' the discount thinning while it sits. Should've filed on time.",
+                "The {faction} {direction}. Salt spilled toward the door, the old hands say. The kind rate's leaving, and no arguing it.",
+                "They don't forgive on a Thirdday, they say — and the {faction} {direction}. The discount won't wait. Mend it on a kinder one."),
             [$"{Cooled}/dramatic"] = ImmutableList.Create(
-                "Alas! The {faction} have {direction} toward your forge — the ore turns dear!",
-                "The {faction} {direction}, and the price of iron rises like a tide against you!",
-                "Hear it and grieve: the {faction} {direction}, and every pick bites deeper into the purse!",
-                "The great {faction} {direction} — cold shoulders, and colder prices!",
-                "Woe! The {faction} {direction}, and iron's price rises against you!",
-                "Grieve, tavern! The {faction} {direction}, and every ingot bites deeper!",
-                "The great {faction} {direction} from you, and the forge pays the toll!",
-                "Dark tidings — the {faction} {direction}, and the ore turns against your purse!",
-                "The {faction} {direction}, and a chill settles on every price you pay!",
-                "Hear and lament: the {faction} {direction}, the iron dear as gold!",
-                "The {faction} {direction} toward you — the anvils ring a poorer tune!",
-                "A bitter season! The {faction} {direction}, and the ledger weeps coin!",
-                "Alas, the {faction} {direction}! The ore climbs a whole coin — a catastrophe measured in coppers, but felt in the soul!",
-                "The great {faction} {direction} from you, and iron's price rises like a tide — a very small tide, but a cold one!",
-                "By stamp and by grievance, the {faction} {direction}! A copper added to the ore — a small toll, grandly resented!",
-                "The great seal turns its face away — the {faction} {direction}, and the ore climbs by decree!",
-                "The tides of fortune ebb! The {faction} {direction}, and the ore turns dear as a cursed morning!",
-                "Read the omens and grieve — the {faction} {direction}, and every ingot bites a copper deeper!"),
+                "Alas! The {faction} have {direction} toward your forge — the cheap ore slips away!",
+                "The {faction} {direction}, and iron's kindness ebbs like a tide going out!",
+                "Hear it and grieve: the {faction} {direction}, and the discount withers on the vine!",
+                "The great {faction} {direction} — cold shoulders, and the warm rate cooling with them!",
+                "Woe! The {faction} {direction}, and the discount drains away before your eyes!",
+                "Grieve, tavern! The {faction} {direction}, and every spared copper packs its bags!",
+                "The great {faction} {direction} from you, and the forge's sweet rate slips through its fingers!",
+                "Dark tidings — the {faction} {direction}, and the ore forgets its fondness for your purse!",
+                "The {faction} {direction}, and the discount fades like a candle in a draft!",
+                "Hear and lament: the {faction} {direction}, the bargain going the way of all bargains!",
+                "The {faction} {direction} toward you — the anvils ring a poorer tune, and the discount fades with it!",
+                "A bitter season! The {faction} {direction}, and the ledger mourns its little discount!",
+                "Alas, the {faction} {direction}! A whole coin of discount, fading — a catastrophe measured in coppers, but felt in the soul!",
+                "The great {faction} {direction} from you, and the discount ebbs like a tide — a very small tide, but a cold one!",
+                "By stamp and by grievance, the {faction} {direction}! A copper of goodwill, struck from the books — a small loss, grandly mourned!",
+                "The great seal turns its face away — the {faction} {direction}, and the discount fades by decree!",
+                "The tides of fortune ebb! The {faction} {direction}, and the bargain goes out with the water!",
+                "Read the omens and grieve — the {faction} {direction}, and every spared copper slips back into the guild's ledger!"),
             [$"{Cooled}/wry"] = ImmutableList.Create(
-                "The {faction} {direction} on you. Turns out they hold grudges and invoices.",
-                "The {faction} {direction} — nothing personal, just pricier ore. Somewhat personal.",
-                "The {faction} {direction} toward your shop. Absence makes the ore grow costlier.",
-                "The {faction} {direction}. The dearer prices are, I'm told, a coincidence.",
-                "The {faction} {direction} toward you. Nothing personal — well, the prices are.",
-                "The {faction} {direction}. Absence makes the ore grow costlier, apparently.",
+                "The {faction} {direction} on you. Turns out grudges outlast discounts. Considerably.",
+                "The {faction} {direction} — nothing personal, just a fading discount. Somewhat personal.",
+                "The {faction} {direction} toward your shop. Absence makes the discount grow forgetful.",
+                "The {faction} {direction}. The shrinking discount is, I'm told, a coincidence.",
+                "The {faction} {direction} toward you. Nothing personal — well, the discount was.",
+                "The {faction} {direction}. Out of sight, out of the good-rate ledger, apparently.",
                 "So the {faction} {direction}. Who knew loyalty was itemized.",
-                "The {faction} {direction} on your shop. The dearer ore is 'a coincidence.'",
-                "The {faction} {direction}. You forgot them; they remembered, with a surcharge.",
-                "The {faction} {direction} toward you. Cold guild, warm invoice.",
-                "The {faction} {direction}. They're not upset. The prices are just expressing themselves.",
-                "The great {faction} {direction} on you. Grudges, now available by the ingot.",
-                "The {faction} {direction} on you. There's a form for grudges; they filled it out neatly. Dearer ore, itemized.",
-                "So the {faction} {direction}. Nothing personal — the surcharge, however, is extremely personal. Ore's up a coin.",
-                "The {faction} {direction}. Grievance filed in triplicate, dearer ore attached. The clerk seemed to enjoy it.",
-                "Apparently the {faction} {direction} — there's a form for disappointment now. Dearer ore, neatly itemized.",
-                "The {faction} {direction}. The signs warned of it, or the empty ledger did. Dearer ore either way.",
-                "They never cool on a Thirdday, they claim. The {faction} {direction} regardless. Costlier ore, no apology."),
+                "The {faction} {direction} on your shop. The discount is 'stepping out for a while.'",
+                "The {faction} {direction}. You forgot them; they're returning the favor, one coin of discount at a time.",
+                "The {faction} {direction} toward you. Cold guild, cooling discount.",
+                "The {faction} {direction}. They're not upset. The discount is just quietly excusing itself.",
+                "The great {faction} {direction} on you. Goodwill, now fading by the ingot.",
+                "The {faction} {direction} on you. There's a form for grudges; they filled it out neatly. Fading discount, itemized.",
+                "So the {faction} {direction}. Nothing personal — the way the discount is fading, however, is extremely personal.",
+                "The {faction} {direction}. Grievance filed in triplicate, discount unfiled in the same motion. The clerk seemed to enjoy it.",
+                "Apparently the {faction} {direction} — there's a form for disappointment now. The discount leaves, neatly itemized.",
+                "The {faction} {direction}. The signs warned of it, or the empty ledger did. The discount fades either way.",
+                "They never cool on a Thirdday, they claim. The {faction} {direction} regardless. The discount goes, no apology."),
             [$"{Cooled}/omen"] = ImmutableList.Create(
-                "The {faction} {direction} toward you — the candles guttered at the assay. Dearer ore, darker signs.",
-                "I saw it in the slag: the {faction} {direction}. The veins turn their faces away.",
-                "The {faction} {direction}. The mountain keeps its grudges; the price remembers too.",
-                "When the {faction} {direction}, salt the threshold — cold guild, cold trade, costlier iron.",
-                "The {faction} {direction}. The slag showed it plain. Dearer ore, darker signs.",
+                "The {faction} {direction} toward you — the candles guttered at the assay. The kind price wanes, and the signs darken.",
+                "I saw it in the slag: the {faction} {direction}. The veins turn their faces away, and the kind rate goes with them.",
+                "The {faction} {direction}. The mountain keeps its grudges; the discount does not keep at all.",
+                "When the {faction} {direction}, salt the threshold — cold guild, cold trade, the good rate going.",
+                "The {faction} {direction}. The slag showed it plain. The discount thins, and the omens agree.",
                 "The veins turn their faces away: the {faction} {direction} from you.",
                 "The {faction} {direction} on your name. Salt the threshold; cold trade follows.",
-                "When the {faction} {direction}, the old ones say the ore sours. It has.",
+                "When the {faction} {direction}, the old ones say the bargain sours first. It has.",
                 "The {faction} {direction}. The coals leaned away from your account tonight.",
-                "The {faction} {direction} toward you. Costlier iron, and the deep's cold shoulder.",
+                "The {faction} {direction} toward you. A waning discount, and the deep's cold shoulder.",
                 "The {faction} {direction}. The mountain feeds a colder table now. Yours.",
-                "The {faction} {direction} from you. Dearer ore is how the deep says it's watching.",
-                "I swore the {faction} would hold. They {direction} instead, and the ore turned dear. My portents are in disgrace.",
-                "The signs promised warm trade. The {faction} {direction}, dearer iron in hand. Even the omens are asking for a refund.",
-                "The tide went out cold, and the {faction} {direction}. Dearer ore rides an ebbing tide — read it plain.",
-                "Salt spilled toward the sill — an ill sign. The {faction} {direction}, and the ore turns dear.",
-                "The signs promised a warm season. The {faction} {direction} instead, ore dear in hand. The omens keep no receipts.",
-                "I read cheap iron in the coals. The {faction} {direction} and made it a lie — dearer ore, and a portent hiding its face."),
+                "The {faction} {direction} from you. A fading discount is how the deep says it's watching.",
+                "I swore the {faction} would hold. They {direction} instead, and the discount is fading. My portents are in disgrace.",
+                "The signs promised warm trade. The {faction} {direction}, and the discount followed the signs out. Even the omens are asking for a refund.",
+                "The tide went out cold, and the {faction} {direction}. A thinning discount rides an ebbing tide — read it plain.",
+                "Salt spilled toward the sill — an ill sign. The {faction} {direction}, and the kind price drains away.",
+                "The signs promised a warm season. The {faction} {direction} instead, the discount slipping. The omens keep no receipts.",
+                "I read lasting cheap iron in the coals. The {faction} {direction} and made it a lie — a fading discount, and a portent hiding its face."),
         },
         new Dictionary<string, string>(StringComparer.Ordinal)
         {
             [Favored] = "The {faction} have {direction} to your custom — cheaper ore, folk say.",
-            [Cooled] = "The {faction} have {direction} toward your shop — dearer ore, folk say.",
+            [Cooled] = "The {faction} have {direction} toward your shop — the ore's discount is fading, folk say.",
         });
 }

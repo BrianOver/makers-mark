@@ -37,7 +37,8 @@ public sealed record Suggestion(PlayerAction? Action, string Reason);
 /// 15+ days, T4") was never about missing invalidation — it was that the SAME low-priority fallback
 /// (buy-material/craft) always won the race regardless of what the town actually needed. U8 fixes
 /// that by giving two higher-priority, demand-aware suggestions first crack every call: (0) an
-/// un-honored memorial once the farewell rite is legal (Evening) — the thin death-adjacent bridge to
+/// un-honored memorial on the FIRST Evening the farewell rite is legal — exactly once per memorial
+/// (P2-MEMORY-04), the thin death-adjacent bridge to
 /// Phase A's Legend Engine; (1) <see cref="DemandBoard.Snapshot"/>'s current top demand — an open
 /// commission (a guaranteed sale, locked in by accepting) or a depth-stalled hero's blocking gear slot
 /// (craft/buy toward it). Only when NEITHER fires does the original cheapest-productive-path fallback
@@ -50,20 +51,26 @@ public static class ObjectiveAdvisor
         var suggestions = ImmutableList.CreateBuilder<Suggestion>();
         var phase = state.Phase;
 
-        // 0. Death-adjacent bridge (U8): a memorial is only actionable once the rite is legal
-        //    (Evening, FarewellHandlers) — a hero who dies THIS Evening is honorable starting the
-        //    NEXT one. Once honored, the memorial drops out of this read (Honored filter), so this
-        //    branch self-invalidates with zero extra state.
+        // 0. Death-adjacent bridge (U8), narrowed to fire ONCE per memorial (P2-MEMORY-04): the
+        //    rite is suggested on the FIRST Evening it is legal — the memorial is raised during the
+        //    death-revealing Evening's system pass, so the first Evening a caller can act on it is
+        //    Day + 1 — and never again. The prior read (first un-honored memorial, every Evening,
+        //    forever) re-presented a permanent fact nightly as if it were news, measured at 1,287
+        //    fires in one campaign. Thereafter an un-honored memorial is a fact the wall carries,
+        //    not a prompt anyone repeats: the ledger is news at the threshold of memory. Stateless
+        //    and deterministic — the predicate is a pure read of Memorial.Day, no new state. The
+        //    one line it keeps names the cost of skipping (the rite keeps; nothing is lost but the
+        //    saying of it). Once honored, the memorial drops out of this read (Honored filter).
         if (phase == DayPhase.Evening)
         {
-            var memorial = state.Drama.Memorials.FirstOrDefault(m => !m.Honored);
+            var memorial = state.Drama.Memorials.FirstOrDefault(m => !m.Honored && state.Day == m.Day + 1);
             if (memorial is not null)
             {
                 var honor = new HonorMemorialAction(memorial.Hero);
                 if (ActionLegality.IsLegal(state, honor, phase))
                 {
                     suggestions.Add(new Suggestion(honor,
-                        $"Honor {memorial.HeroName}'s memorial — their {memorial.GearNamed} still waits at the stone."));
+                        $"Honor {memorial.HeroName}'s memorial — the rite keeps, and it will wait as long as you do."));
                 }
             }
         }
