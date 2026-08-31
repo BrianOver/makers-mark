@@ -182,7 +182,6 @@ if ($Diff) {
 # CAPTURE MODE
 # ============================================================================================
 $godotDir = Join-Path $repo "godot"
-$buildInfoPath = Join-Path $godotDir "assets\build_info.txt"
 $receiptsDir = Join-Path $repo "runs\receipts"
 $indexPath = Join-Path $receiptsDir "index.jsonl"
 New-Item -ItemType Directory -Force -Path $receiptsDir | Out-Null
@@ -206,16 +205,12 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 # ---- 2. stamp -- the sha that produced this build renders INSIDE every captured frame -----
-$sha = (git rev-parse --short HEAD)
-$branch = (git rev-parse --abbrev-ref HEAD)
-$dirty = if ((git status --porcelain)) { "dirty" } else { "clean" }
-$dateStr = (Get-Date -Format "yyyy-MM-dd")
-$stamp = "receipt: $branch@$sha | $dirty | $dateStr"
+# Shared with shoot.ps1 (P2-SCREEN-02) so the two scripts can never write this stamp
+# differently -- see tools/stamp-build-info.ps1's own header for why that mattered.
+. (Join-Path $repo "tools\stamp-build-info.ps1")
+$stamp = Set-BuildInfoStamp -Repo $repo
 Write-Host $stamp -ForegroundColor Cyan
-# Windows PowerShell 5.1's `Set-Content -Encoding utf8` writes a BOM; play.bat's equivalent
-# stamp write does not, and BuildStamp.cs's plain .Trim() would leave a stray BOM character
-# rather than strip it. Write BOM-less UTF-8 explicitly to match that convention exactly.
-[System.IO.File]::WriteAllText($buildInfoPath, $stamp, (New-Object System.Text.UTF8Encoding($false)))
+$sha = (git rev-parse --short HEAD)
 
 # ---- 3. reimport -- cheap and idempotent when nothing changed; matters when the visible ---
 #         change is an asset edit rather than C#. Same call play.bat makes; not gated on its

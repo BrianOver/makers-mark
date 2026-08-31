@@ -4032,8 +4032,10 @@ public partial class MainUi : Control
         button.AddThemeStyleboxOverride("pressed", GameTheme.ButtonStylePrimary(GameTheme.ButtonVisualState.Pressed));
 
         button.AddThemeColorOverride("font_color", GameTheme.BoneColor);
-        button.AddThemeColorOverride("font_color_hover", GameTheme.BoneColor);
-        button.AddThemeColorOverride("font_color_pressed", GameTheme.BoneColor);
+        // P2-SCREEN-01: Godot 4 spellings (see GameTheme.Build's matching fix) -- the Godot 3
+        // names below were silently ignored.
+        button.AddThemeColorOverride("font_hover_color", GameTheme.BoneColor);
+        button.AddThemeColorOverride("font_pressed_color", GameTheme.BoneColor);
     }
 
     /// <summary>UI-4: a 28px icon-only Books Tray button — the full label moves to <see
