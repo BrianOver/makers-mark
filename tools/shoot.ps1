@@ -24,6 +24,16 @@ $ErrorActionPreference = "Stop"
 $repo = (git rev-parse --show-toplevel)
 $godot = Join-Path $repo "godot"
 
+# P2-SCREEN-02: stamp godot/assets/build_info.txt with the running branch@sha BEFORE rendering,
+# the same way receipt.ps1 does (shared code, tools/stamp-build-info.ps1 -- see its header). This
+# script did not stamp at all before: a shoot.ps1-only capture (its own documented standalone
+# usage, not only as receipt.ps1's child process) could carry a stale watermark naming whatever
+# commit receipt.ps1 last happened to stamp in this worktree, not the one actually being
+# rendered -- a measured, real wasted diagnosis.
+. (Join-Path $repo "tools\stamp-build-info.ps1")
+$stamp = Set-BuildInfoStamp -Repo $repo
+Write-Host $stamp -ForegroundColor DarkGray
+
 $env:SHOT_OUT = $Out
 $env:SHOT_STATE = $State
 $env:SHOT_WATCH_FIGHT = if ($State -eq "Watch") { "1" } else { "" }
