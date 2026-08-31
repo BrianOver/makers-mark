@@ -411,9 +411,13 @@ public static class GameTheme
 
         theme.SetColor("font_color", "Label", BodyTextColor);
         theme.SetColor("font_color", "Button", BodyTextColor);
-        theme.SetColor("font_color_hover", "Button", BoneColor);
-        theme.SetColor("font_color_pressed", "Button", BoneColor);
-        theme.SetColor("font_color_disabled", "Button", new Color(BodyTextColor, 0.5f));
+        // P2-SCREEN-01: these three were the Godot 3 theme item spellings (font_color_hover /
+        // font_color_pressed / font_color_disabled) -- Godot 4 silently accepts an unknown theme
+        // item name and never applies it, so all three had been dead since this theme was
+        // written. Godot 4's own names below.
+        theme.SetColor("font_hover_color", "Button", BoneColor);
+        theme.SetColor("font_pressed_color", "Button", BoneColor);
+        theme.SetColor("font_disabled_color", "Button", new Color(BodyTextColor, 0.5f));
 
         theme.SetFontSize("font_size", "Label", BodyFontSize);
         theme.SetFontSize("font_size", "Button", BodyFontSize);
