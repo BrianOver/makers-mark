@@ -999,11 +999,10 @@ on whether a person does.
 
 ### 11.10 Finish the variation the owner asked for — 2026-08-14
 
-**Status: capped overhead, substrate. Not a §2 link item, and no unit here may displace a
-§11.4 path item.** It exists in this section, rather than as a third file in `docs/plans/`,
-because rule 4's two-doc cap is full (`2026-08-13-002` and `2026-08-14-001` both hold live
-units) and the owner chose an inline amendment over raising the cap. Written tight for that
-reason: this is the plan, not a wave doc's worth of it.
+**Capped overhead, substrate — not a §2 link item, and no unit here may displace a §11.4 path
+item.** It lives inline in this section rather than as a file in `docs/plans/` because the owner
+chose an inline amendment. Written tight for that reason: this is the plan, not a wave doc's
+worth of it.
 
 **What was asked, 2026-08-14:** *"Heroes, NPCs, enemies, items we craft etc should all be a
 little unique — obviously we cannot generate on the fly so we need a large collection of
@@ -5012,6 +5011,14 @@ R31. A tester can reach day 4 without hand-playing three days.
 R32. A player who is stuck, idle, or repeatedly refused is offered help once, without a nag.
 R33. A player is taught to leave a room, and can ask where to go at any time.
 
+**Booked here from the plan generations this section absorbed**
+
+R37. No player-crafted item worn by any hero, in any gear slot, can be shelved a second time.
+R38. A price the player types by real input is the price the sim records.
+R39. The town's people stand in groups a person would recognise, not on a dozen private orbits.
+R40. Dusk is pools of warm light in a cool wash, not one flat tint over the whole viewport.
+R41. A hero visibly swings, and visibly takes a hit, on the frame the sim says it happened.
+
 **Proof it keeps working**
 
 R34. An automated run takes the course: reads each instruction, obeys it, and asserts a pointer drew on screen.
@@ -5123,13 +5130,18 @@ changes when it is done. A regression pin now holds that.
 | U38 | A harness takes the course | `godot/scripts/tools/FullPlaytest.cs` | U15, U29 |
 | U39 | Copy cannot outlive its control | `godot/tests/`, `godot/scripts/tools/PlaytestLog.cs` | U33 |
 | U40 | The sixth decision becomes teachable | `godot/scripts/ui/TutorialFlow.cs`, `godot/tests/DilemmaLessonsTests.cs` | U27 |
-| U41 | The clock's own doc stops contradicting the clock | `sim/GameSim/Kernel/PhaseClock.cs` | — |
+| U41 | The clock's own doc stops contradicting the clock | `godot/scripts/PhaseClock.cs` | — |
 | U42 | The off-camera marker stops landing on the objective card | `godot/scripts/ui/TutorialOverlay.cs`, `godot/scripts/ui/ObjectiveTracker.cs` | U15 |
 | U43 | The course can be photographed mid-step | `godot/tools/shot_harness.gd`, `godot/scripts/MainUi.cs` | — |
 | U44 | The craft lesson can never be skipped past | `godot/scripts/ui/TutorialFlow.cs` | — |
 | U45 | The teaching strip stops cutting a sentence in half | `godot/scripts/ui/ObjectiveTracker.cs`, `godot/scripts/ui/TutorialFlow.cs` | U11 |
 | U46 | An ordinary lesson stops stealing the chain's pointer | `godot/scripts/ui/TutorialAnchorArbiter.cs`, `godot/tests/` | U10 |
 | U47 | The banked slot is named where it bites | `godot/scripts/ui/TutorialFlow.cs` | U28 |
+| U48 | A worn trinket can be sold twice | `sim/GameSim/Economy/ShopHandlers.cs`, `sim/GameSim/Harness/BaselinePlayer.cs` | — |
+| U49 | A player can set a price, and a test proves it | `godot/tests/HumanPlayer.cs`, `godot/tests/ShopPanelTests.cs` | — |
+| U50 | The cast stops scattering | `godot/scripts/town2d/Town2D.cs`, `godot/scripts/town2d/HeroActor2D.cs`, `godot/scripts/town2d/TownsfolkNpc2D.cs` | — |
+| U51 | Lantern lights | `godot/scripts/town2d/Town2D.cs`, `godot/scripts/town2d/TownLayout2D.cs` | — |
+| U52 | Per-class attack and impact frames | `tools/art/gen_town_sprites.py`, `godot/scripts/panels/DelveStage.cs` | U50 (art rig only) |
 
 ---
 
@@ -5724,7 +5736,8 @@ changes when it is done. A regression pin now holds that.
 
 - Goal: delete a stale sentence living inside the code, found while fixing the primer that repeated it.
 - Requirements: R3, R4
-- Files: `sim/GameSim/Kernel/PhaseClock.cs`
+- Files: `godot/scripts/PhaseClock.cs` — the clock is an adapter, not a sim type; there is no
+  `sim/GameSim/Kernel/PhaseClock.cs` and git has no record of one at any commit, on any branch.
 - Approach: the class-level doc comment says auto-advance is on by default for a new campaign. The field's own
   default forty lines below is `false`, and its inline doc says so. The primer's defect was the same claim, one
   layer out — which is how a stale comment becomes shipped copy. Delete the wrong sentence rather than
@@ -5732,6 +5745,148 @@ changes when it is done. A regression pin now holds that.
 - Test scenarios: a test asserts the documented default matches the field's actual default, so the two cannot
   drift again.
 - Verification: no comment in the file states a default the code contradicts.
+
+### Wave 7 — Booked from the plan generations this PR deleted
+
+Five units that were genuinely unbuilt when their home documents were deleted. They are not
+tutorial work; they are here because §11.14.14 is the plan of record and a booked item that lives
+nowhere is a dropped item. U48 is the only one of the five that breaks a §2 link, so it goes first.
+
+#### U48. A worn trinket can be sold twice
+
+- Goal: no player-crafted item on any hero's body can be shelved a second time, whichever of the
+  four gear slots it sits in.
+- Requirements: R37
+- Files: `sim/GameSim/Economy/ShopHandlers.cs`, `sim/GameSim/Harness/BaselinePlayer.cs`,
+  `sim/GameSim.Tests/Economy/ShopHandlersTests.cs`
+- Approach: `ApplyStock`'s worn-gear guard (numbered step 3) tests `hero.Gear.Weapon`,
+  `.Shield` and `.Armor` and stops there. `GearSet` has a fourth slot — `Trinket`, the P2 slot
+  (`Contracts/Heroes.cs`) — so a player-crafted trinket a hero is wearing shelves cleanly and sells
+  again. That is a **link-2 honesty break, not a balance nit**: the same physical object leaves the
+  player's hands twice, and the channel the whole link rests on is the one that lies. Ask the
+  question `HeirloomHandlers.WoreItem` already asks — it covers all four slots — rather than adding
+  a fourth `||`, so the next slot added cannot reopen this. Preserve the rejection message shape
+  verbatim (`"{Name} ({id}) is equipped by {hero} — it cannot be shelved."`); surfaces map reason
+  strings to copy. Keep the sweep over every hero alive or dead: the dead keep their worn gear.
+  The same three-slot equipped-set exists a **third** time in `BaselinePlayer` — fix it there too,
+  or the harness will keep shelving what the kernel now rejects and the two will disagree silently.
+- Test scenarios: a trinket nobody wears shelves; a player-crafted trinket on a living hero is
+  rejected, naming that hero; the same trinket on a dead hero is also rejected; Weapon, Shield and
+  Armor still reject with a byte-identical reason (extend `Stock_ItemEquippedByAHero_Rejected`,
+  do not duplicate it); a rejection mutates no item and moves no gold; `BaselinePlayer`'s
+  equipped-set includes Trinket, asserted on a hand-built state because the harness cannot reach a
+  trinket-wearing hero in a real campaign.
+- Verification: the fast lane green, and the trinket case fails when the fix alone is reverted.
+
+#### U49. A player can set a price, and a test proves it
+
+- Goal: one honest-input test drives the stock price the way a player does, and proves the typed
+  number is what the sim received.
+- Requirements: R38
+- Files: `godot/tests/HumanPlayer.cs`, `godot/tests/ShopPanelTests.cs`
+- Approach: `HumanPlayer` acts only through real input — `Click`, `ClickControl`, `MoveTo`, `Drag`,
+  `Hold`/`Release`/`Tap` — and has no way to enter a number, so the shelf price has never been
+  driven by a synthetic player. Add one capability in the same register: find the `SpinBox` by name
+  (`StockPrice_{id}`), click into its editable child to focus it, tap the digits, commit with Enter.
+  Then assert on the **shelved item's price in sim state**, never the widget's displayed value.
+  Verify the input path by hand before building the assertion around it: if clicking and typing does
+  not move the SpinBox, that is itself the finding, and the unit reports rather than reaching for
+  `.Value`.
+- Test scenarios: type a price for an unshelved craft, press Enter, click Stock, and the shelved
+  item's price in sim state is the typed number; the typed number differs from `SuggestedPrice.For`'s
+  pre-filled default, or the test passes without the typing having done anything; the price control
+  is visible and enabled at the moment the test types into it; a value below the SpinBox floor of 1
+  does not reach sim state as a below-floor price.
+- Verification: the engine suite green on its pass count, and the new test fails when the typing step
+  alone is removed — that is what proves the typed number reached the sim rather than the default.
+
+#### U50. The cast stops scattering
+
+- Goal: heroes and townsfolk read as a town's worth of people who know each other, not a dozen
+  independent oscillators.
+- Requirements: R39
+- Files: `godot/scripts/town2d/Town2D.cs` (`HomeFor`, `TownsfolkHomeTiles`),
+  `godot/scripts/town2d/HeroActor2D.cs`, `godot/scripts/town2d/TownsfolkNpc2D.cs`,
+  `godot/tests/HeroActor2DTests.cs`, `godot/tests/TownsfolkNpc2DTests.cs`,
+  `godot/tests/TownLifeTests.cs`
+- Approach: the scatter is arithmetic. `Town2D.HomeFor` reads a six-entry
+  `TownLayout2D.HeroHomeTiles` table and, for any id outside 1–6, still falls through to the
+  original `TileToWorld(6 + heroValue*3 % 28, 10 + heroValue*2 % 6)` — and either way each actor
+  then wanders a private lissajous around its own fixed anchor. Townsfolk sit at hardcoded corners
+  with their own small wander. There is no cohesion, flocking, leader-follow or
+  distance-to-companion term anywhere in the ambient-life files. Replace the per-id anchor with a
+  small table of **named gathering spots** — the well, the tavern door, the market front, the forge
+  yard, the gate road — and give each actor a spot rather than a coordinate, two or three sharing a
+  spot with a deterministic per-actor offset inside it so they stand in conversational clusters.
+  Which spot an actor holds is a pure function of its sim id and the day phase (heroes drift toward
+  the gate before an expedition, toward the tavern in the evening), so it stays deterministic,
+  save-safe, and needs no new sim data. Keep the lissajous as the *within-spot* idle so the walk
+  animation and pose maths are untouched. `HeroActor2D.RallyTo`/`MarchOutTo` and
+  `Town2D.RallySpacingPx` are the one place the codebase already moves heroes as a group — match
+  that spacing, and no `Tween` (there are zero `CreateTween` calls in `godot/scripts` and that is
+  deliberate).
+- Test scenarios: at any phase no spot holds more than *k* actors and no actor is further than *r* px
+  from its spot; the mean pairwise distance between living heroes at Morning is under a pinned
+  ceiling derived from today's measured spread; spot assignment is a pure function of
+  `(heroId, phase)` — two `Town2D` instances built from the same state assign identically;
+  assignments survive a save/load round trip; actors sharing a spot never occupy the same pixel;
+  `RallyTo`/`MarchOutTo` still win over the spot anchor while they run and the anchor resumes after;
+  the errand-walk and tavern-seating suites are unchanged and green — they still override the anchor.
+- Verification: rendered captures at Morning, Expedition and Evening showing clustered groups, plus
+  the engine suite run whole and compared on its pass count.
+
+#### U51. Lantern lights
+
+- Goal: dusk becomes pools of warm light in a cool wash instead of a purple filter over everything.
+- Requirements: R40
+- Files: `godot/scripts/town2d/Town2D.cs` (`DuskModulate`, `BuildProps`, a lamp layer),
+  `godot/scripts/town2d/TownLayout2D.cs` (`Props`), `godot/tests/PhaseLightTests.cs`,
+  `godot/tests/Town2DSceneTests.cs`
+- Approach: the town's only light model is one `CanvasModulate` (`Town2D.DuskModulate`) tinting the
+  whole viewport flat, which is exactly the "day/night is a lie" complaint its own doc comment
+  records. `MineWatch` is the only file in `godot/scripts/` that builds a `PointLight2D` at all —
+  `_torch` and `_campfireLight`, over `BuildLightGradient` — and that recipe is the one to reuse.
+  Give each `town2d-prop-lantern` placement (`TownLayout2D.Props` has four) and each lit venue
+  window a `PointLight2D` on that recipe, energy driven by `DayPhaseTint` so it rises into Evening.
+  Godot allows at most one `CanvasModulate` per canvas, so the existing modulate stays and softens
+  rather than being replaced. This is the (b) half of a three-part unit whose (a) and (c) halves —
+  spreading the venues across the grid and a parallax silhouette band — are **not booked**: they are
+  layout and art direction the owner has not asked for, and (b) is the part that stands alone.
+- Test scenarios: every lantern placement has exactly one `PointLight2D`; energy at Morning is below
+  energy at Evening; energy is a pure function of `DayPhase`; `CanvasShrink` is unchanged and
+  `CameraZoom` is still 1 — the regression pin against fixing look with magnification; the interior
+  warm-tint override still wins while an interior is active.
+- Verification: rendered Morning and Evening captures of the plaza — the Evening one is the proof —
+  plus the engine suite run whole and compared on its pass count.
+
+#### U52. Per-class attack and impact frames
+
+- Goal: a hero visibly swings and visibly takes a hit, drawn, on the frame the sim says it happened.
+- Requirements: R41
+- Files: `tools/art/gen_town_sprites.py`, `godot/assets/art/town2d-hero-*_{attack,impact}.png`,
+  `godot/assets/art/art-manifest.json`, `godot/scripts/panels/DelveStage.cs`,
+  `godot/tests/TownSpriteArtTests.cs`, `godot/tests/DelveStageTests.cs`
+- Approach: `art-manifest.json` has **zero** `attack` or `impact` entries — every hero id ships
+  base, `_step`, `_walk2` and `_walk4` and nothing else — and `DelveStage.BeginCombatPose` is
+  documented as "MOTION only": the swing is position and rotation maths additive over the walk gait,
+  with no frame behind it. Author two frames per class in `gen_town_sprites.py`'s existing rig, an
+  attack extension and an impact recoil, and let `BeginCombatPose` swap the frame at the curve's
+  peak while keeping the additive nudge. Procedural, no GPU, `--check` drift-guarded, and it ships at
+  draw size — never a runtime `Scale` knob. Write full-width rows rather than mirroring a padded
+  half; that lesson has been paid for twice. This is the (b) half of a three-part unit: (a) carrying
+  `KillingItem` into the beat and (c) staging the kill are **not booked here** — check whether they
+  landed before touching them, and if they did not, they are a link-4 item and outrank this one.
+- Test scenarios: every hero class has committed `_attack` and `_impact` frames at the class body's
+  pinned size, enumerated **from the manifest** and never from a literal class-id array (a guard that
+  iterates a hand-listed array stops covering the family the moment the family grows);
+  `gen_town_sprites.py --check` reports zero drift; an exchange beat with damage dealt swaps to the
+  attack frame during the pose and returns to the gait after, asserted on the sprite's actual region
+  and not on a flag; the same seed and beats produce the same frame sequence; `MineWatch` still
+  builds exactly **one** `SubViewport` — the headless two-viewport hang must not return; the golden
+  replay is untouched, because every frame of this is adapter-side.
+- Verification: a captured `DelveStage` sequence across a full fight, plus the **full** engine suite
+  run whole with its raw `Failed: N, Passed: N` quoted — never a filtered run, which cannot see other
+  suites vanish.
 
 ---
 
