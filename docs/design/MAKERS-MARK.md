@@ -689,92 +689,13 @@ So, binding rules for every session that touches this repo:
    same PR as the work; re-ordering happens as a visible diff *here*, argued in review —
    never as a fresh planning doc. (P7 gets a subordinate plan doc for its own wave, written
    against this section, when its turn comes.)
-   **Amended 2026-08-07:** the same carve-out is granted, explicitly rather than assumed, to
-   `docs/plans/2026-08-07-001-feat-reachability-wave-plan.md` for the reachability items it
-   enumerates — P1, P2, P6a/b, and the legibility rows this section had not swept for. Granting it
-   by name is the point: that doc leaned on the P7 parenthesis for two-thirds of its scope, which
-   would have been a fig leaf. A wave doc is legitimate only when this section says so.
-   **Amended 2026-08-08:** granted, by name, to
-   `docs/plans/2026-08-08-001-feat-proof-the-player-never-sees-plan.md`, which carries **P3** and
-   a set of link-4/link-5 leaks three audits found the same night: the sim computes the proof and
-   the client discards it. The worst of them is not a gap in the plan, it is a gap in the *game* —
-   `CampNarration.Attribution` writes the causal sentence naming what the player did, and it lives
-   in `GameSim.Cli`, a project the Godot client does not reference. That is §11.6 rule 2
-   interrupt-class (a §2 link-4 break), which is why it leads a wave instead of being booked.
-   The grant covers P3 and that leak set only; the art rows in it ride as capped overhead and may
-   never displace a path item.
-   **Amended 2026-08-09:** granted, by name, to
-   `docs/plans/2026-08-09-001-feat-the-shell-around-the-game-plan.md` — the playtest harness, the
-   export/shipping path, and the settings menu. This is the second and final live wave doc; the
-   two-doc cap is now full and nothing further may be written until one of them dies on merge.
-   The grant is **entirely substrate and capped overhead** — not one unit in it is a §2 link item,
-   and none may displace a path item. It earns the slot on one argument: the harness was reporting
-   completed runs it had not performed (§A), which makes every finding it has produced since
-   2026-08-04 suspect, and a compromised instrument is a substrate defect rather than a chore.
-   Its §C5 carries a genuine law question — a settings menu is where the seven laws can be broken
-   by something shaped like a courtesy — and the tripwire it specifies is binding on any future
-   settings work whether or not the rest of that wave ships.
-   **Amended 2026-08-10:** the shell wave's units all landed (#417–#422, #430–#433), so its doc
-   dies on merge per rule 7 and the freed slot is granted, by name, to
-   `docs/plans/2026-08-10-001-feat-the-playtest-keeps-what-it-saw-plan.md` — the same harness, one
-   layer deeper. The last wave made it stop lying about whether it played; this one makes it **keep
-   what it saw**: per-turn frames, the backend log nothing has ever read, a coverage denominator so
-   that "we tested everything" can be false, and personas so N runs measure N players instead of one
-   player N times. Substrate again, and it earns the slot on its predecessor's argument plus one
-   sharper fact: the scout judge's standing verdict — *"nothing in the log names the player's work —
-   every outcome is read as generic"* — is a link-4/link-5 claim resting entirely on one model's
-   prose, with no recorded evidence beside it. An instrument that cannot evidence a claim about §2
-   links cannot be used to decide anything about them. Same constraint as before: capped overhead,
-   and no unit here may displace a §11.4 path item.
-   **Amended 2026-08-10 (second):** the keeps-what-it-saw wave's units all landed (#436, #438,
-   plus the frames/backend/coverage/personas and sweep PRs), so its doc dies in the same PR as
-   this amendment (rule 7, atomically — a plan only on a branch does not exist, so the deletion,
-   the successor doc, and this grant travel together). The freed slot is granted, by name, to
-   `docs/plans/2026-08-10-002-feat-the-playtest-becomes-a-player-plan.md` — five units: the eyes
-   upgrade (llava:7b cannot read the game's own pixel fonts; qwen3-vl:8b measured reading a full
-   tutorial line verbatim on this machine), mechanical fun metrics led by the product-sentence
-   counter (a direct instrument on links 4–5, and the §A judge currently cannot answer its own
-   day-11 question — its input is trimmed from the front at 6000 chars), a dead-verb detector
-   probing law 3 with zero prose, driver-side temperament so quit reasons become findings, and
-   scenario cards for owner goal 1. The plan was adversarially checked by a second fable pass and
-   carries its seven named changes, including: the first sweep is an instrument SHAKEDOWN whose
-   numbers are disposable until §11.8's Gloomwood fix lands — a baseline taken on a campaign that
-   cannot finish is not a baseline. Substrate and capped overhead throughout; no unit may
-   displace a §11.4 path item.
-   **Amended 2026-08-10 (fourth):** the playtest-becomes-a-player wave's units all landed (#448),
-   its doc died on merge per rule 7, and no successor was queued at the time — this section is
-   catching up on that untracked death now. Separately, the critical-path slot the (now-deleted)
-   "third" amendment above once described — `docs/plans/2026-08-10-003-feat-the-forward-ladder-plan.md`,
-   the §11.8 resolution — also landed its last unit (L6/L7) and dies on merge in this same PR
-   (§11.8 carries the resolution). Both slots are empty; nothing is queued.
-   **Amended 2026-08-11:** one slot is granted, by name, to
-   `docs/plans/2026-08-11-001-fix-the-eyes-learn-labels-plan.md` — the ten-rounds campaign's first
-   forensics wave. The instrument's own volume run convicted it: models press visible labels while
-   the harness accepts only node names (an A/B pair in the campaign's own logs proves the gap),
-   judges were grading harness digest artifacts as if they were game copy, and the product-sentence
-   headline read True in 33 of 34 runs on a regex hit the backend never corroborated. Four units
-   are substrate (the instrument); two are game defects the campaign caught for real — commission
-   and memorial buttons that never consult the legality mirror they were owed, and a quench
-   minigame that ticks from boot and auto-plunges a phantom craft into every session. Capped
-   overhead; no unit may displace a §11.4 path item.
-   **Amended 2026-08-11 (second):** the eyes-learn-labels wave landed both halves (#457 the
-   instrument, this PR the game defects), so its doc dies in this same PR per rule 7. Both
-   slots are empty; nothing is queued.
-   **Amended 2026-08-11 (third):** one slot is granted, by name, to
-   `docs/plans/2026-08-11-002-feat-the-playtest-learns-to-finish-plan.md`. The ten-rounds
-   campaign could not complete a single model-driven test (58 of 58 runs dead on patience by
-   day 3; ~1,190 of ~1,260 refusals were the 8B model emitting empty commands — fable census),
-   and the owner's finding is the grant's whole argument: testing that cannot finish tests
-   nothing. Three units, all instrument-side: menu-choice acting (pick from the advisor's own
-   legal set instead of composing freeform JSON), sweep-mode patience (the would-have-quit
-   moment becomes a finding instead of a fatality), and an eyes/brain model split. Substrate,
-   capped overhead; no unit may displace a §11.4 path item.
-   **Amended 2026-08-11 (fourth):** U1-U3 of the playtest-learns-to-finish wave landed together
-   in this PR — menu-choice acting, the eyes/brain split, and sweep-mode patience are all wired
-   into the driver and covered by the pure-logic suites. Its own Definition of Done names this
-   PR as where the doc dies (rule 7): U4 is a run, not a unit — the 10-run sweep proving the
-   success criterion, executed by the orchestrator once the GPU frees, reported to the owner
-   from `runs/`, never re-added here as a queued unit. The slot is empty; nothing is queued.
+   **Both slots are empty and nothing is queued.** A grant is written into this rule by name in the
+   same PR that creates the doc, and deleted in the PR that deletes it. The chain of historical
+   grants that used to sit here — ten amendments naming eight wave docs, every one of them long
+   merged and every one of the eight files absent from `main` — was a record of finished work, and
+   rule 8 says that lives in `git log`. The two docs it ended on (a balance baseline plan and an
+   honesty-riders plan) were deleted as abandoned: their shipped units landed in #495 and #499, and
+   their unshipped ones are booked in §11.14.14 as U48 and U49.
 5. **The measurement rule.** When new data contradicts this plan — P4 moves the boredom
    day, P3's assertions fail, a sweep overturns a tuning claim — the plan amends in the
    same PR that lands the finding. A plan that cannot lose an argument with a measurement
@@ -5952,9 +5873,15 @@ station its comment already claims, or delete the panel. Until then the roster d
 an honest `null`, pinned to an exact four-item list so a fifth unreachable surface fails the build.
 *Deferred — a design call, not a tutorial defect, but the lying comment should die either way.*
 
-OQ5. **The third plan slot.** This program lands here because rule 6 caps `docs/plans/` at two and both
-slots hold live work — the balance baseline plan has five of seven units unshipped and the honesty-riders
-plan all four. *Deferred — if this program should own a slot instead, one of those two finishes or is dropped first.*
+OQ5. **The plan slots are empty, so this question is closed.** This program landed inline because rule 6
+caps `docs/plans/` at two and both slots were held. Both docs are now deleted as abandoned under rule 7,
+neither having been referenced by a commit or an open PR since 2026-08-14. The balance baseline plan's
+U1/U2 landed in #495; its U3–U5 were dead, because `SkilledSmithPlayer` is referenced only by its own
+test and is wired into neither `GameSim.Cli` nor the Balance suite, and its U6 `AutoCraftGrade` change was
+overtaken by a different ruling on 2026-08-09. The honesty-riders plan's U2 landed 2026-08-14 in
+`7547c733` (#499) — this question used to assert **all four** of its units were unshipped, which was
+false — U3 landed a quarter, and its U1 and U4 are booked above as U48 and U49. Nothing is queued, so a
+future wave may take a slot without displacing anything.
 
 ### What must survive, named so this rework cannot quietly discard it
 
