@@ -328,11 +328,21 @@ public class TutorialNeverAsksTheImpossibleTests
 
             AssertThat(ui.Tutorial.GatingNoteForTests(commissionDef, eveningDay3) ?? string.Empty)
                 .Contains("Commissions are answered in the Morning");
-            AssertThat(ui.Tutorial.CopyFor(TutorialStep.Commission, eveningDay3))
+            // P2-SCREEN-08: Commission's own main instruction stays unconditional (never swaps to a
+            // full wait variant outside Morning — the tray tooltip is still worth naming even when the
+            // board cannot be answered right this second), but now folds GatingNote's own nuance onto
+            // the SAME line rather than leaving it reachable only through the separate query.
+            var copy = ui.Tutorial.CopyFor(TutorialStep.Commission, eveningDay3);
+            AssertThat(copy)
                 .OverrideFailureMessage(
                     "Commission's own card swapped to a wait variant outside Morning — its main " +
-                    "instruction is meant to stay unconditional; GatingNote alone carries the nuance.")
+                    "instruction is meant to stay unconditional.")
                 .Contains(GodotClient.MainUi.CommissionsTrayTooltip);
+            AssertThat(copy)
+                .OverrideFailureMessage(
+                    "Commission's card names the tray but never folds in the Morning-only nuance — a " +
+                    "player outside Morning presses Accept/Decline with no idea why nothing answers.")
+                .Contains("Commissions are answered in the Morning");
         }
         finally { Unmount(ui); }
     }
