@@ -143,17 +143,25 @@ public abstract partial class SimPanel : Control
     ///
     /// <para><paramref name="onRefused"/>, when given, keeps the control PRESSABLE while refused
     /// and answers a press with the fix (the verdict's own reason) instead of silently swallowing
-    /// it — <c>ForgePanel</c> passes its own <c>SetFeedback</c> here for every gated verb.
-    /// Omitted (the default), a refused button falls back to the old
-    /// <see cref="Godot.BaseButton.Disabled"/>-true swallow, which every panel outside the Forge
-    /// still relies on; this unit's job was to make the LABEL honest everywhere; the Forge alone
-    /// is fully converted to the stronger pressable-and-answers contract.</para>
+    /// it — <c>ForgePanel</c> passes its own <c>SetFeedback</c> here for every gated verb. THIS is
+    /// what gates the label-suffix/autowrap/width-floor package below, not merely
+    /// <paramref name="verdict"/>.Legal: those three only make sense together (a wrapped, bounded-
+    /// width reason existing to explain a control the player can still press), and before that was
+    /// enforced, a refused-but-Disabled-swallow button elsewhere (e.g. LedgerModal's BuyOre, which
+    /// never opts in) got the SAME 360px floor anyway — inside a plain HBoxContainer with an
+    /// ExpandFill sibling label, that floor starved the label down to Godot's classic
+    /// one-character-per-line collapse (LayoutTests.EveningLedger_CardLabels_RenderAtReadableWidth,
+    /// found in CI). Omitted (the default), a refused button falls back to the old
+    /// <see cref="Godot.BaseButton.Disabled"/>-true swallow AND the old bare-verb label, which
+    /// every panel outside the Forge still relies on unchanged; the Forge alone is fully converted
+    /// to the stronger pressable-and-answers contract.</para>
     /// </summary>
     protected static Button AddButton(Node parent, string name, string verb, Verdict verdict, Action onPressed, Action<string>? onRefused = null)
     {
-        var label = verdict.Legal ? verb : $"{verb} — {verdict.Reason}";
+        var refusedAndPressable = !verdict.Legal && onRefused is not null;
+        var label = refusedAndPressable ? $"{verb} — {verdict.Reason}" : verb;
         var button = new Button { Name = name, Text = label };
-        if (!verdict.Legal)
+        if (refusedAndPressable)
         {
             // A refused reason can run well past a single line's worth of width, and a Button's
             // Text does not wrap by default — measured: "Masterwork Attempt (guaranteed) —
