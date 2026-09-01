@@ -207,7 +207,7 @@ public partial class ScryingMirror : SimPanel
             foreach (var line in card.Manifest)
             {
                 var manifestRow = AddRow(_feedBody!);
-                var manifestButton = AddButton(manifestRow, $"ManifestLine_{line.Item.Value}_{card.PartyKey}", line.Text,
+                var manifestButton = AddButton(manifestRow, $"ManifestLine_{line.Item.Value}_{card.PartyKey}", line.Text, Verdict.Ok,
                     () => OnShowProvenance(line.Item));
                 manifestButton.SizeFlagsHorizontal = SizeFlags.ExpandFill;
                 manifestButton.Alignment = HorizontalAlignment.Left;
@@ -240,7 +240,7 @@ public partial class ScryingMirror : SimPanel
                 // U5: "your craft writes the legends" made touchable — the ★ attribution line
                 // opens the item's provenance card on click, instead of a plain label.
                 var row = AddRow(_feedBody!);
-                var button = AddButton(row, $"AttributionBeat_{itemId.Value}_{beat.Floor}", beat.Text,
+                var button = AddButton(row, $"AttributionBeat_{itemId.Value}_{beat.Floor}", beat.Text, Verdict.Ok,
                     () => OnShowProvenance(itemId));
                 button.SizeFlagsHorizontal = SizeFlags.ExpandFill;
                 button.Alignment = HorizontalAlignment.Left;
@@ -335,7 +335,7 @@ public partial class ScryingMirror : SimPanel
         scroll.AddChild(_feedBody);
 
         // In the ANCHORED action row: the one control the whole surface's escapability depends on.
-        AddButton(card.ActionRow, "MirrorClose", "Close", CloseMirror)
+        AddButton(card.ActionRow, "MirrorClose", "Close", Verdict.Ok, CloseMirror)
             .SizeFlagsHorizontal = SizeFlags.ExpandFill;
 
         // U5: added LAST (after the panel body) so it draws over the feed, self-contained

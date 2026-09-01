@@ -642,10 +642,13 @@ public static class UiKit
         };
         hbox.AddChild(iconRect);
 
+        // P2-SCREEN-09: the blocker goes IN the label, not just the tooltip below — a disabled
+        // row's own name now carries why, so a screenshot (or a glance with no mouse) reads the
+        // same fact the tooltip only ever gave to a hover.
         var nameLabel = new Label
         {
             Name = "Name",
-            Text = name,
+            Text = enabled || string.IsNullOrEmpty(whyNot) ? name : $"{name} — {whyNot}",
             SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
             ClipText = true,
             TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis,

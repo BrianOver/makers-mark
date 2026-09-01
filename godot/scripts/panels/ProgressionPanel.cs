@@ -177,7 +177,7 @@ public partial class ProgressionPanel : SimPanel
             _professionToggles[id] = toggle;
         }
 
-        _confirmProfessions = AddButton(col, "ConfirmProfessions", "Confirm professions", OnConfirmProfessionsPressed);
+        _confirmProfessions = AddButton(col, "ConfirmProfessions", "Confirm professions", Verdict.Ok, OnConfirmProfessionsPressed);
 
         _professionsFeedback = AddLabel(col, string.Empty);
         _professionsFeedback.Name = "ProfessionsFeedback";

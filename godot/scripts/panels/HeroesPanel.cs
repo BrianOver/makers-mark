@@ -246,7 +246,7 @@ public partial class HeroesPanel : SimPanel
             // U5: "your craft writes the legends" made touchable — open the item's provenance
             // card (History entries + maker's mark + forge sub-scores) on click.
             var gearItemId = id;
-            AddButton(row, $"Provenance_{gearItemId.Value}", "History", () => OnShowProvenance(gearItemId));
+            AddButton(row, $"Provenance_{gearItemId.Value}", "History", Verdict.Ok, () => OnShowProvenance(gearItemId));
         }
 
         AddLabel(_detail!, "ITEM MEMORIES:");

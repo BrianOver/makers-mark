@@ -212,6 +212,6 @@ public partial class ChronicleScroll : SimPanel
         _lines.AddThemeConstantOverride("separation", GameTheme.Space8);
         scroll.AddChild(_lines);
 
-        AddButton(box, "CloseChronicle", "Close", CloseScroll);
+        AddButton(box, "CloseChronicle", "Close", Verdict.Ok, CloseScroll);
     }
 }

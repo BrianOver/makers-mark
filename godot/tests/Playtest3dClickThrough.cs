@@ -7,6 +7,7 @@ using System.Text;
 using Godot;
 using GdUnit4;
 using GameSim.Contracts;
+using GodotClient.Tools;
 using static GdUnit4.Assertions;
 using static GodotClient.Tests.UiTestSupport;
 
@@ -438,7 +439,7 @@ public class Playtest3dClickThrough
             var appliedBefore = ui.Adapter.AppliedThisPhase.Count;
             try
             {
-                if (host.FindChild(name, recursive: true, owned: false) is not Button btn || btn.Disabled)
+                if (host.FindChild(name, recursive: true, owned: false) is not Button btn || !IsActionable(btn))
                 {
                     continue; // gated off after a prior click this pass
                 }
@@ -498,7 +499,7 @@ public class Playtest3dClickThrough
                     var pendingBefore = ui.Adapter.PendingActions.Count;
                     var appliedBefore = ui.Adapter.AppliedThisPhase.Count;
                     var btn = ui.Forge.FindChild(name, recursive: true, owned: false) as Button;
-                    if (btn is null || btn.Disabled)
+                    if (btn is null || !IsActionable(btn))
                     {
                         continue;
                     }
@@ -559,6 +560,13 @@ public class Playtest3dClickThrough
         _ => null,
     };
 
+    /// <summary>P2-SCREEN-09: "Craft_"/"Unlock_" (the Forge's own gated verbs) stay Disabled=false
+    /// even when REFUSED — the blocker rides in the label instead of swallowing the press — so
+    /// <c>!b.Disabled</c> alone no longer means "legal". <see cref="ScreenObservation.IsLegal"/>
+    /// is the honest signal either way (falls back to <c>!Disabled</c> for every button that never
+    /// carried a sim verdict, unchanged from before this unit).</summary>
+    private static bool IsActionable(Button b) => ScreenObservation.IsLegal(b);
+
     private static List<string> EnabledClickableButtonNames(Node root)
     {
         var names = new List<string>();
@@ -567,7 +575,7 @@ public class Playtest3dClickThrough
         while (stack.Count > 0)
         {
             var node = stack.Pop();
-            if (node is Button b && !b.Disabled)
+            if (node is Button b && IsActionable(b))
             {
                 var n = b.Name.ToString();
                 if (!SkipExact.Contains(n) && ClickablePrefixes.Any(p => n.StartsWith(p, StringComparison.Ordinal)))

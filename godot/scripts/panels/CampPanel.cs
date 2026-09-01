@@ -278,11 +278,11 @@ public partial class CampPanel : SimPanel
             warning.AddThemeColorOverride("font_color", new Color(1f, 0.55f, 0.35f));
         }
 
-        var recall = AddButton(cardBody, $"CampRecall_{lead.Value}",
-            atFleeThreshold ? "⚠ Signal Retreat!" : "Recall",
-            () => Adapter!.Queue(new RecallPartyAction(lead)));
         // Mirror of CampHandlers.ApplyRecall: the bell rings once per party.
-        GateButton(recall, !party.Recalled, "The recall bell has already rung for this party.");
+        AddButton(cardBody, $"CampRecall_{lead.Value}",
+            atFleeThreshold ? "⚠ Signal Retreat!" : "Recall",
+            new Verdict(!party.Recalled, "The recall bell has already rung for this party."),
+            () => Adapter!.Queue(new RecallPartyAction(lead)));
     }
 
     private void OnSend(OptionButton pick, HeroId to)
@@ -414,7 +414,7 @@ public partial class CampPanel : SimPanel
             "Nothing to send yet? You can leave this stop, work the forge, and come back — the vigil holds until you answer it.");
         forgeHint.Name = "CampForgeHint";
 
-        AddButton(box, "CampForge", "Forge something for them", () =>
+        AddButton(box, "CampForge", "Forge something for them", Verdict.Ok, () =>
         {
             CloseModal();
             OpenForgeRequested?.Invoke();
@@ -447,7 +447,7 @@ public partial class CampPanel : SimPanel
         // verb: closing the slate AND raising SendDeeperRequested in the same press, the only way the
         // vigil stop ever ends. Same anchored-action-row position, same softlock-proof structure
         // (BuildFittedModalCard) — only what pressing it DOES changed.
-        AddButton(card.ActionRow, "CampDeeper", "Send them deeper", () =>
+        AddButton(card.ActionRow, "CampDeeper", "Send them deeper", Verdict.Ok, () =>
             {
                 CloseModal();
                 SendDeeperRequested?.Invoke();

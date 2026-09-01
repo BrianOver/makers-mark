@@ -286,7 +286,7 @@ public partial class BountyPanel : SimPanel
         _poster = new PosterComposer { Name = "BountyPoster" };
         posterRow.AddChild(_poster);
 
-        _postButton = AddButton(posterRow, "PostBounty", "Post", OnPostPressed);
+        _postButton = AddButton(posterRow, "PostBounty", "Post", Verdict.Ok, OnPostPressed);
 
         // Always-visible twin of the Post button's tooltip (see GatePostButton's doc comment) — a
         // disabled control whose only explanation is a hover is exactly what read as "broke" to a

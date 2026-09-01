@@ -94,7 +94,7 @@ public partial class CounterPanel : SimPanel
     private void BuildClosedState(GameState state)
     {
         AddLabel(_body!, "The counter is quiet — open it to serve this morning's customers.");
-        var open = AddButton(_body!, "OpenCounter", "Open Counter", () =>
+        var open = AddButton(_body!, "OpenCounter", "Open Counter", Verdict.Ok, () =>
         {
             var action = new OpenCounterAction();
             Adapter!.Queue(action);
@@ -122,7 +122,7 @@ public partial class CounterPanel : SimPanel
 
         // CounterHandlers.ApplyClose only ever rejects when Counter is null — never true in this
         // branch — so CloseCounter is unconditionally legal here; no GateButton mirror needed.
-        AddButton(_body!, "CloseCounter", "Close Counter", () =>
+        AddButton(_body!, "CloseCounter", "Close Counter", Verdict.Ok, () =>
         {
             var action = new CloseCounterAction();
             Adapter!.Queue(action);
@@ -439,10 +439,10 @@ public partial class CounterPanel : SimPanel
             && counter.StandingOfferGold is not null && counter.Presented is not null;
 
         var row = AddRow(section.Body);
-        var accept = AddButton(row, "Accept", "Accept", QueueAccept);
-        GateButton(accept, legal, "No standing offer to respond to — present an item first.");
+        const string noStandingOfferReason = "No standing offer to respond to — present an item first.";
+        AddButton(row, "Accept", "Accept", new Verdict(legal, noStandingOfferReason), QueueAccept);
 
-        var hold = AddButton(row, "HoldFirm", "Hold Firm", () =>
+        AddButton(row, "HoldFirm", "Hold Firm", new Verdict(legal, noStandingOfferReason), () =>
         {
             // U2: same press-feedback cue as Present/Accept — Hold Firm has no closing outcome of
             // its own to acknowledge (a walk plays no cue either; CustomerWalked's own reveal stays
@@ -473,7 +473,6 @@ public partial class CounterPanel : SimPanel
 
             _feedback!.Text = Confirm(action, $"Held firm — {consequence}");
         });
-        GateButton(hold, legal, "No standing offer to respond to — present an item first.");
 
         // U2 (design doc §B5): a coin stack you count out, not a SpinBox you type into — the SAME
         // seam either way (Counter reads priceStack.Value). Node name kept as "CounterPrice" so
@@ -487,7 +486,7 @@ public partial class CounterPanel : SimPanel
             Value = counter.StandingOfferGold ?? 1,
         };
         row.AddChild(priceStack);
-        var counterBtn = AddButton(row, "Counter", "Counter", () =>
+        AddButton(row, "Counter", "Counter", new Verdict(legal, noStandingOfferReason), () =>
         {
             // U2 (loud-failures-and-quiet-channels plan): same press-feedback cue as Present/
             // Accept/Hold Firm — never Coin here either, for the same double-play reason QueueAccept
@@ -540,7 +539,6 @@ public partial class CounterPanel : SimPanel
 
             _feedback!.Text = Confirm(action, $"Countered at {price}g — {consequence}");
         });
-        GateButton(counterBtn, legal, "No standing offer to respond to — present an item first.");
     }
 
     /// <summary>Today's <see cref="CustomerWalked"/> reasons (R8 prose half) — mirrors

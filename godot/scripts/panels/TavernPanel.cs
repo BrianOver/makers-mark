@@ -290,7 +290,7 @@ public partial class TavernPanel : SimPanel
         var thread = new PursuedThread(hero.Id.Value, kind);
         var pursuing = _pursued == thread;
         var button = AddButton(
-            row, $"Pursue_{kind}_{hero.Id.Value}", pursuing ? "Pursuing — see the bar" : "Pursue", () =>
+            row, $"Pursue_{kind}_{hero.Id.Value}", pursuing ? "Pursuing — see the bar" : "Pursue", Verdict.Ok, () =>
             {
                 _pursued = thread;
                 Refresh();
@@ -365,23 +365,21 @@ public partial class TavernPanel : SimPanel
         var legal = state.Phase == DayPhase.Morning;
         const string whyNot = "Commissions are struck in the Morning — come back at the bar then.";
 
-        var accept = AddButton(row, $"HandshakeAccept_{hero.Id.Value}", "Shake on it", () =>
+        AddButton(row, $"HandshakeAccept_{hero.Id.Value}", "Shake on it", new Verdict(legal, whyNot), () =>
         {
             var action = new AcceptCommissionAction(hero.Id);
             Adapter!.Queue(action);
             _feedback!.Text = Confirm(action, $"Shook on {hero.Name}'s commission");
             _pursued = null;
         });
-        GateButton(accept, legal, whyNot);
 
-        var decline = AddButton(row, $"HandshakeDecline_{hero.Id.Value}", "Turn it down", () =>
+        AddButton(row, $"HandshakeDecline_{hero.Id.Value}", "Turn it down", new Verdict(legal, whyNot), () =>
         {
             var action = new DeclineCommissionAction(hero.Id);
             Adapter!.Queue(action);
             _feedback!.Text = Confirm(action, $"Turned down {hero.Name}'s commission");
             _pursued = null;
         });
-        GateButton(decline, legal, whyNot);
     }
 
     /// <summary>Evening's handshake: buy the hero's ore (<see cref="BuyOreAction"/>) — the SAME
@@ -404,7 +402,7 @@ public partial class TavernPanel : SimPanel
         var spin = AddSpinBox(parent, $"HandshakeQty_{hero.Id.Value}", 1, offer.Quantity, offer.Quantity);
 
         var row = AddRow(parent);
-        var buy = AddButton(row, $"HandshakeBuy_{hero.Id.Value}", "Shake on it", () =>
+        var buy = AddButton(row, $"HandshakeBuy_{hero.Id.Value}", "Shake on it", Verdict.Ok, () =>
         {
             var quantity = (int)spin.Value;
             var action = new BuyOreAction(hero.Id, offer.MaterialKey, quantity);
@@ -572,7 +570,7 @@ public partial class TavernPanel : SimPanel
             AddLabel(row, $"  {slot}: {item.Name} [{item.Quality}] — {mark}");
 
             var gearItemId = id;
-            AddButton(row, $"TavernHistory_{hero.Id.Value}_{slot}", "History", () => OnShowProvenance(gearItemId));
+            AddButton(row, $"TavernHistory_{hero.Id.Value}_{slot}", "History", Verdict.Ok, () => OnShowProvenance(gearItemId));
         }
 
         if (!wornAny)
