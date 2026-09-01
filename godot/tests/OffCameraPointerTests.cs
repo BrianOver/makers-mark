@@ -1,7 +1,10 @@
 #if GDUNIT_TESTS
+using System;
+using System.Linq;
 using System.Threading.Tasks;
 using GdUnit4;
 using Godot;
+using GodotClient.Tools;
 using GodotClient.Town2d;
 using GodotClient.Ui;
 using static GdUnit4.Assertions;
@@ -67,11 +70,20 @@ public class OffCameraPointerTests
 
     [TestCase]
     /// <summary>
-    /// U42: the marker must not land on the objective card. Found by photograph — U15's marker was
-    /// geometrically perfect and sat on the card's own chevrons, because the card owns the whole right
-    /// edge and every day-one target (market, tavern, mine gate) is east of the forge spawn.
+    /// P2-SCREEN-10: replaces U42's own test, which asked the SAME single node
+    /// (<c>ui.Objective.GetGlobalRect()</c>) production consulted for its avoidance rule —
+    /// tautologically green, and blind to the Tutorial dock <c>MainUi</c> stacks 16px below
+    /// Objective in the same top-right column. This exercises BOTH cards visible at once — a case
+    /// the old test could not even express — and reads the marker against EACH card's own live
+    /// rect via the arbiter's free-region query, never a single named obstacle.
+    ///
+    /// <para>Before this unit's fix, this exact test (asserting <c>ui.Tutorial.GetGlobalRect()</c>
+    /// clear) failed against production: U42's <c>KeepClearOf</c> named only <c>Objective</c>, so
+    /// its slide-clear-of-the-card fallback had no idea a second card existed 16px below and could
+    /// land the marker on it. After the fix it passes — see this unit's own PR body for the raw
+    /// before/after run.</para>
     /// </summary>
-    public async Task AnEasternTarget_PutsTheMarkerClearOfTheObjectiveCard()
+    public async Task AnEasternTarget_PutsTheMarkerClearOfBothTopRightDocks()
     {
         var ui = MountMainUi();
         try
@@ -84,11 +96,28 @@ public class OffCameraPointerTests
             AssertThat(market.GlobalPosition.X > forge.GlobalPosition.X)
                 .OverrideFailureMessage(
                     "Fixture guard: the market must sit east of the forge (larger world X) for this test " +
-                    "to be about the edge the objective card occupies.")
+                    "to be about the edge both docks occupy.")
                 .IsTrue();
 
             AssertThat(ui.Objective.IsVisibleInTree())
-                .OverrideFailureMessage("Fixture guard: the objective card must be on screen — it is the obstacle under test.")
+                .OverrideFailureMessage("Fixture guard: the objective card must be on screen — it is one of the two obstacles under test.")
+                .IsTrue();
+
+            // The Tutorial dock never naturally shows on day 1 (both its rows gate on later
+            // eligibility this fixture has no reason to earn) — forced here, directly, the same way
+            // this suite already forces scenarios production would not naturally reach (see
+            // AWorldAnchor_DampsEverySiblingStationsTell entering an interior directly below).
+            // Docked exactly where MainUi.UpdateObjectiveDock docks it in real play: immediately
+            // below Objective's own live bottom edge, with a real non-zero height, so it is a
+            // genuine second obstacle — never a sliver a Grow() would swallow by accident.
+            var objectiveRect = ui.Objective.GetGlobalRect();
+            ui.Tutorial.Size = new Vector2(objectiveRect.Size.X, 80f);
+            ui.Tutorial.GlobalPosition = new Vector2(objectiveRect.Position.X, objectiveRect.End.Y + 16f);
+            ui.Tutorial.Visible = true;
+            await SettleLayout(ui);
+
+            AssertThat(ui.Tutorial.IsVisibleInTree())
+                .OverrideFailureMessage("Fixture guard: the Tutorial dock must be on screen — it is the SECOND obstacle U42's own fix could not see.")
                 .IsTrue();
 
             ui.Overlay.RefreshAnchor(TutorialAnchor.ForBuilding("market"), ui.Town, ui.Drawer, ui);
@@ -101,21 +130,74 @@ public class OffCameraPointerTests
                 .IsTrue();
 
             var card = ui.Objective.GetGlobalRect();
+            var tutorialDock = ui.Tutorial.GetGlobalRect();
             var marker = ui.Overlay.OffCameraMarkerCenter;
 
             AssertThat(card.HasPoint(marker))
                 .OverrideFailureMessage(
                     $"The marker ({marker}) is inside the objective card ({card}). It reads as one of the " +
-                    "card's own buttons instead of a direction to walk — which is exactly the defect U42 " +
-                    "exists to fix, and no geometry assertion caught it.")
+                    "card's own buttons instead of a direction to walk.")
+                .IsFalse();
+
+            AssertThat(tutorialDock.HasPoint(marker))
+                .OverrideFailureMessage(
+                    $"The marker ({marker}) is inside the Tutorial dock ({tutorialDock}). This is exactly the " +
+                    "defect P2-SCREEN-10 exists to fix: U42's own KeepClearOf named ONLY the objective card, so " +
+                    "clearing it could still land the marker on the second card stacked below — a " +
+                    "named-obstacle rule is a hand-listed fixture with n=1, and the old test (asking the same " +
+                    "single node production consulted) could never catch it.")
                 .IsFalse();
 
             AssertThat(marker.X)
                 .OverrideFailureMessage(
-                    $"Clearing the card must move the marker ALONG its edge, never inward: an eastern " +
+                    $"Clearing both cards must move the marker ALONG the edge, never inward: an eastern " +
                     $"target's marker ({marker}) still has to sit in the right half of the screen, or it " +
                     "has stopped encoding a direction.")
                 .IsGreater(ui.Town.ViewportScreenRect.GetCenter().X);
+        }
+        finally { Unmount(ui); }
+    }
+
+    [TestCase]
+    /// <summary>
+    /// P2-SCREEN-10: the third option U42's own fallback comment missed ("overlapping is worse than
+    /// wrong, but wrong is worse than gone") — when EVERY point on the boundary is claimed, the
+    /// marker must not draw a wrong position, and the suppression must be LOUD, never silent (this
+    /// repo's own scar: a full playtest once reported "clean" over a real placeholder bug because a
+    /// degradation logged nowhere).
+    /// </summary>
+    public void AFullyClaimedBoundary_SuppressesTheMarker_AndLogsRatherThanFailingSilently()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            EngineDistress.ResetForTests();
+
+            // Blankets the WHOLE inset boundary with one obstacle — the objective card is already a
+            // live SurfaceArbiter HudDock claim (MainUi.BuildUi's Overlay.ClaimHudColumn), so
+            // growing IT to cover the whole viewport is enough to prove the "nothing free anywhere"
+            // path without needing every real HUD dock in the game to cooperate.
+            var full = ui.Town.ViewportScreenRect.Grow(64f);
+            ui.Objective.Size = full.Size;
+            ui.Objective.GlobalPosition = full.Position;
+
+            ui.Overlay.RefreshAnchor(TutorialAnchor.ForBuilding("minegate"), ui.Town, ui.Drawer, ui);
+            ui.Overlay.Tick(0.016);
+
+            AssertThat(ui.Overlay.OffCameraMarkerVisible)
+                .OverrideFailureMessage(
+                    "A boundary claimed EVERYWHERE must suppress the marker entirely — drawing it " +
+                    "anywhere would be a confidently wrong direction, which U42's own comment already " +
+                    "conceded is worse than overlapping.")
+                .IsFalse();
+
+            AssertThat(EngineDistress.Messages.Any(m => m.Contains("off-camera marker suppressed", StringComparison.Ordinal)))
+                .OverrideFailureMessage(
+                    "The suppression must log through EngineDistress AT THE DRAW SITE, never silently — " +
+                    "this repo has already shipped the silent-degrade defect once (a full playtest reported " +
+                    "'clean' over a real placeholder bug because nothing recorded the fallback). Recorded " +
+                    "messages: " + string.Join(" | ", EngineDistress.Messages))
+                .IsTrue();
         }
         finally { Unmount(ui); }
     }
