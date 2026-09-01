@@ -9,13 +9,22 @@ namespace GodotClient.Ui;
 /// (no Godot dependency) so <see cref="SurfaceArbiter.Resolve"/> can be pinned pair-by-pair without
 /// mounting a scene — the same reason <see cref="TutorialAnchor"/> stays plain for <see
 /// cref="TutorialAnchorArbiter.Resolve"/>.
+///
+/// <para><b>P2-SCREEN-04 adds <paramref name="OwnsScreen"/>, required — no default.</b> The defect
+/// this unit fixes was a hand-written array silently missing a row (<c>Chronicle</c>); a claim that
+/// could omit its own answer would let the SAME defect recur one field over. Every claimant states
+/// plainly whether it covers the screen the way a full-rect modal does (true for all nine today) or
+/// deliberately does not (<c>CompanionDock</c>'s own class doc explains why it answers false) — a
+/// tenth surface joining the group cannot silently skip the question the way the array let Chronicle
+/// skip the list.</para>
 /// </summary>
-public readonly record struct SurfaceClaim(string Id, string Region, int Precedence);
+public readonly record struct SurfaceClaim(string Id, string Region, int Precedence, bool OwnsScreen);
 
 /// <summary>
 /// Named regions a <see cref="SurfaceClaim"/> can declare — P2-KTD2's "registration is a property of
-/// the region, never a hand-registered class." One region exists today: the nine full-rect modals
-/// <see cref="SurfaceArbiter"/> is wired to in this unit. Later screen units (P2-SCREEN-05/10/11)
+/// the region, never a hand-registered class." <see cref="FullScreenModal"/> is the nine full-rect
+/// modals <see cref="SurfaceArbiter"/> was first wired to (P2-SCREEN-03); <see cref="ChildModal"/>
+/// and <see cref="HudDock"/> join in P2-SCREEN-04, below. Later screen units (P2-SCREEN-05/10/11)
 /// name the interact-prompt, pointer, and toast-strip regions the plan's screen dossier already
 /// reserves words for — not declared here because those surfaces live outside this unit's files
 /// (<c>godot/scripts/ui/SurfaceArbiter.cs</c>, <c>MainUi.cs</c>).
@@ -23,6 +32,21 @@ public readonly record struct SurfaceClaim(string Id, string Region, int Precede
 public static class SurfaceRegion
 {
     public const string FullScreenModal = "FullScreenModal";
+
+    /// <summary>P2-SCREEN-04: <c>ProvenanceCard</c>'s own region — a modal nested inside whichever
+    /// surface constructed it (five hosts: <c>ShopPanel</c>/<c>HeroesPanel</c>/<c>TavernPanel</c>/
+    /// <c>LegendsWall</c>/<c>ScryingMirror</c>), added LAST there so it sees Escape first (see
+    /// <c>ProvenanceCard</c>'s own <c>_Input</c> doc). Kept out of <see cref="FullScreenModal"/> on
+    /// purpose: <c>MainUi.OverlaySurfaces()</c> projects that region alone, and a host's own claim
+    /// already carries "the screen is owned" for as long as the host stays visible — the nested card
+    /// closing or opening on top of it must never be read as the host releasing that ownership.</summary>
+    public const string ChildModal = "ChildModal";
+
+    /// <summary>P2-SCREEN-04: a HUD dock that shares screen space with the town/drawers instead of
+    /// covering it — <c>CompanionDock</c>'s own region. Its claim declares <c>OwnsScreen: false</c>
+    /// explicitly (see <c>CompanionDock</c>'s own class doc for why), replacing a silent omission
+    /// from every list with a stated fact a coverage census can read.</summary>
+    public const string HudDock = "HudDock";
 }
 
 /// <summary>
@@ -62,6 +86,7 @@ public static class SurfaceArbiter
     private const string IdMetaKey = "surface_claim_id";
     private const string RegionMetaKey = "surface_claim_region";
     private const string PrecedenceMetaKey = "surface_claim_precedence";
+    private const string OwnsScreenMetaKey = "surface_claim_owns_screen";
 
     /// <summary>Declares <paramref name="surface"/>'s claim: joins <see cref="GroupName"/> and stamps
     /// the claim as node metadata. Metadata rather than a static <c>Dictionary&lt;ulong, SurfaceClaim&gt;</c>
@@ -74,6 +99,7 @@ public static class SurfaceArbiter
         surface.SetMeta(IdMetaKey, claim.Id);
         surface.SetMeta(RegionMetaKey, claim.Region);
         surface.SetMeta(PrecedenceMetaKey, claim.Precedence);
+        surface.SetMeta(OwnsScreenMetaKey, claim.OwnsScreen);
     }
 
     /// <summary>The claim <paramref name="surface"/> was given via <see cref="Claim"/>, or <see
@@ -83,7 +109,8 @@ public static class SurfaceArbiter
             ? new SurfaceClaim(
                 surface.GetMeta(IdMetaKey).AsString(),
                 surface.GetMeta(RegionMetaKey).AsString(),
-                surface.GetMeta(PrecedenceMetaKey).AsInt32())
+                surface.GetMeta(PrecedenceMetaKey).AsInt32(),
+                surface.GetMeta(OwnsScreenMetaKey).AsBool())
             : null;
 
     /// <summary>Every currently-claimed surface in <paramref name="tree"/>, discovered by <see

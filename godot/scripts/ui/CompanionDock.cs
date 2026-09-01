@@ -43,11 +43,14 @@ namespace GodotClient.Ui;
 /// <list type="bullet">
 /// <item>Root <see cref="Control.MouseFilter"/> is <see cref="Control.MouseFilterEnum.Ignore"/>
 /// — only <see cref="_card"/> itself is <c>Stop</c>. No dim <see cref="ColorRect"/> anywhere.</item>
-/// <item>This class is deliberately NOT added to <c>MainUi.OverlaySurfaces()</c>. That single
-/// omission is the whole design: <c>AnOverlayOwnsTheScreen()</c> stays false while it is open, so
-/// the tutorial card stays visible, town input stays live, the clock never latches, and — because
-/// nothing here ever touches <see cref="DrawerHost"/> or hides <c>ForgePanel</c> — the craft
-/// overlay's <c>_Notification</c> cancel path never fires.</item>
+/// <item>P2-SCREEN-04: this class claims itself with <see cref="SurfaceArbiter"/> like every other
+/// surface, but in <see cref="SurfaceRegion.HudDock"/> with <c>OwnsScreen: false</c> — a stated
+/// fact, not a silent omission from a hand-written array (the exact shape of the Chronicle defect
+/// that unit fixes). <c>MainUi.OverlaySurfaces()</c> only ever projects <see
+/// cref="SurfaceRegion.FullScreenModal"/>, so either way <c>AnOverlayOwnsTheScreen()</c> stays false
+/// while this is open: the tutorial card stays visible, town input stays live, the clock never
+/// latches, and — because nothing here ever touches <see cref="DrawerHost"/> or hides
+/// <c>ForgePanel</c> — the craft overlay's <c>_Notification</c> cancel path never fires.</item>
 /// <item>Anchored bottom-LEFT, <see cref="DockWidth"/>px wide — the right-anchored
 /// <see cref="DrawerHost.DrawerWidth"/>px drawer card can never overlap it, by construction, at
 /// any window width this game supports.</item>
@@ -119,6 +122,12 @@ public partial class CompanionDock : Control
         Name = "CompanionDock";
         SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         MouseFilter = MouseFilterEnum.Ignore; // a companion, not a modal — never blocks by itself
+
+        // P2-SCREEN-04: a DECLARED false, not a silent absence — see this class's own doc for why
+        // AnOverlayOwnsTheScreen() must stay false while this is open. SurfaceRegion.HudDock keeps
+        // it out of MainUi.OverlaySurfaces()'s FullScreenModal projection either way, but the claim
+        // still answers OwnsScreen so a future coverage census can see the exclusion was a decision.
+        SurfaceArbiter.Claim(this, new SurfaceClaim("Docket", SurfaceRegion.HudDock, 0, OwnsScreen: false));
 
         _chip = new Button
         {
