@@ -15,6 +15,18 @@ namespace GodotClient.Ui;
 /// no mutation) and is called by the owner (<c>MainUi</c>) on every phase tick, never per frame
 /// (U18 approach) — <see cref="ObjectiveAdvisor.Suggest"/> only needs to run when the state it
 /// projects over could have changed.
+///
+/// <para>P2-SCREEN-06 (the card diet): this card carries exactly ONE prose block — <see
+/// cref="Reason"/> — and nothing else. It used to also carry a title Label, a row of three
+/// unlabeled glyph buttons, and (while a tutorial was running) a scrolling checklist of every
+/// step's own label/TeachNote/GatingNote — four surfaces wearing one box, in a literal child
+/// order that put a button row directly between the instruction and the checklist's own text.
+/// A screenshot of that layout reads as one sentence severed by chrome; it is actually two
+/// unrelated messages a reader cannot tell apart, which is worse than a wrap bug. The fix moves
+/// every non-prose surface OFF this card: the controls become worded buttons in a title bar
+/// ABOVE <see cref="Reason"/> (never below it — see <see cref="Build"/>), and the checklist
+/// moves out entirely into <c>LessonsPanel</c>, which already renders every row permanently.
+/// </para>
 /// </summary>
 public sealed partial class ObjectiveTracker : PanelContainer
 {
@@ -58,13 +70,14 @@ public sealed partial class ObjectiveTracker : PanelContainer
     ///
     /// <para>U2 (tutorial-revamp plan, §11.13): dropped from 6 to 3. The teaching that used to be
     /// crammed into this card's own text (the mechanism explanation, the "what this actually is"
-    /// paragraph) moved OUT — permanently, into the Lessons book (<c>LessonsPanel</c>) and the
-    /// per-step TeachNote already rendered in the checklist below — so the card itself only ever
-    /// has to hold the instruction PLUS the live advisor reason appended (see
-    /// <c>TutorialFlow.StepText</c>), which now fits in three lines at <see cref="DockWidth"/>.
-    /// Reclaiming this height is what kills <see cref="ChecklistMaxHeight"/>'s old 32px
-    /// "peek-and-scroll sliver" — see that constant's own doc for the new budget math. The copy
-    /// itself is held to this budget from the other side:
+    /// paragraph) moved OUT — permanently, into the Lessons book (<c>LessonsPanel</c>) — so the
+    /// card itself only ever has to hold the instruction PLUS the live advisor reason appended
+    /// (see <c>TutorialFlow.StepText</c>), which fits in three lines at <see cref="DockWidth"/>.
+    /// P2-SCREEN-06 finished the job: the per-step checklist that used to sit below this budget
+    /// (label, TeachNote, GatingNote, one row per step, in its own 75px scrolling window) is gone
+    /// too — moved permanently into <c>LessonsPanel</c>, which is not height-constrained the way a
+    /// persistent HUD chip has to be. This card's own budget now only ever has to cover the
+    /// instruction itself. The copy itself is held to this budget from the other side:
     /// <c>TutorialCopyIsFollowableTests.NoStepsCopy_OutgrowsTheObjectiveCardsOwnUnclampedLineBudget</c>
     /// fails a step that outgrows three lines, because tutorial text renders UNCLAMPED (see
     /// <see cref="Refresh"/>) and a long enough line therefore grows this chip off the screen rather
@@ -81,69 +94,67 @@ public sealed partial class ObjectiveTracker : PanelContainer
     /// whenever a fresh step's text lands.</summary>
     private const double ReasonFadeSeconds = 0.25;
 
-    /// <summary>U5: the checklist's own height ceiling — up to ten rows (plus an occasional gating
-    /// note) would otherwise grow this chip past the window on a short viewport, the exact "still
-    /// cutoff" class of bug <c>TutorialFlow</c>'s own dock already learned this lesson from (see
-    /// its <c>Build</c> doc). Scrolls internally past this height rather than growing the whole
-    /// dock or clipping content with no way to reach it.
-    ///
-    /// <para>Sized against the REST of this same chip's own pre-existing budget
-    /// (<c>HudBoundsTests.ObjectiveChip_HeightTracksContent_NotFixedEmptyPanel</c>'s 260px pin,
-    /// which predates this checklist and is never relaxed): a fresh Day-1 mount measures header
-    /// (~23px) + the unclamped 3-line tutorial reason (<see cref="TutorialMinHeight"/>, ~62px,
-    /// down from ~127px at the old 6-line budget) + the actions row (~35px) + this panel's own
-    /// wood-frame margins (24px) + body separations (~12px) = ~156px before the checklist adds
-    /// anything, leaving ~100px of the 260px budget for it — up from the old sub-40px sliver.</para>
-    ///
-    /// <para>U2 (tutorial-revamp plan, §11.13): raised from 32px (a literal "peek-and-scroll
-    /// sliver, not a several-row window" by the old doc's own words — 32px is barely one text
-    /// line) to 75px — more than double, a real multi-row checklist window rather than a hint
-    /// that a scrollbar exists — measured against a live capture (<c>tools/shoot.ps1</c>) of the
-    /// single longest-copy step (BuyMaterial, whose Reason line carries a live
-    /// advisor-suggestion suffix this class does not control the length of) rather than the
-    /// pre-U2 doc's own hand-estimated headroom, which measured optimistic once rendered. The full
-    /// ten-row list is still one scroll away for whatever this ceiling doesn't fit. A ceiling any
-    /// taller reopens the exact bug the 260px pin exists to catch.</para></summary>
-    private const float ChecklistMaxHeight = 75f;
-
     public Label Reason { get; private set; } = null!;
     public Button Expand { get; private set; } = null!;
     public VBoxContainer RankedList { get; private set; } = null!;
 
-    /// <summary>U5 (loop-legibility plan, R7): the tutorial's own checklist — every displayed
-    /// step, ticked as it completes, rendered from <see cref="TutorialFlow.Checklist"/>. Visible
-    /// only while <see cref="Refresh"/> is given a non-null <c>checklist</c> (i.e. only while the
-    /// tutorial is <see cref="TutorialFlow.Active"/>) — never shown once the chain is dismissed or
-    /// completed, same gate <see cref="TutorialDismiss"/> already uses.</summary>
-    public VBoxContainer TutorialChecklist { get; private set; } = null!;
+    /// <summary>P2-SCREEN-06: the card's own worded title — "Today", or (while a tutorial is
+    /// running) "Today — {Act} · {position} of {total}" (see <see cref="Refresh"/>'s
+    /// <c>tutorialTitleSuffix</c> parameter). Sits ABOVE <see cref="Reason"/> in <see
+    /// cref="Build"/>'s own child order, never below it — this and <see cref="_controlsRow"/>
+    /// together replace the old bare "Today" caption plus the three-glyph button row that used to
+    /// sit BELOW the instruction, which is the literal shape of the severed-sentence defect this
+    /// unit exists to fix (this class's own doc).</summary>
+    private Label _titleLabel = null!;
 
-    /// <summary>The scrollable wrapper around <see cref="TutorialChecklist"/> (see <see
-    /// cref="ChecklistMaxHeight"/>'s own doc) — this, not <see cref="TutorialChecklist"/> itself,
-    /// is what <see cref="RefreshTutorialChecklist"/> shows/hides, so the scrollbar chrome never
-    /// lingers empty.</summary>
-    private ScrollContainer _checklistScroll = null!;
-
-    /// <summary>U23: visible only while <see cref="Refresh"/> is given a tutorial override —
-    /// dismisses the first-run chain (<c>TutorialFlow.Dismiss</c>, wired by <c>MainUi</c>) without
-    /// exposing this chip to any other tutorial-specific concept.</summary>
-    public Button TutorialDismiss { get; private set; } = null!;
-
-    /// <summary>
-    /// U20 (§11.14.14): the on-screen half of the "remind me" re-ask — the matching control the
+    /// <summary>U20 (§11.14.14): the on-screen half of the "remind me" re-ask — the matching control the
     /// task's own "Two absences" #2 asks for, so a player who never learns the <c>tutorial_reask</c>
     /// key still has a press that restates the current step and flashes its pointer. <c>MainUi</c>
     /// wires this <see cref="Button.Pressed"/> to the SAME <c>ReaskTutorial</c> handler the keyboard
     /// shortcut calls — one behavior, two ways to ask for it. Visible on the identical <c>isTutorial</c>
     /// gate as <see cref="TutorialDismiss"/> (see <see cref="Refresh"/>): hidden, and therefore inert,
     /// the moment the chain is no longer <see cref="TutorialFlow.Active"/>.
+    ///
+    /// <para>P2-SCREEN-06: reads "Again" now, not the bare "↻" glyph it used to — one of <see
+    /// cref="TutorialDismiss"/>'s two title-bar siblings, both worded, both right-aligned (see
+    /// <see cref="Build"/>). This is the one of the two with a keyboard twin, so it alone carries
+    /// <see cref="_reaskBadge"/> beside it.</para>
     /// </summary>
     public Button TutorialReask { get; private set; } = null!;
+
+    /// <summary>P2-SCREEN-06: the always-visible "R" chip (<see cref="UiKit.ShortcutBadge"/>) beside
+    /// <see cref="TutorialReask"/> — the re-ask has a keyboard twin (<c>tutorial_reask</c>); <see
+    /// cref="TutorialDismiss"/> does not, which is why only this button gets one. Visibility tracks
+    /// <see cref="TutorialReask"/>'s own (see <see cref="Refresh"/>) so a stray badge never lingers
+    /// once the chain is no longer active.</summary>
+    private Control _reaskBadge = null!;
 
     /// <summary>§11.13 amendment (U5): the confirmed-graduation row's "yes, end it" button — the
     /// caller (<c>MainUi</c>) wires the atomic <c>ConcludeApprenticeshipAction</c> submit +
     /// <see cref="TutorialFlow.Dismiss"/> on this <see cref="Button.Pressed"/> event, on top of this
     /// class's own row-hiding handler (both fire; order between them does not matter).</summary>
     public Button TutorialDismissConfirmYes { get; private set; } = null!;
+
+    /// <summary>
+    /// U20 (§11.14.14): "there is no way to ask where to go" — see <see cref="TutorialReask"/>'s
+    /// own doc. §11.13 amendment (U5, R12 ruled yes): dismissing is graduation, and this now
+    /// confirms rather than acting instantly — "no timers on decisions" (law) means this row waits
+    /// on the player's own second press, never a countdown; the copy (set by <see
+    /// cref="ShowDismissConfirm"/>'s caller, <c>MainUi</c>, from <see
+    /// cref="TutorialFlow.DismissConfirmCopy"/>) names the warrant's cost BEFORE the choice is
+    /// made, never after.
+    ///
+    /// <para>P2-SCREEN-06: reads "Skip" now, not the bare "✕" glyph it used to — one of the two
+    /// controls the owner's photographed defect named outright ("one of them ends a feature and
+    /// forfeits gold, and it is a bare ✕ today"). Naming what it costs, in words, in the title
+    /// bar, is the fix — not hiding it behind a glyph and a tooltip nobody hovers. "Skip" rather
+    /// than the fuller "Skip the course" (CI catch, same unit: the longer word pushed the title
+    /// bar's own controls row 3px past the 1152px-wide viewport floor, <c>HudBoundsTests
+    /// .ObjectiveChip_TextNeverOverflowsItsOwnContainer</c>) — the two-press confirm this button
+    /// arms (<see cref="ShowDismissConfirm"/>) is where the warrant's cost actually gets named, so
+    /// the button itself only has to name the ACTION.</para>
+    /// </summary>
+    public Button TutorialDismiss { get; private set; } = null!;
 
     private VBoxContainer _dismissConfirmRow = null!;
     private Label _dismissConfirmLabel = null!;
@@ -173,55 +184,40 @@ public sealed partial class ObjectiveTracker : PanelContainer
         var body = new VBoxContainer { Name = "ObjectiveTrackerBody" };
         AddChild(body);
 
-        // "Today" — a quiet caption, not the old shouting "OBJECTIVE" — still the smallest
-        // legible size (LegibilityFloor) so it reads as a header, not a peer of the reason line.
-        var header = new Label { Name = "ObjectiveHeader", Text = "Today" };
-        header.AddThemeColorOverride("font_color", GameTheme.HeaderColor);
-        header.AddThemeFontSizeOverride("font_size", GameTheme.LegibilityFloor);
-        body.AddChild(header);
+        // P2-SCREEN-06 (the card diet): a worded title bar, ABOVE the single prose line — never
+        // below it. The old layout put a row of three unlabeled glyph buttons directly BELOW the
+        // instruction and then a scrolling checklist below THAT; a screenshot of it reads as one
+        // sentence severed by chrome. Putting every control here, before Reason exists at all,
+        // means no button in this card ever again sits between two independent text blocks (see
+        // the tripwire, TutorialFlowTests.Card_NoButtonRowSitsBetweenTwoIndependentTextBlocks).
+        // Two rows, not one: the title text alone on
+        // top (room for "Today — {Act} · {position} of {total}" without fighting three buttons for
+        // the same 320px), the controls right-aligned below it.
+        var titleBar = new VBoxContainer { Name = "ObjectiveTitleBar" };
+        body.AddChild(titleBar);
 
-        var reasonRow = new HBoxContainer { Name = "ObjectiveTrackerRow" };
-        reasonRow.AddThemeConstantOverride("separation", GameTheme.Space8);
-        body.AddChild(reasonRow);
+        _titleLabel = new Label { Name = "ObjectiveTitleLabel", Text = "Today" };
+        _titleLabel.AddThemeColorOverride("font_color", GameTheme.HeaderColor);
+        _titleLabel.AddThemeFontSizeOverride("font_size", GameTheme.LegibilityFloor);
+        titleBar.AddChild(_titleLabel);
 
-        // A filled step glyph marks the single live step (the ranked list below dims its own
-        // lower-priority entries with the hollow twin — see the Refresh loop).
-        var stepGlyph = new Label { Name = "ObjectiveStepGlyph", Text = "◆" };
-        stepGlyph.AddThemeColorOverride("font_color", GameTheme.WarnColor);
-        reasonRow.AddChild(stepGlyph);
+        var controlsRow = new HBoxContainer { Name = "ObjectiveControlsRow" };
+        controlsRow.AddThemeConstantOverride("separation", GameTheme.Space8);
+        titleBar.AddChild(controlsRow);
 
-        Reason = new Label
-        {
-            Name = "ObjectiveReason",
-            AutowrapMode = TextServer.AutowrapMode.WordSmart,
-            SizeFlagsHorizontal = SizeFlags.ExpandFill,
-            CustomMinimumSize = new Vector2(DockWidth - 24, ReasonMinHeight),
-            MaxLinesVisible = ReasonMaxLines,
-            ClipText = true,
-            TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis,
-            Modulate = Colors.White, // belt-and-braces: never rely on the engine default alone
-        };
-        reasonRow.AddChild(Reason);
+        // Pushes every control that follows to the right edge of the 320px dock — the title text
+        // above already owns the left edge, so nothing needs to claim it here.
+        controlsRow.AddChild(new Control { Name = "ObjectiveControlsSpacer", SizeFlagsHorizontal = SizeFlags.ExpandFill });
 
-        var actionsRow = new HBoxContainer { Name = "ObjectiveActionsRow" };
-        body.AddChild(actionsRow);
-
-        // Ranked-list expand toggle (U18 approach: "expandable to the ranked list") — an icon-only
-        // chevron (UI-6), full word moved to TooltipText.
-        Expand = new Button { Name = "ObjectiveExpand", Text = "▾", ToggleMode = true, TooltipText = "More" };
+        // Ranked-list expand toggle (U18 approach: "expandable to the ranked list") — worded now
+        // (P2-SCREEN-06: "the controls move into a worded title bar"), not the old icon-only "▾".
+        Expand = new Button { Name = "ObjectiveExpand", Text = "More", ToggleMode = true, TooltipText = "Show the full ranked list" };
         Expand.Pressed += () =>
         {
             RankedList.Visible = Expand.ButtonPressed;
-            Expand.Text = Expand.ButtonPressed ? "▴" : "▾";
-            Expand.TooltipText = Expand.ButtonPressed ? "Less" : "More";
+            Expand.Text = Expand.ButtonPressed ? "Less" : "More";
         };
-        actionsRow.AddChild(Expand);
-
-        TutorialDismiss = new Button
-        {
-            Name = "ObjectiveTutorialDismiss", Text = "✕", Visible = false, TooltipText = "Dismiss tutorial",
-        };
-        actionsRow.AddChild(TutorialDismiss);
+        controlsRow.AddChild(Expand);
 
         // U20: "there is no way to ask where to go" — see this field's own doc. MinigameInput's
         // registry (not TownInput — see its own comment on why) must have already added
@@ -230,15 +226,33 @@ public sealed partial class ObjectiveTracker : PanelContainer
         MinigameInput.RegisterActions();
         TutorialReask = new Button
         {
-            Name = "ObjectiveTutorialReask", Text = "↻", Visible = false, TooltipText = ShortcutMap.Tooltip("tutorial_reask"),
+            Name = "ObjectiveTutorialReask", Text = "Again", Visible = false, TooltipText = ShortcutMap.Tooltip("tutorial_reask"),
         };
-        actionsRow.AddChild(TutorialReask);
+        controlsRow.AddChild(TutorialReask);
+        // P2-SCREEN-06: the re-ask has a keyboard twin; the dismiss beside it does not, so only
+        // this one gets a badge — an always-visible fact, not a tooltip nobody hovers to find.
+        _reaskBadge = UiKit.ShortcutBadge(ShortcutMap.KeyLabel(ShortcutMap.Find("tutorial_reask")));
+        _reaskBadge.Visible = false;
+        controlsRow.AddChild(_reaskBadge);
 
-        // §11.13 amendment (U5, R12 ruled yes): dismissing is graduation, and the ✕ now confirms
+        // "Skip" (not the fuller "Skip the course" this unit shipped with first — see this
+        // field's own doc): the two-press confirm it arms is where the warrant's cost actually
+        // gets named, so the word here only has to carry the action, and the shorter word keeps
+        // the controls row inside the dock's 320px budget at the 1152px viewport floor.
+        TutorialDismiss = new Button
+        {
+            Name = "ObjectiveTutorialDismiss", Text = "Skip", Visible = false,
+            TooltipText = "Skip the course — end the apprenticeship early; a warrant cost may still be owed",
+        };
+        controlsRow.AddChild(TutorialDismiss);
+
+        // §11.13 amendment (U5, R12 ruled yes): dismissing is graduation, and this row confirms
         // rather than acting instantly — "no timers on decisions" (law) means this row waits on the
         // player's own second press, never a countdown; the copy (set by ShowDismissConfirm's
         // caller, MainUi, from TutorialFlow.DismissConfirmCopy) names the warrant's cost BEFORE the
-        // choice is made, never after. Hidden until the ✕ is pressed once.
+        // choice is made, never after. Sits directly below the title bar that triggers it — still
+        // entirely above Reason, so the single prose line below never has to share a sibling with
+        // a button (see the tripwire, TutorialFlowTests.Card_NoButtonRowSitsBetweenTwoIndependentTextBlocks).
         _dismissConfirmRow = new VBoxContainer { Name = "ObjectiveTutorialDismissConfirm", Visible = false };
         body.AddChild(_dismissConfirmRow);
 
@@ -265,22 +279,28 @@ public sealed partial class ObjectiveTracker : PanelContainer
         confirmNo.Pressed += HideDismissConfirm;
         confirmButtons.AddChild(confirmNo);
 
-        // U5: the tutorial checklist — sits below the actions row, above the (unrelated) live
-        // advisor ranked list, and is Clear-then-composed by Refresh() exactly like RankedList
-        // below (same "no checklist yet" contract: hidden until Refresh hands it real rows).
-        // Scrolls internally past ChecklistMaxHeight (see that const's own doc) rather than
-        // growing this whole chip past the window on a short viewport.
-        _checklistScroll = new ScrollContainer
-        {
-            Name = "ObjectiveTutorialChecklistScroll",
-            HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled,
-            CustomMinimumSize = new Vector2(0, ChecklistMaxHeight),
-            Visible = false,
-        };
-        body.AddChild(_checklistScroll);
+        var reasonRow = new HBoxContainer { Name = "ObjectiveTrackerRow" };
+        reasonRow.AddThemeConstantOverride("separation", GameTheme.Space8);
+        body.AddChild(reasonRow);
 
-        TutorialChecklist = new VBoxContainer { Name = "ObjectiveTutorialChecklist" };
-        _checklistScroll.AddChild(TutorialChecklist);
+        // A filled step glyph marks the single live step (the ranked list below dims its own
+        // lower-priority entries with the hollow twin — see the Refresh loop).
+        var stepGlyph = new Label { Name = "ObjectiveStepGlyph", Text = "◆" };
+        stepGlyph.AddThemeColorOverride("font_color", GameTheme.WarnColor);
+        reasonRow.AddChild(stepGlyph);
+
+        Reason = new Label
+        {
+            Name = "ObjectiveReason",
+            AutowrapMode = TextServer.AutowrapMode.WordSmart,
+            SizeFlagsHorizontal = SizeFlags.ExpandFill,
+            CustomMinimumSize = new Vector2(DockWidth - 24, ReasonMinHeight),
+            MaxLinesVisible = ReasonMaxLines,
+            ClipText = true,
+            TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis,
+            Modulate = Colors.White, // belt-and-braces: never rely on the engine default alone
+        };
+        reasonRow.AddChild(Reason);
 
         RankedList = new VBoxContainer { Name = "ObjectiveRankedList", Visible = false };
         body.AddChild(RankedList);
@@ -296,11 +316,12 @@ public sealed partial class ObjectiveTracker : PanelContainer
     /// cref="Tick"/>) whenever the rendered text actually changed — a same-text re-render (a tick
     /// that didn't move the advisor's top pick) never restarts the dip.
     /// </summary>
-    /// <param name="checklist">U5 (loop-legibility plan, R7): <see cref="TutorialFlow.Checklist"/>'s
-    /// own projection, or null while the tutorial is not <see cref="TutorialFlow.Active"/>. Renders
-    /// as a tick-list in <see cref="TutorialChecklist"/>, independent of <paramref
-    /// name="tutorialOverride"/> (the top-slot line) so either can be reasoned about on its own.</param>
-    public void Refresh(GameState state, string? tutorialOverride = null, IReadOnlyList<ChecklistRow>? checklist = null)
+    /// <param name="tutorialTitleSuffix">P2-SCREEN-06: the title bar's own "{Act} · {position} of
+    /// {total}" fragment (<c>TutorialFlow.CurrentActPositionLabel</c>) while a tutorial is active,
+    /// or null to show the bare "Today" caption. Independent of <paramref name="tutorialOverride"/>
+    /// so the title and the instruction can never disagree about whether a tutorial is running —
+    /// both come from the same caller in the same tick (<c>MainUi.RefreshObjectiveLine</c>).</param>
+    public void Refresh(GameState state, string? tutorialOverride = null, string? tutorialTitleSuffix = null)
     {
         var suggestions = ObjectiveAdvisor.Suggest(state);
         var text = tutorialOverride ?? (suggestions.Count > 0 ? suggestions[0].Reason : NoObjectiveText);
@@ -325,8 +346,10 @@ public sealed partial class ObjectiveTracker : PanelContainer
         Reason.Text = Plain(text);
 
         var isTutorial = tutorialOverride is not null;
+        _titleLabel.Text = tutorialTitleSuffix is { } suffix ? $"Today — {suffix}" : "Today";
         TutorialDismiss.Visible = isTutorial;
         TutorialReask.Visible = isTutorial; // U20: inert once the course completes — hidden, not just disabled
+        _reaskBadge.Visible = isTutorial; // the badge tracks the button it sits beside, always
         if (!isTutorial)
         {
             // Defensive: the chain ending some OTHER way (e.g. BackstopDay's own auto-complete)
@@ -353,8 +376,6 @@ public sealed partial class ObjectiveTracker : PanelContainer
         Reason.CustomMinimumSize = new Vector2(
             DockWidth - 24,
             isTutorial ? TutorialMinHeight : ReasonMinHeight);
-
-        RefreshTutorialChecklist(checklist);
 
         foreach (var child in RankedList.GetChildren())
         {
@@ -397,242 +418,6 @@ public sealed partial class ObjectiveTracker : PanelContainer
     /// <summary>Close the confirmed-graduation row without acting — the Keep-going answer, and also
     /// this class's own half of the Yes answer (the caller's Yes handler runs alongside it).</summary>
     public void HideDismissConfirm() => _dismissConfirmRow.Visible = false;
-
-    /// <summary>The checklist rows rendered by the LAST <see cref="RefreshTutorialChecklist"/>
-    /// call that actually rebuilt the tree — <c>null</c> means "never rendered" (distinct from an
-    /// empty/inactive render, mirrors <see cref="_lastReasonText"/>'s own null-means-unrendered
-    /// contract). Compared on every call so a re-render carrying the IDENTICAL ten rows (the
-    /// common case — most calls land mid-step, where nothing in the checklist changed) skips the
-    /// clear-then-compose entirely.</summary>
-    private IReadOnlyList<ChecklistRow>? _lastChecklistRows;
-
-    /// <summary>
-    /// U5 (loop-legibility plan, R7): Clear-then-compose the checklist from <paramref
-    /// name="rows"/> (<see cref="TutorialFlow.Checklist"/>'s own projection) — hidden entirely
-    /// when null/empty (tutorial inactive, or a caller that never passes one — <see
-    /// cref="Refresh"/>'s own default is null, so every existing non-tutorial call site is
-    /// unaffected). A done row dims; the current row carries the filled glyph plus (R7) its own
-    /// gating note when the step is not currently actionable ("a Morning task — rest until dawn"
-    /// rather than the old, confusing "press Next/Advance") and a small "Arrived" mark once <see
-    /// cref="TutorialFlow.NotifyEnteredBuilding"/>'s ratchet has fired for it.
-    ///
-    /// <para><b>Skips the rebuild when <paramref name="rows"/> is unchanged from last time</b> —
-    /// the same "a same-text re-render never restarts the dip" idiom <see cref="Refresh"/> already
-    /// uses for <see cref="Reason"/> (compare against <see cref="_lastReasonText"/>), applied here
-    /// because <c>MainUi.RefreshHud</c>/<c>RefreshObjectiveLine</c> calls this on EVERY phase tick
-    /// AND every immediate action — dozens of times within a single tutorial step that never
-    /// actually changes the ten-row checklist. Rebuilding ~30 Controls on every one of those calls
-    /// (a full <c>Playtest3dClickThrough</c> session drives this hundreds of times before the
-    /// chain completes) measurably destabilized the engine under that load — confirmed by bisection:
-    /// removing just this rebuild's redundant repetition is what stops
-    /// <c>Playtest3dClickThrough</c>'s two test cases from crashing the Godot process when run
-    /// back to back, even though each rebuild individually frees every node it creates.</para>
-    /// </summary>
-    private void RefreshTutorialChecklist(IReadOnlyList<ChecklistRow>? rows)
-    {
-        if (ChecklistUnchanged(rows))
-        {
-            return;
-        }
-
-        _lastChecklistRows = rows;
-
-        foreach (var child in TutorialChecklist.GetChildren())
-        {
-            TutorialChecklist.RemoveChild(child);
-            child.Free();
-        }
-
-        _checklistScroll.Visible = rows is { Count: > 0 };
-        if (rows is null)
-        {
-            return;
-        }
-
-        // U11 (§11.14.14): the deepest control built for the CURRENT row — its own line if it has
-        // neither a TeachNote nor a GatingNote, else whichever of those renders last (gating, then
-        // teach — see the loop below, which appends them in that order). Handed to
-        // DeferScrollChecklistToCurrent once the loop finishes so the auto-scroll always lands on
-        // the LAST thing the current row rendered, never just its label.
-        Control? currentRowLastControl = null;
-
-        foreach (var row in rows)
-        {
-            // U1 (§11.13): Skipped is a THIRD state, checked before Done/Current — a row the chain
-            // carried the player past without it ever being genuinely answered (see
-            // ChecklistRow.Skipped's own doc). A checkmark here would be a false tick; a hollow
-            // circle would read as still-upcoming when it is not.
-            var glyph = row.Skipped ? "—" : row.Done ? "✓" : row.Current ? "◆" : "○";
-            var glyphColor = row.Skipped ? GameTheme.TextDim
-                : row.Done ? GameTheme.GoodColor
-                : row.Current ? GameTheme.WarnColor : GameTheme.TextDim;
-
-            var line = new HBoxContainer { Name = $"TutorialChecklistRow_{row.DisplayIndex}" };
-            line.AddThemeConstantOverride("separation", GameTheme.Space8);
-            TutorialChecklist.AddChild(line);
-            if (row.Current)
-            {
-                currentRowLastControl = line; // overwritten below if a TeachNote/GatingNote follows
-            }
-
-            var glyphLabel = new Label { Text = glyph };
-            glyphLabel.AddThemeColorOverride("font_color", glyphColor);
-            line.AddChild(glyphLabel);
-
-            var suffix = row.Skipped ? "  — didn't come up this time" : row.VisitedAnchor ? "  ✓ Arrived" : string.Empty;
-            var textLabel = new Label
-            {
-                Name = "TutorialChecklistLabel",
-                Text = Plain(row.Label) + suffix,
-                AutowrapMode = TextServer.AutowrapMode.WordSmart,
-                CustomMinimumSize = new Vector2(DockWidth - 40, 0),
-                ClipText = true,
-            };
-            if (row.Done || row.Skipped)
-            {
-                textLabel.AddThemeColorOverride("font_color", GameTheme.TextDim);
-            }
-
-            line.AddChild(textLabel);
-
-            // The current step's "what this mechanism is" line. Until this shipped, every one of
-            // TutorialFlow.Registry's ten TeachNotes was written, reviewed, and rendered by nobody
-            // — a step's instruction told the player what to press and nothing ever told them what
-            // the thing they were pressing DOES. The owner asking to "explain how the bounties work
-            // further" was asking for a paragraph the game already had and never showed.
-            if (row.Current && row.TeachNote is { } teach)
-            {
-                var teachLabel = new Label
-                {
-                    Name = "TutorialChecklistTeachNote",
-                    Text = Plain(teach),
-                    AutowrapMode = TextServer.AutowrapMode.WordSmart,
-                    CustomMinimumSize = new Vector2(DockWidth - 24, 0),
-                };
-                teachLabel.AddThemeColorOverride("font_color", GameTheme.TextDim);
-                TutorialChecklist.AddChild(teachLabel);
-                currentRowLastControl = teachLabel;
-            }
-
-            if (row.Current && row.GatingNote is { } note)
-            {
-                var noteLabel = new Label
-                {
-                    Name = "TutorialChecklistGatingNote",
-                    Text = Plain(note),
-                    AutowrapMode = TextServer.AutowrapMode.WordSmart,
-                    CustomMinimumSize = new Vector2(DockWidth - 24, 0),
-                };
-                noteLabel.AddThemeColorOverride("font_color", GameTheme.WarnColor);
-                TutorialChecklist.AddChild(noteLabel);
-                currentRowLastControl = noteLabel;
-            }
-        }
-
-        // U11 (§11.14.14): auto-scroll to the current row on every rebuild — which includes every
-        // step change, since a step change is exactly what makes ChecklistUnchanged (above) return
-        // false. Before this, the checklist stayed wherever it last was: past the second or third
-        // step, the live instruction, its TeachNote, and (the acute case) the GatingNote warning a
-        // trap the player was about to walk into all sat below ChecklistMaxHeight's 75px fold with
-        // no scrollbar nudge telling anyone to look — the warning was unreadable at exactly the
-        // moment it applied. currentRowLastControl is null only if no row is Current (rows exist
-        // but the chain is between steps), which is never expected mid-tutorial but costs nothing
-        // to guard.
-        if (currentRowLastControl is not null)
-        {
-            DeferScrollChecklistToCurrent(currentRowLastControl);
-        }
-    }
-
-    /// <summary>Settle-poll ceiling for <see cref="DeferScrollChecklistToCurrent"/> — mirrors
-    /// <c>GodotClient.Panels.ForgePanel.DeferEnsureVisible</c>'s own documented constants (wait on
-    /// the CONDITION, never a guessed frame count).</summary>
-    private const int ChecklistScrollSettleFrames = 240;
-
-    private const int ChecklistScrollStableFramesRequired = 3;
-
-    /// <summary>
-    /// U11 (§11.14.14): scroll <see cref="_checklistScroll"/> so <paramref name="target"/> — the
-    /// LAST control the current row rendered (its own line, or its TeachNote/GatingNote when they
-    /// exist; see the call site) — sits on screen. Bottom-anchors <paramref name="target"/> against
-    /// the scroll's own viewport rather than top-aligning it: <paramref name="target"/> is always
-    /// the deepest, most-recently-relevant line for the current row (the GatingNote when one
-    /// exists, since that is the row's own acute warning — the defect this unit exists to fix), so
-    /// landing ITS bottom edge on the viewport's bottom edge guarantees IT is fully visible
-    /// regardless of how tall the row+notes block above it is, while any leftover room in the
-    /// viewport is spent showing as much of that block (and the row before it) as still fits —
-    /// never the reverse, which would let a long TeachNote push the very note it explains off
-    /// screen. Mirrors <c>GodotClient.Panels.ForgePanel.DeferEnsureVisible</c>'s own settle-poll
-    /// idiom (wait on the CONDITION — the target's <see cref="Control.GlobalPosition"/> going
-    /// stable across frames — never a guessed frame count): a freshly Clear-then-composed
-    /// <see cref="TutorialChecklist"/> has not run a layout pass on the SAME frame its children were
-    /// added, so reading GlobalPosition immediately would measure last frame's stale layout.
-    /// </summary>
-    private async void DeferScrollChecklistToCurrent(Control target)
-    {
-        var tree = GetTree();
-        if (tree is null)
-        {
-            return;
-        }
-
-        var previous = new Vector2(float.NaN, float.NaN);
-        var stable = 0;
-        for (var i = 0; i < ChecklistScrollSettleFrames; i++)
-        {
-            await ToSignal(tree, SceneTree.SignalName.ProcessFrame);
-            if (!GodotObject.IsInstanceValid(_checklistScroll) || !GodotObject.IsInstanceValid(target))
-            {
-                return;
-            }
-
-            var current = target.GlobalPosition;
-            stable = current == previous ? stable + 1 : 0;
-            previous = current;
-
-            if (stable >= ChecklistScrollStableFramesRequired)
-            {
-                break;
-            }
-        }
-
-        if (!GodotObject.IsInstanceValid(_checklistScroll) || !GodotObject.IsInstanceValid(target))
-        {
-            return;
-        }
-
-        var delta = (int)((target.GlobalPosition.Y + target.Size.Y)
-            - (_checklistScroll.GlobalPosition.Y + _checklistScroll.Size.Y));
-        _checklistScroll.ScrollVertical = Math.Max(0, _checklistScroll.ScrollVertical + delta);
-    }
-
-    /// <summary>Value-equality check for <see cref="RefreshTutorialChecklist"/>'s skip-if-unchanged
-    /// guard — <see cref="ChecklistRow"/> is a <c>readonly record struct</c>, so element comparison
-    /// is a real field-by-field check, not a reference comparison; two DIFFERENT <see
-    /// cref="TutorialFlow.Checklist"/> calls that happen to return the same content (the common
-    /// case between sim-state changes) compare equal here.</summary>
-    private bool ChecklistUnchanged(IReadOnlyList<ChecklistRow>? rows)
-    {
-        if (rows is null || _lastChecklistRows is null)
-        {
-            return rows is null && _lastChecklistRows is null;
-        }
-
-        if (rows.Count != _lastChecklistRows.Count)
-        {
-            return false;
-        }
-
-        for (var i = 0; i < rows.Count; i++)
-        {
-            if (!rows[i].Equals(_lastChecklistRows[i]))
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
 
     /// <summary>
     /// Strip the markdown emphasis the sim's advisor/tutorial strings carry. Those strings are

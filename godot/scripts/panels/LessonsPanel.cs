@@ -104,7 +104,15 @@ public partial class LessonsPanel : SimPanel
             "Every lesson this campaign has to teach, in order. It stays here whether the tutorial "
             + "is running, dismissed, or already finished — nothing taught is ever taken back.");
 
-        var currentStep = Tutorial is { Active: true } ? Tutorial.Step : (TutorialStep?)null;
+        // P2-SCREEN-06 (the card diet): the four-state row (done/current/skipped/upcoming) that
+        // used to live in ObjectiveTracker's own 75px checklist scroll moves here, permanently —
+        // keyed by DISPLAYED slot (TutorialFlow.Checklist's own contract: BuyMaterial/Craft share
+        // slot 1, so both cards below read the identical state). Null only when the panel is
+        // mounted with no live Adapter/Tutorial at all (defensive; every real mount has both) —
+        // every registry row then falls back to the "upcoming" glyph rather than throwing.
+        var rowsByDisplayIndex = Adapter is not null && Tutorial is not null
+            ? Tutorial.Checklist(Adapter.CurrentState).ToDictionary(r => r.DisplayIndex)
+            : null;
 
         // U-T2-1 (owner ruling): chapters, not one flat countdown — grouped by Act first so the
         // book reads as "The Mark", then "The Hand-Off"'s own four lessons together, then "The
@@ -115,7 +123,15 @@ public partial class LessonsPanel : SimPanel
         foreach (var def in TutorialFlow.Registry
                      .OrderBy(d => (int)d.Act).ThenBy(d => d.DisplayIndex).ThenBy(d => (int)d.Step))
         {
-            var isCurrent = currentStep == def.Step;
+            var row = rowsByDisplayIndex?.GetValueOrDefault(def.DisplayIndex);
+            var isCurrent = row?.Current ?? false;
+            var isDone = row?.Done ?? false;
+            // The honest third state (ChecklistRow.Skipped's own doc): a row the chain carried the
+            // player PAST without it ever being genuinely answered. The only place the game admits
+            // a step never came up — losing this in the move off the card would be a regression in
+            // honesty, not just layout, so it is checked BEFORE Done/Current, same order the old
+            // checklist used.
+            var isSkipped = row?.Skipped ?? false;
             var card = Card($"Lesson_{def.DisplayIndex}_{def.Step}");
             _content!.AddChild(card);
 
@@ -123,15 +139,22 @@ public partial class LessonsPanel : SimPanel
             card.AddChild(body);
 
             var titleRow = AddRow(body);
-            var marker = isCurrent ? "◆" : "○"; // filled diamond / hollow circle — same glyphs ObjectiveTracker's checklist uses
+            // ✓ done / ◆ current / — skipped / ○ still upcoming — same four glyphs and the same
+            // "didn't come up this time" suffix ObjectiveTracker's own (now-deleted) checklist used.
+            var marker = isSkipped ? "—" : isDone ? "✓" : isCurrent ? "◆" : "○";
+            var suffix = isSkipped ? "  — didn't come up this time" : string.Empty;
             var (position, total) = TutorialFlow.ActPosition(def.Step);
             var title = AddLabel(
                 titleRow,
                 ObjectiveTracker.Plain(
-                    $"{marker} {TutorialActVocab.DisplayName(def.Act)} · {position} of {total} — {def.ShortLabel}"));
+                    $"{marker} {TutorialActVocab.DisplayName(def.Act)} · {position} of {total} — {def.ShortLabel}{suffix}"));
             if (isCurrent)
             {
                 title.AddThemeColorOverride("font_color", GameTheme.WarnColor);
+            }
+            else if (isDone || isSkipped)
+            {
+                title.AddThemeColorOverride("font_color", GameTheme.TextDim);
             }
 
             // U5 (§11.14.14): this copy is shared with the CLI, where **bold** is meaningful — a

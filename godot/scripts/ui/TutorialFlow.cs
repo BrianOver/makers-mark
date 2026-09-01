@@ -1781,19 +1781,23 @@ public sealed partial class TutorialFlow : PanelContainer
         MusterPlan.Compute(state.Heroes, state.Bounties, state.Items).Any(p => p.TargetFloor >= 2);
 
     /// <summary>
-    /// U5: the WHOLE ten-slot checklist, done/current/upcoming, for <see
-    /// cref="ObjectiveTracker"/> to render — empty while <see cref="Active"/> is false (the
-    /// caller's own contract: check <see cref="Active"/> before asking, same as <see
-    /// cref="TopSlotText"/>). One row per DISPLAYED slot, not per raw <see cref="TutorialStep"/>
-    /// (BuyMaterial/Craft share slot 1 — see <see cref="Registry"/>'s own doc).
+    /// U5: the WHOLE ten-slot checklist, done/current/skipped/upcoming — one row per DISPLAYED
+    /// slot, not per raw <see cref="TutorialStep"/> (BuyMaterial/Craft share slot 1 — see <see
+    /// cref="Registry"/>'s own doc). Renders it forever, not just while <see cref="Active"/>: P2-
+    /// SCREEN-06 moved the whole checklist off the live HUD card and into <c>LessonsPanel</c>'s
+    /// permanent record, which reads it whether the chain is running, dismissed, or completed —
+    /// so this can no longer go empty the moment <see cref="Active"/> flips false (the OLD
+    /// contract this doc used to state; the card that gated on it is gone).
+    ///
+    /// <para>Once inactive, the slot the chain was frozen on (<see cref="Step"/> never regresses)
+    /// reads by the SAME done/skipped test as any other past row, never as still "current" — a
+    /// dismissed or completed course has nothing left in progress. Every slot the chain never
+    /// reached stays a plain upcoming row (○): honest, since the course really did end before
+    /// getting there, and no third state exists for "ended before this could ever be skipped."
+    /// </para>
     /// </summary>
     public IReadOnlyList<ChecklistRow> Checklist(GameState state)
     {
-        if (!Active)
-        {
-            return Array.Empty<ChecklistRow>();
-        }
-
         var currentIndex = ByStep[Step].DisplayIndex;
         var rows = new List<ChecklistRow>(TotalSteps);
         var seen = new HashSet<int>();
@@ -1804,14 +1808,19 @@ public sealed partial class TutorialFlow : PanelContainer
                 continue;
             }
 
-            var isPast = def.DisplayIndex < currentIndex;
+            // Active: everything before the live slot is past, the live slot is current, nothing
+            // after is either. Inactive: the chain is frozen on Step forever (it never regresses),
+            // so the slot it stopped on is judged as past too (done or skipped, same rule as any
+            // other past row) rather than being read as still in progress — see this method's own
+            // doc.
+            var isPast = Active ? def.DisplayIndex < currentIndex : def.DisplayIndex <= currentIndex;
             // U1 (§11.13): the Vigil row specifically can be carried PAST by the anti-stranding
             // sweep (EveningClose's own AdvanceFrom now includes Vigil) on a day nobody ever camps
             // — genuinely past, but never actually answered. See ChecklistRow.Skipped's own doc for
             // why that is a THIRD state, not a done/upcoming reuse.
             var skipped = isPast && !AnsweredForReal(def, state);
             var done = isPast && !skipped;
-            var current = def.DisplayIndex == currentIndex;
+            var current = Active && def.DisplayIndex == currentIndex;
             var visited = current && def.Anchor.Kind is TutorialAnchorKind.Building or TutorialAnchorKind.Station
                           && VisitedCurrentAnchor;
             var gating = current ? GatingNote(state, ByStep[Step]) : null;
@@ -1823,6 +1832,21 @@ public sealed partial class TutorialFlow : PanelContainer
         }
 
         return rows;
+    }
+
+    /// <summary>P2-SCREEN-06: the title bar's own act/position fragment for the CURRENT step —
+    /// "{Act} · {position} of {total}" — read only while <see cref="Active"/> (same contract as
+    /// <see cref="TopSlotText"/>/<see cref="CurrentAnchor"/>). Word form ("of", not <see
+    /// cref="StepPrefix"/>'s compact "/") because the title bar (<c>ObjectiveTracker</c>'s own
+    /// row, not the 320px-capped instruction line) has the room to spell it out.</summary>
+    public string CurrentActPositionLabel
+    {
+        get
+        {
+            var def = ByStep[Step];
+            var (position, total) = ActPositionByStep[Step];
+            return $"{TutorialActVocab.DisplayName(def.Act)} · {position} of {total}";
+        }
     }
 
     /// <summary>U1 (§11.13): whether Vigil's own stop was ever genuinely answered — the card was

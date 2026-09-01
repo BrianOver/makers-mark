@@ -552,15 +552,18 @@ public class TutorialCopyIsFollowableTests
 
             // And it is on the SCREEN. The whole reason the notes were wrong for so long is that
             // nothing rendered them: ten paragraphs of teaching copy no player had ever read.
-            var label = ui.Objective.FindChild("TutorialChecklistTeachNote", recursive: true, owned: false) as Label;
-            AssertThat(label)
+            //
+            // P2-SCREEN-06 moved this rendering out of the objective dock's own checklist (deleted)
+            // and into LessonsPanel, which renders EVERY row's TeachNote permanently — so the
+            // current step's own note reaching the screen is now proven against that book instead.
+            ui.OpenPanel("Lessons");
+            var rendered = RenderedText(ui.Lessons);
+            AssertThat(rendered.Contains(Plain(rows.Single(r => r.Current).TeachNote!), StringComparison.Ordinal))
                 .OverrideFailureMessage(
-                    "The current step's teach note is not rendered anywhere in the objective dock — it is written, " +
+                    "The current step's teach note is not rendered anywhere in the Lessons book — it is written, " +
                     "pinned non-empty, and invisible, which is exactly how it drifted into describing a mechanism " +
                     "the game does not have.")
-                .IsNotNull();
-            AssertThat(label!.Text)
-                .IsEqual(Plain(rows.Single(r => r.Current).TeachNote!));
+                .IsTrue();
         }
         finally
         {

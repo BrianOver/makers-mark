@@ -1464,20 +1464,16 @@ public partial class MainUi : Control
         // the case by the time a post-warrant death lands, since the chain finishes by day 3-4 and
         // the earliest possible death is day 4. Null (no row, no anchor) outside its own one-night-
         // one-day window — see TutorialFlow.LossActRow's own doc for the "silent while armed, retires
-        // honestly" contract (KTD-H).
+        // honestly" contract (KTD-H). Still needed for the Legends pulse below even though
+        // P2-SCREEN-06 deleted the card's own checklist this row used to also feed — the memorial's
+        // own top-line nudge comes from ObjectiveAdvisor.Suggest instead (its Evening rule), so
+        // nothing here is homeless.
         var lossRow = Tutorial.Active ? null : Tutorial.LossActRow(state);
-        // U30 (§11.14.14): the Proof act's own row, same "only once the numbered chain is done
-        // pointing" gate as the loss row just above — see TutorialFlow.ProofBeatRow's own doc.
-        var proofRow = Tutorial.Active ? null : Tutorial.ProofBeatRow(state);
-        var dormantRows = new[] { proofRow, lossRow }.Where(row => row is not null)
-            .Select(row => row!.Value).ToArray();
-        var checklist = Tutorial.Active ? Tutorial.Checklist(state)
-            : dormantRows.Length > 0 ? dormantRows : null;
 
         Objective.Refresh(
             state,
             Tutorial.TopSlotText(state, locationId), // U23: tutorial overrides the top slot only
-            checklist); // U5/U6: the checklist ticks alongside it
+            Tutorial.Active ? Tutorial.CurrentActPositionLabel : null); // P2-SCREEN-06: title bar suffix
         // U10 (§11.14.14): used to be a hardcoded conditional chain here — "the forge spotlight,
         // else the current chain step, else the loss row" — that every new pointing feature had to
         // add a branch to. TutorialAnchorArbiter is now the one place that precedence lives, tested
