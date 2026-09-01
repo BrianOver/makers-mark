@@ -804,7 +804,7 @@ while (true)
             // see 'mats' for what each material you're holding caps out at.
             Console.WriteLine("  quality ceiling: a material graded below a recipe's tier caps the "
                 + "craft at Fine; matched grade caps Superior (auto-craft's hard cap too, PKD4); "
-                + "above-tier is uncapped — only the 3D forge minigame reaches past Superior, up to "
+                + "above-tier is uncapped — only the forge minigame reaches past Superior, up to "
                 + "Masterwork. See 'mats' for your materials' ceilings.");
 
             break;
@@ -849,7 +849,7 @@ while (true)
 
                 Console.WriteLine("  ceiling key: tN = recipe tier; Fine below it, Superior at it "
                     + "(auto-craft's hard cap too, PKD4), uncapped above it — only 'uncapped' can "
-                    + "reach Masterwork, and only via the 3D forge minigame.");
+                    + "reach Masterwork, and only via the forge minigame.");
             }
 
             break;
