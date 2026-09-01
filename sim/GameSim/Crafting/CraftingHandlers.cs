@@ -7,8 +7,8 @@ namespace GameSim.Crafting;
 
 /// <summary>
 /// Action handler for the crafting module (U4): <see cref="CraftAction"/> and
-/// <see cref="UnlockTalentAction"/>. Crafting is legal in ALL THREE phases — the forge
-/// never closes (Morning, Expedition, Evening).
+/// <see cref="UnlockTalentAction"/>. Crafting is legal in EVERY phase — the forge never
+/// closes; <see cref="CanHandle"/> filters on action type only, never on <see cref="DayPhase"/>.
 ///
 /// Determinism note (KTD4): every rejection happens BEFORE any RNG draw, so a refused
 /// action never advances the stream. Exactly one Roll100 is drawn per successful craft.

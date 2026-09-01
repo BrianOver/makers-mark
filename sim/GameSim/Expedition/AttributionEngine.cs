@@ -120,7 +120,7 @@ public static class AttributionEngine
 
                 foreach (var hero in floorStartFighters)
                 {
-                    foreach (var itemId in new[] { hero.Gear.Weapon, hero.Gear.Shield, hero.Gear.Armor })
+                    foreach (var itemId in new[] { hero.Gear.Weapon, hero.Gear.Shield, hero.Gear.Armor, hero.Gear.Trinket })
                     {
                         if (itemId is not { } id || !IsPlayerCrafted(id, items))
                         {

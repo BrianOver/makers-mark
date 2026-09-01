@@ -13,9 +13,7 @@ namespace GameSim.Professions;
 /// collections) so serialization is byte-stable regardless of the comparer the caller's set
 /// carried.
 ///
-/// REGISTRATION: this handler is NOT yet wired into <c>GameComposition.BuildKernel</c> (that
-/// file is orchestrator-owned). Until the orchestrator registers it, <c>SetProfessionsAction</c>
-/// is a no-op in the composed kernel; tests compose their own kernel including it.
+/// Registered in <c>GameComposition.BuildKernel</c>.
 /// </summary>
 public sealed class ProfessionHandlers : IActionHandler
 {

@@ -423,7 +423,11 @@ public static class ActionLegality
 
         foreach (var hero in state.Heroes.Values)
         {
-            if (hero.Gear.Weapon == action.Item || hero.Gear.Shield == action.Item || hero.Gear.Armor == action.Item)
+            // T10 U48: this used to duplicate ShopHandlers' own pre-fix Weapon/Shield/Armor-only
+            // check (missing Trinket) instead of calling this file's own correct WoreItem below —
+            // the two copies agreeing while both were wrong is exactly why the kernel-parity
+            // property test (ActionLegalityTests) never caught either one.
+            if (WoreItem(hero.Gear, action.Item))
             {
                 return false;
             }

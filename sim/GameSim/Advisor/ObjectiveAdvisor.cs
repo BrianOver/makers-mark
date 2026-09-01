@@ -191,7 +191,7 @@ public static class ObjectiveAdvisor
         //    appended after whatever won above).
         var shelved = state.Player.Shelf.Select(s => s.Item.Value).ToHashSet();
         var equipped = state.Heroes.Values
-            .SelectMany(h => new[] { h.Gear.Weapon, h.Gear.Shield, h.Gear.Armor })
+            .SelectMany(h => new[] { h.Gear.Weapon, h.Gear.Shield, h.Gear.Armor, h.Gear.Trinket })
             .Where(id => id is not null)
             .Select(id => id!.Value.Value)
             .ToHashSet();
@@ -477,7 +477,7 @@ public static class ObjectiveAdvisor
         // Held: finished, unshelved, unequipped — propose shelving it (the concrete next step).
         var shelvedIds = state.Player.Shelf.Select(e => e.Item.Value).ToHashSet();
         var equippedIds = state.Heroes.Values
-            .SelectMany(h => new[] { h.Gear.Weapon, h.Gear.Shield, h.Gear.Armor })
+            .SelectMany(h => new[] { h.Gear.Weapon, h.Gear.Shield, h.Gear.Armor, h.Gear.Trinket })
             .Where(id => id is not null)
             .Select(id => id!.Value.Value)
             .ToHashSet();

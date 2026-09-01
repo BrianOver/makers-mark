@@ -7,7 +7,8 @@ namespace GameSim.Economy;
 /// <see cref="SetPriceAction"/>, <see cref="UnstockAction"/> — each with typed
 /// rejections, never a silent drop.
 ///
-/// Phase legality: ALL THREE phases. The plan's crafting window is the Expedition
+/// Phase legality: EVERY phase (<see cref="CanHandle"/> filters on action type only,
+/// never on <see cref="DayPhase"/>). The plan's crafting window is the Expedition
 /// phase and the forge never closes (see CraftingHandlers); the shop counter follows
 /// the same rule — craft-then-shelve during Expedition is the intended play pattern,
 /// and repricing at Evening (after reading the Ledger) is the R16 feedback lever.
@@ -55,10 +56,12 @@ public sealed class ShopHandlers : IActionHandler
         }
 
         // 3. An item on a hero's back is not in the player's hands. Checked against
-        //    every hero, alive or dead — dead heroes keep their worn gear (R13).
+        //    every hero, alive or dead — dead heroes keep their worn gear (R13). All four
+        //    GearSet slots (T10 U48: this used to check Weapon/Shield/Armor only, missing
+        //    Trinket — a worn trinket could be shelved and sold a second time).
         foreach (var hero in state.Heroes.Values)
         {
-            if (hero.Gear.Weapon == action.Item || hero.Gear.Shield == action.Item || hero.Gear.Armor == action.Item)
+            if (WoreItem(hero.Gear, action.Item))
             {
                 return (state, new RejectedAction(action, $"{item.Name} ({action.Item}) is equipped by {hero.Name} — it cannot be shelved."));
             }
@@ -139,4 +142,11 @@ public sealed class ShopHandlers : IActionHandler
         };
         return (newState, null);
     }
+
+    /// <summary>Whether <paramref name="gear"/> currently has <paramref name="item"/> in any of its
+    /// four slots (Trinket included, T10 U48). Duplicated rather than shared — same standing
+    /// precedent <see cref="GameSim.Advisor.ActionLegality"/>'s class doc names (Contracts/ owns no
+    /// shared Validate seam) — instead of growing the equality chain to a fourth <c>||</c> in place.</summary>
+    private static bool WoreItem(GearSet gear, ItemId item) =>
+        gear.Weapon == item || gear.Shield == item || gear.Armor == item || gear.Trinket == item;
 }

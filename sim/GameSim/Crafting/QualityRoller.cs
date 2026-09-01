@@ -118,7 +118,7 @@ public static class QualityRoller
     /// — draw count is unchanged from the passive path (KTD4). Grade bands are read off the
     /// jittered value (THE TABLE, tests pin these exact numbers):
     ///
-    ///   effective = clamp(performanceGrade ?? 550, 0, 1000) + jitter
+    ///   effective = clamp(performanceGrade ?? AutoCraftGrade, 0, 1000) + jitter   // AutoCraftGrade = 800
     ///   jitter    = Roll100() * 51 / 100 - 25                     // maps [0,99] -> [-25, +25]
     ///
     ///   band:  effective &lt;  200  → Poor

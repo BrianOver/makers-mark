@@ -323,14 +323,15 @@ public sealed class ExpeditionRevealSystem : IPhaseSystem
 
     /// <summary>
     /// The epitaph's gear line (R13): player-crafted pieces first — the player's work
-    /// leads the memorial — then rival goods, weapon/shield/armor order within each group.
+    /// leads the memorial — then rival goods, weapon/shield/armor/trinket order within each
+    /// group (T10 U48: trinket used to be dropped from this enumeration entirely).
     /// </summary>
     private static string GearSummary(GearSet gear, ImmutableSortedDictionary<int, Item> items)
     {
-        var names = new List<string>(3);
+        var names = new List<string>(4);
         foreach (var playerCrafted in new[] { true, false })
         {
-            foreach (var slot in new[] { gear.Weapon, gear.Shield, gear.Armor })
+            foreach (var slot in new[] { gear.Weapon, gear.Shield, gear.Armor, gear.Trinket })
             {
                 if (slot is { } id
                     && items.TryGetValue(id.Value, out var item)
