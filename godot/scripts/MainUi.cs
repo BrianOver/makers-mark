@@ -3388,6 +3388,7 @@ public partial class MainUi : Control
         // --- ledger modal overlay (sibling after the drawer = draws on top) --
         Ledger = GD.Load<PackedScene>("res://scenes/panels/ledger_modal.tscn").Instantiate<LedgerModal>();
         AddChild(Ledger);
+        SurfaceArbiter.Claim(Ledger, new SurfaceClaim("Ledger", SurfaceRegion.FullScreenModal, 1));
         Ledger.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         Ledger.VisibilityChanged += OnLedgerVisibilityChanged;
 
@@ -3396,6 +3397,7 @@ public partial class MainUi : Control
         //     OnLedgerVisibilityChanged) and re-openable from the "Forecast" HUD button.
         Forecast = new RaidForecastBoard();
         AddChild(Forecast);
+        SurfaceArbiter.Claim(Forecast, new SurfaceClaim("Forecast", SurfaceRegion.FullScreenModal, 2));
         Forecast.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         Forecast.VisibilityChanged += OnForecastVisibilityChanged;
         // U1 (§11.11): "Forge one" closes the board and jumps to the Forge — same bare
@@ -3406,14 +3408,17 @@ public partial class MainUi : Control
         // --- Bestiary (gate-b flag 3): code-built modal sibling, opened from the Tavern hotspot.
         Bestiary = new BestiaryPanel();
         AddChild(Bestiary);
+        SurfaceArbiter.Claim(Bestiary, new SurfaceClaim("Bestiary", SurfaceRegion.FullScreenModal, 3));
         Bestiary.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         Bestiary.VisibilityChanged += OnBestiaryVisibilityChanged;
 
         // --- the ending chronicle: code-built modal sibling on the RaidForecastBoard precedent
-        //     (no scene, no import churn). Mounted LAST of the overlays so the campaign's closing
-        //     beat draws above the Ledger it arrives alongside.
+        //     (no scene, no import churn). Draws above the Ledger it arrives alongside (mounted
+        //     after it), though several more overlays mount after Chronicle in turn — see
+        //     SurfaceArbiter's own doc for the real, measured paint order.
         Chronicle = new ChronicleScroll();
         AddChild(Chronicle);
+        SurfaceArbiter.Claim(Chronicle, new SurfaceClaim("Chronicle", SurfaceRegion.FullScreenModal, 4));
         Chronicle.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
 
         // --- Wave 3 (U15) commission board: code-built modal sibling, mirroring RaidForecastBoard.
@@ -3421,6 +3426,7 @@ public partial class MainUi : Control
         //     precedent) rather than a SimPanel binding.
         Commissions = new CommissionBoard { Adapter = Adapter };
         AddChild(Commissions);
+        SurfaceArbiter.Claim(Commissions, new SurfaceClaim("Commissions", SurfaceRegion.FullScreenModal, 5));
         Commissions.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         Commissions.VisibilityChanged += OnCommissionsVisibilityChanged;
 
@@ -3430,6 +3436,7 @@ public partial class MainUi : Control
         //     GameState explicitly.
         Legends = new LegendsWall { Adapter = Adapter };
         AddChild(Legends);
+        SurfaceArbiter.Claim(Legends, new SurfaceClaim("Legends", SurfaceRegion.FullScreenModal, 6));
         Legends.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         Legends.VisibilityChanged += OnLegendsVisibilityChanged;
 
@@ -3438,6 +3445,7 @@ public partial class MainUi : Control
         //     once, so the two overlays never contend.
         Camp = new CampPanel { Name = "CampModal" };
         AddChild(Camp);
+        SurfaceArbiter.Claim(Camp, new SurfaceClaim("Camp", SurfaceRegion.FullScreenModal, 7));
         Camp.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         Camp.VisibilityChanged += OnCampVisibilityChanged;
 
@@ -3448,6 +3456,7 @@ public partial class MainUi : Control
         _systemMenu = BuildSystemMenu();
         _systemMenu.Visible = false;
         AddChild(_systemMenu);
+        SurfaceArbiter.Claim(_systemMenu, new SurfaceClaim("SystemMenu", SurfaceRegion.FullScreenModal, 8));
         _systemMenu.VisibilityChanged += OnSystemMenuVisibilityChanged;
 
         // --- objective chip (U18/KTD13): a floating overlay sibling (like the modals above),
@@ -3539,6 +3548,7 @@ public partial class MainUi : Control
         //     touch. -----------------------------------------------------------------------
         Mirror = new ScryingMirror { Name = "ScryingMirror" };
         AddChild(Mirror);
+        SurfaceArbiter.Claim(Mirror, new SurfaceClaim("Mirror", SurfaceRegion.FullScreenModal, 9));
         Mirror.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         Mirror.VisibilityChanged += OnMirrorVisibilityChanged;
 
