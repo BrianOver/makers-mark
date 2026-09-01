@@ -535,11 +535,15 @@ public class TutorialFlowTests
     /// <summary>U5 (§11.14.14, "teaching surfaces render their own copy"): the reported defect was
     /// a completed checklist row showing its tick with no label — a player reviewing what they had
     /// already done would see a column of checkmarks and nothing saying what any of them were for.
-    /// Reads the RENDERED tree (<see cref="ObjectiveTracker.TutorialChecklist"/>), not just <see
-    /// cref="TutorialFlow.Checklist"/>'s own data (already pinned Done/Current/Neither by <see
+    /// Reads the RENDERED tree, not just <see cref="TutorialFlow.Checklist"/>'s own data (already
+    /// pinned Done/Current/Neither by <see
     /// cref="Checklist_MarksEveryPriorSlotDone_CurrentSlotCurrent_LaterSlotsNeither"/> above) — a
     /// row's own <see cref="ChecklistRow.Label"/> being non-empty proves nothing about what actually
-    /// reaches the screen if the render path ever drops it for a Done row specifically.</summary>
+    /// reaches the screen if the render path ever drops it for a Done row specifically.
+    ///
+    /// <para>P2-SCREEN-06 moved the checklist's rendered home from <c>ObjectiveTracker</c>'s own
+    /// (now-deleted) 75px scroll into <c>LessonsPanel</c>'s permanent record — the claim is
+    /// unchanged, only where it is proven.</para></summary>
     [TestCase]
     public void Checklist_RendersBothTheGlyphAndTheLabel_ForADoneRow()
     {
@@ -549,14 +553,15 @@ public class TutorialFlowTests
             DriveDay1ToLookIn(ui); // -> LookIn, display slot 5; slots 1-4 now read Done
             var doneRow = ui.Tutorial.Checklist(ui.Adapter.CurrentState).First(r => r.Done);
 
-            var rendered = RenderedText(ui.Objective.TutorialChecklist);
+            ui.OpenPanel("Lessons");
+            var rendered = RenderedText(ui.Lessons);
             AssertThat(rendered.Contains("✓", System.StringComparison.Ordinal))
-                .OverrideFailureMessage("No Done row's glyph reached the rendered checklist at all.")
+                .OverrideFailureMessage("No Done row's glyph reached the rendered Lessons book at all.")
                 .IsTrue();
             AssertThat(rendered.Contains(ObjectiveTracker.Plain(doneRow.Label), System.StringComparison.Ordinal))
                 .OverrideFailureMessage(
                     $"A Done checklist row (slot {doneRow.DisplayIndex}, \"{doneRow.Label}\") is missing its " +
-                    "own label text from the rendered tree — only the glyph would be showing on screen.")
+                    "own label text from the rendered Lessons book — only the glyph would be showing on screen.")
                 .IsTrue();
         }
         finally
@@ -564,6 +569,61 @@ public class TutorialFlowTests
             Unmount(ui);
         }
     }
+
+    /// <summary>
+    /// P2-SCREEN-06 (the card diet): the owner's photographed defect was one instruction sentence
+    /// severed by an unlabeled button row, with a SECOND, unrelated text block picking up below it
+    /// — "...press E to enter the [▾ ✕ ↻] workshop." is two independent messages a reader cannot
+    /// tell apart. This pins the literal geometric shape so it cannot come back, structurally: no
+    /// DIRECT child of the card's own VBox that contains a <see cref="Button"/> anywhere in its
+    /// subtree may sit with a plain-text sibling (a subtree carrying a <see cref="Label"/> and NO
+    /// <see cref="Button"/>) both BEFORE it and AFTER it — regardless of that sibling's current
+    /// <see cref="Control.Visible"/> state, since the defect was a TREE shape, not a runtime one.
+    /// </summary>
+    [TestCase]
+    public void Card_NoButtonRowSitsBetweenTwoIndependentTextBlocks()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            var body = Find<VBoxContainer>(ui.Objective, "ObjectiveTrackerBody");
+            var children = body.GetChildren().OfType<Control>().ToList();
+            AssertThat(children.Count)
+                .OverrideFailureMessage("The card's own VBox has no children — fixture is broken.")
+                .IsGreater(0);
+
+            var hasButton = children.Select(ContainsButtonInSubtree).ToList();
+            var isPureText = children
+                .Select((c, i) => ContainsLabelInSubtree(c) && !hasButton[i])
+                .ToList();
+
+            for (var i = 0; i < children.Count; i++)
+            {
+                if (!hasButton[i])
+                {
+                    continue;
+                }
+
+                var textBefore = isPureText.Take(i).Any(x => x);
+                var textAfter = isPureText.Skip(i + 1).Any(x => x);
+                AssertThat(textBefore && textAfter)
+                    .OverrideFailureMessage(
+                        $"'{children[i].Name}' is a control row sitting between two independent text " +
+                        "blocks — the exact shape of the severed-sentence defect P2-SCREEN-06 fixed.")
+                    .IsFalse();
+            }
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    private static bool ContainsButtonInSubtree(Node node) =>
+        node is Button || node.GetChildren().Any(ContainsButtonInSubtree);
+
+    private static bool ContainsLabelInSubtree(Node node) =>
+        node is Label || node.GetChildren().Any(ContainsLabelInSubtree);
 
     // ── The 2026-08-09 owner report's tutorial half ──────────────────────────────────────────────
     //
