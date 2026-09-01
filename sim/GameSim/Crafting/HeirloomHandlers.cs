@@ -9,7 +9,7 @@ namespace GameSim.Crafting;
 /// reforges a fallen hero's worn gear into a new item carrying their legend-line forward
 /// (<see cref="Item.HeirloomLineage"/>), "the dead persist as inheritance" (R6).
 ///
-/// Legal in ALL THREE phases, same as <see cref="CraftingHandlers"/> (the forge never closes) —
+/// Legal in EVERY phase, same as <see cref="CraftingHandlers"/> (the forge never closes) —
 /// a reforge IS a craft, with a source-provenance guard bolted on front.
 ///
 /// Guard chain (each a distinct typed rejection, ALL before any RNG draw — KTD4):

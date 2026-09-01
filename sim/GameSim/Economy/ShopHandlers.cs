@@ -7,7 +7,8 @@ namespace GameSim.Economy;
 /// <see cref="SetPriceAction"/>, <see cref="UnstockAction"/> — each with typed
 /// rejections, never a silent drop.
 ///
-/// Phase legality: ALL THREE phases. The plan's crafting window is the Expedition
+/// Phase legality: EVERY phase (<see cref="CanHandle"/> filters on action type only,
+/// never on <see cref="DayPhase"/>). The plan's crafting window is the Expedition
 /// phase and the forge never closes (see CraftingHandlers); the shop counter follows
 /// the same rule — craft-then-shelve during Expedition is the intended play pattern,
 /// and repricing at Evening (after reading the Ledger) is the R16 feedback lever.
