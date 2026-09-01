@@ -105,7 +105,7 @@ public static class BaselinePlayer
                 // Stock every unshelved player craft at the rival's price formula.
                 var shelved = state.Player.Shelf.Select(s => s.Item.Value).ToHashSet();
                 var equipped = state.Heroes.Values
-                    .SelectMany(h => new[] { h.Gear.Weapon, h.Gear.Shield, h.Gear.Armor })
+                    .SelectMany(h => new[] { h.Gear.Weapon, h.Gear.Shield, h.Gear.Armor, h.Gear.Trinket })
                     .Where(id => id is not null)
                     .Select(id => id!.Value.Value)
                     .ToHashSet();
