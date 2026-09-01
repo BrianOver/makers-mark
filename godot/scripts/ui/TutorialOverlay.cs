@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using Godot;
+using GodotClient.Tools;
 using GodotClient.Town2d;
 
 namespace GodotClient.Ui;
@@ -126,21 +128,28 @@ public sealed partial class TutorialOverlay : Control
     public string? PulsingHudControlName => _hudTarget?.Name.ToString();
 
     /// <summary>
-    /// U42 (§11.14.14): a HUD control the off-camera marker must not land on top of. Set by
-    /// <c>MainUi</c> to the objective card.
+    /// P2-SCREEN-10: registers <paramref name="objectiveDock"/> and <paramref name="tutorialDock"/>
+    /// as <see cref="SurfaceRegion.HudDock"/> claims with <see cref="SurfaceArbiter"/> — replaces
+    /// U42's <c>KeepClearOf</c>, a field that held a permanent reference to exactly ONE HUD node
+    /// (the objective card) and so never noticed the Tutorial dock sharing its column 16px below
+    /// (found by photograph: U15's marker was measured at screen (1127, 366) on day 1 step 2 —
+    /// geometrically perfect, and also sitting on the objective card's own chevrons, because the
+    /// card owns the whole right edge and every day-one target is east of the forge spawn).
     ///
-    /// <para>Found by photograph, not by test. U15's marker was measured at screen (1127, 366) on
-    /// day 1 step 2 — hard against the right edge at the vertical centre, direction correct, camera
-    /// untouched. Every assertion about it passed. It was also sitting on the objective card, which
-    /// owns that entire edge, so it read as one of the card's own chevrons rather than as a
-    /// direction to walk. And from the forge spawn the market, the tavern and the mine gate are ALL
-    /// east, so that is not an unlucky case — it is every off-camera marker a new player sees on
-    /// day one.</para>
-    ///
-    /// <para>A reference rather than a rect so the overlay never has to know what the card is or
-    /// where it is anchored; null leaves the marker's placement exactly as U15 left it.</para>
+    /// <para>This class holds no field for either dock afterward — the whole point. <see
+    /// cref="ClaimedObstacleRects"/> re-reads both docks' LIVE <see cref="Control.GetGlobalRect"/>
+    /// and <see cref="Control.IsVisibleInTree"/> straight from <see cref="SurfaceArbiter.Discover"/>
+    /// every tick, so a claim registered once here, at construction, stays correct as either dock
+    /// resizes, shows, or hides on its own — and a THIRD dock sharing the column is a new <see
+    /// cref="SurfaceArbiter.Claim"/> call at ITS OWN construction site, never an edit here (the
+    /// exact defect shape this unit fixes: a named-obstacle rule is a hand-listed fixture with
+    /// n=1). Call once, from <c>MainUi.BuildUi</c>, right after both docks exist.</para>
     /// </summary>
-    public Control? KeepClearOf { get; set; }
+    public void ClaimHudColumn(Control objectiveDock, Control tutorialDock)
+    {
+        SurfaceArbiter.Claim(objectiveDock, new SurfaceClaim("ObjectiveDock", SurfaceRegion.HudDock, 0, OwnsScreen: false));
+        SurfaceArbiter.Claim(tutorialDock, new SurfaceClaim("TutorialDock", SurfaceRegion.HudDock, 0, OwnsScreen: false));
+    }
 
     /// <summary>U15: true while the off-camera marker is showing (the active anchor's world target
     /// exists but is not inside <see cref="Town2D.ViewportScreenRect"/> right now) — test/inspection
@@ -199,49 +208,211 @@ public sealed partial class TutorialOverlay : Control
     }
 
     /// <summary>
-    /// U42: keeps <paramref name="edgePoint"/> off <see cref="KeepClearOf"/> by moving it ALONG the
-    /// edge it already sits on, never inward. Direction legibility is the whole value of this marker,
-    /// so the horizontal position that encodes "east" is preserved and only the vertical slot moves —
-    /// a marker at the right edge above or below the card still reads as east, whereas one pulled
-    /// inward to clear the card reads as pointing at the middle of the screen.
-    ///
-    /// <para>Picks whichever side of the obstacle is nearer and still inside <paramref name="inset"/>.
-    /// If neither side fits (an obstacle taller than the viewport), the point is left where it was:
-    /// overlapping is worse than wrong, but wrong is worse than gone, and this marker's job is to
-    /// name a direction.</para>
+    /// P2-SCREEN-10: <paramref name="edgePoint"/> if it is already clear of every visible <see
+    /// cref="SurfaceRegion.HudDock"/> claim; otherwise the nearest free point walking <paramref
+    /// name="inset"/>'s own perimeter from it — or <see langword="null"/> if the WHOLE perimeter is
+    /// claimed. Replaces U42's <c>SlideClearOfHud</c>, which named exactly one obstacle
+    /// (<c>KeepClearOf</c>, a single <see cref="Control"/> field) and so missed the Tutorial dock
+    /// stacked 16px below it — this asks <see cref="SurfaceArbiter"/> for whatever is ACTUALLY
+    /// claimed and visible THIS frame, so a third dock joining the column needs no change here.
+    /// Position only, never rotation: <see cref="UpdateOffCameraMarker"/>'s own bearing (<c>direction</c>)
+    /// is computed before this runs and is never touched by it — the marker's rotation always
+    /// encodes the true bearing; only WHERE it sits on the boundary is negotiable.
     /// </summary>
-    private Vector2 SlideClearOfHud(Vector2 edgePoint, Rect2 inset)
+    private Vector2? ClearOfClaims(Vector2 edgePoint, Rect2 inset)
     {
-        if (KeepClearOf is null || !GodotObject.IsInstanceValid(KeepClearOf) || !KeepClearOf.IsVisibleInTree())
+        var obstacles = ClaimedObstacleRects();
+        if (obstacles.Count == 0 || !IsClaimed(edgePoint, obstacles))
         {
             return edgePoint;
         }
 
-        // Grown by the marker's own half-extent so "clear" means visually clear, not merely
-        // centre-outside-the-rect with half the triangle still overlapping.
-        var obstacle = KeepClearOf.GetGlobalRect().Grow(OffCameraMarker.PivotCenter.X);
-        if (!obstacle.HasPoint(edgePoint))
+        return NearestFreeBoundaryPoint(edgePoint, inset, obstacles);
+    }
+
+    /// <summary>Every visible <see cref="SurfaceRegion.HudDock"/> claim's own <see
+    /// cref="SurfaceFootprint"/>, grown by the marker's own half-extent so "clear" means visually
+    /// clear, not merely centre-outside-the-rect with half the triangle still overlapping (mirrors
+    /// the old <c>SlideClearOfHud</c>'s own <c>Grow</c> call). A claimed <see cref="CanvasItem"/>
+    /// that is not a <see cref="Control"/>, or not on screen right now, never contributes a
+    /// rect.</summary>
+    private List<Rect2> ClaimedObstacleRects()
+    {
+        var rects = new List<Rect2>();
+        var tree = GetTree();
+        if (tree is null)
         {
-            return edgePoint;
+            return rects;
         }
 
-        var above = obstacle.Position.Y - OffCameraMarker.PivotCenter.Y;
-        var below = obstacle.End.Y + OffCameraMarker.PivotCenter.Y;
-        var aboveFits = above >= inset.Position.Y;
-        var belowFits = below <= inset.End.Y;
-
-        if (aboveFits && belowFits)
+        var grow = OffCameraMarker.PivotCenter.X;
+        foreach (var (claim, surface) in SurfaceArbiter.Discover(tree))
         {
-            var nearer = Mathf.Abs(edgePoint.Y - above) <= Mathf.Abs(edgePoint.Y - below) ? above : below;
-            return new Vector2(edgePoint.X, nearer);
+            if (claim.Region != SurfaceRegion.HudDock || surface is not Control control || !control.IsVisibleInTree())
+            {
+                continue;
+            }
+
+            rects.Add(SurfaceFootprint(control).Grow(grow));
         }
 
-        if (aboveFits)
+        return rects;
+    }
+
+    /// <summary>
+    /// The screen region <paramref name="control"/> actually occupies — measured, never assumed to
+    /// be its own root rect. P2-SCREEN-04's <see cref="SurfaceRegion.HudDock"/> claims were never
+    /// used geometrically before this unit (that unit's own doc: "this unit is observing-only"),
+    /// and one of today's three claimants (<c>CompanionDock</c>) mounts <c>FullRect</c> at its OWN
+    /// root purely so a small chip/card child can paint above every layer-0 sibling regardless of
+    /// <c>AddChild</c> order — its root <see cref="Control.GetGlobalRect"/> is the WHOLE viewport,
+    /// which would claim the entire boundary for a dock a player only ever sees as a small
+    /// bottom-left chip.
+    ///
+    /// <para>The codebase already has a signal for exactly this distinction: <see
+    /// cref="Control.MouseFilterEnum.Ignore"/> at a claim's own root is how <c>CompanionDock</c>
+    /// itself declares "a companion, not a modal ... only the card itself is Stop" (that class's
+    /// own doc) — a transparent layering wrapper whose rect means nothing visually, with the real
+    /// content living in its children. A control that does NOT make that declaration (the default
+    /// <c>Stop</c>) is trusted at its own rect: Objective and Tutorial are plain single-Control
+    /// docks with a real background panel drawn at their OWN outer edge, so their margin/border is
+    /// still visually part of the obstacle a marker must clear — measured against ONLY their
+    /// visible children (as an earlier version of this method did) undershoots by exactly that
+    /// margin and lets the marker land inside the panel's own border.</para>
+    /// </summary>
+    private static Rect2 SurfaceFootprint(Control control)
+    {
+        if (control.MouseFilter != MouseFilterEnum.Ignore)
         {
-            return new Vector2(edgePoint.X, above);
+            return control.GetGlobalRect();
         }
 
-        return belowFits ? new Vector2(edgePoint.X, below) : edgePoint;
+        Rect2? union = null;
+        foreach (var child in control.GetChildren())
+        {
+            if (child is not Control childControl || !childControl.IsVisibleInTree())
+            {
+                continue;
+            }
+
+            // Recurse: a child could itself be another transparent layering wrapper.
+            var rect = SurfaceFootprint(childControl);
+            union = union is { } existing ? existing.Merge(rect) : rect;
+        }
+
+        return union ?? control.GetGlobalRect();
+    }
+
+    private static bool IsClaimed(Vector2 point, IReadOnlyList<Rect2> obstacles)
+    {
+        foreach (var obstacle in obstacles)
+        {
+            if (obstacle.HasPoint(point))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private const float BoundaryWalkStepPx = 4f;
+
+    /// <summary>Walks <paramref name="inset"/>'s own perimeter outward from <paramref name="start"/>
+    /// in both directions at once (one step each side per iteration), returning the first point
+    /// that clears every rect in <paramref name="obstacles"/> — the nearer free point wins by
+    /// construction, since both directions are checked at the SAME distance before either grows.
+    /// Returns <see langword="null"/> once the search has covered the whole perimeter and found
+    /// nothing free anywhere. <see cref="BoundaryParam"/>/<see cref="PointAtBoundaryParam"/> give
+    /// the walk one 1-D coordinate to move along regardless of which of the four edges <paramref
+    /// name="start"/> sits on, so this single method covers every direction a bearing can point —
+    /// U42's own <c>SlideClearOfHud</c> only ever walked vertically along the right edge.</summary>
+    private static Vector2? NearestFreeBoundaryPoint(Vector2 start, Rect2 inset, IReadOnlyList<Rect2> obstacles)
+    {
+        var perimeter = 2f * (inset.Size.X + inset.Size.Y);
+        var t0 = BoundaryParam(start, inset);
+
+        for (var d = BoundaryWalkStepPx; d <= perimeter / 2f; d += BoundaryWalkStepPx)
+        {
+            var forward = PointAtBoundaryParam(Mathf.PosMod(t0 + d, perimeter), inset);
+            if (!IsClaimed(forward, obstacles))
+            {
+                return forward;
+            }
+
+            var backward = PointAtBoundaryParam(Mathf.PosMod(t0 - d, perimeter), inset);
+            if (!IsClaimed(backward, obstacles))
+            {
+                return backward;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>The 1-D perimeter coordinate of <paramref name="p"/> on <paramref name="rect"/>'s
+    /// own border — 0 at the top-left corner, increasing clockwise (top, then right, then bottom,
+    /// then left), wrapping at <c>2*(width+height)</c>. Every caller here hands in a point already
+    /// ON the border (a ray-cast landing point or a previous boundary-walk result), so the
+    /// nearest-edge test below is float-slop tolerance, not a general point-to-rect projection.
+    /// </summary>
+    private static float BoundaryParam(Vector2 p, Rect2 rect)
+    {
+        var w = rect.Size.X;
+        var h = rect.Size.Y;
+        var local = p - rect.Position;
+
+        var distTop = Mathf.Abs(local.Y);
+        var distBottom = Mathf.Abs(local.Y - h);
+        var distLeft = Mathf.Abs(local.X);
+        var distRight = Mathf.Abs(local.X - w);
+        var minDist = Mathf.Min(Mathf.Min(distTop, distBottom), Mathf.Min(distLeft, distRight));
+
+        if (minDist == distTop)
+        {
+            return Mathf.Clamp(local.X, 0, w);
+        }
+
+        if (minDist == distRight)
+        {
+            return w + Mathf.Clamp(local.Y, 0, h);
+        }
+
+        if (minDist == distBottom)
+        {
+            return w + h + Mathf.Clamp(w - local.X, 0, w);
+        }
+
+        return w + h + w + Mathf.Clamp(h - local.Y, 0, h);
+    }
+
+    /// <summary>The inverse of <see cref="BoundaryParam"/>: the point on <paramref name="rect"/>'s
+    /// border at 1-D coordinate <paramref name="t"/> (already wrapped into <c>[0, perimeter)</c> by
+    /// every caller here).</summary>
+    private static Vector2 PointAtBoundaryParam(float t, Rect2 rect)
+    {
+        var w = rect.Size.X;
+        var h = rect.Size.Y;
+
+        if (t < w)
+        {
+            return rect.Position + new Vector2(t, 0);
+        }
+
+        t -= w;
+        if (t < h)
+        {
+            return rect.Position + new Vector2(w, t);
+        }
+
+        t -= h;
+        if (t < w)
+        {
+            return rect.Position + new Vector2(w - t, h);
+        }
+
+        t -= w;
+        return rect.Position + new Vector2(0, h - t);
     }
 
     private ColorRect OutlineStrip(string name)
@@ -515,7 +686,23 @@ public sealed partial class TutorialOverlay : Control
         var alongY = Mathf.Abs(direction.Y) > 0.0001f ? half.Y / Mathf.Abs(direction.Y) : float.PositiveInfinity;
         var edgePoint = center + direction * Mathf.Min(alongX, alongY);
 
-        edgePoint = SlideClearOfHud(edgePoint, inset);
+        var freePoint = ClearOfClaims(edgePoint, inset);
+        if (freePoint is null)
+        {
+            // P2-SCREEN-10: the whole boundary is claimed by a visible HUD dock. U42's own
+            // fallback here ("overlapping is worse than wrong, but wrong is worse than gone")
+            // stopped one option short: gone is fine as long as it is LOUD, never silent — this
+            // repo has shipped the silent-degradation defect before (a full playtest once reported
+            // "clean" over a real placeholder bug because the degrade logged nowhere). The active
+            // step's own card still names the direction in words; this overlay's job was always
+            // only the visual half, never the only channel.
+            EngineDistress.Warn(
+                $"[TutorialOverlay] off-camera marker suppressed for anchor {_anchor.Kind}/{_anchor.Key}" +
+                (_anchor.StationId is null ? "" : $"/{_anchor.StationId}") +
+                " — every point on the screen edge is claimed by a visible HUD dock.");
+            _offCameraMarker.Visible = false;
+            return;
+        }
 
         _offCameraMarker.Visible = true;
         _offCameraMarker.QueueRedraw(); // geometry is static, but this is cheap and removes any
@@ -523,8 +710,8 @@ public sealed partial class TutorialOverlay : Control
                                         // re-triggers _Draw (mirrors QuenchCanvas's own
                                         // every-frame QueueRedraw idiom elsewhere in this codebase).
         _offCameraMarker.PivotOffset = OffCameraMarker.PivotCenter;
-        _offCameraMarker.Position = edgePoint - OffCameraMarker.PivotCenter;
-        _offCameraMarker.Rotation = direction.Angle();
+        _offCameraMarker.Position = freePoint.Value - OffCameraMarker.PivotCenter;
+        _offCameraMarker.Rotation = direction.Angle(); // true bearing, decoupled from the cleared position above
 
         // U15 (KTD8/OQ3): reads the SAME live scale/alpha Building2D.TickTutorialPulse just computed
         // for the on-screen pulse — not a second copy of the breathe math — so the marker and the

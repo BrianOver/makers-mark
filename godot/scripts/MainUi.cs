@@ -3616,11 +3616,11 @@ public partial class MainUi : Control
         AddChild(Overlay);
         Overlay.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         Overlay.Build();
-        // U42 (§11.14.14): the objective card owns the whole right edge, which is exactly where a
-        // marker for an eastern target must sit — and from the forge spawn the market, the tavern and
-        // the mine gate are all east. Telling the overlay what to keep clear of here (rather than
-        // letting it reach for the card) keeps it ignorant of the HUD's layout.
-        Overlay.KeepClearOf = Objective;
+        // P2-SCREEN-10: claims both top-right docks with SurfaceArbiter so the off-camera marker's
+        // free-space query can find them without this overlay ever holding a field reference to
+        // either (U42's KeepClearOf named only Objective, and missed the Tutorial dock stacked
+        // 16px below it) — see TutorialOverlay.ClaimHudColumn's own doc.
+        Overlay.ClaimHudColumn(Objective, Tutorial);
 
         // --- U-T2 Wave C (§11.14.4, Act II): the shared mentor banner for lessons that live
         //     outside any one panel (the two dilemma call-outs) — mounted after Overlay so it

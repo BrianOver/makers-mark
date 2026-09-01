@@ -683,6 +683,38 @@ func _process(_delta: float) -> bool:
 		var bell5 = _ui.find_child("AdvancePhase", true, false)
 		if bell5:
 			bell5.emit_signal("pressed")
+	# TutorialOffCamera's second beat (P2-SCREEN-10): this state's whole point is proving the
+	# off-camera marker clears BOTH top-right docks, but the Tutorial dock never naturally shows
+	# this early -- both its rows (second profession, quick travel) gate on eligibility a fresh
+	# day-1 fixture has no reason to have earned. Forced here, capture-only, docked exactly where
+	# MainUi.UpdateObjectiveDock docks it in real play: immediately below Objective's own live
+	# bottom edge, with a real non-zero height. Direct rect writes on the two Nodes' own Godot
+	# properties, never RefreshAffordances/RefreshHud -- either of those would immediately reset
+	# Visible back to false from the real (ineligible) state, the same trap
+	# OffCameraPointerTests.AnEasternTarget_PutsTheMarkerClearOfBothTopRightDocks documents on the
+	# C# side (godot/tests/OffCameraPointerTests.cs).
+	if _state == "TutorialOffCamera" and _frames == 90:
+		var objective_dock = _ui.find_child("ObjectiveTracker", true, false)
+		var tutorial_dock = _ui.find_child("TutorialFlow", true, false)
+		var quick_travel_row = _ui.find_child("QuickTravelRow", true, false)
+		if objective_dock and tutorial_dock:
+			var obj_rect = objective_dock.get_global_rect()
+			tutorial_dock.size = Vector2(obj_rect.size.x, 80.0)
+			tutorial_dock.global_position = Vector2(obj_rect.position.x, obj_rect.end.y + 16.0)
+			tutorial_dock.visible = true
+			# Real content, not a fabricated label: QuickTravelRow's own venue buttons are built
+			# unconditionally in TutorialFlow.Build regardless of eligibility -- only its own
+			# Visible flag (normally gated on QuickTravelUnlocked) hides them. Revealing that one
+			# flag shows the genuine row rather than an empty panel a viewer could mistake for a
+			# rendering bug.
+			if quick_travel_row:
+				quick_travel_row.visible = true
+		else:
+			# Loud, not silent -- a shot that quietly photographs only ONE card would look like a
+			# clean receipt and prove nothing about the defect this unit fixes (Counter's own
+			# push_error above is the same idiom).
+			push_error("[shot] SHOT_STATE=TutorialOffCamera could not find the Objective/Tutorial " +
+				"docks -- the shot below is missing the second card this receipt exists to prove.")
 	# GateNight's second beat: the tint's ease has now converged (see _settle above) --
 	# enter the gatehouse the same way every other venue receipt does
 	# (OnTownBuildingClicked's "Gate" -> "minegate" mapping, MainUi.cs).
