@@ -78,7 +78,16 @@ public sealed class CommissionSystem : IPhaseSystem
 
     /// <summary>Drops every commission whose deadline has passed. An ACCEPTED one emits
     /// <see cref="CommissionExpired"/> + a mood hit (a broken promise stings); a merely POSTED one is
-    /// removed with no event and no mood change (ignoring the board is always safe).</summary>
+    /// removed with no event and no mood change (ignoring the board is always safe).
+    ///
+    /// <para>T10: a commission whose hero has DIED is voided FIRST, before the deadline check —
+    /// no event, no mood change, regardless of <see cref="Commission.Accepted"/> or how much of the
+    /// deadline window is left. <see cref="PostCommissions"/> already skips dead heroes when posting
+    /// new ones; this closes the matching gap on the expiry side, which previously let an ACCEPTED
+    /// commission survive its hero's death, then fire <see cref="CommissionExpired"/> on the
+    /// deadline day and dock mood on a corpse — rendered to the player as "{Hero} gave up waiting",
+    /// which is not what happened. A dead hero cannot give up waiting.</para>
+    /// </summary>
     private static GameState ExpireCommissions(GameState state, IEventSink events)
     {
         if (state.Commissions.IsEmpty)
@@ -89,6 +98,15 @@ public sealed class CommissionSystem : IPhaseSystem
         var kept = ImmutableList.CreateBuilder<Commission>();
         foreach (var commission in state.Commissions)
         {
+            var heroAlive = state.Heroes.TryGetValue(commission.Hero.Value, out var hero) && hero.Alive;
+            if (!heroAlive)
+            {
+                // Voided silently: no event, no mood change (T10 — a dead hero cannot give up
+                // waiting). The death itself already has its own player-facing surfaces elsewhere;
+                // this system only ever spoke through CommissionExpired, which does not apply here.
+                continue;
+            }
+
             if (state.Day <= commission.DeadlineDay)
             {
                 kept.Add(commission);

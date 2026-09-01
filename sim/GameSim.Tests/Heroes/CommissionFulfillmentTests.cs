@@ -23,10 +23,10 @@ public class CommissionFulfillmentTests
         public void Emit(GameEvent gameEvent) => Events.Add(gameEvent);
     }
 
-    private static Hero MakeHero(int id, int gold, int deepestFloor = 0, int mood = 0) => new(
+    private static Hero MakeHero(int id, int gold, int deepestFloor = 0, int mood = 0, bool alive = true) => new(
         new HeroId(id), $"Hero{id}", "vanguard", Level: 1, MaxHp: 25, Gold: gold,
         GearSet.Empty, ImmutableList<ItemMemory>.Empty,
-        Alive: true, DeepestFloorReached: deepestFloor, DiedOnDay: null)
+        Alive: alive, DeepestFloorReached: deepestFloor, DiedOnDay: alive ? null : 1)
     {
         MoodPermille = mood,
     };
@@ -215,6 +215,65 @@ public class CommissionFulfillmentTests
         Assert.Empty(sink.Events); // no event of any kind for the silent path
         Assert.Empty(after.Commissions); // silently dropped and NOT re-posted (fully/adequately kitted)
         Assert.Equal(42, after.Heroes[1].MoodPermille); // unchanged
+    }
+
+    /// <summary>
+    /// T10 U48: the bug shape being fixed. An ACCEPTED commission whose hero has since died must NOT
+    /// dock mood or fire <see cref="CommissionExpired"/> when the deadline arrives — a dead hero
+    /// cannot give up waiting. Before the fix, ExpireCommissions never checked <see
+    /// cref="Hero.Alive"/>, so this rendered as "{Hero} gave up waiting on that Weapon commission."
+    /// </summary>
+    [Fact]
+    public void AcceptedCommission_HeroDiedBeforeDeadline_ExpiresSilently_NoEventNoMoodChange()
+    {
+        var hero = MakeHero(1, gold: 100, mood: 17, alive: false);
+        var commission = new Commission(hero.Id, ItemSlot.Weapon, QualityGrade.Common, DeadlineDay: 5, PremiumGold: 25)
+        {
+            Accepted = true,
+        };
+
+        var state = GameFactory.NewGame(seed: 6) with
+        {
+            Day = 6, // past the deadline
+            Heroes = ImmutableSortedDictionary<int, Hero>.Empty.Add(1, hero),
+            Commissions = ImmutableList.Create(commission),
+        };
+
+        var sink = new TestSink();
+        var after = new CommissionSystem().Process(state, new Pcg32(state.Rng), sink);
+
+        Assert.Empty(sink.Events.OfType<CommissionExpired>());
+        Assert.Empty(sink.Events); // no event of any kind — a dead hero cannot give up waiting
+        Assert.Empty(after.Commissions); // voided, not re-posted (PostCommissions also skips the dead)
+        Assert.Equal(17, after.Heroes[1].MoodPermille); // unchanged — no penalty on a corpse
+    }
+
+    /// <summary>
+    /// The other half: a dead hero's commission is voided the MOMENT the hero is found dead, not
+    /// merely at the deadline — checked BEFORE <see cref="Commission.DeadlineDay"/>, so it never
+    /// lingers in <see cref="GameState.Commissions"/> for the rest of the deadline window.
+    /// </summary>
+    [Fact]
+    public void Commission_HeroDiedWellBeforeDeadline_VoidedImmediately_NotLeftLingering()
+    {
+        var hero = MakeHero(1, gold: 100, alive: false);
+        var commission = new Commission(hero.Id, ItemSlot.Weapon, QualityGrade.Common, DeadlineDay: 30, PremiumGold: 25)
+        {
+            Accepted = true,
+        };
+
+        var state = GameFactory.NewGame(seed: 7) with
+        {
+            Day = 2, // days away from the deadline — the old code would have kept this
+            Heroes = ImmutableSortedDictionary<int, Hero>.Empty.Add(1, hero),
+            Commissions = ImmutableList.Create(commission),
+        };
+
+        var sink = new TestSink();
+        var after = new CommissionSystem().Process(state, new Pcg32(state.Rng), sink);
+
+        Assert.Empty(sink.Events);
+        Assert.Empty(after.Commissions); // gone now, not parked until day 30
     }
 
     [Fact]

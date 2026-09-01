@@ -274,8 +274,27 @@ public class AtomicEquivalenceTests
     // value above) — the same both-unchanged signature the L5 arc re-anchor entry recorded. This is
     // pure serialized-content movement (a new event type appearing in the log) plus its downstream
     // prose-variant reroll, never a routing/combat/economy decision.
+    // GOLDEN RE-BASELINE #8 (T10 U48, CommissionSystem dead-hero fix): **Class 0b — values change,
+    // draw-free.** ExpireCommissions now voids a commission the moment its hero is found dead
+    // (before the deadline check), instead of leaving an un-accepted commission parked in
+    // GameState.Commissions until its 5-day deadline like every other commission. This idle trace
+    // (seed 9001, zero player actions, so AcceptCommissionAction is never submitted — no commission
+    // is EVER Accepted here, so the mood/CommissionExpired half of the fix never fires on this
+    // specific trace) still autonomously posts commissions every Morning (CommissionSystem draws no
+    // RNG — pure projection over MusterPlan.Compute, unchanged) and heroes still die fighting
+    // autonomously (the same permadeath property every prior re-baseline above exercises). When a
+    // hero holding an un-accepted commission dies, that commission now vacates its
+    // MaxOpenCommissions (3) board slot immediately instead of days later — freeing the slot sooner
+    // for a DIFFERENT alive hero's commission, which changes WHICH hero gets commissioned and WHEN
+    // for the rest of the run. `Inc` and `State` are BOTH byte-identical to the T6 value above (see
+    // PhaseBNoDrawGateTests.cs's matching entry) — the same both-unchanged signature the L5/U4/T6
+    // entries recorded: CommissionSystem draws no RNG before or after this fix, so nothing downstream
+    // of the board-slot timing shift can reorder a combat/shop/recruit draw. The 100-day Balance gate
+    // (Category=Balance) is unchanged (67/67 passed, no threshold moved). Pure serialized-content
+    // movement (the Commissions list plus its CommissionPosted event trail differ) — never a
+    // routing/combat/economy decision.
     private const string ExpectedPreCounterSha256 =
-        "32A002E9EC7D7E2AAE98E6C9C54746AC8060C106956910159F70DF5119FB94F8";
+        "8B8CD415F3A96D85A61A772BF037044CE39076F889D27F7E3BDEC269399AA80F";
 
     [Fact]
     public void ThirtyDayRun_NoCounterActions_IsByteIdenticalToPrePa3Kernel()

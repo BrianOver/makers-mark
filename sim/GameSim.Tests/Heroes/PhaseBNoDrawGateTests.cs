@@ -118,6 +118,13 @@ public class PhaseBNoDrawGateTests
         // expedition, plus the downstream flavour-pack variant reroll that a shifted EventId causes)
         // — that movement is pure serialized-content change on a stream this exact assertion proves
         // is untouched.
+        // GOLDEN RE-BASELINE #8 (T10 U48, CommissionSystem dead-hero fix): see
+        // AtomicEquivalenceTests.cs's matching ledger entry for the full account. ExpireCommissions
+        // now drops a dead hero's commission immediately instead of at its deadline; CommissionSystem
+        // draws no RNG before or after. **Neither `Inc` nor `State` moves for this entry** — same
+        // both-unchanged signature as L5/U4/T6. The AtomicEquivalenceTests SHA256 DOES move (which
+        // hero gets the freed commission board slot, and when, differs) — pure serialized-content
+        // change on a stream this exact assertion proves is untouched.
         Assert.Equal(new RngState(4182585629336870939UL, 13279888329118852579UL), state.Rng);
     }
 }
