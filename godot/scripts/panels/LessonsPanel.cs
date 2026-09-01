@@ -75,6 +75,12 @@ public partial class LessonsPanel : SimPanel
         ["first-talent-unlock"] = "Unlocking a talent",
         ["foundry-four-verbs"] = "The Foundry's four verbs",
         ["the-tariff-fork"] = "Whose ore you buy",
+        // P2-SCREEN-07: the three lessons split back out of BuyMaterial's own bolted-on TeachNote
+        // paragraph — see TutorialFlow's own SlotBudgetLessonId/StationPressLessonId/
+        // LeavingARoomLessonId doc.
+        [TutorialFlow.SlotBudgetLessonId] = "The day's action slots",
+        [TutorialFlow.StationPressLessonId] = "Stations, and pressing E",
+        [TutorialFlow.LeavingARoomLessonId] = "Leaving a room",
     };
 
     /// <summary>Copy for <paramref name="id"/>'s card heading — see <see cref="FirstTouchTitles"/>'s

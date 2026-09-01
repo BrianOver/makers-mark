@@ -510,32 +510,20 @@ public sealed partial class TutorialFlow : PanelContainer
             Step: TutorialStep.BuyMaterial, DisplayIndex: 1, Act: TutorialAct.Mark,
             Anchor: TutorialAnchor.ForStation("forge", "shelf"), MinDay: 1,
             ShortLabel: "Buy material, then craft your first item",
-            // U20 (§11.14.14, "the two absences"): the second sentence is new. Leaving a room was
-            // never taught anywhere, and step 2 (Shelve) is the first one that requires it — walking
-            // back out of the workshop to the Shop. Placed on THIS row, not Craft's, on purpose: Step
-            // starts at BuyMaterial by definition (its own field default) and this is the very first
-            // thing rendered, before the player has taken a single action — so it is the ONE row
-            // guaranteed to reach the screen on every path, including the starter-kit-skips-buy case
-            // where Step jumps straight from BuyMaterial to Shelve in one Advance() pass and Craft's
-            // own TeachNote never becomes current at all (TutorialStepDef's own doc, "the shared
-            // display slot"). A lesson that depends on the player having bought material first is not
-            // "before" anything.
-            //
-            // U28 (§11.14.14, R20, "a player learns which actions spend the day's budget and which
-            // are free"): the two leading sentences are new, named here because this row is the ONE
-            // guaranteed to render before the player has spent anything at all (the same guarantee
-            // the paragraph above already leans on). Qualitative on purpose — no client-restated
-            // constant (law: copy never repeats a sim number back at the player) — ActionBudget's
-            // own ten-type list and free list are cited, not counted, so this line can never drift
-            // from the sim it describes.
-            TeachNote: "Each day gives you a limited run of action slots — buying material, crafting, posting "
-                       + "a bounty, and the forge's bigger upgrades each spend one, so the pips beside your "
-                       + "gold count down as you go and refill fresh at dawn, spent or not. The shelf, the "
-                       + "whole counter session, answering a commission, the camp's send and recall, and "
-                       + "honoring the memorial never touch that budget at all. Inside a building you walk up "
-                       + "to a station and press E to use it. The material vendor and the crafting station "
-                       + "are both stations in your workshop. Every room has a way back out, too — press "
-                       + "Escape to step outside when you're ready to move on.",
+            // P2-SCREEN-07 (§11.15): this row's TeachNote used to carry five bolted-on sentences —
+            // U20's room-exit sentence, then U28's two action-budget sentences, stacked on top of
+            // this row's own original two-sentence "walk up to a station and press E" content — all
+            // three additions citing the SAME reason: this is "the ONE row guaranteed to reach the
+            // screen on every path." P2-SCREEN-06 already made that reason false (the card no longer
+            // renders a step's TeachNote at all), and the paragraph was never three sentences of the
+            // same lesson to begin with. Split back into the three lessons they actually are —
+            // SlotBudgetLessonId/StationPressLessonId/LeavingARoomLessonId below, each its own
+            // once-ever Bryn beat, each landing in the Lessons book permanently the same way this
+            // row's own TeachNote always has. This row keeps only what is actually about buying
+            // material.
+            TeachNote: "The material vendor sells what your recipes call for, priced plainly. Your starter "
+                       + "kit already holds enough for a first piece, if you'd rather skip straight to the "
+                       + "anvil.",
             IsDone: state => state.EventLog.OfType<MaterialPurchased>().Any(),
             AdvanceFrom: [TutorialStep.BuyMaterial], AdvancesTo: TutorialStep.Craft,
             // U13: one candidate per priced material key, quantity 1 — the SAME loop
@@ -1885,6 +1873,17 @@ public sealed partial class TutorialFlow : PanelContainer
     /// </summary>
     public void Advance(GameState state)
     {
+        // P2-SCREEN-07: leaving a room becomes true the moment the player has anything to leave
+        // FOR — the first thing they ever craft, since stocking it means walking back out of the
+        // workshop to the Shop (the same fact Craft's own IsDone above already reads). Checked
+        // before the Active guard below, deliberately: this is a fact about the world, not about
+        // whether the numbered chain is still running (ConsumeFirstTouch's own "the long tail
+        // matters to every campaign" precedent).
+        if (state.EventLog.OfType<ItemCrafted>().Any())
+        {
+            ConsumeFirstTouch(LeavingARoomLessonId, MentorVoice.Speak(LeavingARoomLessonText));
+        }
+
         if (!Active)
         {
             return;
@@ -2058,6 +2057,18 @@ public sealed partial class TutorialFlow : PanelContainer
         {
             Save();
         }
+
+        // P2-SCREEN-07: the slot-budget and station-press lessons both become true the instant the
+        // player is standing in the one room that has stations at all on day 1 — independent of
+        // Active/Step (the "long tail matters to every campaign" precedent every other first-touch
+        // beat in this file already follows), so a returning smith who skipped the numbered chain
+        // still hears both once. "forge" names the venue itself, never the per-profession label —
+        // the same station-anchor Key every profession's BuyMaterial/Craft row already resolves to.
+        if (venueKey == "forge")
+        {
+            ConsumeFirstTouch(SlotBudgetLessonId, MentorVoice.Speak(SlotBudgetLessonText));
+            ConsumeFirstTouch(StationPressLessonId, MentorVoice.Speak(StationPressLessonText));
+        }
     }
 
     /// <summary>
@@ -2197,6 +2208,46 @@ public sealed partial class TutorialFlow : PanelContainer
         + "carry it. You can make it, price it, put it where they'll see it. Then they choose, "
         + "every time. Nobody in this town takes an order from you — not them, not me.\n\n"
         + "You'll stamp everything you make. I'd like to see what that turns into.";
+
+    // ── P2-SCREEN-07 (§11.15): the TeachNote becomes Bryn's three lessons ───────────────────────
+    //
+    // BuyMaterial's own row doc (above) tells the routing half of this story. This is the content
+    // half: three genuinely different facts that were never one lesson, each now its own once-ever
+    // ConsumeFirstTouch beat, delivered where the fact actually becomes true rather than bolted onto
+    // whichever row happened to render first. All three are true almost immediately on a fresh
+    // day-1 campaign — none of them waits on the player having done anything else first — so "the
+    // moment it becomes true" and "the earliest honest moment to say so" land close together for
+    // every one of the three, same as the row they used to share always claimed for all five
+    // sentences at once.
+
+    /// <summary>The action-slot budget: what spends one of the day's ten slot-types, and the longer
+    /// free list that never touches it. Fires the moment the player is standing in a room with a
+    /// station to spend a slot at — see <see cref="NotifyEnteredBuilding"/>.</summary>
+    public const string SlotBudgetLessonId = "slot-budget";
+
+    private const string SlotBudgetLessonText =
+        "Each day gives you a limited run of action slots — buying material, crafting, posting "
+        + "a bounty, and the forge's bigger upgrades each spend one, so the pips beside your "
+        + "gold count down as you go and refill fresh at dawn, spent or not. The shelf, the "
+        + "whole counter session, answering a commission, the camp's send and recall, and "
+        + "honoring the memorial never touch that budget at all.";
+
+    /// <summary>Stations-and-E — this row's own ORIGINAL TeachNote before U20/U28 bolted anything
+    /// onto it (git history: commit bffa29c, "a room has no way out"). Fires alongside <see
+    /// cref="SlotBudgetLessonId"/> — see <see cref="NotifyEnteredBuilding"/>.</summary>
+    public const string StationPressLessonId = "station-press";
+
+    private const string StationPressLessonText =
+        "Inside a building you walk up to a station and press E to use it. The material vendor "
+        + "and the crafting station are both stations in your workshop.";
+
+    /// <summary>Leaving a room. U20's own original sentence, unchanged — only its address moves.
+    /// Fires the first time the player has ever crafted anything (<see cref="Advance"/>), the exact
+    /// moment they next need to walk back out of the workshop to reach the shelf.</summary>
+    public const string LeavingARoomLessonId = "leaving-a-room";
+
+    private const string LeavingARoomLessonText =
+        "Every room has a way back out, too — press Escape to step outside when you're ready to move on.";
 
     // ── U29 (§11.14.14, R21/R22): the two-act-voice-per-night budget ────────────────────────────
     //
