@@ -135,6 +135,22 @@ public partial class ProvenanceCard : Control
         SetAnchorsPreset(LayoutPreset.FullRect);
         MouseFilter = MouseFilterEnum.Stop; // swallow input like every other modal overlay here
 
+        // P2-SCREEN-04: claims itself, here, once — the fix for a defect a hand-written list could
+        // never have caught in the first place. This class is instantiated per hosting panel (five
+        // hosts: ShopPanel/HeroesPanel/TavernPanel/LegendsWall/ScryingMirror), so no single NAME could
+        // ever have gone in MainUi's old OverlaySurfaces() array. Claiming from its own constructor
+        // means every instance registers itself regardless of which panel built it — the region
+        // property (SurfaceRegion.ChildModal), not a roster, is what makes discovery complete.
+        // Precedence 100 is the "child-modal rank" ProvenanceCard.cs's own Escape doc already
+        // describes: added LAST inside its host so it sees Escape first, and strictly above every
+        // FullScreenModal precedence (1-9 today) so SurfaceArbiter.Resolve always names the nested
+        // card over its host while both are visible. OwnsScreen: true — the card genuinely covers
+        // the screen it draws over — but MainUi.OverlaySurfaces() only ever projects
+        // SurfaceRegion.FullScreenModal, so this claim never counts toward "is a modal open": opening
+        // or closing a card must never read as its host releasing that ownership (see
+        // SurfaceRegion.ChildModal's own doc).
+        SurfaceArbiter.Claim(this, new SurfaceClaim("ProvenanceCard", SurfaceRegion.ChildModal, 100, OwnsScreen: true));
+
         var dim = new ColorRect { Color = new Color(0, 0, 0, 0.6f) };
         dim.SetAnchorsPreset(LayoutPreset.FullRect);
         AddChild(dim);

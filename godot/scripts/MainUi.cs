@@ -427,6 +427,12 @@ public partial class MainUi : Control
     /// <summary>U4 (shell-and-audio plan): mirror of the Bestiary/Forecast latch for the in-game
     /// system menu — pause while it owns the screen, resume on close when play was running.</summary>
     private bool _resumePlayOnSystemMenuClose;
+    /// <summary>P2-SCREEN-04: mirror of the Bestiary/Forecast latch for the campaign's ending
+    /// ceremony. Chronicle had NO <c>VisibilityChanged</c> wiring at all before this unit — the
+    /// exact defect this unit exists to fix, one layer under the array omission: even a projection
+    /// that lists Chronicle changes nothing at runtime unless something re-derives <see
+    /// cref="UpdateEngaged"/> the moment it opens.</summary>
+    private bool _resumePlayOnChronicleClose;
 
     /// <summary>
     /// U4: the in-game system menu (Esc's new bottom rung when nothing else owns the screen, and
@@ -823,6 +829,47 @@ public partial class MainUi : Control
     {
         Adapter.Queue(new BuyMaterialAction("copper", 2));
         Adapter.Queue(new CraftAction("dagger", "copper"));
+    }
+
+    /// <summary>
+    /// Dev/receipt tool only (never called from real play) — reachable via <c>shot_harness.gd</c>'s
+    /// <c>call()</c> bridge, the <see cref="Dev_QueueDay1BuyAndCraft"/> idiom. <c>Chronicle</c> fires
+    /// exactly once per campaign, automatically, off a real <see cref="CampaignEnded"/> event
+    /// (<c>StateChanged</c>'s own reader) — there is no player-pressable door to it (<see
+    /// cref="Ui.TutorialSurfaceRegistry"/>'s own class doc), so a GDScript receipt state cannot reach
+    /// it any other way. The tallies are plain ints with no gameplay meaning here; only the fact that
+    /// the scroll opened matters to what this state exists to photograph and test.
+    /// </summary>
+    public void Dev_ShowChronicle() =>
+        Chronicle.ShowFor(new CampaignEnded(
+            DeepestFloorReached: 5, MemorialCount: 1, HonoredMemorialCount: 1,
+            AttributionBeatCount: 3, GossipHighlightCount: 2, LegendaryHeroCount: 1));
+
+    /// <summary>
+    /// Dev/receipt tool only (never called from real play), reachable via <c>shot_harness.gd</c>'s
+    /// <c>call()</c> bridge — the P2-SCREEN-04 nested-modal receipt: a <see cref="ProvenanceCard"/>
+    /// opened over a REAL <see cref="Ui.SurfaceRegion.FullScreenModal"/> host, proving the host's own
+    /// screen-ownership survives the nested card opening on top of it. A fresh day-1 campaign has no
+    /// Signed Work / famous item yet, so this stamps one into a display-only <see cref="GameState"/>
+    /// copy and hands it straight to <see cref="LegendsWall.ShowWall"/> — the exact "hand-built
+    /// GameState fixture" idiom <c>LegendsWallTests.PopulatedWorld</c> already uses off the engine
+    /// test bench. Zero sim mutation: <c>ShowWall</c> only ever renders the <see cref="GameState"/>
+    /// handed to it and never writes it back through <see cref="Adapter"/>.
+    /// </summary>
+    public void Dev_ShowProvenanceCardOverLegends()
+    {
+        var itemId = new ItemId(90001);
+        var item = new Item(
+            itemId, "recipe-signed-receipt", "Longsword", ItemSlot.Weapon, QualityGrade.Masterwork,
+            new ItemStats(20, 0, 5), new MakersMark("You", 1), ImmutableList<ItemHistoryEntry>.Empty)
+        {
+            SignedName = "Emberfall",
+        };
+        var state = Adapter.CurrentState with
+        {
+            Items = Adapter.CurrentState.Items.SetItem(itemId.Value, item),
+        };
+        Legends.ShowWall(state);
     }
 
     public override void _Process(double delta)
@@ -3353,8 +3400,9 @@ public partial class MainUi : Control
         // Docket's own CanvasLayer, between DrawerHost above and TabFade below — layer 40 draws
         // above every layer-0 sibling (the drawer's dim veil included) regardless of AddChild
         // order, the same idiom TabFade (layer 100, just below) and BuildStamp (layer 5) already
-        // use. Deliberately NOT one of OverlaySurfaces: see CompanionDock's own class doc for why
-        // that single omission is the whole fix.
+        // use. Claims itself in the HudDock region with OwnsScreen: false (P2-SCREEN-04) rather
+        // than sitting outside every list — see CompanionDock's own class doc for why that answer
+        // is the whole fix.
         var companionLayer = new CanvasLayer { Name = "CompanionLayer", Layer = CompanionDock.CanvasLayerIndex };
         AddChild(companionLayer);
         Docket = new CompanionDock { Adapter = Adapter };
@@ -3388,7 +3436,7 @@ public partial class MainUi : Control
         // --- ledger modal overlay (sibling after the drawer = draws on top) --
         Ledger = GD.Load<PackedScene>("res://scenes/panels/ledger_modal.tscn").Instantiate<LedgerModal>();
         AddChild(Ledger);
-        SurfaceArbiter.Claim(Ledger, new SurfaceClaim("Ledger", SurfaceRegion.FullScreenModal, 1));
+        SurfaceArbiter.Claim(Ledger, new SurfaceClaim("Ledger", SurfaceRegion.FullScreenModal, 1, OwnsScreen: true));
         Ledger.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         Ledger.VisibilityChanged += OnLedgerVisibilityChanged;
 
@@ -3397,7 +3445,7 @@ public partial class MainUi : Control
         //     OnLedgerVisibilityChanged) and re-openable from the "Forecast" HUD button.
         Forecast = new RaidForecastBoard();
         AddChild(Forecast);
-        SurfaceArbiter.Claim(Forecast, new SurfaceClaim("Forecast", SurfaceRegion.FullScreenModal, 2));
+        SurfaceArbiter.Claim(Forecast, new SurfaceClaim("Forecast", SurfaceRegion.FullScreenModal, 2, OwnsScreen: true));
         Forecast.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         Forecast.VisibilityChanged += OnForecastVisibilityChanged;
         // U1 (§11.11): "Forge one" closes the board and jumps to the Forge — same bare
@@ -3408,7 +3456,7 @@ public partial class MainUi : Control
         // --- Bestiary (gate-b flag 3): code-built modal sibling, opened from the Tavern hotspot.
         Bestiary = new BestiaryPanel();
         AddChild(Bestiary);
-        SurfaceArbiter.Claim(Bestiary, new SurfaceClaim("Bestiary", SurfaceRegion.FullScreenModal, 3));
+        SurfaceArbiter.Claim(Bestiary, new SurfaceClaim("Bestiary", SurfaceRegion.FullScreenModal, 3, OwnsScreen: true));
         Bestiary.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         Bestiary.VisibilityChanged += OnBestiaryVisibilityChanged;
 
@@ -3418,15 +3466,19 @@ public partial class MainUi : Control
         //     SurfaceArbiter's own doc for the real, measured paint order.
         Chronicle = new ChronicleScroll();
         AddChild(Chronicle);
-        SurfaceArbiter.Claim(Chronicle, new SurfaceClaim("Chronicle", SurfaceRegion.FullScreenModal, 4));
+        SurfaceArbiter.Claim(Chronicle, new SurfaceClaim("Chronicle", SurfaceRegion.FullScreenModal, 4, OwnsScreen: true));
         Chronicle.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+        // P2-SCREEN-04: the missing wire. Every sibling modal gets this same line (see Ledger/
+        // Forecast/Bestiary above) — Chronicle never did, so opening it never held the clock,
+        // never blocked world input, and never suppressed PiP. See OnChronicleVisibilityChanged.
+        Chronicle.VisibilityChanged += OnChronicleVisibilityChanged;
 
         // --- Wave 3 (U15) commission board: code-built modal sibling, mirroring RaidForecastBoard.
         //     Unlike Forecast it submits actions, so it needs the adapter handed in (Depths.Clock
         //     precedent) rather than a SimPanel binding.
         Commissions = new CommissionBoard { Adapter = Adapter };
         AddChild(Commissions);
-        SurfaceArbiter.Claim(Commissions, new SurfaceClaim("Commissions", SurfaceRegion.FullScreenModal, 5));
+        SurfaceArbiter.Claim(Commissions, new SurfaceClaim("Commissions", SurfaceRegion.FullScreenModal, 5, OwnsScreen: true));
         Commissions.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         Commissions.VisibilityChanged += OnCommissionsVisibilityChanged;
 
@@ -3436,7 +3488,7 @@ public partial class MainUi : Control
         //     GameState explicitly.
         Legends = new LegendsWall { Adapter = Adapter };
         AddChild(Legends);
-        SurfaceArbiter.Claim(Legends, new SurfaceClaim("Legends", SurfaceRegion.FullScreenModal, 6));
+        SurfaceArbiter.Claim(Legends, new SurfaceClaim("Legends", SurfaceRegion.FullScreenModal, 6, OwnsScreen: true));
         Legends.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         Legends.VisibilityChanged += OnLegendsVisibilityChanged;
 
@@ -3445,7 +3497,7 @@ public partial class MainUi : Control
         //     once, so the two overlays never contend.
         Camp = new CampPanel { Name = "CampModal" };
         AddChild(Camp);
-        SurfaceArbiter.Claim(Camp, new SurfaceClaim("Camp", SurfaceRegion.FullScreenModal, 7));
+        SurfaceArbiter.Claim(Camp, new SurfaceClaim("Camp", SurfaceRegion.FullScreenModal, 7, OwnsScreen: true));
         Camp.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         Camp.VisibilityChanged += OnCampVisibilityChanged;
 
@@ -3456,7 +3508,7 @@ public partial class MainUi : Control
         _systemMenu = BuildSystemMenu();
         _systemMenu.Visible = false;
         AddChild(_systemMenu);
-        SurfaceArbiter.Claim(_systemMenu, new SurfaceClaim("SystemMenu", SurfaceRegion.FullScreenModal, 8));
+        SurfaceArbiter.Claim(_systemMenu, new SurfaceClaim("SystemMenu", SurfaceRegion.FullScreenModal, 8, OwnsScreen: true));
         _systemMenu.VisibilityChanged += OnSystemMenuVisibilityChanged;
 
         // --- objective chip (U18/KTD13): a floating overlay sibling (like the modals above),
@@ -3548,7 +3600,7 @@ public partial class MainUi : Control
         //     touch. -----------------------------------------------------------------------
         Mirror = new ScryingMirror { Name = "ScryingMirror" };
         AddChild(Mirror);
-        SurfaceArbiter.Claim(Mirror, new SurfaceClaim("Mirror", SurfaceRegion.FullScreenModal, 9));
+        SurfaceArbiter.Claim(Mirror, new SurfaceClaim("Mirror", SurfaceRegion.FullScreenModal, 9, OwnsScreen: true));
         Mirror.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         Mirror.VisibilityChanged += OnMirrorVisibilityChanged;
 
@@ -3946,37 +3998,57 @@ public partial class MainUi : Control
     private bool AnOverlayOwnsTheScreen() => OverlaySurfaces().Any(o => o.Surface.Visible);
 
     /// <summary>
-    /// The named list <see cref="AnOverlayOwnsTheScreen"/> and <see cref="ActiveOverlayName"/> both
-    /// fold over — one source for "is anything covering the screen" and "which one, by name",
-    /// so the two can never silently drift apart into two hand-copied lists.
+    /// P2-SCREEN-04: a PROJECTION over <see cref="SurfaceArbiter.Discover"/>, not a hand-written
+    /// list. The array this replaced was missing exactly one row — <c>Chronicle</c> — so the
+    /// campaign's ending ceremony ran with the clock live, world input open, and PiP undimmed; a
+    /// tenth surface could omit itself from a fixed array with nothing to catch it. Discovery closes
+    /// the class of defect rather than patching the instance: every claim in <see
+    /// cref="SurfaceRegion.FullScreenModal"/> that answers <see cref="SurfaceClaim.OwnsScreen"/> true
+    /// is in this list by construction, the moment its constructor calls <see
+    /// cref="SurfaceArbiter.Claim"/> — nobody has to remember to edit a second place.
     ///
-    /// <para><b>2026-08-12 (coverage-can-see-the-overlays finding A):</b> before this method existed,
+    /// <para><see cref="SurfaceRegion.ChildModal"/> claims (<c>ProvenanceCard</c>) are deliberately
+    /// NOT projected here — a nested card opening over its host must never read as the host
+    /// releasing its own claim on the screen, so the host's own <see cref="SurfaceRegion.FullScreenModal"/> claim
+    /// is the only one that counts toward "is a modal open" (see <see cref="SurfaceRegion.ChildModal"/>'s
+    /// own doc). <see cref="SurfaceRegion.HudDock"/> claims (<c>CompanionDock</c>) are excluded the
+    /// same way its own <see cref="SurfaceClaim.OwnsScreen"/>: false answer intends.</para>
+    ///
+    /// <para>The named list <see cref="AnOverlayOwnsTheScreen"/> and <see cref="ActiveOverlayName"/>
+    /// both fold over — one source for "is anything covering the screen" and "which one, by name",
+    /// so the two can never silently drift apart into two hand-copied lists.
+    /// 2026-08-12 (coverage-can-see-the-overlays finding A): before this method existed,
     /// <c>AgentPlaytest.cs</c>'s <c>Location()</c> only ever checked <c>Drawer.IsOpen</c> — every one
-    /// of these seven overlays bypasses the drawer by design (this file's own "FullRect overlays above
+    /// of these overlays bypasses the drawer by design (this file's own "FullRect overlays above
     /// the drawer" comments elsewhere), so a full playthrough that opened the Ledger and the Camp
     /// panel every day reported byte-identical Panel coverage to a run that never opened either. <see
     /// cref="ActiveOverlayName"/> gives the playtest bridge the SAME predicate this class already
     /// trusts for input-blocking, instead of a second hand-maintained name list.</para>
     /// </summary>
-    private (string Name, CanvasItem Surface)[] OverlaySurfaces() => new (string, CanvasItem)[]
-    {
-        ("Ledger", Ledger),
-        ("Camp", Camp),
-        ("Mirror", Mirror),
-        ("Forecast", Forecast),
-        ("Bestiary", Bestiary),
-        ("Commissions", Commissions),
-        ("Legends", Legends),
-        ("SystemMenu", _systemMenu),
-    };
+    private (string Name, CanvasItem Surface)[] OverlaySurfaces() =>
+        SurfaceArbiter.Discover(GetTree())
+            .Where(entry => entry.Claim.Region == SurfaceRegion.FullScreenModal && entry.Claim.OwnsScreen)
+            .Select(entry => (entry.Claim.Id, entry.Surface))
+            .ToArray();
 
     /// <summary>The name of whichever <see cref="OverlaySurfaces"/> entry currently owns the screen,
-    /// or null if none does. <c>internal</c> so <c>AgentPlaytest.cs</c>'s <c>Location()</c> (same
-    /// assembly, GodotClient.Tools) can report an open Ledger/Camp/Mirror/Forecast/Bestiary/
-    /// Commissions/Legends/system-menu as a distinct, trackable location instead of it silently
-    /// reading as "town" — see <see cref="OverlaySurfaces"/>'s own doc for why this reuses that list
-    /// rather than re-deriving the answer.</summary>
-    internal string? ActiveOverlayName() => OverlaySurfaces().FirstOrDefault(o => o.Surface.Visible).Name;
+    /// or null if none does. Resolved by <see cref="SurfaceArbiter.Resolve"/>'s own precedence rule
+    /// rather than array order, so this stays correct even on a tick where discovery finds more than
+    /// one visible claim (in practice the nine full-rect modals stay mutually exclusive — see
+    /// <see cref="SurfaceArbiter"/>'s own class doc). <c>internal</c> so <c>AgentPlaytest.cs</c>'s
+    /// <c>Location()</c> (same assembly, GodotClient.Tools) can report an open Ledger/Camp/Mirror/
+    /// Forecast/Bestiary/Commissions/Legends/Chronicle/system-menu as a distinct, trackable location
+    /// instead of it silently reading as "town" — see <see cref="OverlaySurfaces"/>'s own doc for why
+    /// this reuses that projection rather than re-deriving the answer.</summary>
+    internal string? ActiveOverlayName()
+    {
+        var visible = SurfaceArbiter.Discover(GetTree())
+            .Where(entry => entry.Claim.Region == SurfaceRegion.FullScreenModal
+                && entry.Claim.OwnsScreen && entry.Surface.Visible)
+            .Select(entry => entry.Claim)
+            .ToList();
+        return SurfaceArbiter.Resolve(visible)?.Id;
+    }
 
     /// <summary>
     /// U-audio-2: which cue plays when <paramref name="id"/> opens. Owner's playtest: "Noises for the
@@ -4593,6 +4665,27 @@ public partial class MainUi : Control
         }
 
         UpdateEngaged();
+        UpdateClockLabel();
+        TryFireDeferredMineGateFocus(); // U1: fires the deferred departure pan if the screen is now clear
+    }
+
+    /// <summary>P2-SCREEN-04: mirror of the Bestiary/Forecast latch for the campaign's ending
+    /// ceremony — pause while it owns the screen, resume on close when play was running. Chronicle
+    /// never halts the kernel (its own class doc, "Hades-style"), so resuming here is safe even
+    /// though the campaign has already concluded — the town keeps working after Close.</summary>
+    private void OnChronicleVisibilityChanged()
+    {
+        if (Chronicle.Visible)
+        {
+            _resumePlayOnChronicleClose = Clock.Playing;
+            Clock.Pause();
+        }
+        else if (_resumePlayOnChronicleClose)
+        {
+            Clock.Play();
+        }
+
+        UpdateEngaged(); // the Chronicle now engages the latch too — see OverlaySurfaces()
         UpdateClockLabel();
         TryFireDeferredMineGateFocus(); // U1: fires the deferred departure pan if the screen is now clear
     }

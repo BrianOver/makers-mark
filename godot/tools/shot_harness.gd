@@ -103,11 +103,11 @@ var _settle := 90
 # aside. Kept beside the branches it names, and asserted against SHOT_STATE at startup -- see
 # _initialize.
 const KNOWN_STATES := [
-	"BellTray", "Bestiary", "Camp", "Counter", "Demand", "DepthsPanel", "Docket", "ForgeAnvil",
-	"ForgeExit", "ForgeFlavor", "ForgeLadder", "ForgePanel", "ForgeShelf", "GateNight",
+	"BellTray", "Bestiary", "Camp", "Chronicle", "Counter", "Demand", "DepthsPanel", "Docket",
+	"ForgeAnvil", "ForgeExit", "ForgeFlavor", "ForgeLadder", "ForgePanel", "ForgeShelf", "GateNight",
 	"HeroCandidateOpen", "HeroCards", "HeroErrand", "Ledger", "Lessons", "MineGateFocus", "Mirror",
-	"OccupancyCorner", "ReturnAtNight", "ReturnEmerge", "ReturnQuestEmpty", "SendOff", "ShopPanel",
-	"SystemMenu", "TavernPanel", "TownOverview", "TutorialLookIn", "TutorialOffCamera",
+	"OccupancyCorner", "Provenance", "ReturnAtNight", "ReturnEmerge", "ReturnQuestEmpty", "SendOff",
+	"ShopPanel", "SystemMenu", "TavernPanel", "TownOverview", "TutorialLookIn", "TutorialOffCamera",
 	"Watch",
 ]
 
@@ -354,6 +354,28 @@ func _process(_delta: float) -> bool:
 			# so the drawer-only "before" shot stays reachable for the receipt pair.
 			if _ui.has_method("OpenPanel"):
 				_ui.call("OpenPanel", "Shop")
+		elif _state == "Provenance":
+			# P2-SCREEN-04: the nested-modal receipt -- a ProvenanceCard opened over a REAL
+			# FullScreenModal host (Legends), proving the host's own screen ownership (clock held,
+			# world input blocked, objective card + interact prompt hidden -- all already true the
+			# instant Legends itself opens) survives the card opening on top of it. A fresh day-1
+			# campaign has no Signed Work yet, so the dev bridge stamps one into a display-only
+			# GameState copy and calls LegendsWall.ShowWall directly (zero sim mutation -- see the
+			# bridge's own doc). Both ShowWall and the button press are synchronous, so no
+			# settle-frame beat is needed the way Counter/SendOff/Mirror's drawer-slide idiom is.
+			if _ui.has_method("Dev_ShowProvenanceCardOverLegends"):
+				_ui.call("Dev_ShowProvenanceCardOverLegends")
+				var legend_btn = _ui.find_child("Legend_*", true, false)
+				if legend_btn:
+					legend_btn.emit_signal("pressed")
+				else:
+					push_error("[shot] SHOT_STATE=Provenance could not find a Legend_* row button -- "
+						+ "the shot below is a closed card and proves nothing about the nested-modal claim.")
+			else:
+				push_error("[shot] SHOT_STATE=Provenance could not reach Dev_ShowProvenanceCardOverLegends -- "
+					+ "a capture of the plain town under this name would read as a look nobody took.")
+				quit(1)
+				return false
 		elif _state == "TavernPanel":
 			if _ui.has_method("OpenPanel"):
 				_ui.call("OpenPanel", "Tavern")
@@ -373,6 +395,22 @@ func _process(_delta: float) -> bool:
 			var camp = _ui.find_child("CampModal", true, false)
 			if camp:
 				camp.call("ShowModal")
+		elif _state == "Chronicle":
+			# P2-SCREEN-04: the campaign's ending ceremony fires exactly once per campaign,
+			# automatically, off a real CampaignEnded event -- there is no player-pressable door to
+			# it (TutorialSurfaceRegistry's own class doc), so this receipt uses the same dev-bridge
+			# idiom Dev_QueueDay1BuyAndCraft already established: a MainUi method reachable through
+			# this call() bridge, never called from real play. The receipt this state exists for:
+			# before this unit the ending drew with the clock running, world input live, PiP
+			# undimmed, and the objective card/interact prompt drawn over it -- OverlaySurfaces()
+			# now derives Chronicle from the arbiter instead of a hand-written array missing it.
+			if _ui.has_method("Dev_ShowChronicle"):
+				_ui.call("Dev_ShowChronicle")
+			else:
+				push_error("[shot] SHOT_STATE=Chronicle could not reach Dev_ShowChronicle -- a "
+					+ "capture of the plain town under this name would read as a look nobody took.")
+				quit(1)
+				return false
 		elif _state == "ForgeExit":
 			# U1 (painted-interiors plan): the second required receipt -- proves the exit
 			# door returns the player OUTSIDE. Enters the room the normal way; the second

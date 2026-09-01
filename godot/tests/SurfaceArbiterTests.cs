@@ -18,10 +18,14 @@ namespace GodotClient.Tests;
 [TestSuite]
 public class SurfaceArbiterTests
 {
-    private static readonly SurfaceClaim Ledger = new("Ledger", SurfaceRegion.FullScreenModal, 1);
-    private static readonly SurfaceClaim Chronicle = new("Chronicle", SurfaceRegion.FullScreenModal, 4);
-    private static readonly SurfaceClaim Camp = new("Camp", SurfaceRegion.FullScreenModal, 7);
-    private static readonly SurfaceClaim Mirror = new("Mirror", SurfaceRegion.FullScreenModal, 9);
+    private static readonly SurfaceClaim Ledger = new("Ledger", SurfaceRegion.FullScreenModal, 1, OwnsScreen: true);
+    private static readonly SurfaceClaim Chronicle = new("Chronicle", SurfaceRegion.FullScreenModal, 4, OwnsScreen: true);
+    private static readonly SurfaceClaim Camp = new("Camp", SurfaceRegion.FullScreenModal, 7, OwnsScreen: true);
+    private static readonly SurfaceClaim Mirror = new("Mirror", SurfaceRegion.FullScreenModal, 9, OwnsScreen: true);
+
+    /// <summary>P2-SCREEN-04: ProvenanceCard's own "child-modal rank" — see its own claim call for
+    /// why 100 must beat every FullScreenModal precedence (1-9 today).</summary>
+    private static readonly SurfaceClaim ProvenanceCard = new("ProvenanceCard", SurfaceRegion.ChildModal, 100, OwnsScreen: true);
 
     [TestCase]
     public void EmptyList_ResolvesToNull()
@@ -77,6 +81,15 @@ public class SurfaceArbiterTests
     {
         var result = SurfaceArbiter.Resolve(new List<SurfaceClaim> { Ledger });
         AssertThat(result).IsEqual(Ledger);
+    }
+
+    [TestCase]
+    public void ChildModalRank_OutranksEveryFullScreenModalClaim_RegardlessOfListOrder()
+    {
+        var forward = SurfaceArbiter.Resolve(new List<SurfaceClaim> { Ledger, Chronicle, Camp, Mirror, ProvenanceCard });
+        var reverse = SurfaceArbiter.Resolve(new List<SurfaceClaim> { ProvenanceCard, Mirror, Camp, Chronicle, Ledger });
+        AssertThat(forward).IsEqual(ProvenanceCard);
+        AssertThat(reverse).IsEqual(ProvenanceCard);
     }
 
     [TestCase]

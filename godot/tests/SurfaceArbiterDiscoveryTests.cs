@@ -27,7 +27,13 @@ public class SurfaceArbiterDiscoveryTests
         var ui = MountMainUi();
         try
         {
-            var claims = SurfaceArbiter.Discover(ui.GetTree());
+            // P2-SCREEN-04: filtered to FullScreenModal first — MountMainUi now also constructs
+            // CompanionDock's own HudDock claim and up to five ChildModal ProvenanceCard claims
+            // (one per hosting panel, all built eagerly at boot), so an unfiltered Discover() is no
+            // longer exactly nine. The NINE full-rect modals this test pins are unaffected by either.
+            var claims = SurfaceArbiter.Discover(ui.GetTree())
+                .Where(c => c.Claim.Region == SurfaceRegion.FullScreenModal)
+                .ToList();
             var ids = claims.Select(c => c.Claim.Id).OrderBy(id => id, StringComparer.Ordinal).ToList();
 
             string[] expected =
@@ -53,17 +59,84 @@ public class SurfaceArbiterDiscoveryTests
         }
     }
 
+    /// <summary>P2-SCREEN-04: the "required property, all rows must answer" invariant — every
+    /// FullScreenModal claim (the nine surfaces <see cref="MainUi.OverlaySurfaces"/> now projects)
+    /// answers <see cref="SurfaceClaim.OwnsScreen"/> true. Renamed from the P2-SCREEN-03 original
+    /// (<c>EveryDiscoveredClaim_IsInTheFullScreenModalRegion</c>), which is no longer true of every
+    /// DISCOVERED claim now that <c>CompanionDock</c> (<see cref="SurfaceRegion.HudDock"/>) and
+    /// <c>ProvenanceCard</c> (<see cref="SurfaceRegion.ChildModal"/>) also register themselves.</summary>
     [TestCase]
-    public void EveryDiscoveredClaim_IsInTheFullScreenModalRegion()
+    public void EveryFullScreenModalClaim_OwnsTheScreen()
     {
         var ui = MountMainUi();
         try
         {
-            var claims = SurfaceArbiter.Discover(ui.GetTree());
+            var claims = SurfaceArbiter.Discover(ui.GetTree())
+                .Where(c => c.Claim.Region == SurfaceRegion.FullScreenModal)
+                .ToList();
             AssertThat(claims.Count).IsGreater(0);
             foreach (var (claim, _) in claims)
             {
-                AssertThat(claim.Region).IsEqual(SurfaceRegion.FullScreenModal);
+                AssertThat(claim.OwnsScreen)
+                    .OverrideFailureMessage($"\"{claim.Id}\" is a FullScreenModal claim with OwnsScreen: false.")
+                    .IsTrue();
+            }
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>P2-SCREEN-04: <c>CompanionDock</c>'s own declared exclusion — a stated
+    /// <c>OwnsScreen: false</c> in its own region, not a silent absence from any list (the exact
+    /// defect shape this unit fixes for Chronicle).</summary>
+    [TestCase]
+    public void Docket_DeclaresItDoesNotOwnTheScreen()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            var docket = SurfaceArbiter.Discover(ui.GetTree())
+                .FirstOrDefault(c => c.Claim.Id == "Docket");
+
+            AssertThat(docket.Surface)
+                .OverrideFailureMessage("Expected a \"Docket\" claim to be discovered.")
+                .IsNotNull();
+            AssertThat(docket.Claim.Region).IsEqual(SurfaceRegion.HudDock);
+            AssertThat(docket.Claim.OwnsScreen).IsFalse();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>P2-SCREEN-04 proof requirement: a provenance card opened from any of its five hosts
+    /// registers a claim. All five (<c>ShopPanel</c>/<c>HeroesPanel</c>/<c>TavernPanel</c>/
+    /// <c>LegendsWall</c>/<c>ScryingMirror</c>) build their own <c>ProvenanceCard</c> child eagerly at
+    /// boot (mirroring the nine modals' own eager construction), so all five claims are discoverable
+    /// the instant <c>MainUi</c> mounts — proof that the claim lives on <c>ProvenanceCard</c>'s own
+    /// constructor rather than on any one host, the fix for a class that "cannot be hand-listed,
+    /// being instantiated per hosting panel" (unit body).</summary>
+    [TestCase]
+    public void ProvenanceCard_RegistersAClaim_FromEveryOneOfItsFiveHosts()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            var cardClaims = SurfaceArbiter.Discover(ui.GetTree())
+                .Where(c => c.Claim.Id == "ProvenanceCard")
+                .ToList();
+
+            AssertThat(cardClaims.Count)
+                .OverrideFailureMessage(
+                    $"Expected 5 ProvenanceCard claims (one per host), found {cardClaims.Count}.")
+                .IsEqual(5);
+            foreach (var (claim, _) in cardClaims)
+            {
+                AssertThat(claim.Region).IsEqual(SurfaceRegion.ChildModal);
+                AssertThat(claim.OwnsScreen).IsTrue();
             }
         }
         finally
