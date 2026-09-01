@@ -4097,18 +4097,19 @@ name (§11.6 rule 4).
 |---|---|---|---|---|
 | ⚑ P2-SCREEN-01 | The three dead theme keys, five sites | `godot/scripts/ui/GameTheme.cs`, `godot/scripts/MainUi.cs` | — | [G] |
 | ⚑ P2-SCREEN-02 | Sync and shoot — the rendered baseline | `tools/shoot.ps1`, `tools/receipt.ps1` | — | [G] |
-| ⚑ P2-SCREEN-03 | `SurfaceClaim` + `SurfaceArbiter`, observing only | new `godot/scripts/ui/SurfaceArbiter.cs`, `godot/scripts/MainUi.cs` | P2-SCREEN-02 | [G] |
+| ⚑ P2-SCREEN-03 | `SurfaceClaim` + `SurfaceArbiter`, observing only (regions and precedence are derived from `MainUi`'s measured `AddChild` order and documented in `SurfaceArbiter.cs`'s class doc — this section never carried the table its body promised) | new `godot/scripts/ui/SurfaceArbiter.cs`, `godot/scripts/MainUi.cs` | P2-SCREEN-02 | [G] |
 | ⚑ P2-SCREEN-04 | Modal ownership moves to the arbiter; `OverlaySurfaces()` becomes a projection | `godot/scripts/MainUi.cs`, `godot/scripts/ui/TutorialSurfaceRegistry.cs` | P2-SCREEN-03 | [G] |
 | ⚑ P2-SCREEN-05 | The interact prompt stops lying | `godot/scripts/town2d/WorldInput2D.cs`, `godot/scripts/MainUi.cs` | — | [G] |
 | ⚑ P2-SCREEN-06 | The card diet — one instruction, one prose slot | `godot/scripts/ui/ObjectiveTracker.cs`, `godot/scripts/panels/LessonsPanel.cs` | P2-SCREEN-03 | [G] |
 | ⚑ P2-SCREEN-07 | The TeachNote becomes Bryn's three lessons | `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/ui/MentorVoice.cs` | P2-SCREEN-06 | [G] |
 | ⚑ P2-SCREEN-08 | Gating copy folds into the instruction | `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/ui/ObjectiveTracker.cs` | P2-SCREEN-06 | [G] |
-| ⚑ P2-SCREEN-09 | Honest control state — the verdict in the label | `godot/scripts/ui/SimPanel.cs` (`AddButton`), `godot/scripts/panels/ForgePanel.cs`, `sim/GameSim/Kernel/ActionLegality.cs` (read-only) | P2-SCREEN-01 | [G] |
+| ⚑ P2-SCREEN-09 | Honest control state — the verdict in the label | `godot/scripts/panels/SimPanel.cs` (`AddButton`), `godot/scripts/panels/ForgePanel.cs`, `sim/GameSim/Advisor/ActionLegality.cs` (read-only) | P2-SCREEN-01 | [G] |
 | ⚑ P2-SCREEN-10 | The pointer's free-space query; `KeepClearOf` deleted | `godot/scripts/ui/TutorialOverlay.cs`, `godot/tests/` | P2-SCREEN-03 | [G] |
 | P2-SCREEN-11 | The strip decodes — delete, relabel, reclaim the height | `godot/scripts/MainUi.cs` | P2-SCREEN-03 | [G] |
 | P2-SCREEN-12 | The Books tray becomes a shelf with gate reasons as text | `godot/scripts/MainUi.cs`, `godot/scripts/ui/SurfaceUnlocks.cs` | P2-SCREEN-11 | [G] |
 | P2-SCREEN-13 | Hygiene — the stamp gated, the orphans deleted, `HANDOFF.md` dies | `godot/scripts/MainUi.cs`, `godot/assets/art/`, repo root | — | [G] |
 | P2-SCREEN-14 | The Bestiary gets its door, or the panel dies (OQ6) | `godot/scripts/town2d/InteriorLayout2D.cs`, `godot/scripts/panels/BestiaryPanel.cs` | — | [G] |
+| P2-SCREEN-15 | The three split lessons speak on screen, not only in the book | `godot/scripts/MainUi.cs`, `godot/scripts/ui/MentorVoice.cs`, `godot/scripts/ui/TutorialFlow.cs` | P2-SCREEN-07 | [G] |
 | ⚑ P2-ONBOARD-01 | The teaching lease — one owner per tick | `godot/scripts/ui/TutorialAnchorArbiter.cs`, `godot/scripts/ui/MentorBanner.cs` | P2-SCREEN-03, P2-SCREEN-04 | [G] |
 | P2-ONBOARD-02 | The voice docks bottom-left, and fire-on-open dies as a category | `godot/scripts/ui/MentorBanner.cs`, `godot/scripts/MainUi.cs` | P2-ONBOARD-01 | [G] |
 | P2-ONBOARD-03 | `ApprenticePlayer` — the course as a pure policy | `sim/GameSim/Harness/ApprenticePlayer.cs`, `sim/GameSim.Cli/BatchRunner.cs` | — | [S] |
@@ -4178,7 +4179,7 @@ name (§11.6 rule 4).
 | ⚑ P2-HONEST-01 | The Progress book can be opened, and the harness uses the door | `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/tools/FullPlaytest.cs` | — | [G] |
 | P2-HONEST-02 | Four dead-mechanism sentences die; `Gate.Reason` splits closed/opened | `godot/scripts/ui/SurfaceUnlocks.cs`, copy | — | [G] |
 | P2-HONEST-03 | The dead hero's commission voids silently — the mood dock on a corpse dies | `sim/GameSim/Heroes/CommissionSystem.cs` | — | [S] |
-| P2-HONEST-04 | The queued suffix dies; eight panels stop teaching a console command | `godot/scripts/ui/SimPanel.cs`, `godot/scripts/panels/` | — | [G] |
+| P2-HONEST-04 | The queued suffix dies; eight panels stop teaching a console command | `godot/scripts/panels/SimPanel.cs`, `godot/scripts/panels/` | — | [G] |
 | P2-HONEST-05 | Classes and materials get display names | `sim/GameSim/Materials/MaterialDefinition.cs`, `sim/GameSim/Classes/` | — | [S] |
 | P2-HONEST-06 | The vocabulary census — seven generators, first run triaged | `sim/GameSim.Tests/` (`PlayerVocabularyCensusTests`) | P2-HONEST-04, P2-HONEST-05 | [S] |
 | P2-HONEST-07 | The satisfiable-gate census | `sim/GameSim.Tests/` | P2-HONEST-01 | [S] |
@@ -4351,7 +4352,7 @@ and rule 6 exists because that has happened here four times.
 - Goal: three states, one vocabulary, everywhere: Available / Refused (dimmed, blocker **in the
   label**, still pressable, answers with the fix) / Absent (not a button at all).
 - Requirements: P2-R2, P2-R3, P2-R4
-- Files: `godot/scripts/ui/SimPanel.cs`, `godot/scripts/panels/ForgePanel.cs`, every
+- Files: `godot/scripts/panels/SimPanel.cs`, `godot/scripts/panels/ForgePanel.cs`, every
   `SimPanel.AddButton` caller
 - Approach: `ForgePanel` gates every verb correctly and the gating is invisible (P2-SCREEN-01's
   colours were dead) or dishonest (`Masterwork Attempt (guaranteed)` renders enabled-looking
@@ -4662,6 +4663,17 @@ deliberately still open and says why.
   the in-game book so divergence is structurally impossible — *recommended*: a real file the
   player keeps is half the idea's power. It is also the one place this game writes to disk on the
   player's behalf, which is the owner's call, not a default.
+- **P2-OQ6. `BatchEchoFloor = 550` — a stale comment, or a real value bug?** Found by the
+  `P2-HONEST` sweep (#667) and deliberately left unfixed there, because it is a value change
+  rather than a comment fix. `sim/GameSim/Crafting/CraftingHandlers.cs` declares
+  `BatchEchoFloor = 550` with a doc comment calling it *"the ordinary auto-craft baseline"* —
+  but `QualityRoller.AutoCraftGrade` moved to **800** in PR #583 on 2026-08-17. So either the
+  comment is a fourth instance of the stale-constant family this program is already building a
+  tripwire for, or the floor itself was tuned against a baseline that has since moved and the
+  batch-echo mechanism has been quietly mis-calibrated for two weeks. **Determining which is
+  cheap; changing the value is a balance ceremony.** Answer before `P2-HONEST`'s comment census
+  lands, or the census will flag it and force the question anyway.
+
 - **P2-OQ5. The faction cut — STILL OPEN, deliberately.** Only askable after `P2-MEMORY-09` makes
   the layer's copy honest,
   and only as an explicit reversal of the 2026-08-24 OQ1 ruling ("buy the ore, or buy the
