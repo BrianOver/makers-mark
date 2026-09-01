@@ -44,6 +44,16 @@ public partial class LedgerModal : SimPanel
     private Label? _countLine;
     private VBoxContainer? _cards;
 
+    /// <summary>
+    /// Dev/receipt tool only (never written in real play) — a hand-built <see cref="GameState"/>
+    /// substituted for <c>Adapter.CurrentState</c> inside <see cref="RenderCards"/>, so
+    /// <see cref="Dev_ShowLedgerWithProvenanceBeat"/> can stage a beat that already carries a
+    /// channel (P2-MEMORY-03) deterministically, without waiting on a live combat RNG to land one
+    /// through a specific channel. Null on every real path; zero sim mutation either way — the
+    /// live <c>Adapter</c> is never written to.
+    /// </summary>
+    private GameState? _devStagedState;
+
     /// <summary>The wrapping card grid (U-T5) — a fresh <see cref="HFlowContainer"/> built inside
     /// <see cref="_cards"/> on every <see cref="RenderCards"/> pass, so the extra width a bigger
     /// window carries becomes MORE CARDS PER ROW instead of longer single-file rows. Every hero
@@ -233,6 +243,48 @@ public partial class LedgerModal : SimPanel
     /// whole-game sweep's own recorded finding).</summary>
     public override void _Input(InputEvent @event) => ModalEscape.TryClose(@event, GetViewport(), Visible, CloseModal);
 
+    /// <summary>
+    /// Dev/receipt tool only (never called from real play), reachable via <c>shot_harness.gd</c>'s
+    /// <c>call()</c> bridge — the P2-MEMORY-03 receipt: a killing-blow beat whose item already
+    /// carries a channel (an unpinned counter sale two days earlier), so <c>SHOT_STATE=
+    /// LedgerProvenance</c> can photograph the beat row's second line without a live combat RNG
+    /// landing a real one through a specific channel this run. Mirrors
+    /// <c>MainUi.Dev_ShowProvenanceCardOverLegends</c>'s own "hand-built <see cref="GameState"/>,
+    /// zero sim mutation" idiom — the real hero and their real name/portrait/purse come straight
+    /// off the live <c>Adapter.CurrentState</c> roster; only the item and the day's events are
+    /// synthetic, held in <see cref="_devStagedState"/> and never written back to <c>Adapter</c>.
+    /// </summary>
+    public void Dev_ShowLedgerWithProvenanceBeat()
+    {
+        if (Adapter is null || Adapter.CurrentState.Heroes.IsEmpty)
+        {
+            return;
+        }
+
+        const int day = 5;
+        const int soldOnDay = 3; // two days before the beat — "two days ago" in the clause
+        var hero = new HeroId(Adapter.CurrentState.Heroes.Keys.First());
+        var itemId = new ItemId(90201);
+        var item = new Item(
+            itemId, "recipe-receipt-blade", "Emberbite", ItemSlot.Weapon, QualityGrade.Fine,
+            new ItemStats(12, 0, 5), new MakersMark("You", CraftedOnDay: 1), ImmutableList<ItemHistoryEntry>.Empty);
+
+        var counterSale = new CounterSaleClosed(hero, itemId, Price: 40, Pinned: false)
+            with { Id = new EventId(900001), Day = soldOnDay };
+        var beat = new AttributionBeatEvent(
+                BeatType.KillingBlow, itemId, hero, Floor: 3, Detail: "Emberbite turned the killing blow")
+            with { Id = new EventId(900002), Day = day };
+        var returned = new PartyReturned(ImmutableList.Create(hero)) with { Id = new EventId(900003), Day = day };
+
+        var baseState = Adapter.CurrentState;
+        _devStagedState = baseState with
+        {
+            Items = baseState.Items.SetItem(itemId.Value, item),
+            EventLog = baseState.EventLog.AddRange([counterSale, beat, returned]),
+        };
+        ShowFor(day);
+    }
+
     private void RenderCards(int day)
     {
         if (Adapter is null)
@@ -244,7 +296,7 @@ public partial class LedgerModal : SimPanel
         _feedback!.Text = string.Empty;
         Clear(_cards!);
 
-        var state = Adapter.CurrentState;
+        var state = _devStagedState ?? Adapter.CurrentState;
         var cards = LeadWithAttribution(LedgerQuery.ReturnCards(state, day));
         // U-T5: announce the total up front — "1.4 of 6 cards fit" used to be something a player
         // could only DISCOVER by scrolling and losing count. No cards are ever truncated (every
@@ -524,6 +576,21 @@ public partial class LedgerModal : SimPanel
             AddIcon(beatRow, ResolveItemIcon(state, beat.Item));
             var beatLabel = AddLabel(beatRow, $"{beat.Beat}: {beat.Detail} (floor {beat.Floor})");
             beatLabel.AddThemeColorOverride("font_color", new Color(1f, 0.85f, 0.2f));
+
+            // P2-MEMORY-03: the beat names its channel — a second line saying how the item
+            // reached the hand that held it. Anchored to `night` (the night this card retells,
+            // not the live `state.Day` — see this file's own DawnsLeftLine note above), so the
+            // clause reads the same historical fact however much later the card is reopened.
+            // A pure read over the already-logged sale/commission/delivery events; nothing new to
+            // draw when the item never passed through one of the four channels (an auto-crafted
+            // or rival-vendor piece) — render nothing, never a fallback line.
+            var channelClause = ProvenanceQuery.Clause(ProvenanceQuery.Channel(state, beat.Item), night);
+            if (channelClause.Length > 0)
+            {
+                var channelLabel = AddLabel(telling.Body, channelClause);
+                channelLabel.Name = "BeatChannelLine";
+                channelLabel.AddThemeColorOverride("font_color", GameTheme.TextDim);
+            }
         }
 
         // §11.13 amendment (U5): the apprenticeship warrant's own card — leads with the true roll

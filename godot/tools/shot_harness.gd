@@ -105,7 +105,8 @@ var _settle := 90
 const KNOWN_STATES := [
 	"BellTray", "Bestiary", "Camp", "Chronicle", "Counter", "Demand", "DepthsPanel", "Docket",
 	"ForgeAnvil", "ForgeAnvilEmpty", "ForgeExit", "ForgeFlavor", "ForgeLadder", "ForgePanel",
-	"ForgeShelf", "GateNight", "HeroCandidateOpen", "HeroCards", "HeroErrand", "Ledger", "Lessons",
+	"ForgeShelf", "GateNight", "HeroCandidateOpen", "HeroCards", "HeroErrand", "Ledger",
+	"LedgerProvenance", "Lessons",
 	"MineGateFocus", "Mirror", "OccupancyCorner", "Provenance", "ReturnAtNight", "ReturnEmerge",
 	"ReturnQuestEmpty", "SendOff", "ShopPanel", "SystemMenu", "TavernPanel", "TownOverview",
 	"TutorialLookIn", "TutorialOffCamera", "Watch",
@@ -185,6 +186,14 @@ func _initialize() -> void:
 		# sides for real per-frame jitter (this runs on the GPU, not headless -- see this file's
 		# own SHOT_QUIET doc for why per-frame delta is never perfectly 1/60s here).
 		_settle = 950
+	elif _state == "LedgerProvenance":
+		# P2-MEMORY-03: the beat row (and its P2-MEMORY-03 second line) sits past the fitted
+		# modal's own viewport height on a fresh 1152x648 capture. LedgerScroll's real content
+		# height is not known until Godot's own layout/text-shaping pass finishes settling
+		# (measured: the scrollbar's max is still 0 at frame 60, first non-zero at frame 90) --
+		# so the scroll-down below waits for frame 100 (comfortably past that), and this settle
+		# leaves 50 more frames for it to take before capture.
+		_settle = 150
 	elif _state == "BellTray":
 		# U3 (loop-legibility plan, KTD-B): a plain HUD chip, no camera move -- but the
 		# ack toast auto-clears after MainUi.RejectionToastSeconds (4s = 240 frames), so the
@@ -500,6 +509,23 @@ func _process(_delta: float) -> bool:
 			var bell_l = _ui.find_child("AdvancePhase", true, false)
 			if bell_l:
 				bell_l.emit_signal("pressed")
+		elif _state == "LedgerProvenance":
+			# P2-MEMORY-03: the beat names its channel -- the receipt for the Evening Ledger's
+			# second beat-row line. Real combat RNG landing a beat through a specific channel on
+			# a fresh seed is not guaranteed, so this reaches the LedgerModal node directly (its
+			# own dev bridge, not MainUi's -- LedgerModal is a scene root loaded by MainUi, not a
+			# MainUi property Godot exposes to GDScript get(), same "find by stable node name"
+			# idiom Docket/CompanionDock above already use) and calls its own hand-built-state
+			# receipt method, mirroring Provenance's Dev_ShowProvenanceCardOverLegends idiom.
+			var ledger_modal = _ui.find_child("LedgerModal", true, false)
+			if ledger_modal and ledger_modal.has_method("Dev_ShowLedgerWithProvenanceBeat"):
+				ledger_modal.call("Dev_ShowLedgerWithProvenanceBeat")
+			else:
+				push_error("[shot] SHOT_STATE=LedgerProvenance could not reach "
+					+ "LedgerModal.Dev_ShowLedgerWithProvenanceBeat -- the shot below is empty and "
+					+ "proves nothing about the channel line.")
+				quit(1)
+				return false
 		elif _state == "Mirror":
 			# U1: the second required receipt -- the first proof any human has seen the
 			# mirror render since it merged (#321). No drawer to open first; press the real
@@ -749,6 +775,13 @@ func _process(_delta: float) -> bool:
 				unlock_btn.emit_signal("pressed")
 			else:
 				push_error("[shot] SHOT_STATE=ForgeAnvilEmpty could not find Unlock_%s at frame %d -- the captured frame will not actually be at zero action slots." % [FORGE_ANVIL_EMPTY_UNLOCK_IDS[unlock_idx], _frames])
+	if _state == "LedgerProvenance" and _frames == 100:
+		var ledger_scroll = _ui.find_child("LedgerScroll", true, false)
+		if ledger_scroll:
+			ledger_scroll.scroll_vertical = 9999
+		else:
+			push_error("[shot] SHOT_STATE=LedgerProvenance could not find LedgerScroll to scroll -- "
+				+ "the beat row's second line will be clipped under the fold.")
 	# Ledger's remaining beats: walk the rest of day 1's five phases (frame 60 above already
 	# pressed the bell once, ending Morning) at the same 30-frame spacing SendOff/Mirror use,
 	# then force the reveal open directly once day 1 has rolled over (see the elif above for

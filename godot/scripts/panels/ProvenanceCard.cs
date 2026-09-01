@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using GameSim.Contracts;
+using GameSim.Drama;
 using Godot;
 using GodotClient.Ui;
 
@@ -47,7 +48,7 @@ public partial class ProvenanceCard : Control
         }
 
         ShownItemId = itemId;
-        Render(item);
+        Render(state, item);
         Visible = true;
     }
 
@@ -61,7 +62,7 @@ public partial class ProvenanceCard : Control
     /// two overlays gone for one key press.</summary>
     public override void _Input(InputEvent @event) => ModalEscape.TryClose(@event, GetViewport(), Visible, CloseCard);
 
-    private void Render(Item item)
+    private void Render(GameState state, Item item)
     {
         Clear(_body!);
         _title!.Text = $"{item.Name} [{item.Quality}] — {item.Slot}";
@@ -82,6 +83,24 @@ public partial class ProvenanceCard : Control
         AddLabel(markRow, item.Mark is { } mark
             ? $"Forged by {mark.CrafterName} on day {mark.CraftedOnDay}."
             : "No maker's mark — not player-crafted.");
+
+        // P2-MEMORY-03: how it reached the hand that held it (link 2), and — for a reforged
+        // heirloom — what it carries forward. Anchored to the live day (this card is browsed
+        // now, not retelling a fixed night the way the Evening Ledger's beat row does). Renders
+        // nothing for either when the fact isn't there: an un-sold item has no channel, and
+        // ordinary stock has no lineage — the honest-empty-state contract, never a fallback line.
+        var channelClause = ProvenanceQuery.Clause(ProvenanceQuery.Channel(state, item.Id), state.Day);
+        if (channelClause.Length > 0)
+        {
+            var channelLabel = AddLabel(_body!, channelClause);
+            channelLabel.Name = "ProvenanceChannelLine";
+        }
+
+        if (ProvenanceQuery.HeirloomClause(item) is { } heirloomClause)
+        {
+            var heirloomLabel = AddLabel(_body!, heirloomClause);
+            heirloomLabel.Name = "ProvenanceHeirloomLine";
+        }
 
         // Forge-beat sub-scores (per-mille, smelt/forge/quench order) — only when the item
         // actually carries them (empty for auto-crafted/rival/pre-Phase-A items, per the
