@@ -144,10 +144,15 @@ public sealed partial class ObjectiveTracker : PanelContainer
     /// cref="TutorialFlow.DismissConfirmCopy"/>) names the warrant's cost BEFORE the choice is
     /// made, never after.
     ///
-    /// <para>P2-SCREEN-06: reads "Skip the course" now, not the bare "✕" glyph it used to — one of
-    /// the two controls the owner's photographed defect named outright ("one of them ends a
-    /// feature and forfeits gold, and it is a bare ✕ today"). Naming what it costs, in words, in
-    /// the title bar, is the fix — not hiding it behind a glyph and a tooltip nobody hovers.</para>
+    /// <para>P2-SCREEN-06: reads "Skip" now, not the bare "✕" glyph it used to — one of the two
+    /// controls the owner's photographed defect named outright ("one of them ends a feature and
+    /// forfeits gold, and it is a bare ✕ today"). Naming what it costs, in words, in the title
+    /// bar, is the fix — not hiding it behind a glyph and a tooltip nobody hovers. "Skip" rather
+    /// than the fuller "Skip the course" (CI catch, same unit: the longer word pushed the title
+    /// bar's own controls row 3px past the 1152px-wide viewport floor, <c>HudBoundsTests
+    /// .ObjectiveChip_TextNeverOverflowsItsOwnContainer</c>) — the two-press confirm this button
+    /// arms (<see cref="ShowDismissConfirm"/>) is where the warrant's cost actually gets named, so
+    /// the button itself only has to name the ACTION.</para>
     /// </summary>
     public Button TutorialDismiss { get; private set; } = null!;
 
@@ -230,10 +235,14 @@ public sealed partial class ObjectiveTracker : PanelContainer
         _reaskBadge.Visible = false;
         controlsRow.AddChild(_reaskBadge);
 
+        // "Skip" (not the fuller "Skip the course" this unit shipped with first — see this
+        // field's own doc): the two-press confirm it arms is where the warrant's cost actually
+        // gets named, so the word here only has to carry the action, and the shorter word keeps
+        // the controls row inside the dock's 320px budget at the 1152px viewport floor.
         TutorialDismiss = new Button
         {
-            Name = "ObjectiveTutorialDismiss", Text = "Skip the course", Visible = false,
-            TooltipText = "End the apprenticeship early — a warrant cost may still be owed",
+            Name = "ObjectiveTutorialDismiss", Text = "Skip", Visible = false,
+            TooltipText = "Skip the course — end the apprenticeship early; a warrant cost may still be owed",
         };
         controlsRow.AddChild(TutorialDismiss);
 
