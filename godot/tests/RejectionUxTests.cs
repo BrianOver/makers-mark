@@ -42,24 +42,31 @@ public class RejectionUxTests
     // ── 1. Craft button mirrors material sufficiency (craft is legal ALL phases) ─────────
 
     [TestCase]
-    public void CraftButton_DisabledWithoutMaterials_EnabledWithStock()
+    public void CraftButton_RefusedWithoutMaterials_LegalWithStock()
     {
         // Fresh campaign holds zero copper — the dagger (2x copper) is provably uncraftable.
+        // P2-SCREEN-09: refused, but the Forge's own verbs stay pressable (Disabled=false) with
+        // the blocker named right in the button's own label, not only a tooltip.
         var broke = MountMainUi();
         try
         {
-            AssertThat(Find<Button>(broke.Forge, $"Craft_{ScriptedSession.CraftRecipeId}").Disabled).IsTrue();
+            var craft = Find<Button>(broke.Forge, $"Craft_{ScriptedSession.CraftRecipeId}");
+            AssertThat(craft.Disabled).IsFalse();
+            AssertThat(craft.TooltipText.Length > 0).IsTrue();
+            AssertThat(craft.Text).Contains(craft.TooltipText);
         }
         finally
         {
             Unmount(broke);
         }
 
-        // With exactly the recipe's quantity on hand the same control enables.
+        // With exactly the recipe's quantity on hand the same control is legal — no reason at all.
         var stocked = MountMainUi(CampaignWith(gold: 100, copper: ScriptedSession.CopperNeeded));
         try
         {
-            AssertThat(Find<Button>(stocked.Forge, $"Craft_{ScriptedSession.CraftRecipeId}").Disabled).IsFalse();
+            var craft = Find<Button>(stocked.Forge, $"Craft_{ScriptedSession.CraftRecipeId}");
+            AssertThat(craft.Disabled).IsFalse();
+            AssertThat(craft.TooltipText).IsEqual(string.Empty);
         }
         finally
         {

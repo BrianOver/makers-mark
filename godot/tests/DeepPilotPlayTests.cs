@@ -268,9 +268,13 @@ public class DeepPilotPlayTests
         // "off screen" shape ScreenObservation.DescribeButtons reports). Find it WITHOUT the
         // window-visibility filter first (visible+enabled is enough to know it is really there), then
         // scroll to it before clicking -- the way a person hunting further down a panel would.
+        //
+        // P2-SCREEN-09: WorkForge_ now stays Disabled=false even when REFUSED (the blocker rides
+        // in its own label instead of swallowing the press) -- !b.Disabled alone no longer means
+        // "legal". ScreenObservation.IsLegal is the honest signal either way.
         var work = ScreenObservation.Descendants(content)
             .OfType<Button>()
-            .FirstOrDefault(b => b.IsVisibleInTree() && !b.Disabled && b.Name.ToString().StartsWith("WorkForge_", StringComparison.Ordinal));
+            .FirstOrDefault(b => b.IsVisibleInTree() && ScreenObservation.IsLegal(b) && b.Name.ToString().StartsWith("WorkForge_", StringComparison.Ordinal));
         if (work is null)
         {
             var describe = ScreenObservation.DescribeButtons(content, ui.GetViewport());

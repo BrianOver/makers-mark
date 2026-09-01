@@ -64,16 +64,25 @@ public class ForgeCraftTests
     }
 
     [TestCase]
-    public void ZeroMaterials_RendersInsufficientChip_DisablesCraftButton_NoLayoutCollapse()
+    public void ZeroMaterials_RendersInsufficientChip_RefusedCraftStaysPressableWithReasonInLabel_NoLayoutCollapse()
     {
         var ui = MountMainUi();
         try
         {
             AssertThat(ui.Adapter.CurrentState.Player.Materials.IsEmpty).IsTrue();
 
+            // P2-SCREEN-09: a refused verb stays PRESSABLE (Disabled=false, so a real click still
+            // reaches it) — the blocker lives in the button's own Text, not only a hover tooltip.
             var craft = Find<Button>(ui.Forge, $"Craft_{ScriptedSession.CraftRecipeId}");
-            AssertThat(craft.Disabled).IsTrue();
+            AssertThat(craft.Disabled).IsFalse();
             AssertThat(craft.TooltipText.Length > 0).IsTrue();
+            AssertThat(craft.Text).Contains(craft.TooltipText);
+
+            // Pressing a refused control answers with the fix, never the failure silently
+            // swallowed — and never queues the action the kernel would reject.
+            Press(ui.Forge, $"Craft_{ScriptedSession.CraftRecipeId}");
+            AssertThat(ui.Adapter.AppliedThisPhase.OfType<CraftAction>()).IsEmpty();
+            AssertThat(RenderedText(ui.Forge)).Contains(craft.TooltipText);
 
             // The card itself still stands with real content — never a blank/collapsed panel.
             var forgeText = RenderedText(ui.Forge);
@@ -101,15 +110,71 @@ public class ForgeCraftTests
             AssertThat(RenderedText(ui.Forge)).Contains("iron");
 
             // The dagger's Craft button now gates on iron (zero on hand), proving the
-            // re-render actually re-read SelectedMaterialOr rather than caching copper.
+            // re-render actually re-read SelectedMaterialOr rather than caching copper. Refused
+            // but still pressable (P2-SCREEN-09) — the reason names iron in both the tooltip and
+            // the button's own label.
             var craft = Find<Button>(ui.Forge, $"Craft_{ScriptedSession.CraftRecipeId}");
-            AssertThat(craft.Disabled).IsTrue();
+            AssertThat(craft.Disabled).IsFalse();
             AssertThat(craft.TooltipText).Contains("iron");
+            AssertThat(craft.Text).Contains("iron");
         }
         finally
         {
             Unmount(ui);
         }
+    }
+
+    /// <summary>P2-SCREEN-09 bug fix: the material chip used to print the RAW
+    /// <c>recipe.MaterialQuantity</c> while every craft gate reads the efficiency-adjusted
+    /// <c>needed</c> (<c>max(1, quantity - 1)</c> with the talent) — with Material Efficiency
+    /// unlocked it read "copper 2x (have 1)" on a craft that was perfectly legal. Stocked to
+    /// exactly the REDUCED amount (one less than the recipe's raw quantity) so the raw-quantity
+    /// chip and the effective one disagree, and only one of the two strings can be on screen.</summary>
+    [TestCase]
+    public void MaterialChip_ShowsEffectiveQuantity_NotRawRecipeQuantity_WithMaterialEfficiencyTalent()
+    {
+        var state = GameComposition.NewCampaign(ScriptedSession.Seed);
+        var reduced = ScriptedSession.CopperNeeded - 1;
+        var ui = MountMainUi(new SimAdapter(state with
+        {
+            Player = state.Player with
+            {
+                Materials = ImmutableSortedDictionary<string, int>.Empty.SetItem(ScriptedSession.CraftMaterial, reduced),
+                Talents = state.Player.Talents.SetItem(
+                    ProfessionRegistry.BlacksmithId,
+                    ImmutableSortedSet.Create(StringComparer.Ordinal, TalentTree.MaterialEfficiency)),
+            },
+        }));
+        try
+        {
+            ui.OpenPanel("Forge");
+
+            // Scoped to THIS recipe's own card — other recipes sharing copper as their default
+            // material legitimately show their OWN effective quantity, which can coincidentally
+            // read "2x" too, so a whole-page text search is not a safe proxy for "the dagger's own
+            // chip".
+            var card = ui.Forge.FindChildren($"RecipeCard_{ScriptedSession.CraftRecipeId}", "PanelContainer",
+                recursive: true, owned: false).OfType<Godot.Control>().Single();
+
+            AssertThat(RenderedText(card))
+                .OverrideFailureMessage(
+                    $"Expected the EFFECTIVE quantity ({reduced}x, have {reduced}) on the dagger's own " +
+                    "card — the chip must read the same number the gate below it reads.")
+                .Contains($"{reduced}x (have {reduced})");
+            AssertThat(RenderedText(card))
+                .OverrideFailureMessage(
+                    $"The RAW recipe.MaterialQuantity ({ScriptedSession.CopperNeeded}x) rendered on the " +
+                    "dagger's own card — the chip regressed back to the pre-fix number, which lies " +
+                    "about a legal craft.")
+                .NotContains($"{ScriptedSession.CopperNeeded}x (have {reduced})");
+
+            // The craft is legal on the REDUCED stock alone — proving the chip's number is not
+            // merely cosmetic but the same one ActionLegality actually gates on.
+            var craft = Find<Button>(ui.Forge, $"Craft_{ScriptedSession.CraftRecipeId}");
+            AssertThat(craft.Disabled).IsFalse();
+            AssertThat(craft.TooltipText).IsEqual(string.Empty);
+        }
+        finally { Unmount(ui); }
     }
 
     [TestCase]
@@ -122,9 +187,14 @@ public class ForgeCraftTests
             var unlockable = Find<Button>(ui.Forge, "Unlock_keen-eye");
             AssertThat(unlockable.Disabled).IsFalse();
 
-            // master-touch requires keen-eye, not yet unlocked — locked.
+            // master-touch requires keen-eye, not yet unlocked — refused, but P2-SCREEN-09 keeps
+            // it pressable and names the missing prerequisite right in the label.
             var locked = Find<Button>(ui.Forge, "Unlock_master-touch");
-            AssertThat(locked.Disabled).IsTrue();
+            AssertThat(locked.Disabled).IsFalse();
+            AssertThat(locked.Text).Contains("keen-eye");
+            Press(ui.Forge, "Unlock_master-touch");
+            AssertThat(ui.Adapter.AppliedThisPhase.OfType<UnlockTalentAction>()
+                .Any(a => a.NodeId == "master-touch")).IsFalse();
 
             PressEnabled(ui.Forge, "Unlock_keen-eye");
             var pending = ui.Adapter.AppliedThisPhase.OfType<UnlockTalentAction>().ToList();
@@ -253,7 +323,9 @@ public class ForgeCraftTests
             var masterwork = Find<Button>(ui.Forge, $"Masterwork_{ScriptedSession.CraftRecipeId}");
             var state = ui.Adapter.CurrentState;
             AssertThat(ActionLegality.IsLegal(state, new MasterworkAttemptAction(ScriptedSession.CraftRecipeId, ScriptedSession.CraftMaterial), state.Phase)).IsFalse();
-            AssertThat(masterwork.Disabled).IsTrue();
+            // P2-SCREEN-09: refused stays pressable — the blocker lives in the label, not just a
+            // tooltip only a hover can see.
+            AssertThat(masterwork.Disabled).IsFalse();
             // Assert the NUMBER, not just the words. The gate opens at Forge Tier II
             // (RequiredForgeTierIndex 1, display tier index + 1), and the handler's own rejection
             // says the same. A `Contains("Forge Tier")` assertion passed while this string
@@ -262,6 +334,9 @@ public class ForgeCraftTests
                 .Contains($"Forge Tier {MasterworkAttemptHandlers.RequiredForgeTierIndex + 1} or higher");
             AssertThat(masterwork.TooltipText).NotContains(
                 $"Forge Tier {MasterworkAttemptHandlers.RequiredForgeTierIndex + 2}");
+            AssertThat(masterwork.Text).Contains(masterwork.TooltipText);
+            // "(guaranteed)" never renders on a refused control without its blocker alongside it.
+            AssertThat(masterwork.Text).Contains("(guaranteed)");
         }
         finally { Unmount(ui); }
     }
@@ -307,12 +382,17 @@ public class ForgeCraftTests
             ui.OpenPanel("Forge");
 
             var masterwork = Find<Button>(ui.Forge, $"Masterwork_{ScriptedSession.CraftRecipeId}");
-            AssertThat(masterwork.Disabled).IsTrue();
+            // P2-SCREEN-09: refused but pressable — a press answers with the fix, never a queued
+            // action the kernel would reject.
+            AssertThat(masterwork.Disabled).IsFalse();
             AssertThat(masterwork.TooltipText).Contains("flux");
+            AssertThat(masterwork.Text).Contains("flux");
+            Press(ui.Forge, $"Masterwork_{ScriptedSession.CraftRecipeId}");
+            AssertThat(ui.Adapter.AppliedThisPhase.OfType<MasterworkAttemptAction>()).IsEmpty();
 
-            // Row disabled is proven above; also prove the KERNEL itself refuses it with NO
-            // partial consumption, same style as BuyingCoal_WithInsufficientGold_Rejects... above —
-            // a future edit that ever let a stale-enabled row through must still cost nothing.
+            // Also prove the KERNEL itself refuses it with NO partial consumption if some future
+            // edit ever queues it anyway, same style as BuyingCoal_WithInsufficientGold_Rejects...
+            // above — a stale-enabled row must still cost nothing.
             ui.Adapter.Queue(new MasterworkAttemptAction(ScriptedSession.CraftRecipeId, ScriptedSession.CraftMaterial));
 
             AssertThat(ui.Adapter.LastRejections.Count).IsEqual(1);
@@ -335,9 +415,15 @@ public class ForgeCraftTests
             var state = ui.Adapter.CurrentState;
             AssertThat(ActionLegality.IsLegal(state, new CommissionLegendaryWorkAction(ScriptedSession.CraftRecipeId, ScriptedSession.CraftMaterial), state.Phase)).IsFalse();
             var commission = Find<Button>(ui.Forge, $"Commission_{ScriptedSession.CraftRecipeId}");
-            AssertThat(commission.Disabled).IsTrue();
+            // P2-SCREEN-09: refused but pressable, and the blocker rides alongside the "(N of 4
+            // left)" qualifier in the SAME label — that count never renders standing alone as if
+            // the control were available.
+            AssertThat(commission.Disabled).IsFalse();
             AssertThat(commission.TooltipText).Contains("already spoken for");
             AssertThat(commission.Text).Contains($"0 of {LegendaryCommissionHandlers.MaxPerCampaign}");
+            AssertThat(commission.Text).Contains("already spoken for");
+            Press(ui.Forge, $"Commission_{ScriptedSession.CraftRecipeId}");
+            AssertThat(ui.Adapter.AppliedThisPhase.OfType<CommissionLegendaryWorkAction>()).IsEmpty();
         }
         finally { Unmount(ui); }
     }
@@ -736,6 +822,38 @@ public class ForgeCraftTests
         return found;
     }
 
+    /// <summary>
+    /// P2-SCREEN-09's own enforcement instrument, proven by reflection since the real proof is a
+    /// COMPILE error: <c>SimPanel.AddButton</c> must have exactly one overload, and it must take a
+    /// verdict. Before this unit the 4-arg (no-verdict) overload existed alongside a 5-arg one —
+    /// the easy, unreviewed path that let ~23 hand-rolled <c>.Disabled</c> sites accumulate
+    /// instead of going through this seam. A second overload reappearing (even a "compatibility"
+    /// one) reopens that exact path, silently, so this fails BY COUNT rather than trusting nobody
+    /// ever adds one back.
+    /// </summary>
+    [TestCase]
+    public void AddButton_HasExactlyOneOverload_AndItTakesAVerdict()
+    {
+        var overloads = typeof(GodotClient.Panels.SimPanel)
+            .GetMethods(System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Instance)
+            .Where(m => m.Name == "AddButton")
+            .ToList();
+
+        AssertThat(overloads.Count)
+            .OverrideFailureMessage(
+                $"Found {overloads.Count} AddButton overload(s) on SimPanel — P2-SCREEN-09's whole " +
+                "point is that there is exactly ONE way to add a button that submits a sim verb, so a " +
+                "second (no-verdict) overload silently reopens the easy, unreviewed path this unit closed.")
+            .IsEqual(1);
+
+        var hasVerdictParameter = overloads[0].GetParameters().Any(p => p.ParameterType.Name == "Verdict");
+        AssertThat(hasVerdictParameter)
+            .OverrideFailureMessage(
+                "SimPanel.AddButton no longer takes a Verdict parameter — a button with no verdict must " +
+                "be a compile error, and this reflection check is the proof that the parameter is still there.")
+            .IsTrue();
+    }
+
     [TestCase]
     public void EveryEnabledCraftButton_IsAnActionTheSimAcceptsToday()
     {
@@ -745,7 +863,11 @@ public class ForgeCraftTests
             ui.OpenPanel("Forge");
             var state = ui.Adapter.CurrentState;
 
-            var enabledButtons = AllButtons(ui.Forge).Where(b => !b.Disabled).ToList();
+            // P2-SCREEN-09: every craft/work/masterwork/commission button covered by
+            // RebuildAction now stays PRESSABLE (Disabled=false) even when refused — the honest
+            // "enabled" signal for THIS sweep's scope is an empty TooltipText (AddButton's own
+            // contract: empty when legal, the reason when refused), not Button.Disabled.
+            var enabledButtons = AllButtons(ui.Forge).Where(b => string.IsNullOrEmpty(b.TooltipText)).ToList();
 
             var swept = 0;
             foreach (var button in enabledButtons)
@@ -767,6 +889,90 @@ public class ForgeCraftTests
             // vacuously by finding nothing to check.
             AssertThat(swept > 0)
                 .OverrideFailureMessage("Swept zero craft/work/masterwork/commission buttons — the fixture is vacuous.")
+                .IsTrue();
+        }
+        finally { Unmount(ui); }
+    }
+
+    /// <summary>Every gated verb <see cref="SimPanel.AddButton"/> can name in the Forge — used to
+    /// DISCOVER which on-screen buttons this census's label/legality checks apply to, from a
+    /// button's own rendered <c>Name</c> prefix rather than a hand-listed recipe/node id array
+    /// (P2-KTD3: a literal id array stops covering the family the moment a new recipe or talent
+    /// ships).</summary>
+    private static readonly string[] GatedVerbPrefixes =
+    [
+        "Craft_", "WorkForge_", "Brew_", "Assemble_", "Scrape_", "ForgeAnother_",
+        "Masterwork_", "Commission_", "Unlock_",
+    ];
+
+    /// <summary>
+    /// P2-SCREEN-09's own census, over a state that is BOTH out of materials (a fresh save always
+    /// is) AND out of action slots (drained here on cost-free talent unlocks, so the check covers
+    /// the OTHER refusal shape too — the one <c>affordable</c> alone never used to catch). Every
+    /// gated verb rendered on screen — discovered by name prefix, not a hand-written fixture list
+    /// — is checked both ways: refused means the button's OWN label names its blocker (never a
+    /// tooltip-only secret) and stays pressable; not-refused means <see cref="ActionLegality"/>
+    /// (the one legality authority) actually agrees it is legal right now.
+    /// </summary>
+    [TestCase]
+    public void ZeroMaterialsAndZeroSlots_EveryRefusedVerbNamesItsBlockerInItsOwnLabel_EveryOtherOneIsLegal()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.OpenPanel("Forge");
+
+            // Drain the whole day's action budget on cost-free talent unlocks (no material or
+            // gold dependency — KeenEye/MaterialEfficiency need no prerequisite at Forge I, and
+            // unlocking either legalizes one more of the remaining three) so the SAME captured
+            // screen also exercises "No action slots left today", not only material shortage.
+            foreach (var nodeId in new[] { "keen-eye", "material-efficiency", "master-touch", "weapon-specialist", "material-mastery" })
+            {
+                ui.Adapter.Queue(new UnlockTalentAction(nodeId, ProfessionRegistry.BlacksmithId));
+            }
+
+            AssertThat(ui.Adapter.CurrentState.ActionSlotsRemaining).IsEqual(0);
+            AssertThat(ui.Adapter.CurrentState.Player.Materials.IsEmpty).IsTrue();
+            ui.OpenPanel("Forge"); // fresh read, same idiom FocusSection's own doc uses
+
+            var state = ui.Adapter.CurrentState;
+            var checkedRefused = 0;
+            var checkedLegal = 0;
+            foreach (var button in AllButtons(ui.Forge))
+            {
+                var name = button.Name.ToString();
+                if (!GatedVerbPrefixes.Any(p => name.StartsWith(p, StringComparison.Ordinal)))
+                {
+                    continue; // not a gated sim verb — a tab, a close button, a nav shortcut, ...
+                }
+
+                if (!string.IsNullOrEmpty(button.TooltipText))
+                {
+                    checkedRefused++;
+                    AssertThat(button.Disabled)
+                        .OverrideFailureMessage($"{name}: refused but Disabled=true — a refused Forge verb must stay pressable.")
+                        .IsFalse();
+                    AssertThat(button.Text)
+                        .OverrideFailureMessage($"{name}: refused (reason '{button.TooltipText}') but its own label never names it: '{button.Text}'.")
+                        .Contains(button.TooltipText);
+                    continue;
+                }
+
+                var action = RebuildAction(name);
+                if (action is null)
+                {
+                    continue; // Unlock_ isn't in RebuildAction's scope — its label check above still ran
+                }
+
+                checkedLegal++;
+                AssertThat(ActionLegality.IsLegal(state, action, state.Phase))
+                    .OverrideFailureMessage($"{name}: rendered with no reason (legal) but ActionLegality.IsLegal says no for {action}.")
+                    .IsTrue();
+            }
+
+            // Fixture-assumption guard: a broken sweep would pass vacuously by finding nothing.
+            AssertThat(checkedRefused > 0)
+                .OverrideFailureMessage("Swept zero refused verbs — the fixture is vacuous.")
                 .IsTrue();
         }
         finally { Unmount(ui); }

@@ -13,11 +13,17 @@ namespace GodotClient.Tools;
 /// One button on screen right now, as a local model would need to see it — visible whether it is
 /// currently pressable or not, so a refusal ("disabled") is something the model could have seen
 /// coming rather than a mystery. See <see cref="ScreenObservation.ObservedControls"/>.
+///
+/// <para><see cref="Reason"/> (P2-SCREEN-09): the player-phrased blocker when <see cref="Enabled"/>
+/// is false, empty otherwise — the same text now rides in the control's own on-screen label
+/// (never a tooltip-only secret), added here so the census that already existed for the harness
+/// (this record) reads the identical fact a human now sees without a mouse.</para>
 /// </summary>
 public sealed record ControlDigest(
     [property: JsonPropertyName("name")] string Name,
     [property: JsonPropertyName("label")] string Label,
-    [property: JsonPropertyName("enabled")] bool Enabled);
+    [property: JsonPropertyName("enabled")] bool Enabled,
+    [property: JsonPropertyName("reason")] string Reason);
 
 /// <summary>
 /// One value-bearing control on screen right now that is NOT a <see cref="Button"/> — an
@@ -205,7 +211,7 @@ public sealed class AgentPlaytestBridge
         var state = ui.Adapter.CurrentState;
         var viewport = ui.GetViewport();
         var controls = ScreenObservation.ObservedControls(ui)
-            .Select(c => new ControlDigest(c.Name, c.Label, c.Enabled))
+            .Select(c => new ControlDigest(c.Name, c.Label, c.Enabled, c.Reason))
             .ToList();
 
         // Record each value control's OPENING value the first time it is ever seen (by object

@@ -522,10 +522,13 @@ public class EngineeringBenchTests
             // pinning: "Craft" would read as the only way to make the thing.
             var craft = ui.Forge.FindChild("Craft_engineering-bolt-thrower", recursive: true, owned: false) as Button;
             AssertThat(craft is not null).IsTrue();
+            // P2-SCREEN-09: a refused verb now carries its blocker right in the label too (this
+            // campaign has zero materials), so the button's Text is the verb PLUS that reason —
+            // Contains, not IsEqual, is the honest check for the verb half of that string.
             AssertThat(craft!.Text)
                 .OverrideFailureMessage(
                     "An active profession's instant Craft must read as the fallback, not the default.")
-                .IsEqual("Auto-craft (competent)");
+                .Contains("Auto-craft (competent)");
         }
         finally
         {

@@ -565,12 +565,12 @@ public partial class LedgerModal : SimPanel
                 AddIcon(row, IconRegistry.Ore(ore.MaterialKey));
                 AddLabel(row, OreOfferLine(Adapter!.CurrentState, ore));
                 var offer = ore;
-                var buy = AddButton(row, $"BuyOre_{ore.From.Value}_{ore.MaterialKey}", "Buy", () =>
+                var buyLegal = BuyOreLegal(Adapter!.CurrentState, offer, card.HeroName, out var whyNot);
+                AddButton(row, $"BuyOre_{ore.From.Value}_{ore.MaterialKey}", "Buy", new Verdict(buyLegal, whyNot), () =>
                 {
                     Adapter!.Queue(new BuyOreAction(offer.From, offer.MaterialKey, offer.Quantity));
                     _feedback!.Text = $"queued: buy {offer.Quantity}x {offer.MaterialKey} from {card.HeroName} (applies when the Evening ticks)";
                 });
-                GateButton(buy, BuyOreLegal(Adapter!.CurrentState, offer, card.HeroName, out var whyNot), whyNot);
 
                 // U6 (campaign finding: this row read as LIVE outside Evening even though
                 // BuyOreAction is Evening-gated at the kernel — GateButton above already disables
@@ -712,7 +712,7 @@ public partial class LedgerModal : SimPanel
         if (anyLines)
         {
             AddButton(
-                _cards!, "ToggleTale", _showFullTale ? "Show less" : "Full tale",
+                _cards!, "ToggleTale", _showFullTale ? "Show less" : "Full tale", Verdict.Ok,
                 () =>
                 {
                     _showFullTale = !_showFullTale;
@@ -929,6 +929,6 @@ public partial class LedgerModal : SimPanel
         // reasoning as CampPanel/ScryingMirror's own Close/Hold controls (BuildFittedModalCard's
         // own doc): this is the ONLY way to dismiss a true modal overlay, so its position must
         // never depend on how much content is stacked above it.
-        AddButton(card.ActionRow, "CloseLedger", "Close", CloseModal);
+        AddButton(card.ActionRow, "CloseLedger", "Close", Verdict.Ok, CloseModal);
     }
 }

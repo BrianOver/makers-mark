@@ -207,26 +207,60 @@ public static class ScreenObservation
 
     /// <summary>
     /// Every VISIBLE button under <paramref name="root"/> — enabled or not — with the label a
-    /// person reads and its enabled state. This is <see cref="AgentPlaytest"/>'s own addition
-    /// (not one of HumanPlayer's existing members): the agent channel's <c>controls</c> digest
-    /// deliberately includes disabled buttons too, with <c>enabled: false</c>, so a local model
-    /// can see what exists and is currently unavailable rather than only ever seeing a shrinking
-    /// list it can never explain.
+    /// person reads, its enabled state, and (P2-SCREEN-09) the blocker text when refused. This is
+    /// <see cref="AgentPlaytest"/>'s own addition (not one of HumanPlayer's existing members): the
+    /// agent channel's <c>controls</c> digest deliberately includes disabled buttons too, with
+    /// <c>enabled: false</c>, so a local model can see what exists and is currently unavailable
+    /// rather than only ever seeing a shrinking list it can never explain.
+    ///
+    /// <para><see cref="Reason"/> is read off <c>SimPanel.VerdictReasonMetaKey</c> — a meta tag
+    /// only <c>SimPanel.AddButton</c>/<c>GateButton</c> ever set, never
+    /// <see cref="Button.TooltipText"/> directly: that property is general-purpose Godot state
+    /// (e.g. the Forge's own docket shortcut carries an informational hover tooltip that has
+    /// nothing to do with legality), so an empty tooltip can never safely mean "legal" for every
+    /// button project-wide. <see cref="Enabled"/> is DERIVED from the reason (empty means legal)
+    /// ONLY for a control that carries the meta at all; every other button falls back to the
+    /// pre-existing <see cref="BaseButton.Disabled"/> signal, unchanged. P2-SCREEN-09 needed this
+    /// split because the Forge's own gated verbs stay pressable (Disabled=false) even when
+    /// refused, answering a press with the reason instead of performing the gated action — so
+    /// <c>Disabled</c> alone can no longer tell "the sim will accept this" from "it won't, but the
+    /// button still takes the click" for THOSE controls specifically.</para>
     /// </summary>
-    public static IReadOnlyList<(string Name, string Label, bool Enabled)> ObservedControls(Node root)
+    public static IReadOnlyList<(string Name, string Label, bool Enabled, string Reason)> ObservedControls(Node root)
     {
-        var result = new List<(string, string, bool)>();
+        var result = new List<(string, string, bool, string)>();
         foreach (var node in Descendants(root))
         {
             if (node is Button button && button.IsVisibleInTree())
             {
                 var label = string.IsNullOrEmpty(button.Text) ? $"<{button.Name}>" : button.Text;
-                result.Add((button.Name.ToString(), label, !button.Disabled));
+                result.Add((button.Name.ToString(), label, IsLegal(button), VerdictReason(button)));
             }
         }
 
         return result;
     }
+
+    /// <summary>The refusal reason <c>SimPanel.AddButton</c>/<c>GateButton</c> recorded on
+    /// <paramref name="button"/>'s <c>SimPanel.VerdictReasonMetaKey</c> meta, or empty for a
+    /// control that never carried a verdict at all (see <see cref="ObservedControls"/>'s own doc
+    /// for why this is NOT <see cref="Button.TooltipText"/>).</summary>
+    public static string VerdictReason(Button button) =>
+        button.HasMeta(GodotClient.Panels.SimPanel.VerdictReasonMetaKey)
+            ? button.GetMeta(GodotClient.Panels.SimPanel.VerdictReasonMetaKey).AsString()
+            : string.Empty;
+
+    /// <summary>Whether <paramref name="button"/> is legal right now: for a control that carries a
+    /// sim verdict at all, an empty <see cref="VerdictReason"/>; for every other button (never
+    /// routed through <c>SimPanel.AddButton</c>/<c>GateButton</c>), the pre-existing
+    /// <see cref="BaseButton.Disabled"/> signal, unchanged. Needed because P2-SCREEN-09 made the
+    /// Forge's own gated verbs stay pressable (Disabled=false) even when refused — <c>Disabled</c>
+    /// alone can no longer tell "the sim accepts this" from "it doesn't, but the click still
+    /// lands" for THOSE controls specifically.</summary>
+    public static bool IsLegal(Button button) =>
+        button.HasMeta(GodotClient.Panels.SimPanel.VerdictReasonMetaKey)
+            ? string.IsNullOrEmpty(VerdictReason(button))
+            : !button.Disabled;
 
     /// <summary>The visible button named <paramref name="name"/> under <paramref name="root"/>, or
     /// null. Scoped to VISIBLE buttons only, same honesty rule as <see cref="ObservedControls"/> —

@@ -333,10 +333,10 @@ public partial class ShopPanel : SimPanel
             controlsRow.AddChild(priceTag);
             // Legacy Reprice button kept (existing test looks it up by name): queues the exact
             // same action the tag's own edit would, through the same seam.
-            AddButton(controlsRow, $"Reprice_{itemId.Value}", "Reprice", () => Reprice(itemId.Value, priceTag.Value));
+            AddButton(controlsRow, $"Reprice_{itemId.Value}", "Reprice", Verdict.Ok, () => Reprice(itemId.Value, priceTag.Value));
             // U5: "your craft writes the legends" made touchable — open the item's provenance
             // card (History entries + maker's mark + forge sub-scores) on click.
-            AddButton(controlsRow, $"Provenance_{itemId.Value}", "History", () => OnShowProvenance(itemId));
+            AddButton(controlsRow, $"Provenance_{itemId.Value}", "History", Verdict.Ok, () => OnShowProvenance(itemId));
 
             // U8 (§11.12 plan, "shop counters identical and redundant — condense"): Present/Suggest
             // used to render in CounterPanel.BuildShelfActions — a SECOND full iteration of this
@@ -351,8 +351,8 @@ public partial class ShopPanel : SimPanel
             if (state.Counter is { Closed: false } counter && counter.Active is not null)
             {
                 var counterRow = AddRow(cardBody);
-                AddButton(counterRow, $"Present_{itemId.Value}", "Present", () => _counter!.QueuePresent(itemId));
-                AddButton(counterRow, $"Suggest_{itemId.Value}", "Suggest", () => _counter!.QueueSuggest(itemId, item.Name));
+                AddButton(counterRow, $"Present_{itemId.Value}", "Present", Verdict.Ok, () => _counter!.QueuePresent(itemId));
+                AddButton(counterRow, $"Suggest_{itemId.Value}", "Suggest", Verdict.Ok, () => _counter!.QueueSuggest(itemId, item.Name));
             }
 
             if (passesToday.TryGetValue(itemId.Value, out var passes))
@@ -493,7 +493,7 @@ public partial class ShopPanel : SimPanel
             priceSpin.ValueChanged += value =>
                 priceHint.Text = $"priced at {(int)value}g — {PriceOrigin((int)value, item)}";
             // U5: same provenance popup as the shelf section above.
-            AddButton(controlsRow, $"Provenance_{item.Id.Value}", "History", () => OnShowProvenance(item.Id));
+            AddButton(controlsRow, $"Provenance_{item.Id.Value}", "History", Verdict.Ok, () => OnShowProvenance(item.Id));
         }
     }
 

@@ -104,11 +104,20 @@ var _settle := 90
 # _initialize.
 const KNOWN_STATES := [
 	"BellTray", "Bestiary", "Camp", "Chronicle", "Counter", "Demand", "DepthsPanel", "Docket",
-	"ForgeAnvil", "ForgeExit", "ForgeFlavor", "ForgeLadder", "ForgePanel", "ForgeShelf", "GateNight",
-	"HeroCandidateOpen", "HeroCards", "HeroErrand", "Ledger", "Lessons", "MineGateFocus", "Mirror",
-	"OccupancyCorner", "Provenance", "ReturnAtNight", "ReturnEmerge", "ReturnQuestEmpty", "SendOff",
-	"ShopPanel", "SystemMenu", "TavernPanel", "TownOverview", "TutorialLookIn", "TutorialOffCamera",
-	"Watch",
+	"ForgeAnvil", "ForgeAnvilEmpty", "ForgeExit", "ForgeFlavor", "ForgeLadder", "ForgePanel",
+	"ForgeShelf", "GateNight", "HeroCandidateOpen", "HeroCards", "HeroErrand", "Ledger", "Lessons",
+	"MineGateFocus", "Mirror", "OccupancyCorner", "Provenance", "ReturnAtNight", "ReturnEmerge",
+	"ReturnQuestEmpty", "SendOff", "ShopPanel", "SystemMenu", "TavernPanel", "TownOverview",
+	"TutorialLookIn", "TutorialOffCamera", "Watch",
+]
+
+# P2-SCREEN-09: the recipe id/talent node id sequence ForgeAnvilEmpty unlocks to drain the whole
+# day's action budget WITHOUT spending a single copper — see the frame==260/300/340/380/420
+# dispatch below for why this exact order (each node's one prerequisite, if any, is already
+# unlocked by the time its own press fires).
+const FORGE_ANVIL_EMPTY_UNLOCK_FRAMES := [260, 300, 340, 380, 420]
+const FORGE_ANVIL_EMPTY_UNLOCK_IDS := [
+	"keen-eye", "material-efficiency", "master-touch", "weapon-specialist", "material-mastery",
 ]
 
 func _initialize() -> void:
@@ -141,6 +150,11 @@ func _initialize() -> void:
 		_settle = 1200
 	elif _state == "":
 		_settle = 90
+	elif _state == "ForgeAnvilEmpty":
+		# P2-SCREEN-09: the anvil press lands at frame 200 (ForgeAnvil's own timing); the five
+		# talent-unlock presses below run at 260/300/340/380/420, so 500 leaves ~80 frames (over
+		# a second) past the last press for ForgePanel's own Refresh to settle before capture.
+		_settle = 500
 	elif _state == "HeroErrand":
 		# U-T3-8 (register #150, "no hero/NPC walk animation"): the plain town default ("") only
 		# settles 90 frames (1.5s) -- nowhere near enough for HeroActor2D's own id-seeded first-
@@ -418,7 +432,7 @@ func _process(_delta: float) -> bool:
 			# SendOff/Mirror above drive their own second beat through a real signal/call.
 			if _ui.has_method("OnTownBuildingClicked"):
 				_ui.call("OnTownBuildingClicked", "Forge")
-		elif _state == "ForgeShelf" or _state == "ForgeFlavor" or _state == "ForgeAnvil":
+		elif _state == "ForgeShelf" or _state == "ForgeFlavor" or _state == "ForgeAnvil" or _state == "ForgeAnvilEmpty":
 			# U3 (painted-interiors plan): enter the room the normal way; the second beat
 			# (frame 200 below) presses the actual station -- shelf, bellows, or anvil.
 			if _ui.has_method("OnTownBuildingClicked"):
@@ -716,12 +730,25 @@ func _process(_delta: float) -> bool:
 		var bellows = _ui.find_child("Building_bellows", true, false)
 		if bellows:
 			bellows.call("RaisePick")
-	if _state == "ForgeAnvil" and _frames == 200:
+	if (_state == "ForgeAnvil" or _state == "ForgeAnvilEmpty") and _frames == 200:
 		# U3: the anvil station's own RaisePick -- the comparison receipt proving the shelf
 		# scrolls somewhere DIFFERENT (materials) than the anvil does (craft/recipe cards).
 		var anvil = _ui.find_child("Building_anvil", true, false)
 		if anvil:
 			anvil.call("RaisePick")
+	# P2-SCREEN-09: five real Unlock_<id> button presses (never an adapter/state injection seam)
+	# spend the whole day's action budget on cost-free talents -- zero gold, zero materials -- so
+	# the SAME captured frame proves BOTH refusal shapes read honestly off one screen: recipe
+	# cards refuse for missing materials (a fresh save always has none), and by the last press the
+	# vendor/foundry/needs rows ALSO refuse for "No action slots left today".
+	if _state == "ForgeAnvilEmpty":
+		var unlock_idx = FORGE_ANVIL_EMPTY_UNLOCK_FRAMES.find(_frames)
+		if unlock_idx != -1:
+			var unlock_btn = _ui.find_child("Unlock_" + FORGE_ANVIL_EMPTY_UNLOCK_IDS[unlock_idx], true, false)
+			if unlock_btn:
+				unlock_btn.emit_signal("pressed")
+			else:
+				push_error("[shot] SHOT_STATE=ForgeAnvilEmpty could not find Unlock_%s at frame %d -- the captured frame will not actually be at zero action slots." % [FORGE_ANVIL_EMPTY_UNLOCK_IDS[unlock_idx], _frames])
 	# Ledger's remaining beats: walk the rest of day 1's five phases (frame 60 above already
 	# pressed the bell once, ending Morning) at the same 30-frame spacing SendOff/Mirror use,
 	# then force the reveal open directly once day 1 has rolled over (see the elif above for
@@ -739,6 +766,16 @@ func _process(_delta: float) -> bool:
 		var open_ledger = _ui.find_child("OpenLedger", true, false)
 		if open_ledger:
 			open_ledger.emit_signal("pressed")
+	# ForgeAnvilEmpty's five talent-unlock presses (above) are a means to an end (draining the
+	# action budget on zero gold/materials) -- Bryn's own first-touch teaching banner
+	# ("ForgeMentorBanner", ForgePanel's own node) fires as a side effect of the FIRST talent
+	# unlock and covers the whole panel, which is real content but not what THIS receipt is
+	# about. Suppressed here, same "the modals that covered you are the thing to suppress" idiom
+	# Watch's own CampModal/TutorialOverlay/MentorBanner/DepartureSlate suppression already uses.
+	if _state == "ForgeAnvilEmpty" and _frames == _settle - 1:
+		var forge_mentor = _ui.find_child("ForgeMentorBanner", true, false)
+		if forge_mentor:
+			forge_mentor.visible = false
 	if _frames >= _settle:
 		_warn_about_covering_overlays()
 		var img := root.get_texture().get_image()

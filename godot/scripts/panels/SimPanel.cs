@@ -102,10 +102,97 @@ public abstract partial class SimPanel : Control
         return label;
     }
 
-    protected static Button AddButton(Node parent, string name, string text, Action onPressed)
+    /// <summary>
+    /// P2-SCREEN-09: the sim's own verdict on whether the action a button submits would be
+    /// accepted right now, plus — when refused — the player-phrased reason. <see cref="Legal"/>
+    /// routes through <c>GameSim.Advisor.ActionLegality</c>, the one legality authority; a panel
+    /// that re-derives the boolean itself is keeping a third copy of a rule that already has two
+    /// (the handler's own guard, and ActionLegality's mirror of it). <see cref="Reason"/> stays
+    /// presentation prose written on the client — it names a control the player can see and
+    /// phrases it for a human, which is exactly why it does NOT belong in the sim.
+    /// </summary>
+    protected readonly record struct Verdict(bool Legal, string Reason = "")
     {
-        var button = new Button { Name = name, Text = text };
-        button.Pressed += onPressed;
+        /// <summary>An always-legal control — a UI navigation button (Close, History, a tab
+        /// toggle) that submits no gated sim verb at all, never a gated one rendered unconditionally.</summary>
+        public static readonly Verdict Ok = new(true, string.Empty);
+    }
+
+    /// <summary>Fixed wrap width (px) for a refused button's label — comfortably under the Forge
+    /// drawer's own measured budget (<c>GodotClient.Ui.DrawerHost.DrawerWidth</c> minus its
+    /// margins, ~601px) even beside a sibling in the same <see cref="AddWrappingRow"/> row, so a
+    /// refused verb's own reason never has to fight for that budget the way its unbounded natural
+    /// width did.</summary>
+    private const float RefusedButtonWrapWidth = 360f;
+
+    /// <summary>
+    /// P2-SCREEN-09: the ONE way to add a button whose press submits a sim verb — <paramref
+    /// name="verdict"/> is REQUIRED, so a button with no verdict is a compile error. Before this
+    /// unit, the 4-arg overload took no verdict and returned an enabled button by default — the
+    /// easy path that let ~23 hand-rolled <c>.Disabled</c> sites accumulate outside this one seam
+    /// instead of going through it.
+    ///
+    /// <para><b>Three states, one vocabulary, everywhere.</b> Available
+    /// (<paramref name="verdict"/>.Legal true) renders the bare verb at full contrast. Refused
+    /// (false) dims the button and writes the blocker INTO the label — "Work the forge — need 2
+    /// copper, have 0" — never a tooltip alone (invisible to anyone who doesn't hover, absent
+    /// from every screenshot anyone will ever take of this game); the tooltip is still set too,
+    /// for the harness census and for hover, but it is never the reason's only home. Absent (not
+    /// part of the game yet) is not this method's job — see <c>ForgePanel</c>'s tier-locked
+    /// recipe row for that shape: a compact row naming the key, never a button at all.</para>
+    ///
+    /// <para><paramref name="onRefused"/>, when given, keeps the control PRESSABLE while refused
+    /// and answers a press with the fix (the verdict's own reason) instead of silently swallowing
+    /// it — <c>ForgePanel</c> passes its own <c>SetFeedback</c> here for every gated verb.
+    /// Omitted (the default), a refused button falls back to the old
+    /// <see cref="Godot.BaseButton.Disabled"/>-true swallow, which every panel outside the Forge
+    /// still relies on; this unit's job was to make the LABEL honest everywhere; the Forge alone
+    /// is fully converted to the stronger pressable-and-answers contract.</para>
+    /// </summary>
+    protected static Button AddButton(Node parent, string name, string verb, Verdict verdict, Action onPressed, Action<string>? onRefused = null)
+    {
+        var label = verdict.Legal ? verb : $"{verb} — {verdict.Reason}";
+        var button = new Button { Name = name, Text = label };
+        if (!verdict.Legal)
+        {
+            // A refused reason can run well past a single line's worth of width, and a Button's
+            // Text does not wrap by default — measured: "Masterwork Attempt (guaranteed) —
+            // Requires Forge Tier 2..." alone demanded 706px against the drawer's 601px budget,
+            // widening the WHOLE recipe card (and every sibling laid out after it) rather than
+            // wrapping onto a second line the way an AddWrappingRow already lets the ROW do
+            // between children.
+            //
+            // Autowrap ALONE does not bound that width: inside an HFlowContainer (every gated
+            // Forge verb's parent row) a child is sized at its own preferred width, and an
+            // autowrap Control's preferred width is its UNWRAPPED single-line width absent an
+            // explicit cap — so the button never actually wrapped, it just silently under-reported
+            // its minimum size, which is worse (a ScrollContainer sized off that lie could never
+            // scroll far enough to reach a button sitting past where it claimed content ended;
+            // caught by HumanPlaytestTests.ForgeRecipeBelowTheVendorList_IsReachableByScrollingTheWheel).
+            // A fixed CustomMinimumSize.X gives the wrap something real to wrap AGAINST, so the
+            // reported minimum height already reflects the lines it will actually draw.
+            button.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+            button.CustomMinimumSize = new Vector2(RefusedButtonWrapWidth, 0);
+        }
+
+        button.TooltipText = verdict.Legal ? string.Empty : verdict.Reason;
+        MarkVerdict(button, verdict.Legal, verdict.Reason);
+        if (onRefused is null)
+        {
+            button.Disabled = !verdict.Legal;
+        }
+
+        button.Pressed += () =>
+        {
+            if (verdict.Legal)
+            {
+                onPressed();
+            }
+            else
+            {
+                onRefused?.Invoke(verdict.Reason);
+            }
+        };
         parent.AddChild(button);
         return button;
     }
@@ -122,8 +209,23 @@ public abstract partial class SimPanel : Control
     {
         button.Disabled = !legal;
         button.TooltipText = legal ? string.Empty : whyNot;
+        MarkVerdict(button, legal, whyNot);
         return button;
     }
+
+    /// <summary>
+    /// P2-SCREEN-09: the meta key <see cref="ScreenObservation"/> reads to tell "this control
+    /// carries a real sim verdict" from "this is some other Godot button with an unrelated hover
+    /// tooltip" — <see cref="Godot.Button.TooltipText"/> is a general-purpose Godot property
+    /// (e.g. the Forge's own docket shortcut sets an informational one that has nothing to do
+    /// with legality), so an empty tooltip alone can never safely mean "legal" project-wide. Only
+    /// <see cref="AddButton"/> and <see cref="GateButton"/> ever set this meta, so its mere
+    /// presence is itself the "this went through the verdict contract" signal.
+    /// </summary>
+    public const string VerdictReasonMetaKey = "P2ScreenVerdictReason";
+
+    private static void MarkVerdict(Button button, bool legal, string reason) =>
+        button.SetMeta(VerdictReasonMetaKey, legal ? string.Empty : reason);
 
     protected static SpinBox AddSpinBox(Node parent, string name, double min, double max, double value)
     {

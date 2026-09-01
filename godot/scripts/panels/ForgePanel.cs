@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
+using GameSim.Advisor;
 using GameSim.Contracts;
 using GameSim.Crafting;
 using GameSim.Economy;
@@ -627,7 +628,10 @@ public partial class ForgePanel : SimPanel
         (int Quote, bool Legal, string WhyNot) MaterialGate(string key, int qty)
         {
             var q = MaterialVendorHandlers.QuoteCost(key, qty);
-            var ok = state.Phase == DayPhase.Morning && q <= state.Player.Gold && state.ActionSlotsRemaining > 0;
+            // P2-SCREEN-09: the boolean routes through ActionLegality (the one legality
+            // authority) — the reason chain below only picks which sentence to print, in the
+            // SAME order MaterialVendorHandlers.Apply checks its own guards.
+            var ok = ActionLegality.IsLegal(state, new BuyMaterialAction(key, qty), state.Phase);
             var reason = state.Phase != DayPhase.Morning
                 ? "The vendor sells in the Morning."
                 : q > state.Player.Gold
@@ -714,10 +718,8 @@ public partial class ForgePanel : SimPanel
             upgradeIcon = IconRegistry.Ore(oreKey);
             upgradePrice = $"{upgradeCost}g + {ForgeTierHandlers.OreQuantity} {oreKey}";
             upgradeOwned = $"{oreHave}/{ForgeTierHandlers.OreQuantity} {oreKey}";
-            upgradeLegal = state.Phase == DayPhase.Morning
-                && oreHave >= ForgeTierHandlers.OreQuantity
-                && upgradeCost <= state.Player.Gold
-                && state.ActionSlotsRemaining > 0;
+            // P2-SCREEN-09: ActionLegality decides; the chain below only picks the reason.
+            upgradeLegal = ActionLegality.IsLegal(state, new UpgradeForgeAction(), state.Phase);
             upgradeWhyNot = state.Phase != DayPhase.Morning
                 ? "The forge upgrades in the Morning."
                 : oreHave < ForgeTierHandlers.OreQuantity
@@ -740,9 +742,8 @@ public partial class ForgePanel : SimPanel
             var supplyHave = state.Player.Materials.TryGetValue(supplyKey, out var supplyStock) ? supplyStock : 0;
             var buySupply = new Button { Name = $"BuySupply_{supplyKey}", Text = "Buy 1" };
             buySupply.Pressed += () => OnBuyForgeSupplyPressed(supplyKey);
-            var supplyLegal = state.Phase == DayPhase.Morning
-                && unitPrice <= state.Player.Gold
-                && state.ActionSlotsRemaining > 0;
+            // P2-SCREEN-09: ActionLegality decides; the chain below only picks the reason.
+            var supplyLegal = ActionLegality.IsLegal(state, new BuyForgeSupplyAction(supplyKey, 1), state.Phase);
             var supplyWhyNot = state.Phase != DayPhase.Morning
                 ? "The forge supplier sells in the Morning."
                 : unitPrice > state.Player.Gold
@@ -877,17 +878,33 @@ public partial class ForgePanel : SimPanel
                 // chips): wrap instead of growing. See NoPanel_DemandsMoreWidthThanTheDrawerGivesIt_
                 // AfterACompletedCraft (HumanPlaytestTests.cs), which failed red before this line.
                 var controlsRow = AddWrappingRow(cardBody);
+                // P2-SCREEN-09 bug fix: this used to print the RAW recipe.MaterialQuantity while
+                // every gate below reads the efficiency-adjusted `needed` — with the material-
+                // efficiency talent unlocked the chip read "copper 2x (have 1)" on a craft that
+                // was perfectly legal. `needed` is the same number the buttons below gate on.
                 controlsRow.AddChild(StatChip(
-                    material, $"{recipe.MaterialQuantity}x (have {have})",
+                    material, $"{needed}x (have {have})",
                     affordable ? UiKit.ChipTone.Positive : UiKit.ChipTone.Neutral));
+
+                // P2-SCREEN-09: the boolean now routes through ActionLegality (the one legality
+                // authority) instead of the hand-rolled `affordable` local — CraftLegal's own last
+                // guard is the day's action budget, which `affordable` never checked, so a craft
+                // card used to render ENABLED on a materials-flush, slots-exhausted day and the
+                // press would still bounce off the kernel. The reason text stays hand-written
+                // (presentation), checked in the SAME order CraftingHandlers.ApplyCraft guards.
+                var craftAction = new CraftAction(recipe.RecipeId, material);
+                var craftLegal = ActionLegality.IsLegal(state, craftAction, state.Phase);
+                var craftWhyNot = !affordable
+                    ? $"need {needed} {material}, have {have}"
+                    : $"No action slots left today (0/{ActionBudget.SlotsPerDay}) — 'next' to advance.";
 
                 // PA6/PKD4: an ACTIVE profession's instant Craft is the null-grade auto-craft
                 // path (competent, hard-capped below Masterwork) — relabeled so it reads as the
                 // explicit fallback beside the minigame, not the only way to craft. A PASSIVE
                 // profession's Craft is unchanged (no minigame exists for it in Phase A).
                 var craftLabel = profession.ActiveCraft ? "Auto-craft (competent)" : "Craft";
-                var craft = AddButton(controlsRow, $"Craft_{recipe.RecipeId}", craftLabel, () => OnCraftPressed(recipe.RecipeId));
-                GateButton(craft, affordable, $"Not enough {material} — need {needed}, have {have}.");
+                AddButton(controlsRow, $"Craft_{recipe.RecipeId}", craftLabel, new Verdict(craftLegal, craftWhyNot),
+                    () => OnCraftPressed(recipe.RecipeId), onRefused: SetFeedback);
 
                 if (profession.ActiveCraft)
                 {
@@ -906,35 +923,35 @@ public partial class ForgePanel : SimPanel
                         // same bug class PR #464 fixed for blacksmith). Shortened to match the
                         // parenthetical-qualifier convention "Assemble (bench)" already uses —
                         // "reagent" was redundant inside a panel already headed "Apothecary".
-                        var brew = AddButton(controlsRow, $"Brew_{recipe.RecipeId}", "Brew (puzzle)",
-                            () => OnBrewPressed(recipe, material, profession!, unlocked));
-                        GateButton(brew, affordable, $"Not enough {material} — need {needed}, have {have}.");
+                        // These four overlay-opening buttons all gate on the SAME underlying
+                        // CraftAction the minigame's own On*Finished handler eventually queues
+                        // (craftLegal/craftWhyNot, computed above) — opening the overlay for a
+                        // craft the kernel would reject only defers the honest refusal to the
+                        // worst possible moment (after the player has already played it through).
+                        AddButton(controlsRow, $"Brew_{recipe.RecipeId}", "Brew (puzzle)", new Verdict(craftLegal, craftWhyNot),
+                            () => OnBrewPressed(recipe, material, profession!, unlocked), onRefused: SetFeedback);
                     }
                     else if (professionId == EngineeringProfession.Id)
                     {
-                        var assemble = AddButton(controlsRow, $"Assemble_{recipe.RecipeId}", "Assemble (bench)",
-                            () => OnAssemblePressed(recipe, material, profession!, unlocked));
-                        GateButton(assemble, affordable, $"Not enough {material} — need {needed}, have {have}.");
+                        AddButton(controlsRow, $"Assemble_{recipe.RecipeId}", "Assemble (bench)", new Verdict(craftLegal, craftWhyNot),
+                            () => OnAssemblePressed(recipe, material, profession!, unlocked), onRefused: SetFeedback);
                     }
                     else if (professionId == TanningProfession.Id)
                     {
-                        var scrape = AddButton(controlsRow, $"Scrape_{recipe.RecipeId}", "Scrape the hide",
-                            () => OnScrapeHidePressed(recipe, material, profession!, unlocked));
-                        GateButton(scrape, affordable, $"Not enough {material} — need {needed}, have {have}.");
+                        AddButton(controlsRow, $"Scrape_{recipe.RecipeId}", "Scrape the hide", new Verdict(craftLegal, craftWhyNot),
+                            () => OnScrapeHidePressed(recipe, material, profession!, unlocked), onRefused: SetFeedback);
                     }
                     else
                     {
-                        var work = AddButton(controlsRow, $"WorkForge_{recipe.RecipeId}", "Work the forge",
-                            () => OnWorkForgePressed(recipe, material, profession!, unlocked));
-                        GateButton(work, affordable, $"Not enough {material} — need {needed}, have {have}.");
+                        AddButton(controlsRow, $"WorkForge_{recipe.RecipeId}", "Work the forge", new Verdict(craftLegal, craftWhyNot),
+                            () => OnWorkForgePressed(recipe, material, profession!, unlocked), onRefused: SetFeedback);
 
                         // U7 / loop-structure KTD-C: once THIS recipe+material has a proven trace,
                         // offer to re-queue it at one click instead of re-playing both acts.
                         if (_lastForgeTraces.ContainsKey((recipe.RecipeId, material)))
                         {
-                            var repeat = AddButton(controlsRow, $"ForgeAnother_{recipe.RecipeId}", "Forge another like it",
-                                () => RepeatLastForge(recipe.RecipeId, material));
-                            GateButton(repeat, affordable, $"Not enough {material} — need {needed}, have {have}.");
+                            AddButton(controlsRow, $"ForgeAnother_{recipe.RecipeId}", "Forge another like it", new Verdict(craftLegal, craftWhyNot),
+                                () => RepeatLastForge(recipe.RecipeId, material), onRefused: SetFeedback);
                         }
                     }
                 }
@@ -963,8 +980,12 @@ public partial class ForgePanel : SimPanel
                 var mwFluxOk = fluxHave >= MasterworkAttemptHandlers.FluxCost;
                 var mwSurcharge = MasterworkAttemptHandlers.GoldSurchargePerTier * (tierIndex + 1);
                 var mwGoldOk = state.Player.Gold >= mwSurcharge;
-                var mwLegal = atMasterworkTier && tierTalentOk && affordable && mwCoalOk && mwFluxOk && mwGoldOk
-                    && state.ActionSlotsRemaining > 0;
+                // P2-SCREEN-09: the boolean itself now comes from ActionLegality (the one
+                // legality authority) — the hand-derived chain above stays ONLY to pick which
+                // reason string to print, in the SAME order MasterworkAttemptHandlers.Apply
+                // checks its own guards, so the printed reason is always the one that actually
+                // made IsLegal say no.
+                var mwLegal = ActionLegality.IsLegal(state, new MasterworkAttemptAction(recipe.RecipeId, material), state.Phase);
                 // Display tier is index + 1 (index 0 = Forge I), so the REQUIRED display tier is
                 // RequiredForgeTierIndex + 1 — matching the handler's own rejection string at
                 // MasterworkAttemptHandlers.cs:79. An earlier "+ 2" here advertised Tier III for a
@@ -983,9 +1004,8 @@ public partial class ForgePanel : SimPanel
                                 : !mwGoldOk
                                     ? $"Not enough gold — need {mwSurcharge}, have {state.Player.Gold}."
                                     : $"No action slots left today (0/{ActionBudget.SlotsPerDay}) — 'next' to advance.";
-                var masterwork = AddButton(controlsRow, $"Masterwork_{recipe.RecipeId}", "Masterwork Attempt (guaranteed)",
-                    () => OnMasterworkPressed(recipe.RecipeId, material));
-                GateButton(masterwork, mwLegal, mwWhyNot);
+                AddButton(controlsRow, $"Masterwork_{recipe.RecipeId}", "Masterwork Attempt (guaranteed)",
+                    new Verdict(mwLegal, mwWhyNot), () => OnMasterworkPressed(recipe.RecipeId, material), onRefused: SetFeedback);
 
                 // U4 (P6b): commission one of the era's capped legendary works — same card, same
                 // selected material, DOUBLE quantity (LegendaryCommissionHandlers.MaterialMultiplier,
@@ -999,8 +1019,9 @@ public partial class ForgePanel : SimPanel
                 var legendaryMaterialOk = have >= legendaryNeeded;
                 var legendaryCost = LegendaryCommissionHandlers.BaseGold * (tierIndex + 1);
                 var legendaryGoldOk = state.Player.Gold >= legendaryCost;
-                var legendaryLegal = !legendaryCapped && tierTalentOk && legendaryMaterialOk && legendaryGoldOk
-                    && state.ActionSlotsRemaining > 0;
+                // P2-SCREEN-09: same swap as the masterwork gate above — ActionLegality decides,
+                // the hand chain below only picks which reason to print.
+                var legendaryLegal = ActionLegality.IsLegal(state, new CommissionLegendaryWorkAction(recipe.RecipeId, material), state.Phase);
                 var legendaryWhyNot = legendaryCapped
                     ? $"All {LegendaryCommissionHandlers.MaxPerCampaign} legendary commissions for this era are already spoken for."
                     : !tierTalentOk
@@ -1010,10 +1031,9 @@ public partial class ForgePanel : SimPanel
                         : !legendaryGoldOk
                             ? $"Not enough gold — need {legendaryCost}, have {state.Player.Gold}."
                             : $"No action slots left today (0/{ActionBudget.SlotsPerDay}) — 'next' to advance.";
-                var legendary = AddButton(controlsRow, $"Commission_{recipe.RecipeId}",
+                AddButton(controlsRow, $"Commission_{recipe.RecipeId}",
                     $"Commission Legendary ({commissionsRemaining} of {LegendaryCommissionHandlers.MaxPerCampaign} left)",
-                    () => OnCommissionLegendaryPressed(recipe.RecipeId, material));
-                GateButton(legendary, legendaryLegal, legendaryWhyNot);
+                    new Verdict(legendaryLegal, legendaryWhyNot), () => OnCommissionLegendaryPressed(recipe.RecipeId, material), onRefused: SetFeedback);
             }
 
             foreach (var node in profession.TalentNodes.Values)
@@ -1037,18 +1057,20 @@ public partial class ForgePanel : SimPanel
                     // button that only asked CanUnlock would show ENABLED for a Forge-Tier-locked or
                     // slot-exhausted day the kernel then rejects — the exact defect this whole unit
                     // exists to close, just one button over from the Craft/Work-the-forge fix above.
-                    var button = AddButton(row, $"Unlock_{node.NodeId}", "Unlock", () => OnUnlockPressed(node.NodeId, professionId));
+                    // P2-SCREEN-09: the boolean routes through ActionLegality; the hand chain
+                    // below only picks which reason to print, same idiom as Craft/Masterwork above.
+                    var unlockLegal = ActionLegality.IsLegal(state, new UnlockTalentAction(node.NodeId, professionId), state.Phase);
                     var prereqsOk = profession.CanUnlock(node.NodeId, unlocked);
                     var missingPrereq = node.Prerequisites.FirstOrDefault(p => !unlocked.Contains(p));
                     var forgeTierOk = !TalentTree.ForgeTierRequirement.TryGetValue(node.NodeId, out var requiredTierIndex)
                         || tierIndex >= requiredTierIndex;
-                    var unlockLegal = prereqsOk && forgeTierOk && state.ActionSlotsRemaining > 0;
                     var unlockWhyNot = !prereqsOk
                         ? $"Requires '{missingPrereq}' first."
                         : !forgeTierOk
                             ? $"Requires Forge Tier {requiredTierIndex + 1} or higher (workshop is Tier {tierIndex + 1})."
                             : $"No action slots left today (0/{ActionBudget.SlotsPerDay}) — 'next' to advance.";
-                    GateButton(button, unlockLegal, unlockWhyNot);
+                    AddButton(row, $"Unlock_{node.NodeId}", "Unlock", new Verdict(unlockLegal, unlockWhyNot),
+                        () => OnUnlockPressed(node.NodeId, professionId), onRefused: SetFeedback);
                 }
             }
         }
@@ -2081,7 +2103,7 @@ public partial class ForgePanel : SimPanel
         // other row above it already fights for (see this method's own multi-paragraph history:
         // even a few px has buried "Work the forge"/"Buy 1" before). Reachable by scrolling, same
         // as Talents already is on some professions; never touches DrawerHost.
-        var docketButton = AddButton(_craftViewRoot, "OpenDocketFromForge", "Tomorrow at the Counter",
+        var docketButton = AddButton(_craftViewRoot, "OpenDocketFromForge", "Tomorrow at the Counter", Verdict.Ok,
             () => OpenDocketRequested?.Invoke());
         docketButton.TooltipText = "Open the counter forecast without leaving the forge.";
 
@@ -2179,7 +2201,7 @@ public partial class ForgePanel : SimPanel
         _ceremonyPips = AddRow(body);
         _ceremonyPips.Name = "ForgeCeremonyPips";
 
-        var skip = AddButton(body, "ForgeCeremonySkip", "Skip", HideCeremony);
+        var skip = AddButton(body, "ForgeCeremonySkip", "Skip", Verdict.Ok, HideCeremony);
         skip.SizeFlagsHorizontal = SizeFlags.ShrinkCenter;
     }
 
@@ -2218,7 +2240,7 @@ public partial class ForgePanel : SimPanel
         _mentorLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
         _mentorLabel.HorizontalAlignment = HorizontalAlignment.Center;
 
-        var dismiss = AddButton(body, "ForgeMentorDismiss", "Got it", DismissMentorBanner);
+        var dismiss = AddButton(body, "ForgeMentorDismiss", "Got it", Verdict.Ok, DismissMentorBanner);
         dismiss.SizeFlagsHorizontal = SizeFlags.ShrinkCenter;
     }
 

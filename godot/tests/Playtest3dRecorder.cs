@@ -6,6 +6,7 @@ using System.Text;
 using Godot;
 using GdUnit4;
 using GameSim.Contracts;
+using GodotClient.Tools;
 using static GdUnit4.Assertions;
 using static GodotClient.Tests.UiTestSupport;
 
@@ -232,7 +233,9 @@ public class Playtest3dRecorder
             // Did the gated Forge surface light up? Count enabled craft buttons now.
             ui.Drawer.Open("Forge");
             var craftButtons = CollectButtons(ui.Forge).Where(b => b.Name.ToString().StartsWith("Craft_")).ToList();
-            var enabledCraft = craftButtons.Count(b => !b.Disabled);
+            // P2-SCREEN-09: Craft_ stays Disabled=false even when refused (the blocker rides in
+            // its own label) — ScreenObservation.IsLegal is the honest "legal now" signal.
+            var enabledCraft = craftButtons.Count(ScreenObservation.IsLegal);
             report.AppendLine($"- Forge craft buttons enabled (active run): **{enabledCraft} / {craftButtons.Count}**");
 
             // Did any Phase-D sink control surface?
