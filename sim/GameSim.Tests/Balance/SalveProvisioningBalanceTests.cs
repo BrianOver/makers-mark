@@ -25,6 +25,16 @@ public class SalveProvisioningBalanceTests
 
     private static ProvisionStats Run(bool withSalves) => Run(withSalves, Seed);
 
+    // MEASURED (CI run 33582674334, balance-sim.trx): Run(withSalves: true) at the default Seed
+    // is called once each by Baseline_ConsumableActivityStaysASmallOrganicTrickle and
+    // SalveEconomy_ActuallyEngages (~20s of pure duplication of the same 100-day campaign). Run
+    // is a pure function of its (withSalves, seed) arguments, so memoizing this one shared
+    // combination is safe. Do NOT route SalveScenario_IsDeterministic through this field — it
+    // exists to run the SAME campaign TWICE and compare byte-identical output, so it must keep
+    // calling Run(withSalves: true) fresh both times.
+    private static readonly Lazy<ProvisionStats> MemoizedWithSalves =
+        new(() => Run(withSalves: true), LazyThreadSafetyMode.ExecutionAndPublication);
+
     private static ProvisionStats Run(bool withSalves, ulong seed)
     {
         var kernel = GameComposition.BuildKernel();
@@ -118,7 +128,7 @@ public class SalveProvisioningBalanceTests
         // 32 used for this file's leg that deliberately force-crafts two salves every Expedition
         // window — still a clean, well-separated A/B for this file's other assertions.
         var baseline = Run(withSalves: false);
-        var salves = Run(withSalves: true);
+        var salves = MemoizedWithSalves.Value;
 
         Assert.True(baseline.SalvesSold < salves.SalvesSold,
             $"baseline ({baseline.SalvesSold}) should sell far fewer salves than the forced-salve leg ({salves.SalvesSold})");
@@ -135,7 +145,7 @@ public class SalveProvisioningBalanceTests
     [Trait("Category", "Balance")]
     public void SalveEconomy_ActuallyEngages()
     {
-        var salves = Run(withSalves: true);
+        var salves = MemoizedWithSalves.Value;
 
         Assert.True(salves.SalvesSold > 0, "no salve ever sold — the shopping pass never engaged");
         Assert.True(salves.SalveUses > 0, "no salve ever drunk — the quaff rule never engaged");

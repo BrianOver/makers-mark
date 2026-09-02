@@ -39,8 +39,17 @@
     Worktree to test. Defaults to the repo containing this script.
 
 .PARAMETER MinTests
-    Minimum Total the run must report. Default 780 (suite was 803 on 2026-08-03). Raise it as the
-    suite grows; never lower it to make a run pass.
+    Minimum Total the run must report. Default 1650 (CI audit run 33582674334, 2026-08-29: the
+    suite actually executes 1696; 1650 is 97% of that, above the 1655 measured two days earlier,
+    so ordinary churn cannot false-red this while a 3% truncation still goes red). This number
+    ROTS: it must be raised by hand as the suite grows, or a run that silently drops a large slice
+    of the suite will still clear it and print green -- that is the exact failure this script's own
+    header exists to catch, and it has already happened to this default once (780, "suite was 803
+    on 2026-08-03", left unmaintained until the audit above). Never lower it to make a run pass.
+    `sim/GameSim.Tests/Hygiene/EngineTestFloorCensusTests.cs` checks the SIBLING floor
+    (ENGINE_MIN_PASSED in .github/workflows/ci.yml) against a live test-attribute count so that
+    drift is caught automatically; this default has no such census and still needs a human to
+    revisit it periodically.
 
 .PARAMETER Filter
     Optional dotnet test --filter. Sets -MinTests to 0, since a filtered run legitimately runs few
@@ -53,7 +62,7 @@
 [CmdletBinding()]
 param(
     [string]$RepoRoot,
-    [int]$MinTests = 780,
+    [int]$MinTests = 1650,
     [string]$Filter,
 
     # How long to WAIT for another run to finish before giving up. The machine is serialized (one

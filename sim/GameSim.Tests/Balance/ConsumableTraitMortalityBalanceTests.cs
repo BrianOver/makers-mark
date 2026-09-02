@@ -49,6 +49,21 @@ public class ConsumableTraitMortalityBalanceTests
 
     private sealed record TraitMortality(int RecklessTotal, int RecklessDied, int PreparedTotal, int PreparedDied);
 
+    // MEASURED (CI run 33582674334, balance-sim.trx): RunAllSeedsParallel is called once each by
+    // SalvesStocked_TraitPopulationEngagesAcrossSweep (1008.1s) and
+    // SalvesStocked_PreparedHeroes_SurviveMeasurablyBetterThanReckless (733.7s) — same 90-seed
+    // sweep, same policy, zero inputs, computed twice for ~970s of pure duplication inside the
+    // single slowest test class in the job (1796.8s of the 1945s balance job — xUnit runs one
+    // class serially, so this class alone sets the job's floor). RunAllSeedsParallel's own doc
+    // comment certifies it is pure (no shared mutable state, no IO/clock, commutative sum), so a
+    // Lazy memo consumed by exactly these two tests is safe: each test still gets the correct,
+    // fully-computed sweep result, just not recomputed. Do NOT do this for
+    // SalvesStocked_TraitMortalityScenario_IsDeterministic below — that test exists to run the
+    // SAME single-seed campaign TWICE and compare, so it calls Run() fresh both times, never this
+    // field. Never "simplify" this back into an inline call in either band test.
+    private static readonly Lazy<TraitMortality> MemoizedSweep =
+        new(RunAllSeedsParallel, LazyThreadSafetyMode.ExecutionAndPublication);
+
     /// <summary>Runs the salve-stocking scenario for one seed and classifies every hero who ever
     /// existed on that campaign by their derived Consumable Stocking trait — total seen vs died
     /// (<c>!hero.Alive</c>) per side.</summary>
@@ -146,7 +161,7 @@ public class ConsumableTraitMortalityBalanceTests
     {
         // Engagement guard (SalveProvisioningBalanceTests precedent): the comparison below is
         // meaningless if the sweep never produced enough Reckless/Prepared heroes to compare.
-        var totals = RunAllSeedsParallel();
+        var totals = MemoizedSweep.Value;
 
         Assert.True(totals.RecklessTotal >= 10, $"too few Reckless heroes seen across the sweep: {totals.RecklessTotal}");
         Assert.True(totals.PreparedTotal >= 10, $"too few Prepared heroes seen across the sweep: {totals.PreparedTotal}");
@@ -232,7 +247,7 @@ public class ConsumableTraitMortalityBalanceTests
         // NOT part of this grant and is never re-baselined: it is permanent, by design, precisely
         // so a future regression that returns to zero or negative cannot hide behind a margin
         // number this same PR just loosened.
-        var totals = RunAllSeedsParallel();
+        var totals = MemoizedSweep.Value;
         var (recklessTotal, recklessDied, preparedTotal, preparedDied) =
             (totals.RecklessTotal, totals.RecklessDied, totals.PreparedTotal, totals.PreparedDied);
 

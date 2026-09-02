@@ -62,6 +62,19 @@ public class FactionTariffBalanceTests
         }
     }
 
+    // MEASURED (CI run 33582674334, balance-sim.trx): Run(MainSeed, neutral: false) — the
+    // FAVORED leg — is called once each by HundredDay_TariffFires_ReachesFavored_AndDiscounts,
+    // HundredDay_Favored_PaysLessThanBaseOnItsOwnBuys, and
+    // HundredDay_AggregateDiscount_StaysWithinCap (106.5 + 129.8 + 89.5s; two of the three are
+    // pure duplication of the same 100-day campaign, ~216s). Run is a pure function of its
+    // (seed, neutral) arguments, so memoizing the one (MainSeed, false) combination those three
+    // band tests share is safe. Do NOT route HundredDay_WithFactions_IsDeterministic through this
+    // field — it exists to run the SAME campaign TWICE and compare byte-identical output, so it
+    // must keep calling Run() fresh both times (and its neutral:true leg is only ever computed by
+    // that test, so it stays out of this memo too).
+    private static readonly Lazy<TariffRunStats> MemoizedFavoredRun =
+        new(() => Run(MainSeed, neutral: false), LazyThreadSafetyMode.ExecutionAndPublication);
+
     private static long BaseCostOf(GameState state, BuyOreAction buy)
     {
         var index = state.OpenOreOffers.FindIndex(o => o.From == buy.From && o.MaterialKey == buy.MaterialKey);
@@ -132,7 +145,7 @@ public class FactionTariffBalanceTests
     [Trait("Category", "Balance")]
     public void HundredDay_TariffFires_ReachesFavored_AndDiscounts()
     {
-        var fav = Run(MainSeed, neutral: false);
+        var fav = MemoizedFavoredRun.Value;
 
         // Standing must actually reach the "favored" band (cap/2), i.e. the driver is live and earning.
         Assert.True(fav.MaxStanding >= FactionStandingThresholds.FavoredEnter(Deepvein),
@@ -173,7 +186,7 @@ public class FactionTariffBalanceTests
         // price of those same buys (measured: 2980g paid vs 3143g base, a real ~5.2% saving).
         // HundredDay_AggregateDiscount_StaysWithinCap (below) bounds that saving from the other
         // side, and HundredDay_TariffFires_ReachesFavored_AndDiscounts proves it is never zero.
-        var fav = Run(MainSeed, neutral: false);
+        var fav = MemoizedFavoredRun.Value;
 
         Assert.True(fav.TotalPlayerOreCost < fav.TotalBaseOreCost,
             $"favored player did not save on identical buys: paid {fav.TotalPlayerOreCost} vs base {fav.TotalBaseOreCost}");
@@ -185,7 +198,7 @@ public class FactionTariffBalanceTests
     [Trait("Category", "Balance")]
     public void HundredDay_AggregateDiscount_StaysWithinCap()
     {
-        var fav = Run(MainSeed, neutral: false);
+        var fav = MemoizedFavoredRun.Value;
 
         var minted = -fav.TotalTariffDelta;            // total gold saved by discounts (>= 0)
         Assert.True(minted > 0, "no discount minted — nothing to bound");

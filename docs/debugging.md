@@ -27,12 +27,36 @@ it by re-entering the same commands with `--seed <s>`, or debug from its exporte
 
 | Lane | Command | Needs |
 |---|---|---|
-| Sim fast lane | `dotnet test sim/GameSim.Tests/GameSim.Tests.csproj --filter Category!=Balance` | nothing |
+| Sim fast lane | `dotnet test sim/GameSim.Tests/GameSim.Tests.csproj -c Release --filter Category!=Balance` | nothing |
 | Balance gate | `dotnet test sim/GameSim.Tests/GameSim.Tests.csproj --filter Category=Balance` | nothing |
 | Art conformance | `dotnet test art/GameArt.Tests/GameArt.Tests.csproj` | nothing |
 | Engine tests | **`.\tools\engine-test.ps1`** (NOT `dotnet test godot/tests` by hand) | Godot 4.6.3 via GODOT_BIN; a display (CI uses xvfb) |
 
 Run the fast lane before reporting ANY work done (CLAUDE.md rule 1).
+
+### The standard local set (pick by what the PR touches, never guess a smaller filter)
+
+Two PRs failed CI overnight on `LayoutTests.EveningLedger_CardLabels_RenderAtReadableWidth` and
+`HudBoundsTests.ObjectiveChip_TextNeverOverflowsItsOwnContainer` — cross-cutting layout tests that
+live in files neither PR touched — after both had a large, green, **filtered** local run. No filter
+either session would plausibly have chosen selects those two tests. The lesson is not "pick a better
+filter": **the engine suite has no safe filter.** `tools/engine-test.ps1` already says this in its
+own `.PARAMETER Filter` doc; the fix here is to actually follow it, every time:
+
+1. **Always:** `dotnet test sim/GameSim.Tests/GameSim.Tests.csproj -c Release --filter Category!=Balance`
+   — 1754 cases, ~135 duration-seconds, under a minute wall-clock. **Never filter further than
+   `Category!=Balance`.** `-c Release` matters: it matches what CI runs, and Debug runs the sim
+   1.5–3x slower.
+2. **If the PR touches `godot/` at all:** `.\tools\engine-test.ps1` with **no `-Filter`, ever** — see
+   §2a for why a filtered engine run cannot prove anything.
+3. **If the PR touches `sim/GameSim/`:** the balance gate too. Be honest that more cores mostly don't
+   help here — xUnit runs one test class serially, so the job's floor is whichever single class's
+   tests sum the highest, not the sum across cores. Measured wall-clock: ~30 min before the
+   `Lazy<T>` sweep memoization landed (2026-08-29 CI audit, run 33582674334), ~17 min after (the
+   memoized class alone was 1796.8s of a 1945s job; see the `Lazy<T>` fields and their doc comments
+   in `sim/GameSim.Tests/Balance/`).
+4. **If the PR touches `art/` or `tools/`:** run the art-conformance lane, and any dedicated
+   `tools/` test project that covers the changed file.
 
 ### 2a. The engine lane lies to you, so it has a wrapper
 
@@ -44,13 +68,15 @@ error. The script fails on all of them.
 |---|---|---|
 | Two concurrent runs | `Passed: 87 ... Duration: 579 ms` | Not a fast suite — a runtime that never connected. gdUnit DROPS every `[RequireGodotRuntime]` test and still prints `Passed!` |
 | Piping to `tail`/`head` | success | A bash pipeline returns the LAST command's exit code, hiding a failed run |
-| Runtime dies mid-session | `Passed!` for a partial suite | The summary counts what finished. `ENGINE_MIN_PASSED=300` against ~800 tests means half the suite can vanish and still clear CI's floor |
+| Runtime dies mid-session | `Passed!` for a partial suite | The summary counts what finished. `ENGINE_MIN_PASSED=900` (`.github/workflows/ci.yml`) against a suite that runs 1696 means a run that drops well over half the suite can still clear CI's floor — check the current floor in `ci.yml` before trusting any number written here, since this exact table row has gone stale once already |
 | Testing `C:\Code\Game` | green | That root is a coordination checkout nobody updates — it was ~130 PRs stale on 2026-08-03. You measured old code |
 | **The wrapper itself, pre-2026-08-04** | `dotnet.exe : Expecting be equal:` and a 31-line log | The wrapper was hiding real failures. See below — this cost an hour of looking in the wrong place |
 | **The wrapper itself, pre-2026-08-07** | `PASS - 945 tests, runtime healthy.` + a receipt | The run was `Failed: 5, Passed: 940`. The runner exited **0 with five failures** and the wrapper's only failure check was the exit code. See below |
 
-**The count is the check, not the word "Passed".** Healthy is ~880 (2026-08-04). If you see 500-ish,
-the runtime died; read §5 before theorising.
+**The count is the check, not the word "Passed".** The full suite runs 1696 (2026-08-29 CI audit,
+run 33582674334) — up from ~880 on 2026-08-04, so treat any specific count in this doc as a snapshot,
+not a target: it already went stale once. If the printed `Total` is dramatically below the current
+`ENGINE_MIN_PASSED` in `.github/workflows/ci.yml`, the runtime died; read §5 before theorising.
 
 **If a run log ends right after the build output with no summary, suspect the SHELL, not the test
 framework.** In Windows PowerShell 5.1, redirecting a native process's stderr (`2>&1`) wraps each line
@@ -170,8 +196,8 @@ in the overlay is the exact integer the sim rolled against — no recompute need
 | Balance gate red after tuning | Bands moved | Re-tune or re-baseline deliberately — never loosen the assertion to pass |
 | `HaggleResponseAction` rejected "No standing offer to respond to" | `PresentItemAction` and `HaggleResponseAction` queued in the SAME batch/tick | Submit them in SEPARATE ticks — `CounterHandlers.ApplyHaggle` resolves immediately (no spare deferred field survives the Contracts freeze, see its doc remarks) and reads the standing offer `CounterQueueSystem` set up on a PRIOR tick's Present. Natural UX anyway: see the offer, then respond |
 | Counter session "stuck" — Morning never advances | `GameKernel.Advance`'s Morning-hold (PKD5) is working as designed | An open, un-`Closed` `CounterState` intentionally holds the phase at Morning. Queue `CloseCounterAction` (unserved heroes fall back to the atomic pass same-tick) or serve the queue empty |
-| `dotnet test godot/tests` prints "Godot compilation TIMEOUT" and reports far FEWER tests than usual (e.g. 33 instead of the full ~267), still "Passed!" | gdUnit4Net's `CompileProcessTimeout` (default 20s) is too short for a cold/first-in-session build; the run that hits it appears to complete against a partial/stale discovery set rather than failing outright | Don't trust a run whose console shows a TIMEOUT banner, even if it says `Passed!` — the low test count is the tell. Re-run the exact same command once with nothing else changed; a warm second run completes cleanly (confirmed PA9: identical invocation went 33/33 → 267/267 pass with no code change between runs). If a full-count run itself fails, that's real — investigate normally. Recurs every cold run → raise `CompileProcessTimeout` in `.runsettings`'s `<GdUnit4>` block |
-| CI `engine-tests` red with `Connection interrupted by cancellation requested` and a duration of **~9m48s**, at any test count | The gdUnit Godot runtime **stalls** and the session is cancelled at a fixed ~9m48s. **Not** a headroom problem and not the blamed test's fault. Two measurements from 2026-08-01 settle it: (a) PR #311's commit aborted at 9m48s/266-of-550, then passed **unchanged** on re-run at 3m21s/550; (b) PR #314's job *passed* the full suite 550/550 in 3m13s and then its **8-test** silent-skip-guard step was cut at the same 9m48s. A cap that lands identically on 8 tests and on 550 is a fixed deadline, and an 8-test run reaching it means the runtime stalled at/near connect rather than running slowly. Healthy run ~3m30s = ~2.8x headroom; the job's ~14 min is checkout + setup + build + import, not the test run | `gh run rerun <id> --failed`. The blamed test is whichever one was executing when the axe fell and differs every time (HumanCampaignTests, Playtest3dClickThrough, MainUiTests.ShopPanel_…, MainUiTests.ForgePanel_CraftRoundTrip all observed with identical error text) — do not "fix" that test, and do not trim the suite to buy time you already have. If it reproduces on re-run, that is new information: look for a genuinely slow call on a hot path |
+| `dotnet test godot/tests` prints "Godot compilation TIMEOUT" and reports far FEWER tests than usual, still "Passed!" | gdUnit4Net's `CompileProcessTimeout` (default 20s) is too short for a cold/first-in-session build; the run that hits it appears to complete against a partial/stale discovery set rather than failing outright | Don't trust a run whose console shows a TIMEOUT banner, even if it says `Passed!` — a low test count relative to the CURRENT full suite (check `ENGINE_MIN_PASSED` in `.github/workflows/ci.yml` — the 267 this row's PA9 evidence used is from 2026-mid and long stale; the suite runs 1696 as of the 2026-08-29 audit) is the tell. Re-run the exact same command once with nothing else changed; a warm second run completes cleanly (PA9's own confirmation: identical invocation went 33/33 → 267/267 with no code change between runs — that 267 is that incident's historical count, not today's target). If a full-count run itself fails, that's real — investigate normally. Recurs every cold run → raise `CompileProcessTimeout` in `.runsettings`'s `<GdUnit4>` block |
+| CI `engine-tests` red with `Connection interrupted by cancellation requested` and a duration of **~9m48s**, at any test count | The gdUnit Godot runtime **stalls** and the session is cancelled at a fixed ~9m48s. **Not** a headroom problem and not the blamed test's fault. Two measurements from 2026-08-01 settle it (the suite was ~550 tests then; it is 1696 now — the counts below are that incident's historical evidence, not a current target): (a) PR #311's commit aborted at 9m48s/266-of-550, then passed **unchanged** on re-run at 3m21s/550; (b) PR #314's job *passed* the full suite 550/550 in 3m13s and then its **8-test** silent-skip-guard step was cut at the same 9m48s. A cap that lands identically on 8 tests and on 550 is a fixed deadline, and an 8-test run reaching it means the runtime stalled at/near connect rather than running slowly. Healthy run ~3m30s = ~2.8x headroom; the job's ~14 min is checkout + setup + build + import, not the test run | `gh run rerun <id> --failed`. The blamed test is whichever one was executing when the axe fell and differs every time (HumanCampaignTests, Playtest3dClickThrough, MainUiTests.ShopPanel_…, MainUiTests.ForgePanel_CraftRoundTrip all observed with identical error text) — do not "fix" that test, and do not trim the suite to buy time you already have. If it reproduces on re-run, that is new information: look for a genuinely slow call on a hot path |
 | gdUnit engine suite hangs (never returns) on a 3D scene | Pumping physics frames while a 3D `SubViewport` keeps rendering — memory: godot-3d-headless-test-hang | Disable the `SubViewport`'s render-target update before pumping frames in the test (see `Town3DSceneTests`/`CameraRig` test setup for the pattern) |
 
 ## 6. The telemetry loop
