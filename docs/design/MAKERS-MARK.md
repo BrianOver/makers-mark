@@ -3241,13 +3241,36 @@ camp day 5–6; never destitute). Deliberately **not** authored: the first commi
 the ore price — both are sim outputs; the seed search selects for their *shape*. Left to the sim,
 untouched: every price, every hero decision, every death, every beat.
 
-**Flagged inference, carried:** how much of the day-1–7 event stream is invariant to player-action
-divergence is *not measured* — it is reasoned from the deliberate stream-position stabilisation in
-`GameComposition.cs`. The pin test therefore phrases its promises as what the replay proves, the
-player-facing fiction promises only what survives divergence (the cast, the warrant, the
-calendar), and the seed search must additionally run perturbed scripts (skip the bounty, skip the
-counter) and trim the intended-beat set to what holds across them. That check is part of
-`P2-ONBOARD-04`, not an afterthought.
+**MEASURED 2026-09-01, and the answer is the pessimistic one.** This paragraph carried a flagged
+inference — that the day-1–7 stream's invariance to player-action divergence was reasoned from
+`GameComposition.cs`'s stream-position stabilisation rather than measured. `P2-ONBOARD-03` (#670)
+measured it: 20 seeds × 8 days under `apprentice` against the same seeds under `baseline`.
+
+**All 20 of 20 seeds diverge from day 1.** `CraftAction` draws exactly one RNG value per successful
+craft; `ApprenticePlayer` crafts on day 1 where `BaselinePlayer` has no base material to craft with,
+and that single extra draw lands in the same tick as the expedition's own resolution, shifting the
+shared stream from day 1 onward. Day 1's mechanical outcome can still coincidentally match, but by
+day 8 **20/20 seeds give at least one of the starting six a different fate, and 19/20 seed a
+completely different recruit** — a different identity, not merely different timing.
+
+So nothing in the day-1–7 stream holds invariant beyond the fixed pre-action state: the cast's names
+and classes, the purse, the starting materials.
+
+**Three consequences, all binding on `P2-ONBOARD-04` and `-05`:**
+
+1. **The pin asserts seed *plus script*, never seed alone.** `OpeningCampaignPinTests` proves "this
+   seed under `ApprenticePlayer` produces these beats on these days" and its own doc must say so, or
+   the next reader will believe the seed guarantees the week.
+2. **The fiction promises only what survives divergence** — the six heroes, the purse, the warrant,
+   the calendar. It may not promise "a commission arrives on day 3", because for a player who plays
+   differently it will not.
+3. **The perturbed-script trimming is now the load-bearing half of `P2-ONBOARD-04`**, not a
+   safety check appended to it. The seed search selects for beats that are *likely across* perturbed
+   scripts; it cannot select for beats that are *guaranteed by* one.
+
+Read plainly: a player who follows the guided course gets the guided week; a player who ignores it
+gets an honest, different one. That is the correct outcome for this game — the alternative would be
+arranging outcomes rather than conditions, which is the line law 4 draws.
 
 **Bryn's beats are deliverables.** Beat 0, at the bench:
 
