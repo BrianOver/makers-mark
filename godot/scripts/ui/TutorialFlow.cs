@@ -510,32 +510,20 @@ public sealed partial class TutorialFlow : PanelContainer
             Step: TutorialStep.BuyMaterial, DisplayIndex: 1, Act: TutorialAct.Mark,
             Anchor: TutorialAnchor.ForStation("forge", "shelf"), MinDay: 1,
             ShortLabel: "Buy material, then craft your first item",
-            // U20 (§11.14.14, "the two absences"): the second sentence is new. Leaving a room was
-            // never taught anywhere, and step 2 (Shelve) is the first one that requires it — walking
-            // back out of the workshop to the Shop. Placed on THIS row, not Craft's, on purpose: Step
-            // starts at BuyMaterial by definition (its own field default) and this is the very first
-            // thing rendered, before the player has taken a single action — so it is the ONE row
-            // guaranteed to reach the screen on every path, including the starter-kit-skips-buy case
-            // where Step jumps straight from BuyMaterial to Shelve in one Advance() pass and Craft's
-            // own TeachNote never becomes current at all (TutorialStepDef's own doc, "the shared
-            // display slot"). A lesson that depends on the player having bought material first is not
-            // "before" anything.
-            //
-            // U28 (§11.14.14, R20, "a player learns which actions spend the day's budget and which
-            // are free"): the two leading sentences are new, named here because this row is the ONE
-            // guaranteed to render before the player has spent anything at all (the same guarantee
-            // the paragraph above already leans on). Qualitative on purpose — no client-restated
-            // constant (law: copy never repeats a sim number back at the player) — ActionBudget's
-            // own ten-type list and free list are cited, not counted, so this line can never drift
-            // from the sim it describes.
-            TeachNote: "Each day gives you a limited run of action slots — buying material, crafting, posting "
-                       + "a bounty, and the forge's bigger upgrades each spend one, so the pips beside your "
-                       + "gold count down as you go and refill fresh at dawn, spent or not. The shelf, the "
-                       + "whole counter session, answering a commission, the camp's send and recall, and "
-                       + "honoring the memorial never touch that budget at all. Inside a building you walk up "
-                       + "to a station and press E to use it. The material vendor and the crafting station "
-                       + "are both stations in your workshop. Every room has a way back out, too — press "
-                       + "Escape to step outside when you're ready to move on.",
+            // P2-SCREEN-07 (§11.15): this row's TeachNote used to carry five bolted-on sentences —
+            // U20's room-exit sentence, then U28's two action-budget sentences, stacked on top of
+            // this row's own original two-sentence "walk up to a station and press E" content — all
+            // three additions citing the SAME reason: this is "the ONE row guaranteed to reach the
+            // screen on every path." P2-SCREEN-06 already made that reason false (the card no longer
+            // renders a step's TeachNote at all), and the paragraph was never three sentences of the
+            // same lesson to begin with. Split back into the three lessons they actually are —
+            // SlotBudgetLessonId/StationPressLessonId/LeavingARoomLessonId below, each its own
+            // once-ever Bryn beat, each landing in the Lessons book permanently the same way this
+            // row's own TeachNote always has. This row keeps only what is actually about buying
+            // material.
+            TeachNote: "The material vendor sells what your recipes call for, priced plainly. Your starter "
+                       + "kit already holds enough for a first piece, if you'd rather skip straight to the "
+                       + "anvil.",
             IsDone: state => state.EventLog.OfType<MaterialPurchased>().Any(),
             AdvanceFrom: [TutorialStep.BuyMaterial], AdvancesTo: TutorialStep.Craft,
             // U13: one candidate per priced material key, quantity 1 — the SAME loop
@@ -1213,7 +1201,7 @@ public sealed partial class TutorialFlow : PanelContainer
         var building = def.Anchor.Kind is TutorialAnchorKind.Building or TutorialAnchorKind.Station
             ? BuildingDisplayName(def.Anchor.Key!) : string.Empty;
         var alreadyThere = building.Length > 0 && IsAtAnchor(def, openPanelId);
-        return def.Step switch
+        var instruction = def.Step switch
         {
             // U2 (tutorial-revamp plan, §11.13): dropped the trailing "Inside, press E at a
             // station" sentence — genuinely redundant now that the overlay pulses the EXACT
@@ -1265,13 +1253,14 @@ public sealed partial class TutorialFlow : PanelContainer
             // Vigil: no walk-there destination — the camp card opens itself the moment a party camps
             // below the checkpoint (CampPanel.ShowModal, called from MainUi's own SyncCampModal every
             // Camp tick); the lesson is which of its verbs to press. "The winch-house slate" and "the
-            // recall bell" were both names for things the screen labels differently. U1 (§11.13):
-            // appends the muster's own truth (VigilGatingNote) instead of leaving the player to
-            // guess whether today is even a day this can happen — staging a stop is the UNCOMMON
-            // case (RaidConductor's own doc), so most days the honest answer is "not today."
+            // recall bell" were both names for things the screen labels differently. U1 (§11.13)
+            // used to append the muster's own truth (VigilGatingNote) right here, inline — P2-SCREEN-08
+            // folds it in generically instead (see the GatingNote fold below this switch), the same
+            // address every OTHER nuance-only case (OpenCounter's empty shelf, Commission's empty
+            // board) now uses, so this row no longer needs its own special case for it.
             TutorialStep.Vigil =>
                 $"{StepPrefix(def)}: When they camp, a card fills the screen — pick a supply and " +
-                $"press **Send**, or press **Recall**. {VigilGatingNote(state)}",
+                "press **Send**, or press **Recall**.",
             TutorialStep.EveningClose =>
                 $"{StepPrefix(def)}: Evening. The **EVENING LEDGER** opens itself — press **Buy** " +
                 $"under **ORE OFFERED**, then close it and press **{EveningBell(state)}** at the top of the screen.",
@@ -1294,6 +1283,17 @@ public sealed partial class TutorialFlow : PanelContainer
                 "is yours after this.",
             _ => string.Empty,
         };
+
+        // P2-SCREEN-08: the card used to carry a separate refusal block for exactly this — "why you
+        // cannot do the thing I just told you to do" is the same question as "what do I do now", and
+        // splitting them across a button row is the defect P2-SCREEN-06 already fixed for the OTHER
+        // half of the card. GatingNote's day/phase/slot-gate cases can only ever return non-null when
+        // StepActionAvailable is already false — which returns via WaitText above, before this line
+        // is ever reached — so every case that folds in HERE is one WaitText's binary available/
+        // unavailable model cannot see: a press that is technically legal right now but has nothing
+        // real behind it yet (Vigil with no staged stop, an empty commission board, an empty shelf
+        // under an open counter).
+        return GatingNote(state, def) is { } note ? $"{instruction} {note}" : instruction;
     }
 
     /// <summary>The bell's OWN current label for the phase this step is really about, read from
@@ -1696,20 +1696,35 @@ public sealed partial class TutorialFlow : PanelContainer
             // brings it back.
             TutorialStep.LookIn =>
                 $"{StepPrefix(def)}: Nobody is down there right now — ring **Send them off** and the Mirror opens on them as they go.",
-            // U13: the generic net. Deriving availability from ActionLegality.IsLegal means every
-            // dimension a real handler checks (material, gold, session state) can now be the reason a
-            // step reads unavailable, not only the day/phase/slot axes this switch used to enumerate
-            // by hand — naming each one is worth doing as it is actually hit in play, but showing
-            // NOTHING in the meantime (the pre-U13 `_ => string.Empty` here) is the one answer law 7
-            // forbids: the card must always say SOMETHING, even a plain one, never go blank.
-            _ => $"{StepPrefix(def)}: Not available right now — nothing lost by waiting.",
+            // P2-SCREEN-08: the generic net is gone. It used to catch every unauthored case with the
+            // same placeholder sentence regardless of why the step was actually unavailable — under
+            // this switch's own `when`-guard shape, every step that can reach this method already has
+            // an authored line above (BuyMaterial/PostBounty/OpenCounter/LookIn are the only ones
+            // StepActionAvailable can ever route here for, per that method's own doc), so a surviving
+            // generic answer would mean a NEW legality case reached this switch with nobody having
+            // decided what it should say — a defect to catch loudly, not paper over quietly.
+            // TutorialNeverAsksTheImpossibleTests' own coverage sweep is the test assertion this
+            // replaces the fallback string with: it drives every step through every gated day/phase/
+            // slot combination the sim can produce and proves this throw is never reached.
+            _ => throw new InvalidOperationException(
+                $"WaitText: {def.Step} is unavailable with no authored reason for this state (Day " +
+                $"{state.Day}, {state.Phase}) — a legality case was missed; author its line above " +
+                "instead of letting it fall through to a generic one."),
         };
     }
 
-    /// <summary>U5: a SHORT version of <see cref="WaitText"/>'s own gating reason, for the
-    /// checklist's current-row detail (<see cref="Checklist"/>) — null when the step is currently
-    /// actionable. Answers the owner's literal wording ("Tutorial 6 ... during the night" should
-    /// read as a Morning-only gate, not a button to press).</summary>
+    /// <summary>U5: a SHORT version of <see cref="WaitText"/>'s own gating reason — non-null whenever
+    /// the CURRENT step has a caveat worth naming, null when there is none. <see cref="Checklist"/>
+    /// still carries it (unchanged, for the Lessons book's own bookkeeping); P2-SCREEN-08 additionally
+    /// folds it straight into <see cref="StepText"/>'s single instruction line, which is now its real
+    /// address — every case reachable from that fold (Vigil with no staged stop, an empty commission
+    /// board, an empty shelf under an open counter) is a step that is technically actionable right now
+    /// and would otherwise say nothing about why pressing it lands nowhere. Every OTHER case here
+    /// (day/phase/slot gates) can only return non-null when <see cref="StepActionAvailable"/> is
+    /// already false, which <see cref="StepText"/> routes to <see cref="WaitText"/> instead, before
+    /// ever reaching this method — so those never double up with WaitText's own wording. Answers the
+    /// owner's literal wording ("Tutorial 6 ... during the night" should read as a Morning-only gate,
+    /// not a button to press).</summary>
     private static string? GatingNote(GameState state, TutorialStepDef def)
     {
         // U1 (§11.13): Vigil never gets the generic "Comes on Day N" framing either — see
@@ -1752,8 +1767,16 @@ public sealed partial class TutorialFlow : PanelContainer
             // silences ended here.
             TutorialStep.Commission when state.Phase != DayPhase.Morning =>
                 "Commissions are answered in the Morning — the board keeps until then.",
+            // P2-SCREEN-08: trimmed from "No one is asking today. Heroes post at dawn, and only
+            // when their kit has a gap." — the fuller explanation still true, but this case now
+            // folds directly onto the card's own single instruction line (StepText), which has a
+            // hard character budget (TutorialCopyIsFollowableTests
+            // .NoStepsCopy_OutgrowsTheObjectiveCardsOwnUnclampedLineBudget) the longer wording blew
+            // past. The mechanism itself (gap-driven, posts at dawn) is still taught in full in this
+            // row's own TeachNote, permanently in the Lessons book — this line only ever has to
+            // answer "why is nothing here right now."
             TutorialStep.Commission when state.Commissions.IsEmpty =>
-                "No one is asking today. Heroes post at dawn, and only when their kit has a gap.",
+                "No one is asking today.",
             TutorialStep.LookIn when !WatchWindowOpen(state) =>
                 "Only while a party is out — ring Send them off.",
             // U2 (tutorial-revamp plan, §11.13): the conditional-not-day-based gating note —
@@ -1885,6 +1908,17 @@ public sealed partial class TutorialFlow : PanelContainer
     /// </summary>
     public void Advance(GameState state)
     {
+        // P2-SCREEN-07: leaving a room becomes true the moment the player has anything to leave
+        // FOR — the first thing they ever craft, since stocking it means walking back out of the
+        // workshop to the Shop (the same fact Craft's own IsDone above already reads). Checked
+        // before the Active guard below, deliberately: this is a fact about the world, not about
+        // whether the numbered chain is still running (ConsumeFirstTouch's own "the long tail
+        // matters to every campaign" precedent).
+        if (state.EventLog.OfType<ItemCrafted>().Any())
+        {
+            ConsumeFirstTouch(LeavingARoomLessonId, MentorVoice.Speak(LeavingARoomLessonText));
+        }
+
         if (!Active)
         {
             return;
@@ -2058,6 +2092,18 @@ public sealed partial class TutorialFlow : PanelContainer
         {
             Save();
         }
+
+        // P2-SCREEN-07: the slot-budget and station-press lessons both become true the instant the
+        // player is standing in the one room that has stations at all on day 1 — independent of
+        // Active/Step (the "long tail matters to every campaign" precedent every other first-touch
+        // beat in this file already follows), so a returning smith who skipped the numbered chain
+        // still hears both once. "forge" names the venue itself, never the per-profession label —
+        // the same station-anchor Key every profession's BuyMaterial/Craft row already resolves to.
+        if (venueKey == "forge")
+        {
+            ConsumeFirstTouch(SlotBudgetLessonId, MentorVoice.Speak(SlotBudgetLessonText));
+            ConsumeFirstTouch(StationPressLessonId, MentorVoice.Speak(StationPressLessonText));
+        }
     }
 
     /// <summary>
@@ -2197,6 +2243,46 @@ public sealed partial class TutorialFlow : PanelContainer
         + "carry it. You can make it, price it, put it where they'll see it. Then they choose, "
         + "every time. Nobody in this town takes an order from you — not them, not me.\n\n"
         + "You'll stamp everything you make. I'd like to see what that turns into.";
+
+    // ── P2-SCREEN-07 (§11.15): the TeachNote becomes Bryn's three lessons ───────────────────────
+    //
+    // BuyMaterial's own row doc (above) tells the routing half of this story. This is the content
+    // half: three genuinely different facts that were never one lesson, each now its own once-ever
+    // ConsumeFirstTouch beat, delivered where the fact actually becomes true rather than bolted onto
+    // whichever row happened to render first. All three are true almost immediately on a fresh
+    // day-1 campaign — none of them waits on the player having done anything else first — so "the
+    // moment it becomes true" and "the earliest honest moment to say so" land close together for
+    // every one of the three, same as the row they used to share always claimed for all five
+    // sentences at once.
+
+    /// <summary>The action-slot budget: what spends one of the day's ten slot-types, and the longer
+    /// free list that never touches it. Fires the moment the player is standing in a room with a
+    /// station to spend a slot at — see <see cref="NotifyEnteredBuilding"/>.</summary>
+    public const string SlotBudgetLessonId = "slot-budget";
+
+    private const string SlotBudgetLessonText =
+        "Each day gives you a limited run of action slots — buying material, crafting, posting "
+        + "a bounty, and the forge's bigger upgrades each spend one, so the pips beside your "
+        + "gold count down as you go and refill fresh at dawn, spent or not. The shelf, the "
+        + "whole counter session, answering a commission, the camp's send and recall, and "
+        + "honoring the memorial never touch that budget at all.";
+
+    /// <summary>Stations-and-E — this row's own ORIGINAL TeachNote before U20/U28 bolted anything
+    /// onto it (git history: commit bffa29c, "a room has no way out"). Fires alongside <see
+    /// cref="SlotBudgetLessonId"/> — see <see cref="NotifyEnteredBuilding"/>.</summary>
+    public const string StationPressLessonId = "station-press";
+
+    private const string StationPressLessonText =
+        "Inside a building you walk up to a station and press E to use it. The material vendor "
+        + "and the crafting station are both stations in your workshop.";
+
+    /// <summary>Leaving a room. U20's own original sentence, unchanged — only its address moves.
+    /// Fires the first time the player has ever crafted anything (<see cref="Advance"/>), the exact
+    /// moment they next need to walk back out of the workshop to reach the shelf.</summary>
+    public const string LeavingARoomLessonId = "leaving-a-room";
+
+    private const string LeavingARoomLessonText =
+        "Every room has a way back out, too — press Escape to step outside when you're ready to move on.";
 
     // ── U29 (§11.14.14, R21/R22): the two-act-voice-per-night budget ────────────────────────────
     //

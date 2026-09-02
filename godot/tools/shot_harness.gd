@@ -105,11 +105,11 @@ var _settle := 90
 const KNOWN_STATES := [
 	"BellTray", "Bestiary", "Camp", "Chronicle", "Counter", "Demand", "DepthsPanel", "Docket",
 	"ForgeAnvil", "ForgeAnvilEmpty", "ForgeExit", "ForgeFlavor", "ForgeLadder", "ForgePanel",
-	"ForgeShelf", "GateNight", "HeroCandidateOpen", "HeroCards", "HeroErrand", "Ledger",
-	"LedgerProvenance", "Lessons",
-	"MineGateFocus", "Mirror", "OccupancyCorner", "Provenance", "ReturnAtNight", "ReturnEmerge",
-	"ReturnQuestEmpty", "SendOff", "ShopPanel", "SystemMenu", "TavernPanel", "TownOverview",
-	"TutorialLookIn", "TutorialOffCamera", "Watch",
+	"ForgeShelf", "GatedCounterEmptyShelf", "GateNight", "HeroCandidateOpen", "HeroCards",
+	"HeroErrand", "Ledger", "LedgerProvenance", "Lessons", "MineGateFocus", "Mirror",
+	"OccupancyCorner", "Provenance", "ReturnAtNight", "ReturnEmerge", "ReturnQuestEmpty", "SendOff",
+	"ShopPanel", "SplitLessons", "SystemMenu", "TavernPanel", "TownOverview", "TutorialLookIn",
+	"TutorialOffCamera", "Watch",
 ]
 
 # P2-SCREEN-09: the recipe id/talent node id sequence ForgeAnvilEmpty unlocks to drain the whole
@@ -555,6 +555,39 @@ func _process(_delta: float) -> bool:
 			# exactly the law-1 line an off-camera pointer must not cross.
 			if _ui.has_method("Dev_QueueDay1BuyAndCraft"):
 				_ui.call("Dev_QueueDay1BuyAndCraft")
+		elif _state == "SplitLessons":
+			# P2-SCREEN-07: the receipt for Bryn's three split lessons (slot-budget, station-press,
+			# leaving-a-room) each landing in the Lessons book as SEPARATE cards rather than one
+			# bolted-together paragraph. Buy+craft (Dev_QueueDay1BuyAndCraft) fires ItemCrafted --
+			# TutorialFlow.Advance's own leaving-a-room hook -- then walking into the forge
+			# (OnTownBuildingClicked, same production path a real click takes) fires
+			# NotifyEnteredBuilding("forge"), which is slot-budget's and station-press's own hook.
+			# All three ConsumeFirstTouch ids are fired by the time the second beat (frame 90 below)
+			# opens the Lessons book.
+			if _ui.has_method("Dev_QueueDay1BuyAndCraft"):
+				_ui.call("Dev_QueueDay1BuyAndCraft")
+			if _ui.has_method("OnTownBuildingClicked"):
+				_ui.call("OnTownBuildingClicked", "Forge")
+		elif _state == "GatedCounterEmptyShelf":
+			# P2-SCREEN-08: the receipt for a gating note folded onto the card's ONE instruction line
+			# rather than a second block. Buy+craft only (Dev_QueueDay1BuyAndCraft) -- deliberately
+			# never stocks the shelf, so OpenCounter's own empty-shelf GatingNote case would stay
+			# live once that step is current AND it is Morning again -- but reaching OpenCounter at
+			# all requires the party to have already departed, which is necessarily past Morning
+			# (the same TutorialRegistryConformanceTests
+			# .AGatedStep_ShowsItsGatingNote_OutsideItsOwnWindow_NeverThePressNextAdvanceCopy sequence
+			# below drives for real), and cycling the clock back around to the next Morning keeps
+			# auto-opening a NEW party's own CampPanel/LedgerModal faster than it can be suppressed.
+			# This state settles for the Morning-only phase-gate case instead (still a real,
+			# non-trivial GatingNote fold, WaitText's own — see the frame-150 note below) rather than
+			# chase the empty-shelf case through several more days of simulated auto-modals; that
+			# exact case is proven instead by GatingFoldedIntoInstructionTests
+			# .OpenCounterWithAnEmptyShelf_FoldsTheReason_OntoTheSameInstructionLine.
+			if _ui.has_method("Dev_QueueDay1BuyAndCraft"):
+				_ui.call("Dev_QueueDay1BuyAndCraft")
+			var gatedBell = _ui.find_child("AdvancePhase", true, false)
+			if gatedBell:
+				gatedBell.emit_signal("pressed")
 		elif _state == "TutorialLookIn":
 			# U5 (loop-legibility plan): the receipt for LookIn's own HUD anchor
 			# (WatchButton) -- queue the SAME day-1 ladder TutorialFlowTests.DriveDay1ToLookIn
@@ -755,6 +788,51 @@ func _process(_delta: float) -> bool:
 			# push_error above is the same idiom).
 			push_error("[shot] SHOT_STATE=TutorialOffCamera could not find the Objective/Tutorial " +
 				"docks -- the shot below is missing the second card this receipt exists to prove.")
+	# SplitLessons' second beat: the workshop entry above (frame 60) has settled -- open the real
+	# Lessons book (production OpenPanel path) so the receipt shows all three split lessons already
+	# fired, as separate cards.
+	if _state == "SplitLessons" and _frames == 90:
+		if _ui.has_method("OpenPanel"):
+			_ui.call("OpenPanel", "Lessons")
+	# SplitLessons' third beat: the three split-lesson cards are the LAST thing LessonsPanel renders
+	# (after all ten registry rows), so they sit well below the fold on open -- scroll the book's own
+	# ScrollContainer (SimPanel.BuildScrollBody, node name "Scroll") to bring the first of the three
+	# on screen.
+	if _state == "SplitLessons" and _frames == 120:
+		var lessonCard = _ui.find_child("Lesson_FirstTouch_slot-budget", true, false)
+		if lessonCard:
+			var scrollAncestor = lessonCard.get_parent()
+			while scrollAncestor != null and not (scrollAncestor is ScrollContainer):
+				scrollAncestor = scrollAncestor.get_parent()
+			if scrollAncestor:
+				scrollAncestor.ensure_control_visible(lessonCard)
+	# GatedCounterEmptyShelf's second beat: the SAME Expedition -> Camp press
+	# TutorialRegistryConformanceTests drives for real -- this is what actually lands the party's
+	# departure and advances Step to LookIn. Opening the Mirror (LookIn's own taught affordance)
+	# advances Step again, straight to OpenCounter -- Day 1, Phase Camp, exactly where that same
+	# test parks it to check the Morning-only GatingNote fold.
+	if _state == "GatedCounterEmptyShelf" and _frames == 90:
+		var gatedBell2 = _ui.find_child("AdvancePhase", true, false)
+		if gatedBell2:
+			gatedBell2.emit_signal("pressed")
+		var gatedMirror = _ui.find_child("ScryingMirror", true, false)
+		if gatedMirror:
+			gatedMirror.call("ShowMirror") # LookIn -> OpenCounter (the step, not the visible modal)
+			gatedMirror.call("CloseMirror") # the modal itself must not linger and own the screen
+	# GatedCounterEmptyShelf's third beat: the objective card renders the current step's own
+	# instruction regardless of which drawer (if any) is open, so no further click is needed here
+	# -- but the party's own return can auto-open CampPanel/LedgerModal along the way (events
+	# entirely independent of the TUTORIAL's own Step, which never left OpenCounter --
+	# CounterAnsweredAtLeastOnce was never satisfied), and either would otherwise cover the whole
+	# screen. Suppressed the same way the "Watch" state above already suppresses CampModal for the
+	# identical reason.
+	if _state == "GatedCounterEmptyShelf" and _frames == 150:
+		var gatedCampModal = _ui.find_child("CampModal", true, false)
+		if gatedCampModal:
+			gatedCampModal.visible = false
+		var gatedLedger = _ui.find_child("LedgerModal", true, false)
+		if gatedLedger:
+			gatedLedger.visible = false
 	# GateNight's second beat: the tint's ease has now converged (see _settle above) --
 	# enter the gatehouse the same way every other venue receipt does
 	# (OnTownBuildingClicked's "Gate" -> "minegate" mapping, MainUi.cs).
