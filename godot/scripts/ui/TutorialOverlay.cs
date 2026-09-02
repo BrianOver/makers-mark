@@ -128,6 +128,18 @@ public sealed partial class TutorialOverlay : Control
     public string? PulsingHudControlName => _hudTarget?.Name.ToString();
 
     /// <summary>
+    /// P2-ONBOARD-02 (§11.15): the live screen-space rect the current Hud/PanelControl/PanelSection
+    /// pulse actually draws its outline around — <see langword="null"/> while nothing is pulsing in
+    /// screen space (no active anchor, or the active one is a world-space Building/Station pulse
+    /// instead, which lives with the sprite and never touches this control's own coordinate space).
+    /// <see cref="MentorBanner.PositionDock"/> reads this every frame so the docked mentor card can
+    /// never sit on top of the very thing the pulse is pointing at — the hard rule that card may
+    /// never intersect the pointer's live target.
+    /// </summary>
+    public Rect2? PulsingTargetRect() =>
+        _hudTarget is { } target && target.IsVisibleInTree() ? target.GetGlobalRect() : null;
+
+    /// <summary>
     /// P2-SCREEN-10: registers <paramref name="objectiveDock"/> and <paramref name="tutorialDock"/>
     /// as <see cref="SurfaceRegion.HudDock"/> claims with <see cref="SurfaceArbiter"/> — replaces
     /// U42's <c>KeepClearOf</c>, a field that held a permanent reference to exactly ONE HUD node

@@ -52,6 +52,11 @@ public partial class BestiaryPanel : Control
     private VBoxContainer _list = null!;
     private TextureRect _monsterPortrait = null!;
     private Label _detailTitle = null!;
+
+    /// <summary>P2-ONBOARD-02: the "read-only-surfaces" once-ever caption, a sibling of <see
+    /// cref="_list"/> under the shared title — Refresh() never clears this parent, so it survives
+    /// every rebuild once <see cref="ShowHeaderCaption"/> sets it.</summary>
+    private Label? _caption;
     private Label _detailBody = null!;
     private bool _built;
 
@@ -71,6 +76,17 @@ public partial class BestiaryPanel : Control
     public bool SelectedHasPortrait => _monsterPortrait.Texture is not null;
 
     public override void _Ready() => EnsureBuilt();
+
+    /// <summary>P2-ONBOARD-02: <c>MainUi</c> calls this the ONE time <see
+    /// cref="TutorialFlow.ConsumeFirstTouch"/> ever returns the "read-only-surfaces" text for this
+    /// campaign — replaces the old floating <see cref="MentorBanner"/> popup that used to fire the
+    /// instant this panel's own <c>VisibilityChanged</c> handler saw it open.</summary>
+    public void ShowHeaderCaption(string text)
+    {
+        EnsureBuilt();
+        _caption!.Text = text;
+        _caption.Visible = true;
+    }
 
     /// <summary>Build (idempotent) the venue→monster list from <see cref="VenueRegistry.All"/> and
     /// open the overlay. Auto-selects the first monster that has a committed portrait so the viewer
@@ -248,6 +264,9 @@ public partial class BestiaryPanel : Control
         title.Name = "BestiaryTitle";
         title.ThemeTypeVariation = GameTheme.HeaderThemeType;
         title.AddThemeColorOverride("font_color", GameTheme.HeaderColor);
+
+        _caption = UiKit.OnceEverCaption();
+        outer.AddChild(_caption);
 
         var body = new HBoxContainer { SizeFlagsVertical = SizeFlags.ExpandFill };
         outer.AddChild(body);

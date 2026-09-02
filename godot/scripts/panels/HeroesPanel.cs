@@ -84,7 +84,35 @@ public partial class HeroesPanel : SimPanel
     /// <see cref="EnsureBuilt"/> so it draws over the roster/detail split.</summary>
     private ProvenanceCard? _provenance;
 
+    /// <summary>P2-ONBOARD-02: the "read-only-surfaces" once-ever caption — lives in its OWN row
+    /// above <see cref="_split"/> (see <see cref="EnsureBuilt"/>), never inside <see
+    /// cref="_rosterScroll"/>. It was placed there first and that was a defect, not a style
+    /// choice: <see cref="_rosterScroll"/>'s stacked-layout height is hard-capped at exactly
+    /// <see cref="RosterCardSize"/>.Y + 40 (room for one card row and nothing else — see <see
+    /// cref="RelayoutSplit"/>), so the caption's own height pushed every roster card below that
+    /// box's clip rect, and <c>HumanPlaytestTests</c>'s single scroll probe (aimed at the whole
+    /// panel's center, which sits inside <see cref="_detailScroll"/> in stacked mode) never
+    /// reaches back up into <see cref="_rosterScroll"/> to reveal them — caught live as
+    /// "Heroes 0/0" where main measured "Heroes 4/4". A sibling row of <see cref="_split"/>
+    /// costs the roster/detail split exactly its own height instead, the same reservation
+    /// idiom <see cref="Ui.MentorBanner.PositionDock"/> uses against <see
+    /// cref="Ui.CompanionDock"/>. Never a child of <see cref="_detail"/> either, which <see
+    /// cref="RenderDetail"/> Clears on every hero selection (that would wipe the caption the
+    /// instant the player clicked a different card).</summary>
+    private Label? _caption;
+
     public override void _Ready() => EnsureBuilt();
+
+    /// <summary>P2-ONBOARD-02: <c>MainUi</c> calls this the ONE time <see
+    /// cref="TutorialFlow.ConsumeFirstTouch"/> ever returns the "read-only-surfaces" text for this
+    /// campaign — replaces the old floating <see cref="MentorBanner"/> popup that used to fire the
+    /// instant this panel opened.</summary>
+    public void ShowHeaderCaption(string text)
+    {
+        EnsureBuilt();
+        _caption!.Text = text;
+        _caption.Visible = true;
+    }
 
     public override void Refresh()
     {
@@ -418,18 +446,32 @@ public partial class HeroesPanel : SimPanel
             return;
         }
 
+        // P2-ONBOARD-02 (CI fix): a stable column so the once-ever caption gets its OWN row,
+        // outside the roster/detail split entirely — see the field doc on _caption for why it
+        // cannot live inside _rosterScroll. SizeFlagsVertical.ExpandFill on _split (below) means
+        // this row costs the split exactly the caption's own height when visible, and nothing at
+        // all while it is not (an invisible Control claims no row in a BoxContainer).
+        var column = new VBoxContainer { Name = "HeroesPanelColumn" };
+        column.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+        AddChild(column);
+
+        _caption = UiKit.OnceEverCaption();
+        column.AddChild(_caption);
+
         // U21 drawer-relayout audit: a plain (non-Container) Control so the roster/detail split
         // can freely switch between side-by-side and stacked (see RelayoutSplit) by directly
         // positioning its two children — an HBox/VBox can't change orientation without
         // reparenting churn, so this manual layout replaces it.
-        _split = new Control { Name = "HeroSplit" };
+        _split = new Control { Name = "HeroSplit", SizeFlagsVertical = SizeFlags.ExpandFill };
         // SetAnchorsAndOffsetsPreset (not plain SetAnchorsPreset): a freshly-constructed Control
         // has Size == Vector2.Zero, and the plain overload's default resize mode PRESERVES the
         // control's current rect while only changing which anchors govern it — it would pin this
-        // to a degenerate zero-size rect rather than actually filling the panel.
+        // to a degenerate zero-size rect rather than actually filling the panel. (Harmless now
+        // that _split's parent is a Container, which positions it directly regardless of its own
+        // anchors — kept for the standalone case, e.g. a test resizing _split directly.)
         _split.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         _split.Resized += RelayoutSplit;
-        AddChild(_split);
+        column.AddChild(_split);
 
         // Roster: a vertically-scrolling grid of portrait cards (horizontal scroll disabled,
         // U7/R7 convention — the grid follows the column width instead of collapsing).

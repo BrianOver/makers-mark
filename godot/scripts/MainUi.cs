@@ -1036,6 +1036,14 @@ public partial class MainUi : Control
         // nothing anchored — i.e. whenever the tutorial is inactive).
         Overlay.Tick(delta);
 
+        // P2-ONBOARD-02 (§11.15): reposition the docked mentor card every frame — clear of the
+        // pointer's own live target rect (Overlay's current pulse, re-read fresh since Tick above
+        // can move it every frame) and clear of the docket's own LIVE footprint (its real chip/card
+        // pixels, not merely its SurfaceArbiter claim — see CompanionDock.ReservedFootprintHeight's
+        // own doc for why that distinction matters). Cheap (a handful of float comparisons); a no-op
+        // in effect whenever the banner itself is not visible.
+        Mentor.PositionDock(Overlay.PulsingTargetRect(), Docket.ReservedFootprintHeight);
+
         // U12 (§11.14.14, R13): mirror the world's own live prompt onto the HUD every frame —
         // Town.WorldInputNode.PromptText changes on ANY WorldInput2D._PhysicsProcess tick (walking
         // in or out of a station's Interact zone), not on a phase boundary, so this cannot be a
@@ -2697,18 +2705,32 @@ public partial class MainUi : Control
     /// what the sim decided). One shared first-touch id fired from whichever of the four the player
     /// reaches first (<see cref="OpenPanel"/> for HeroCards/Depths/Heroes, <see
     /// cref="OnBestiaryVisibilityChanged"/> for Bestiary) — the other three become no-ops by <see
-    /// cref="TutorialFlow.ConsumeFirstTouch"/>'s own once-ever contract.</summary>
+    /// cref="TutorialFlow.ConsumeFirstTouch"/>'s own once-ever contract.
+    ///
+    /// <para>P2-ONBOARD-02 (§11.15): no longer a <see cref="MentorBanner"/> popup — a rendered pass
+    /// found Bryn's banner covering nearly every first-opened panel, and a text census then found
+    /// this was one of four lessons firing on OPEN into that centred card. The words are unchanged;
+    /// <paramref name="showCaption"/> is whichever of the four panels' own <c>ShowHeaderCaption</c>
+    /// the caller just opened, so the caption lands inside the SAME panel it describes rather than
+    /// floating over whatever the player is looking at.</para>
+    /// </summary>
     // U3 (§11.14.14, register check): used to say "a button" and "the sim's own record" — the
     // same engine-naming defect the proof lesson above had, twice over in one line. "Something
     // to press" and "the town's own record" say the identical thing without ever naming the
     // engine underneath.
-    private void ShowReadOnlySurfaceLesson() =>
-        Mentor.ShowFirstTouch(Tutorial.ConsumeFirstTouch(
-            "read-only-surfaces",
-            MentorVoice.Speak(
-                "Nothing on this board is something to press — it only shows you what has already "
-                + "happened. Heroes, depths, and the bestiary are the town's own record, not a place "
-                + "to act.")));
+    private void ShowReadOnlySurfaceLesson(Action<string> showCaption)
+    {
+        if (Tutorial.ConsumeFirstTouch(
+                "read-only-surfaces",
+                MentorVoice.Speak(
+                    "Nothing on this board is something to press — it only shows you what has already "
+                    + "happened. Heroes, depths, and the bestiary are the town's own record, not a place "
+                    + "to act."))
+            is { } caption)
+        {
+            showCaption(caption);
+        }
+    }
 
     /// <summary>
     /// Register #160: <i>"Tomorrow at the counter is good but needs integration into the game
@@ -2721,14 +2743,26 @@ public partial class MainUi : Control
     /// instruction to complete. Naming it in the counter step's own TeachNote (see
     /// <see cref="TutorialFlow"/>'s OpenCounter row) ties the tool to the beat it serves without
     /// making the beat depend on it.</para>
+    ///
+    /// <para>P2-ONBOARD-02 (§11.15): no longer a <see cref="MentorBanner"/> popup, and this one
+    /// mattered more than the other three — register #160's whole point is that the docket stays
+    /// open WHILE the player works the forge, which is exactly when a floating popup covering the
+    /// screen hurt most. The words are unchanged; they render as <see
+    /// cref="CompanionDock.SetHeaderCaption"/> instead.</para>
     /// </summary>
-    private void ShowDocketLesson() =>
-        Mentor.ShowFirstTouch(Tutorial.ConsumeFirstTouch(
-            "tomorrow-at-the-counter",
-            MentorVoice.Speak(
-                "That is tomorrow's counter, read from what the town has already decided — who is "
-                + "coming, and what they will be asking for. It stays open while you work, so keep "
-                + "it up while you craft and make what somebody actually wants.")));
+    private void ShowDocketLesson()
+    {
+        if (Tutorial.ConsumeFirstTouch(
+                "tomorrow-at-the-counter",
+                MentorVoice.Speak(
+                    "That is tomorrow's counter, read from what the town has already decided — who is "
+                    + "coming, and what they will be asking for. It stays open while you work, so keep "
+                    + "it up while you craft and make what somebody actually wants."))
+            is { } caption)
+        {
+            Docket.SetHeaderCaption(caption);
+        }
+    }
 
     /// <summary>U-T2 Wave E ("the HUD chips including quick travel, which unlocks silently today",
     /// the long tail): <see cref="TutorialFlow.QuickTravelRow"/> just starts rendering the day the
@@ -3791,9 +3825,17 @@ public partial class MainUi : Control
             // check just never matched the panel that copy meant (HeroesPanel's own drawer id is
             // "Heroes", distinct from "HeroCards"/HeroPanel) — one shared id, whichever of the four
             // the player opens first teaches it.
-            if (id is "HeroCards" or "Depths" or "Heroes")
+            if (id == "HeroCards")
             {
-                ShowReadOnlySurfaceLesson();
+                ShowReadOnlySurfaceLesson(HeroCards.ShowHeaderCaption);
+            }
+            else if (id == "Depths")
+            {
+                ShowReadOnlySurfaceLesson(Depths.ShowHeaderCaption);
+            }
+            else if (id == "Heroes")
+            {
+                ShowReadOnlySurfaceLesson(Heroes.ShowHeaderCaption);
             }
         }
 
@@ -4657,7 +4699,7 @@ public partial class MainUi : Control
         {
             _resumePlayOnBestiaryClose = Clock.Playing;
             Clock.Pause();
-            ShowReadOnlySurfaceLesson();
+            ShowReadOnlySurfaceLesson(Bestiary.ShowHeaderCaption);
         }
         else if (_resumePlayOnBestiaryClose)
         {

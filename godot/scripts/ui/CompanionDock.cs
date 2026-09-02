@@ -82,6 +82,13 @@ public partial class CompanionDock : Control
     private PanelContainer? _card;
     private VBoxContainer? _body;
 
+    /// <summary>P2-ONBOARD-02: the "tomorrow-at-the-counter" once-ever caption — a sibling of the
+    /// scrollable <see cref="_body"/>, never a child of it, so it survives every
+    /// <see cref="RefreshBody"/> call (which reruns on EVERY tick this dock stays expanded, via
+    /// <see cref="RefreshIfOpen"/> — a child of <see cref="_body"/> would be wiped within a frame
+    /// or two of the very first time it appeared).</summary>
+    private Label? _caption;
+
     /// <summary>The live sim adapter this dock reads from (CommissionBoard/LegendsWall precedent)
     /// — set once by <c>MainUi.BuildUi</c> at construction. Never mutated here: reading
     /// <see cref="SimAdapter.CurrentState"/> is the only sim contact this class makes.</summary>
@@ -153,16 +160,61 @@ public partial class CompanionDock : Control
         _card.OffsetTop = _card.OffsetBottom - CardHeight;
         AddChild(_card);
 
+        // P2-ONBOARD-02: a stable wrapper so the once-ever caption can sit ABOVE the scroll without
+        // becoming its second direct child (a ScrollContainer only ever manages one). RefreshBody
+        // only ever Clears _body itself, never this wrapper, so the caption survives every refresh.
+        var cardBody = new VBoxContainer { Name = "DocketCardBody", SizeFlagsVertical = SizeFlags.ExpandFill };
+        _card.AddChild(cardBody);
+
+        _caption = UiKit.OnceEverCaption();
+        cardBody.AddChild(_caption);
+
         var scroll = new ScrollContainer
         {
             Name = "DocketScroll",
             HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled,
+            SizeFlagsVertical = SizeFlags.ExpandFill,
         };
-        _card.AddChild(scroll);
+        cardBody.AddChild(scroll);
 
         _body = new VBoxContainer { Name = "DocketBody", SizeFlagsHorizontal = SizeFlags.ExpandFill };
         scroll.AddChild(_body);
     }
+
+    /// <summary>P2-ONBOARD-02: sets the once-ever "tomorrow-at-the-counter" caption — called from
+    /// <c>MainUi.ShowDocketLesson</c> the ONE time <see cref="TutorialFlow.ConsumeFirstTouch"/> ever
+    /// returns non-null for that id. Replaces the old floating <see cref="MentorBanner"/> popup
+    /// that used to fire the instant this dock expanded (register #160's own defect: the docket is
+    /// meant to stay open WHILE the player works the forge, which is exactly when a floating popup
+    /// covering the screen hurts most).
+    ///
+    /// <para>Named <c>Set</c>, not <c>Show</c>, on purpose — <c>SurfaceClaimDiscoveryCensusTests</c>
+    /// (sim-side) deny-by-defaults any class with a public <c>Show*</c>/<c>Close*</c> pair as a
+    /// claimable full-rect modal needing its own <c>SurfaceArbiter.Claim</c> line in
+    /// <c>MainUi.cs</c>; this dock already declared, deliberately, that it is NOT one
+    /// (<see cref="SurfaceRegion.HudDock"/>, <c>OwnsScreen: false</c>, in <see cref="Build"/> above
+    /// — P2-SCREEN-04's own ruling). A same-shaped name would trip that census for a surface this
+    /// unit did not touch and the ruling already settled.</para>
+    /// </summary>
+    public void SetHeaderCaption(string text)
+    {
+        Build();
+        _caption!.Text = text;
+        _caption.Visible = true;
+    }
+
+    /// <summary>
+    /// P2-ONBOARD-02: how much vertical screen space this dock actually occupies right now,
+    /// measured from the window's bottom edge — <see cref="Margin"/> + <see cref="ChipHeight"/> for
+    /// the chip alone (always present), plus another <see cref="Margin"/> + <see cref="CardHeight"/>
+    /// while <see cref="IsExpanded"/> too. <see cref="MentorBanner.PositionDock"/> reads this so the
+    /// docked mentor card reserves real headroom above this dock's LIVE footprint instead of
+    /// trusting <see cref="SurfaceArbiter"/>'s <see cref="SurfaceRegion.HudDock"/> claim alone — that
+    /// claim answers "does this surface own the whole screen" (no), not "what pixels does it
+    /// actually cover" (this dock's own chip and expanded card cover real bottom-left pixels, the
+    /// exact P2-SCREEN-10 finding this unit's own plan section calls out by name).
+    /// </summary>
+    public float ReservedFootprintHeight => Margin + ChipHeight + (IsExpanded ? Margin + CardHeight : 0f);
 
     /// <summary>Expand the card and refresh it from the live state (button/chip precedent).</summary>
     public void Open() => SetExpanded(true);

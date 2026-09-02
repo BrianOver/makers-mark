@@ -178,6 +178,34 @@ public static class UiKit
         return card;
     }
 
+    /// <summary>
+    /// P2-ONBOARD-02 (§11.15): a once-ever teaching caption rendered INSIDE the panel it
+    /// describes — the replacement for the four fire-on-open lessons that used to interrupt with a
+    /// floating <see cref="MentorBanner"/> the instant a surface opened (a rendered pass found
+    /// Bryn's banner covering nearly every first-opened panel; a text census then found the cause
+    /// was the copy policy itself — four lessons firing on OPEN into a centred card — not the
+    /// layout). The words are unchanged, only their address moves: from a modal toast the player
+    /// had to dismiss to a quiet header line they read (or don't) at their own pace. Hidden by
+    /// default; the caller sets <see cref="Label.Text"/> and <see cref="CanvasItem.Visible"/> the
+    /// ONE time <see cref="TutorialFlow.ConsumeFirstTouch"/> ever returns non-null for that lesson's
+    /// id, and never touches it again — this label is built into a STABLE parent (never one that a
+    /// panel's own <c>Refresh()</c> clears), so once shown it survives every later rebuild of that
+    /// panel for the rest of the campaign, the same "shown once, never re-triggered" contract
+    /// <see cref="TutorialFlow.ConsumeFirstTouch"/> already guarantees for the id itself.
+    /// </summary>
+    public static Label OnceEverCaption(string name = "OnceEverCaption")
+    {
+        var label = new Label
+        {
+            Name = name,
+            AutowrapMode = TextServer.AutowrapMode.WordSmart,
+            SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
+            Visible = false,
+        };
+        label.AddThemeColorOverride("font_color", GameTheme.TextDim);
+        return label;
+    }
+
     /// <summary>A titled section: a themed panel wrapping a header <see cref="Label"/> (Coolant,
     /// <see cref="GameTheme.HeaderFontSize"/>) over a body <see cref="VBoxContainer"/> callers
     /// populate with cards/rows.

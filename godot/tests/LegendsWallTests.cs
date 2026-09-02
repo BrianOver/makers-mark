@@ -404,7 +404,15 @@ public class LegendsWallTests
     /// carried as a NAMED exemption in <c>TeachingCoverageCensusTests.ActionUntaught</c> until this
     /// unit: the one action this whole panel exists to offer was the only untaught one on it, and it
     /// resolved with a sound cue and a row that re-read "— honored" on the next refresh. Same
-    /// fixture and wiring as <see cref="HonorButton_QueuesHonorMemorialAction"/>.</summary>
+    /// fixture and wiring as <see cref="HonorButton_QueuesHonorMemorialAction"/>.
+    ///
+    /// <para>P2-ONBOARD-02 (§11.15): the "setup check" this test used to open with — that the wall's
+    /// OWN lesson had to be holding the banner before the press, to prove Honor's lesson preempts
+    /// it — is retired along with <c>ShowWallLesson</c> itself, which no longer touches the banner
+    /// at all (see that method's own doc). <c>ShowHonorLesson</c> is untouched: still an ACT lesson,
+    /// still the one thing this panel teaches through the shared <see
+    /// cref="GodotClient.Ui.MentorBanner"/> rather than a header caption.</para>
+    /// </summary>
     [TestCase]
     public void FirstHonorPress_TeachesTheRite()
     {
@@ -414,14 +422,9 @@ public class LegendsWallTests
         {
             ui.Legends.ShowWall(world);
 
-            // Deliberately NOT dismissed first: the wall's own orientation lesson is up right now,
-            // and the rite's lesson has to replace it. ConsumeFirstTouch marks an id fired before
-            // the banner decides whether to show it, so a lesson that yields to a standing banner is
-            // consumed and lost for the whole campaign — which makes preempt the only correct
-            // setting for an ACT's lesson, and makes this the assertion that proves it.
             AssertThat(ui.Mentor.Visible)
-                .OverrideFailureMessage("setup check: the wall's own lesson should be holding the banner here.")
-                .IsTrue();
+                .OverrideFailureMessage("setup check: the wall's own orientation caption should be showing, not the banner.")
+                .IsFalse();
 
             PressEnabled(ui.Legends, $"Honor_{FallenHeroId.Value}");
 
@@ -443,8 +446,11 @@ public class LegendsWallTests
     }
 
     /// <summary>The wall's own first-open orientation note, the counterpart to the forecast board's
-    /// <c>forecast-board-taught</c>. Before this unit a visit that neither honored nor reforged
-    /// anything taught nothing at all — on the one screen where link 5 pays out.</summary>
+    /// <c>forecast-board-taught</c>. Before P2-ONBOARD-02 this fired a floating <see
+    /// cref="GodotClient.Ui.MentorBanner"/> the instant the wall opened — one of the four fire-on-
+    /// open lessons a rendered pass found covering nearly every first-opened panel. It now renders
+    /// as this wall's own once-ever header caption instead — a stable sibling of <c>_title</c> that
+    /// survives every later <see cref="LegendsWall.ShowWall"/> rebuild.</summary>
     [TestCase]
     public void OpeningAPopulatedWall_TeachesWhatTheWallIs_WithoutPressingAnything()
     {
@@ -454,12 +460,16 @@ public class LegendsWallTests
         {
             ui.Legends.ShowWall(world);
 
-            AssertThat(ui.Mentor.Visible)
+            var caption = Find<Label>(ui.Legends, "OnceEverCaption");
+            AssertThat(caption.Visible)
                 .OverrideFailureMessage("A populated wall taught nothing on a first-ever visit.")
                 .IsTrue();
-            AssertThat(Find<Label>(ui.Mentor, "MentorBannerText").Text)
+            AssertThat(caption.Text)
                 .OverrideFailureMessage("The wall's lesson has to name the one property that makes it matter: it is permanent.")
                 .Contains("permanent");
+            AssertThat(ui.Mentor.Visible)
+                .OverrideFailureMessage("The wall's own orientation note must render as its own caption, never the floating banner.")
+                .IsFalse();
         }
         finally
         {
@@ -481,12 +491,12 @@ public class LegendsWallTests
             AssertThat(ui.Legends.ShowedEmptyState)
                 .OverrideFailureMessage("setup check: this fixture must render the invitational empty state.")
                 .IsTrue();
-            AssertThat(ui.Mentor.Visible)
+            AssertThat(Find<Label>(ui.Legends, "OnceEverCaption").Visible)
                 .OverrideFailureMessage("An empty wall has nothing to orient a player to, and must not burn the once-ever firing.")
                 .IsFalse();
 
             ui.Legends.ShowWall(WorldWithFallenHero());
-            AssertThat(ui.Mentor.Visible)
+            AssertThat(Find<Label>(ui.Legends, "OnceEverCaption").Visible)
                 .OverrideFailureMessage("The populated wall must still teach after an empty visit — the firing was not spent.")
                 .IsTrue();
         }

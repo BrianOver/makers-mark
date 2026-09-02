@@ -85,6 +85,37 @@ public partial class MentorBanner : PanelContainer
     /// fields.</summary>
     public event Action? QueueChanged;
 
+    /// <summary>
+    /// P2-ONBOARD-02 (§11.15): fixed footprint (px) of the docked box the banner card rests inside
+    /// — sized generously against the longest lesson line this class has ever carried (wrapped at
+    /// <see cref="CardBodyWidth"/>, plus the Dismiss button) so <see cref="CenterContainer"/> never
+    /// has to center a card bigger than its own box (the exact overflow <see cref="CardBodyWidth"/>'s
+    /// own doc already fixed once, at the window level — this is the same guard one level down, at
+    /// the dock's own box). If a future lesson's copy ever runs long enough to overflow this box
+    /// anyway, <see cref="CenterContainer"/> degrades the same safe direction the old FullRect
+    /// centering did: it overflows UPWARD, away from the drawer and the docket both, never sideways.
+    /// </summary>
+    private const float DockWidth = 480f;
+
+    private const float DockHeight = 260f;
+
+    /// <summary>Gap (px) kept between the docked box's resting edge and the window edge it sits
+    /// against — the same order of magnitude <see cref="Ui.CompanionDock"/>'s own <c>Margin</c> uses
+    /// for its bottom-left chip, so the two docked HUD elements read as one visual family.</summary>
+    private const float DockMargin = 16f;
+
+    /// <summary>Fixed card body width — see the "MentorBannerBody" node built in <see cref="Build"/>
+    /// below (the WholeGameSweepTests overflow fix); pulled out to a named constant now that
+    /// <see cref="DockWidth"/> needs to stay wider than it.</summary>
+    private const float CardBodyWidth = 440f;
+
+    /// <summary>Extra clearance (px) kept between the docked box and whatever live rect it was moved
+    /// to avoid — enough that the pulsing outline's own glow never touches the card.</summary>
+    private const float AvoidGap = 24f;
+
+    /// <summary>The fixed-size box the card centers inside — see <see cref="PositionDock"/>.</summary>
+    private CenterContainer _dock = null!;
+
     /// <summary>Build the banner chrome once, hidden. Idempotent-guarded like every other
     /// code-built node on this project.</summary>
     public void Build()
@@ -104,9 +135,29 @@ public partial class MentorBanner : PanelContainer
         // is the only thing that makes a FullRect PanelContainer draw nothing.
         AddThemeStyleboxOverride("panel", new StyleBoxEmpty());
 
-        var center = new CenterContainer { Name = "MentorBannerCenter", MouseFilter = MouseFilterEnum.Ignore };
-        center.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-        AddChild(center);
+        // P2-ONBOARD-02 (§11.15): a plain (non-Container) Control between this class's own
+        // PanelContainer root and the docked box below — root, being a Container, forces ANY direct
+        // Container child (a CenterContainer included) to fill its whole content rect regardless of
+        // that child's own anchors/offsets. _stage exists purely to opt the box below OUT of that
+        // forced fill, the identical "plain Control breaks the Container chain" technique
+        // Ui.HeroesPanel's own manually-positioned split uses for the same reason.
+        var stage = new Control { Name = "MentorBannerStage", MouseFilter = MouseFilterEnum.Ignore };
+        stage.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+        AddChild(stage);
+
+        // U16 (§11.14.14, "Bryn's banner covering nearly every first-opened panel"): this used to be
+        // a FullRect CenterContainer, dead center of the whole screen — exactly where every panel's
+        // own first-opened content also renders. P2-ONBOARD-02 docks it instead: a fixed
+        // DockWidth x DockHeight box anchored to the one region nothing else on this screen claims
+        // (see PositionDock's own doc for the full argument, including the P2-SCREEN-10 footprint
+        // check that argument depends on). CenterContainer still does the actual centering WITHIN
+        // that box, so a short line sits centered in a mostly-empty invisible box (MouseFilter.Ignore
+        // on every layer above the card itself, so the empty space is never a dead-click trap) and a
+        // long one grows toward the box's own edges exactly as it always did against the screen.
+        _dock = new CenterContainer { Name = "MentorBannerDock", MouseFilter = MouseFilterEnum.Ignore };
+        _dock.SetAnchorsPreset(LayoutPreset.BottomLeft);
+        PositionDock(avoidPointerTarget: null); // resting position until the first live tick moves it
+        stage.AddChild(_dock);
 
         // U-T9-12 (§11.14.13): the wood frame belongs on the CARD, not on this FullRect root.
         //
@@ -117,12 +168,13 @@ public partial class MentorBanner : PanelContainer
         // worst of all the PROOF, where the line explaining "that flash" hid the flash it was
         // explaining. A teacher who blanks the thing she is pointing at is not teaching.
         //
-        // The root stays FullRect (the CenterContainer needs it to centre against the window) and
-        // stays MouseFilter.Ignore, which was always the intent and is only now honest: a transparent
-        // root means the controls a click passes through to are controls the player can actually see.
+        // The root stays FullRect (the docked box still needs a full-window stage to anchor against)
+        // and stays MouseFilter.Ignore, which was always the intent and is only now honest: a
+        // transparent root means the controls a click passes through to are controls the player can
+        // actually see.
         var card = UiKit.Card("MentorBannerCard");
         card.AddThemeStyleboxOverride("panel", GameTheme.PanelStyleWood());
-        center.AddChild(card);
+        _dock.AddChild(card);
 
         // U-T2 Wave D fix (WholeGameSweepTests): an unconstrained Label under a CenterContainer
         // sizes to its own UNWRAPPED natural width before AutowrapMode ever gets a width to wrap
@@ -132,17 +184,66 @@ public partial class MentorBanner : PanelContainer
         // mis-sized VBoxContainer) shoving the Dismiss button below the visible window entirely —
         // a dead click on the one control that gets the player OUT of the lesson. Same fixed-width
         // idiom CommissionBoard/RaidForecastBoard already use for their own modal cards.
-        var body = new VBoxContainer { Name = "MentorBannerBody", CustomMinimumSize = new Vector2(440, 0) };
+        var body = new VBoxContainer { Name = "MentorBannerBody", CustomMinimumSize = new Vector2(CardBodyWidth, 0) };
         card.AddChild(body);
 
         _label = AddLabel(body, string.Empty);
         _label.Name = "MentorBannerText";
         _label.AutowrapMode = TextServer.AutowrapMode.WordSmart;
         _label.HorizontalAlignment = HorizontalAlignment.Center;
-        _label.CustomMinimumSize = new Vector2(440, 0);
+        _label.CustomMinimumSize = new Vector2(CardBodyWidth, 0);
 
         var dismiss = AddButton(body, "MentorBannerDismiss", "Got it", Dismiss);
         dismiss.SizeFlagsHorizontal = SizeFlags.ShrinkCenter;
+    }
+
+    /// <summary>
+    /// P2-ONBOARD-02 (§11.15): repositions <see cref="_dock"/>'s fixed box every tick <c>MainUi</c>
+    /// calls this — cheap (a handful of float comparisons), and idempotent when nothing has moved.
+    ///
+    /// <para><b>Why bottom-left is the resting position, verified rather than assumed.</b> The
+    /// drawer (<see cref="DrawerHost"/>) is right-anchored <see cref="DrawerHost.DrawerWidth"/>px
+    /// wide, and every full-rect modal this class already draws above (<c>MainUi.BuildUi</c>'s
+    /// comment, preserved above) is a <see cref="SurfaceRegion.FullScreenModal"/> sibling — so
+    /// bottom-left is clear of both BY CONSTRUCTION. The one surface that could have made that false
+    /// is <see cref="Ui.CompanionDock"/>, which P2-SCREEN-10 already flagged: its own
+    /// <see cref="SurfaceArbiter"/> claim is <see cref="SurfaceRegion.HudDock"/> with
+    /// <c>OwnsScreen: false</c>, but that claim answers "does it own the SCREEN," not "does it own
+    /// bottom-left PIXELS" — and it demonstrably does (its chip sits flush in that corner, and its
+    /// card grows upward from it when expanded). <paramref name="reserveAboveBottom"/> is
+    /// <c>MainUi</c> handing over that dock's own LIVE <see cref="Ui.CompanionDock.ReservedFootprintHeight"/>
+    /// (read off its real <see cref="Ui.CompanionDock.IsExpanded"/> state, never a hand-assumed
+    /// constant) — the box's resting bottom edge sits that far above the window's own bottom edge,
+    /// so the two docked elements stack rather than collide, in either of the docket's two states.</para>
+    ///
+    /// <para><b>The pointer's own live target rect never gets a static answer</b> — a HUD anchor can
+    /// be anywhere the tutorial or a lesson-rank voice currently points, including bottom-left
+    /// itself (a tray button, the docket's own toggle). <paramref name="avoidPointerTarget"/> is
+    /// <c>TutorialOverlay.PulsingTargetRect()</c>, and whenever it would <see cref="Rect2.Intersects"/>
+    /// the box's resting position, the box is pushed straight UP, clear of that rect's own top edge
+    /// plus <see cref="AvoidGap"/> — never sideways, since sideways is exactly where the drawer and
+    /// the docket both already live. <see langword="null"/> (nothing is pulsing right now, or the
+    /// current anchor is not a screen-space one) leaves the box at its resting position.</para>
+    /// </summary>
+    public void PositionDock(Rect2? avoidPointerTarget, float reserveAboveBottom = 0f)
+    {
+        var bottomY = Size.Y - DockMargin - reserveAboveBottom;
+        var topY = bottomY - DockHeight;
+
+        if (avoidPointerTarget is { } rect)
+        {
+            var resting = new Rect2(DockMargin, topY, DockWidth, DockHeight);
+            if (rect.Intersects(resting))
+            {
+                bottomY = Mathf.Min(bottomY, rect.Position.Y - AvoidGap);
+                topY = bottomY - DockHeight;
+            }
+        }
+
+        _dock.OffsetLeft = DockMargin;
+        _dock.OffsetRight = DockMargin + DockWidth;
+        _dock.OffsetTop = topY - Size.Y;
+        _dock.OffsetBottom = bottomY - Size.Y;
     }
 
     /// <summary>

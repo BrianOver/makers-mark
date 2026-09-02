@@ -120,7 +120,13 @@ public class WaveELessonsTests
 
     /// <summary>"the read-only surfaces": Depths carries no gate (<c>SurfaceUnlocks.GateFor</c>
     /// returns null for it, per <c>MainUi.OpenPanel</c>'s own doc) and no player-submitted action
-    /// anywhere on it — a bare open teaches the lesson.</summary>
+    /// anywhere on it — a bare open teaches the lesson.
+    ///
+    /// <para>P2-ONBOARD-02 (§11.15): no longer a floating <see cref="GodotClient.Ui.MentorBanner"/>
+    /// popup — a rendered pass found Bryn's banner covering nearly every first-opened panel, and
+    /// this was one of four lessons firing on OPEN into that centred card. It now renders as this
+    /// panel's own once-ever header caption.</para>
+    /// </summary>
     [TestCase]
     public void OpeningDepthsForTheFirstTime_TeachesTheReadOnlySurfaceLesson()
     {
@@ -129,15 +135,17 @@ public class WaveELessonsTests
         {
             ui.OpenPanel("Depths");
 
-            AssertThat(ui.Mentor.Visible)
+            var caption = Find<Label>(ui.Depths, "OnceEverCaption");
+            AssertThat(caption.Visible)
                 .OverrideFailureMessage("The read-only-surface lesson never showed on Depths' first-ever open.")
                 .IsTrue();
-            var text = Find<Label>(ui.Mentor, "MentorBannerText").Text;
-            AssertThat(text).Contains(MentorVoice.Name);
             // U3 (§11.14.14): used to assert "sim" — the line named the engine out loud until this
             // unit's register-check fix made it the town's own record instead (MentorVoiceTests'
             // widened corpus check pins the ban going forward).
-            AssertThat(text).Contains("town");
+            AssertThat(caption.Text).Contains("town");
+            AssertThat(ui.Mentor.Visible)
+                .OverrideFailureMessage("The read-only-surface lesson must render as its own caption, never the floating banner.")
+                .IsFalse();
         }
         finally
         {
@@ -149,7 +157,12 @@ public class WaveELessonsTests
     /// read-only-surfaces lesson's copy already named "Heroes" among the boards it covers, but the
     /// trigger only ever checked <c>id is "HeroCards" or "Depths"</c> — <c>HeroesPanel</c>'s own
     /// drawer id is "Heroes", a DIFFERENT panel from HeroCards' <c>HeroPanel</c>, so the copy's own
-    /// promise was never kept for it. Fixed alongside the census, not deferred as a finding.</summary>
+    /// promise was never kept for it. Fixed alongside the census, not deferred as a finding.
+    ///
+    /// <para>P2-ONBOARD-02 (§11.15): see <see
+    /// cref="OpeningDepthsForTheFirstTime_TeachesTheReadOnlySurfaceLesson"/>'s own note — the same
+    /// conversion, on the roster's own caption instead of Depths'.</para>
+    /// </summary>
     [TestCase]
     public void OpeningHeroesForTheFirstTime_TeachesTheReadOnlySurfaceLesson()
     {
@@ -158,13 +171,15 @@ public class WaveELessonsTests
         {
             ui.OpenPanel("Heroes");
 
-            AssertThat(ui.Mentor.Visible)
+            var caption = Find<Label>(ui.Heroes, "OnceEverCaption");
+            AssertThat(caption.Visible)
                 .OverrideFailureMessage("The read-only-surface lesson never showed on Heroes' first-ever open.")
                 .IsTrue();
-            var text = Find<Label>(ui.Mentor, "MentorBannerText").Text;
-            AssertThat(text).Contains(MentorVoice.Name);
             // U3 (§11.14.14): see the Depths test above for why this is "town", not "sim".
-            AssertThat(text).Contains("town");
+            AssertThat(caption.Text).Contains("town");
+            AssertThat(ui.Mentor.Visible)
+                .OverrideFailureMessage("The read-only-surface lesson must render as its own caption, never the floating banner.")
+                .IsFalse();
         }
         finally
         {
@@ -175,7 +190,8 @@ public class WaveELessonsTests
     /// <summary>Same lesson, other door: opening Bestiary first must ALSO teach it, and opening
     /// Depths right after must NOT show it a second time (<see
     /// cref="TutorialFlow.ConsumeFirstTouch"/>'s once-ever contract, shared across both open
-    /// paths).</summary>
+    /// paths) — now checked on each panel's OWN caption rather than a shared banner, since P2-
+    /// ONBOARD-02 gives every one of the four read-only surfaces its own stable caption label.</summary>
     [TestCase]
     public void OpeningBestiaryFirst_TeachesTheSameLesson_AndDepthsAfterDoesNotRepeatIt()
     {
@@ -183,14 +199,13 @@ public class WaveELessonsTests
         try
         {
             ui.Bestiary.ShowAll();
-            AssertThat(ui.Mentor.Visible)
+            AssertThat(Find<Label>(ui.Bestiary, "OnceEverCaption").Visible)
                 .OverrideFailureMessage("The read-only-surface lesson never showed on Bestiary's first-ever open.")
                 .IsTrue();
 
-            ui.Mentor.Dismiss();
             ui.OpenPanel("Depths");
 
-            AssertThat(ui.Mentor.Visible)
+            AssertThat(Find<Label>(ui.Depths, "OnceEverCaption").Visible)
                 .OverrideFailureMessage("The once-ever lesson fired a second time from a different read-only surface.")
                 .IsFalse();
         }
