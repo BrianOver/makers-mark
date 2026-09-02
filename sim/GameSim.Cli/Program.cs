@@ -102,6 +102,17 @@ if (args.Length > 0 && args[0] == "characterize")
     return cParsed is null ? 1 : GameSim.Cli.Characterize.Run(cParsed, Console.Out, Console.Error);
 }
 
+// Seed-search mode (P2-ONBOARD-04, docs/design/MAKERS-MARK.md §11.15): `-- seed-search --seeds N
+// [--seed S] [--days D]` sweeps seeds under ApprenticePlayer against the Warrant's seven criteria;
+// `-- seed-search --perturb SEED [--days D]` replays one seed under three deviating scripts and
+// reports which criteria survive every one. A DATA TOOL (Characterize/ConsequenceProbe precedent):
+// asserts nothing, exits 0.
+if (args.Length > 0 && args[0] == "seed-search")
+{
+    var ssParsed = GameSim.Cli.SeedSearch.Parse(args[1..], Console.Error);
+    return ssParsed is null ? 1 : GameSim.Cli.SeedSearch.Run(ssParsed, Console.Out, Console.Error);
+}
+
 // Interactive mode accepts ONLY `--seed N`. Anything else is a hard error — a typo'd batch
 // invocation ('Batch', misordered flags) must never fall through to the interactive REPL,
 // where redirected stdin would EOF and exit 0 having written zero chronicles (silent green).
