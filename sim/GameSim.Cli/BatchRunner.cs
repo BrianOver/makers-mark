@@ -19,17 +19,21 @@ namespace GameSim.Cli;
 public static class BatchRunner
 {
     public const string Usage =
-        "usage: batch --seeds <count> [--seed <startSeed>] [--days <days>] [--out <dir>] [--policy baseline|counter]";
+        "usage: batch --seeds <count> [--seed <startSeed>] [--days <days>] [--out <dir>] [--policy baseline|counter|apprentice]";
 
     /// <summary>
     /// The player policy a sweep drives (U0: <see cref="CounterPlayer"/> was previously
     /// unreachable — hardcoded to <see cref="BaselinePlayer"/>). Default stays
     /// <see cref="Policy.Baseline"/> so <c>BaselinePlayerPinTests</c> and the golden corpus never move.
+    /// P2-ONBOARD-03 adds <see cref="Policy.Apprentice"/> (<see cref="ApprenticePlayer"/>), the
+    /// guided-course policy the P2-ONBOARD-04 seed search sweeps against — this axis was built
+    /// forward-fit for exactly that (see this class's own doc comment).
     /// </summary>
     public enum Policy
     {
         Baseline,
         Counter,
+        Apprentice,
     }
 
     /// <summary>Parsed batch parameters. Defaults: 20 seeds starting at 1, 100 days, runs/, baseline policy.</summary>
@@ -98,8 +102,11 @@ public static class BatchRunner
             case "counter":
                 policy = Policy.Counter;
                 break;
+            case "apprentice":
+                policy = Policy.Apprentice;
+                break;
             default:
-                error.WriteLine($"batch: unknown --policy '{policyArg}' (expected 'baseline' or 'counter')");
+                error.WriteLine($"batch: unknown --policy '{policyArg}' (expected 'baseline', 'counter', or 'apprentice')");
                 error.WriteLine(Usage);
                 return null;
         }
@@ -112,6 +119,7 @@ public static class BatchRunner
     private static string PolicyFileTag(Policy policy) => policy switch
     {
         Policy.Counter => "counter",
+        Policy.Apprentice => "apprentice",
         _ => "baseline",
     };
 
@@ -120,6 +128,7 @@ public static class BatchRunner
     private static Func<GameState, ImmutableList<PlayerAction>> PolicyFn(Policy policy) => policy switch
     {
         Policy.Counter => CounterPlayer.ActionsFor,
+        Policy.Apprentice => ApprenticePlayer.ActionsFor,
         _ => BaselinePlayer.ActionsFor,
     };
 
