@@ -103,7 +103,8 @@ var _settle := 90
 # aside. Kept beside the branches it names, and asserted against SHOT_STATE at startup -- see
 # _initialize.
 const KNOWN_STATES := [
-	"BellTray", "Bestiary", "Camp", "Chronicle", "Counter", "Demand", "DepthsPanel", "Docket",
+	"BellTray", "Bestiary", "Camp", "Chronicle", "CommissionDilemma", "Counter", "Demand",
+	"DepthsPanel", "Docket",
 	"ForgeAnvil", "ForgeAnvilEmpty", "ForgeExit", "ForgeFlavor", "ForgeLadder", "ForgePanel",
 	"ForgeShelf", "GatedCounterEmptyShelf", "GateNight", "HeroCandidateOpen", "HeroCards",
 	"HeroErrand", "Ledger", "LedgerProvenance", "Lessons", "MineGateFocus", "Mirror",
@@ -397,6 +398,19 @@ func _process(_delta: float) -> bool:
 			else:
 				push_error("[shot] SHOT_STATE=Provenance could not reach Dev_ShowProvenanceCardOverLegends -- "
 					+ "a capture of the plain town under this name would read as a look nobody took.")
+				quit(1)
+				return false
+		elif _state == "CommissionDilemma":
+			# U27 (§11.14.14, dilemma #1): a fresh day-1 campaign has no open commission yet to
+			# render the hold-or-sell fork against, so this calls CommissionBoard's own shot-
+			# harness bridge (Dev_ShowSampleOpenCommission) -- same "stage a synthetic state,
+			# never mutate the live Adapter" idiom the Provenance state above uses.
+			var commissions = _ui.find_child("CommissionBoard", true, false)
+			if commissions and commissions.has_method("Dev_ShowSampleOpenCommission"):
+				commissions.call("Dev_ShowSampleOpenCommission")
+			else:
+				push_error("[shot] SHOT_STATE=CommissionDilemma could not reach CommissionBoard.Dev_ShowSampleOpenCommission -- "
+					+ "the shot below is the plain town and proves nothing about the hold-or-sell fix.")
 				quit(1)
 				return false
 		elif _state == "TavernPanel":

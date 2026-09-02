@@ -743,9 +743,20 @@ public sealed partial class TutorialFlow : PanelContainer
             Step: TutorialStep.Vigil, DisplayIndex: 7, Act: TutorialAct.HandOff,
             Anchor: TutorialAnchor.ForHud("CampCard"), MinDay: 1,
             ShortLabel: "See the vigil, and know it can wait",
+            // U27 (§11.14.14, dilemma #6, R15/R14.7): the sentence names the mechanism, not just the
+            // fee — a supply's Heal item is what lets a hero who would otherwise have gone home too
+            // hurt (ExpeditionResolver's post-floor CombatMath.ShouldDrink check) drink instead and
+            // press on to the NEXT floor, one deeper than she would have stopped at. THE-GAME.md
+            // §3.5 #6 states both halves plainly ("provisioning a camped party provably saves that
+            // party, and measurably endangers the run... both halves are real, and the game does
+            // not resolve them for you") — this TeachNote now carries both, never just the save
+            // half the original wording (KTD2-era) shipped alone.
             TeachNote: "A camped party waits on your answer before it goes further. A supply costs a runner's "
-                       + "fee and reaches them underground; a recall brings them home short of their target. "
-                       + "Sending them deeper is the third answer, and it spends nothing of yours.",
+                       + "fee and reaches them underground, and it does more than heal — a hero who would "
+                       + "otherwise have gone home too hurt can drink it and press on to the next floor "
+                       + "instead, and the deep floors are where heroes die. A recall brings them home short "
+                       + "of their target, safe but short. Sending them deeper is the third answer, and it "
+                       + "spends nothing of yours.",
             IsDone: state => state.EventLog.OfType<SupplyDelivered>().Any() || state.EventLog.OfType<PartyRecalled>().Any(),
             AdvanceFrom: [TutorialStep.Vigil], AdvancesTo: TutorialStep.EveningClose),
         new(
