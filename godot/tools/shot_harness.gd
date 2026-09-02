@@ -187,12 +187,13 @@ func _initialize() -> void:
 		# own SHOT_QUIET doc for why per-frame delta is never perfectly 1/60s here).
 		_settle = 950
 	elif _state == "LedgerProvenance":
-		# P2-MEMORY-03: the beat row (and its P2-MEMORY-03 second line) sits past the fitted
-		# modal's own viewport height on a fresh 1152x648 capture. LedgerScroll's real content
-		# height is not known until Godot's own layout/text-shaping pass finishes settling
-		# (measured: the scrollbar's max is still 0 at frame 60, first non-zero at frame 90) --
-		# so the scroll-down below waits for frame 100 (comfortably past that), and this settle
-		# leaves 50 more frames for it to take before capture.
+		# P2-MEMORY-03/-17: the beat row (now carrying BOTH the channel clause and the presence
+		# clause composed onto one line) sits past the fitted modal's own viewport height on a
+		# fresh 1152x648 capture. LedgerScroll's real content height is not known until Godot's
+		# own layout/text-shaping pass finishes settling (measured: the scrollbar's max is still 0
+		# at frame 60, first non-zero at frame 90) -- so the scroll-down below waits for frame 100
+		# (comfortably past that), and this settle leaves 50 more frames for it to take before
+		# capture.
 		_settle = 150
 	elif _state == "BellTray":
 		# U3 (loop-legibility plan, KTD-B): a plain HUD chip, no camera move -- but the
@@ -510,13 +511,15 @@ func _process(_delta: float) -> bool:
 			if bell_l:
 				bell_l.emit_signal("pressed")
 		elif _state == "LedgerProvenance":
-			# P2-MEMORY-03: the beat names its channel -- the receipt for the Evening Ledger's
-			# second beat-row line. Real combat RNG landing a beat through a specific channel on
-			# a fresh seed is not guaranteed, so this reaches the LedgerModal node directly (its
-			# own dev bridge, not MainUi's -- LedgerModal is a scene root loaded by MainUi, not a
-			# MainUi property Godot exposes to GDScript get(), same "find by stable node name"
-			# idiom Docket/CompanionDock above already use) and calls its own hand-built-state
-			# receipt method, mirroring Provenance's Dev_ShowProvenanceCardOverLegends idiom.
+			# P2-MEMORY-03/-17: the beat names its channel AND its presence -- the receipt for
+			# the Evening Ledger's beat row composing both onto one line. Real combat RNG landing
+			# a beat through a specific channel, and a real bounty acceptance moving a departure's
+			# floor, are not guaranteed on a fresh seed, so this reaches the LedgerModal node
+			# directly (its own dev bridge, not MainUi's -- LedgerModal is a scene root loaded by
+			# MainUi, not a MainUi property Godot exposes to GDScript get(), same "find by stable
+			# node name" idiom Docket/CompanionDock above already use) and calls its own
+			# hand-built-state receipt method, mirroring Provenance's
+			# Dev_ShowProvenanceCardOverLegends idiom.
 			var ledger_modal = _ui.find_child("LedgerModal", true, false)
 			if ledger_modal and ledger_modal.has_method("Dev_ShowLedgerWithProvenanceBeat"):
 				ledger_modal.call("Dev_ShowLedgerWithProvenanceBeat")
