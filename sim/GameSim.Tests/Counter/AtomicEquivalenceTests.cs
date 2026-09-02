@@ -293,8 +293,18 @@ public class AtomicEquivalenceTests
     // (Category=Balance) is unchanged (67/67 passed, no threshold moved). Pure serialized-content
     // movement (the Commissions list plus its CommissionPosted event trail differ) — never a
     // routing/combat/economy decision.
+    // 2026-09-02 (P2-PROOF-01, "retain the night"): re-baselined for a pure STATE-SHAPE change with
+    // no behaviour behind it yet. ExpeditionResult gained a trailing PartyAtDeparture init member and
+    // GameState gained a trailing LastNightExpeditions init member, both defaulting to empty, and
+    // NOTHING populates either on this commit — the producer lands in the module PR that follows.
+    // So every value in this trace is unchanged and only the serialized shape moved: SaveCodec now
+    // emits two additional empty collections. `Inc` and `State` are BOTH byte-identical (see
+    // PhaseBNoDrawGateTests, which passes unchanged), because a type addition draws no RNG — the
+    // same both-unchanged signature the L5/U4/T6 and dead-hero-commission entries above recorded.
+    // The 100-day Balance gate is untouched by a contract that no rule reads. Pure serialized-content
+    // movement; never a routing, combat, or economy decision.
     private const string ExpectedPreCounterSha256 =
-        "8B8CD415F3A96D85A61A772BF037044CE39076F889D27F7E3BDEC269399AA80F";
+        "7EB41A00EAD6D5A278EA1AA5C274733C465CE422C3B3C1C4A5CEC72B005E9FF7";
 
     [Fact]
     public void ThirtyDayRun_NoCounterActions_IsByteIdenticalToPrePa3Kernel()
