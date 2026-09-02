@@ -90,9 +90,17 @@ public partial class ProvenanceCard : Control
         // nothing for either when the fact isn't there: an un-sold item has no channel, and
         // ordinary stock has no lineage — the honest-empty-state contract, never a fallback line.
         var channelClause = ProvenanceQuery.Clause(ProvenanceQuery.Channel(state, item.Id), state.Day);
-        if (channelClause.Length > 0)
+
+        // P2-MEMORY-17: the presence clause — anchored to the item's own attribution beat (its
+        // hero and day), not the live day, since it names a fact about the night the beat
+        // happened, not about today. Composed onto the same line as the channel clause (one
+        // thought, not two stacked receipts): how it reached the hand, then why the hand was on
+        // that floor. Empty when the item never earned a beat, or no bounty moved the floor.
+        var presenceClause = ProvenanceQuery.PresenceClause(ProvenanceQuery.ItemPresence(state, item.Id));
+        var channelLine = string.Join(' ', new[] { channelClause, presenceClause }.Where(clause => clause.Length > 0));
+        if (channelLine.Length > 0)
         {
-            var channelLabel = AddLabel(_body!, channelClause);
+            var channelLabel = AddLabel(_body!, channelLine);
             channelLabel.Name = "ProvenanceChannelLine";
         }
 

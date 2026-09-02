@@ -48,9 +48,9 @@ public partial class LedgerModal : SimPanel
     /// Dev/receipt tool only (never written in real play) — a hand-built <see cref="GameState"/>
     /// substituted for <c>Adapter.CurrentState</c> inside <see cref="RenderCards"/>, so
     /// <see cref="Dev_ShowLedgerWithProvenanceBeat"/> can stage a beat that already carries a
-    /// channel (P2-MEMORY-03) deterministically, without waiting on a live combat RNG to land one
-    /// through a specific channel. Null on every real path; zero sim mutation either way — the
-    /// live <c>Adapter</c> is never written to.
+    /// channel (P2-MEMORY-03) and a presence (P2-MEMORY-17) deterministically, without waiting on
+    /// a live combat RNG or a live bounty acceptance to land either one. Null on every real path;
+    /// zero sim mutation either way — the live <c>Adapter</c> is never written to.
     /// </summary>
     private GameState? _devStagedState;
 
@@ -245,14 +245,18 @@ public partial class LedgerModal : SimPanel
 
     /// <summary>
     /// Dev/receipt tool only (never called from real play), reachable via <c>shot_harness.gd</c>'s
-    /// <c>call()</c> bridge — the P2-MEMORY-03 receipt: a killing-blow beat whose item already
-    /// carries a channel (an unpinned counter sale two days earlier), so <c>SHOT_STATE=
-    /// LedgerProvenance</c> can photograph the beat row's second line without a live combat RNG
-    /// landing a real one through a specific channel this run. Mirrors
+    /// <c>call()</c> bridge — the P2-MEMORY-03/-17 receipt: a killing-blow beat whose item already
+    /// carries a channel (an unpinned counter sale two days earlier) AND whose expedition already
+    /// carries a presence (a bounty-driven departure, floor 1 the natural default vs floor 3
+    /// actually departed for), so <c>SHOT_STATE=LedgerProvenance</c> can photograph the beat row's
+    /// two composed lines without a live combat RNG landing either one this run. Mirrors
     /// <c>MainUi.Dev_ShowProvenanceCardOverLegends</c>'s own "hand-built <see cref="GameState"/>,
     /// zero sim mutation" idiom — the real hero and their real name/portrait/purse come straight
     /// off the live <c>Adapter.CurrentState</c> roster; only the item and the day's events are
     /// synthetic, held in <see cref="_devStagedState"/> and never written back to <c>Adapter</c>.
+    /// No <c>FloorRecordSet</c> is staged before <c>day</c>, so <see cref="ProvenanceQuery.Presence"/>
+    /// reconstructs the hero's prior depth as 0 (a fresh roster hero genuinely has none yet at this
+    /// harness's day-1 mount) — the same fact a real never-yet-departed hero would carry.
     /// </summary>
     public void Dev_ShowLedgerWithProvenanceBeat()
     {
@@ -263,6 +267,7 @@ public partial class LedgerModal : SimPanel
 
         const int day = 5;
         const int soldOnDay = 3; // two days before the beat — "two days ago" in the clause
+        const int targetFloor = 3; // the bounty's floor — the natural default (clamp(0+1,...)) is 1
         var hero = new HeroId(Adapter.CurrentState.Heroes.Keys.First());
         var itemId = new ItemId(90201);
         var item = new Item(
@@ -272,15 +277,17 @@ public partial class LedgerModal : SimPanel
         var counterSale = new CounterSaleClosed(hero, itemId, Price: 40, Pinned: false)
             with { Id = new EventId(900001), Day = soldOnDay };
         var beat = new AttributionBeatEvent(
-                BeatType.KillingBlow, itemId, hero, Floor: 3, Detail: "Emberbite turned the killing blow")
+                BeatType.KillingBlow, itemId, hero, Floor: targetFloor, Detail: "Emberbite turned the killing blow")
             with { Id = new EventId(900002), Day = day };
         var returned = new PartyReturned(ImmutableList.Create(hero)) with { Id = new EventId(900003), Day = day };
+        var departed = new PartyDeparted(ImmutableList.Create(hero), TargetFloor: targetFloor)
+            with { Id = new EventId(900004), Day = day };
 
         var baseState = Adapter.CurrentState;
         _devStagedState = baseState with
         {
             Items = baseState.Items.SetItem(itemId.Value, item),
-            EventLog = baseState.EventLog.AddRange([counterSale, beat, returned]),
+            EventLog = baseState.EventLog.AddRange([counterSale, beat, returned, departed]),
         };
         ShowFor(day);
     }
@@ -585,9 +592,18 @@ public partial class LedgerModal : SimPanel
             // draw when the item never passed through one of the four channels (an auto-crafted
             // or rival-vendor piece) — render nothing, never a fallback line.
             var channelClause = ProvenanceQuery.Clause(ProvenanceQuery.Channel(state, beat.Item), night);
-            if (channelClause.Length > 0)
+
+            // P2-MEMORY-17: the presence clause — a second recorded fact about the SAME night,
+            // naming gold rather than depth earned as the reason the fight happened where it did.
+            // Composed onto the channel clause's own line (one paragraph, not a second stacked
+            // row) so the two read as one thought: how the item reached the hand, then why the
+            // hand was standing on that floor at all. Empty when no bounty moved the floor.
+            var presenceClause = ProvenanceQuery.PresenceClause(ProvenanceQuery.Presence(state, beat.Hero, night));
+            var beatMemoryLine = string.Join(
+                ' ', new[] { channelClause, presenceClause }.Where(clause => clause.Length > 0));
+            if (beatMemoryLine.Length > 0)
             {
-                var channelLabel = AddLabel(telling.Body, channelClause);
+                var channelLabel = AddLabel(telling.Body, beatMemoryLine);
                 channelLabel.Name = "BeatChannelLine";
                 channelLabel.AddThemeColorOverride("font_color", GameTheme.TextDim);
             }
