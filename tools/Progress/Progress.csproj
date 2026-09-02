@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Plan/git reconciler: answers "where does this program actually stand" straight from git,
+       so nobody has to hand-reconcile docs/design/MAKERS-MARK.md's unit index against git log
+       again. See docs/debugging.md's "Progress reconciler" section for what it checks and how
+       to run it. TargetFramework comes from Directory.Build.props — do not add one here.
+
+       Deliberately stores nothing: no cache, no state file, no generated markdown checked in.
+       Every run derives fresh from `git ls-tree`, `git log origin/main`, and
+       `gh pr list` (merged and open states). If this tool ever wrote its own output into the repo,
+       that output would itself be a stale doc within a day — which is the exact failure this
+       tool exists to prevent (CLAUDE.md rules 6-8). -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Progress</RootNamespace>
+    <Description>Reconciles docs/design/MAKERS-MARK.md's unit index against git/gh reality on origin/main — landed/open/unbuilt status, misfiled paths, ordering violations, dangling doc refs, and unit-id collisions. Stores nothing.</Description>
+  </PropertyGroup>
+</Project>
