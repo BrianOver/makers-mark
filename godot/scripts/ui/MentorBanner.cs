@@ -157,6 +157,19 @@ public partial class MentorBanner : PanelContainer
     public TutorialAnchor? CurrentAnchor { get; private set; }
 
     /// <summary>
+    /// P2-ONBOARD-01 (§11.15): the <see cref="MentorVoiceRank"/> of whichever line is currently on
+    /// screen — read alongside <see cref="CurrentAnchor"/> by <see
+    /// cref="TutorialAnchorArbiter.Resolve"/> so a lesson-rank voice's own anchor never contends for
+    /// the pulse (U46's rule, now structural rather than a caller's discipline to remember). Mirrors
+    /// <see cref="_currentRank"/> exactly; exposed here because that field predates this unit and had
+    /// no external reader until now. Stale (whatever rank last applied) while <see cref="Visible"/> is
+    /// false — harmless, since every caller of this property first reads <see cref="CurrentAnchor"/>
+    /// and finds it null, the same "no separate Visible check needed" contract that property's own doc
+    /// already establishes.
+    /// </summary>
+    public MentorVoiceRank CurrentRank => _currentRank;
+
+    /// <summary>
     /// Shows <paramref name="fired"/> (already-wrapped in Bryn's own voice, already-gated through
     /// <see cref="TutorialFlow.ConsumeFirstTouch"/> by the caller) — or does nothing when
     /// <paramref name="fired"/> is <see langword="null"/> (the lesson did not fire this call, per

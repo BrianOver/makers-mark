@@ -1488,7 +1488,11 @@ public partial class MainUi : Control
                 // U10: the shared Mentor banner's own anchor — non-null only while IT is showing a
                 // line that declared one (MentorBanner.CurrentAnchor's own doc: cleared to null the
                 // instant the banner closes, so no separate Visible check is needed here).
-                MentorBannerAnchor: Mentor.CurrentAnchor,
+                // P2-ONBOARD-01 (§11.15): paired with the rank that line is showing at — Resolve is
+                // the one place that decides whether a lesson's own anchor even gets to compete.
+                MentorBanner: Mentor.CurrentAnchor is { } mentorAnchor
+                    ? new TutorialAnchorArbiter.MentorBannerVoice(mentorAnchor, Mentor.CurrentRank)
+                    : null,
                 // U-T9-5: AnchorFor, not CurrentAnchor — a Station anchor points at the town building
                 // until the player is actually inside the venue, then hands off to the station. See
                 // its own doc for why the un-aimed version left steps 1/2/7 pulsing behind a wall.
