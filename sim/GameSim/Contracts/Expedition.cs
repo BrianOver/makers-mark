@@ -49,6 +49,29 @@ public sealed record AttributionBeat(BeatType Beat, ItemId Item, HeroId Hero, in
 public sealed record OreLoot(HeroId Hero, string MaterialKey, int Quantity);
 
 /// <summary>
+/// One party member's combat-relevant record AS THEY MARCHED, snapshotted at result-build time.
+///
+/// This exists because attribution is computed at departure and the reveal tick then applies XP,
+/// rank and level. So a counterfactual recomputed later against LIVE hero records can return a
+/// different verdict than the beat it is explaining: a hero who levelled overnight gains defense,
+/// and the blow that provably would have killed them no longer does. Anything that re-derives a
+/// recorded fight must read these values and never <c>state.Heroes</c>.
+///
+/// Item STATS are deliberately absent and must be read live: nothing in <c>sim/GameSim</c> writes
+/// <c>Item.Stats</c> after minting (only History and ItemMemory are appended), so the live item is
+/// the raid-time item. Only the hero's own numbers drift.
+/// </summary>
+public sealed record HeroAtDeparture(
+    HeroId Id,
+    string Name,
+    string ClassId,
+    int Level,
+    int MaxHp,
+    ItemId? Weapon,
+    ItemId? Shield,
+    ItemId? Armor);
+
+/// <summary>
 /// The pure-function output of an expedition (KTD5): computed at departure, revealed on return.
 /// Everything the Evening reveal needs is in here — no other source of truth exists.
 /// <see cref="VenueId"/> is the <c>VenueRegistry</c> key of the venue raided (P4); it is TRAILING
@@ -68,7 +91,16 @@ public sealed record ExpeditionResult(
     ImmutableList<OreLoot> Loot,
     ImmutableSortedDictionary<int, int> GoldEarnedByHero,
     string VenueId = "mine",
-    ExpeditionHalt Halt = ExpeditionHalt.TargetReached);
+    ExpeditionHalt Halt = ExpeditionHalt.TargetReached)
+{
+    /// <summary>The party's combat-relevant records as they marched (see
+    /// <see cref="HeroAtDeparture"/> for why live hero records are the wrong source). Non-positional
+    /// init member on the <see cref="VenueId"/>/<see cref="Halt"/> precedent: saves written before
+    /// this property deserialize to empty, and an empty snapshot means "this result predates the
+    /// snapshot", never "the party was empty".</summary>
+    public ImmutableList<HeroAtDeparture> PartyAtDeparture { get; init; } =
+        ImmutableList<HeroAtDeparture>.Empty;
+}
 
 /// <summary>
 /// A staged expedition parked between the Expedition tick (stage 1, floors [1..CheckpointFloor])

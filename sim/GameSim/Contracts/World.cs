@@ -217,6 +217,25 @@ public sealed record GameState(
     /// Non-positional init member: pre-staging saves (no property) deserialize to empty.</summary>
     public ImmutableList<InFlightExpedition> InFlight { get; init; } = ImmutableList<InFlightExpedition>.Empty;
 
+    /// <summary>
+    /// Last night's revealed expedition results, kept so a recorded fight can still be read after
+    /// the reveal has consumed it.
+    ///
+    /// <see cref="PendingExpeditions"/> is emptied at the Evening tick, and with it the whole roll
+    /// stream — every <c>FloorOutcome</c> and <c>CombatEvent</c>, which is the only record of what
+    /// actually happened. The client kept a snapshot of its own, but that snapshot is replaced at
+    /// the next Evening and lost on relaunch, so anything reading it silently vanishes on Continue.
+    /// Moving the consumed results here instead of dropping them is what lets a night be re-read.
+    ///
+    /// Bounded to one night by construction: the reveal replaces this list wholesale rather than
+    /// appending, so it holds a few kB and never grows. Non-positional init member on the
+    /// <see cref="InFlight"/>/<see cref="Venues"/>/<see cref="Counter"/> precedent — saves written
+    /// before this property deserialize to empty and simply have no readable night until their next
+    /// reveal, which is honest degradation rather than a failure.
+    /// </summary>
+    public ImmutableList<ExpeditionResult> LastNightExpeditions { get; init; } =
+        ImmutableList<ExpeditionResult>.Empty;
+
     /// <summary>Per-venue mutable state keyed by VenueRegistry id (M4). Non-positional init
     /// member: pre-M4 saves (no property) deserialize to empty — no entry = untouched/open.</summary>
     public ImmutableSortedDictionary<string, VenueState> Venues { get; init; } = ImmutableSortedDictionary<string, VenueState>.Empty;
