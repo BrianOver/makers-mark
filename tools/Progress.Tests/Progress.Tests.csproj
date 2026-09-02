@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Progress reconciler's own test suite: hand-built markdown/commit fixtures only, zero git or
+       gh IO — the parsing and reconciliation logic is pure (strings and records in, records out),
+       so it is testable without a repo checkout. TargetFramework comes from Directory.Build.props. -->
+  <PropertyGroup>
+    <RootNamespace>Progress.Tests</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <Description>Test suite for the Progress reconciliation tool — hand-built plan/commit fixtures, no git or gh IO.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Progress\Progress.csproj" />
+  </ItemGroup>
+</Project>

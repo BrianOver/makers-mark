@@ -178,3 +178,77 @@ in the overlay is the exact integer the sim rolled against — no recompute need
 
 `docs/telemetry-loop.md` — batch → analytics → anomalies → Claude proposes data-tuning PR →
 gates → Brian approves. Anomaly entries carry their own repro pointers (section 1 applies).
+
+## 7. The Progress reconciler — where does this program actually stand
+
+`docs/design/MAKERS-MARK.md`'s unit index is hand-written and drifts (CLAUDE.md rules 6-8: git
+outranks every doc, and a stale doc is deleted, not corrected). Reconciling it against reality by
+hand means walking every unit id against `git log` and `gh pr list` — a full session was spent
+doing exactly that for one section, and it found five generations of dead plan, ten cited wave
+docs that no longer existed, and a unit filed against a source file that doesn't exist. `tools/Progress`
+automates that reconciliation. **It reads git and gh fresh on every run and writes nothing —**
+no cache, no state file, no generated markdown checked in. If it stored its own output anywhere in
+the repo, that output would be a stale doc within a day, which is the exact failure it exists to
+prevent. Re-run it; never trust a saved copy of what it said last time.
+
+### Run it
+
+```bash
+dotnet run --project tools/Progress
+```
+
+Reconciles `docs/design/MAKERS-MARK.md` (or a path passed as the first argument) against
+`origin/main` — never the working tree, never the current branch, so the answer is the same
+regardless of which checkout runs it. It fetches `origin/main` first (best-effort; a
+network-unavailable sandbox gets a warning on stderr and reconciles against whatever local ref it
+already has, rather than failing outright).
+
+### What each finding means, and what to do when it fires
+
+The report has five numbered findings plus an unparseable-rows section:
+
+1. **Per-domain landed / open / unbuilt**, with the commit SHA and PR number for each landed
+   unit (P2 domains: `P2-SCREEN`, `P2-ONBOARD`, `P2-PROOF`, `P2-MEMORY`, `P2-PEOPLE`, `P2-LONG`,
+   `P2-HONEST`; T10's course units group under one `T10` domain). Informational — not a failure.
+2. **Units citing a path that doesn't exist on `origin/main`.** A unit's "Key files" cell is
+   checked against `git ls-tree`, not the working tree. A file the unit's own row marks `new
+   \`path\`` is exempt (it's supposed to not exist yet) — and so is a path **any other unit in the
+   plan** has marked `new`, since the doc's convention only tags a file's origin unit, not every
+   later unit that also touches it. What's left citing a non-`new`, non-existent path is either a
+   wrong path (this repo's own motivating case: a unit filed against
+   `sim/GameSim/Kernel/PhaseClock.cs` when the clock actually lives at
+   `godot/scripts/PhaseClock.cs`) or a plan gap where no unit is actually on the hook for creating
+   a file it names. **Fails the run.** Fix: correct the path, or add `new` to whichever unit
+   creates the file.
+3. **Ordering violations** — a *landed* unit depends on a unit that has not landed. Either the
+   plan's dependency is wrong, or the dependency shipped later than it should have. **Fails the
+   run.** Fix: re-check the actual build order against the stated dependency and correct whichever
+   one is wrong (usually the doc).
+4. **Dangling doc references** — any `docs/**.md` path cited anywhere in the plan (table cell or
+   prose) that isn't on `origin/main`. Informational, not a failure — some of these are the plan
+   *documenting* that a registry no longer exists, not asserting it does. Fix when the citation is
+   actually stale: delete the reference or point it at the doc's current name.
+5. **Unit-id collisions** — the same id used twice, in the same or different index tables. **Fails
+   the run.** Fix: renumber one of them; this is exactly the failure mode the `P2-` namespace was
+   created to end (four generations of colliding plain `U` numbers before it).
+
+**Unparseable rows** (not one of the five, always reported when present): a table row whose first
+cell parsed as a unit id but whose column count didn't match that id family's expected shape (5
+columns for `P2-DOMAIN-nn`, 4 for T10's `Un`), or whose title cell was empty. Never silently
+dropped — a parser that quietly skips rows it can't parse is the same defect class as a
+hand-maintained fixture list that stops covering its family.
+
+**Exit code**: non-zero when finding 2, 3, or 5 is non-empty (a misfiled path, an ordering
+violation, or an id collision is a defect, not information); zero otherwise. Findings 1 and 4 never
+affect the exit code.
+
+### Design notes, if extending it
+
+`tools/Progress/PlanParser.cs` and `Reconciler.cs` are pure — strings and records in, records out,
+covered by `tools/Progress.Tests` with hand-built fixtures. `GitShell.cs` is the only impure
+surface (shells out to `git` and `gh`); `Program.cs` is the thin wiring between them. Commit-tag
+extraction (`CommitTags.cs`) reads the shape of a commit subject or PR title rather than trusting
+one fixed convention, because this repo's own history doesn't use one consistently — a
+parenthetical single id, a parenthetical slash-combo, a colon-prefixed slash-combo, a comma list,
+or (on a "sweep" commit) no recognizable tag at all. A commit with no tag is reported as carrying
+no tag, not an error: not every commit closes a unit.
