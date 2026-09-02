@@ -20,21 +20,48 @@ namespace GameSim.Tests.Balance;
 /// harness runs and both arms complete. The measured deltas are the tuning baseline for the telemetry
 /// loop and are recorded below + in the U4 report.
 ///
-/// Recorded baseline (seeds 2026–2045 × 100 days, GameSim.Tests build 2026-07-18):
-///   NEVER-SEND     : deaths=768  expeditions=3518  targetReached=1234  deliveries=0   salveUses=382
-///   SEND-BELOW-40% : deaths=797  expeditions=3523  targetReached=1222  deliveries=62  salveUses=404
-///   Δ deaths=+29    Δ targetReached=−12
-/// Finding: the &lt;40% send trigger fires 62 times across the 2000 party-day sweep — real but sparse,
-/// because a hero clearing the floor-1 checkpoint clean only sometimes parks in the [25%,40%) HP band
-/// (the too-hurt exit at &lt;25% finalises before parking). At the aggregate the deliveries slightly
-/// RAISE mortality (+29 deaths) and slightly LOWER the TargetReached rate (−12): the SAME emergent
-/// risk-compensation mechanism SalveProvisioningBalanceTests documents — a topped-up hero pushes into
-/// stage-2 floors that kill, rather than banking a shallow clear. So the camp verb's aggregate
-/// campaign value is a KNOB pointing the wrong way at the v1 floor-1 checkpoint, exactly D1's noted
-/// cost ("a floor-1 camp report carries thinner HP signal"). Per-instance the verb is real — the
-/// marquee test proves a delivered-salve PotionLifesave end-to-end with zero attribution edits. The
-/// lever is CampCheckpointDepth / the send threshold / the fee, owned by the telemetry loop; retune
-/// BEFORE U5 builds presentation on a signal that currently costs lives at scale.
+/// Recorded baseline (seeds 2026–2045 × 100 days), TWO measurements on record so drift is visible
+/// rather than replaced (P2-LONG-23 re-measured; do not silently re-pin a third time):
+///
+///   2026-07-18 build (GameSim.Tests, pre-venue-ladder / pre-quality-roller-change /
+///   pre-attribution-rework):
+///     NEVER-SEND     : deaths=768  expeditions=3518  targetReached=1234  deliveries=0   salveUses=382
+///     SEND-BELOW-40% : deaths=797  expeditions=3523  targetReached=1222  deliveries=62  salveUses=404
+///     Δ deaths=+29    Δ targetReached=−12
+///   Finding (07-18): the &lt;40% send trigger fires 62 times across the 2000 party-day sweep — real
+///   but sparse, because a hero clearing the floor-1 checkpoint clean only sometimes parks in the
+///   [25%,40%) HP band (the too-hurt exit at &lt;25% finalises before parking). At the aggregate the
+///   deliveries slightly RAISE mortality (+29 deaths) and slightly LOWER the TargetReached rate (−12):
+///   the SAME emergent risk-compensation mechanism SalveProvisioningBalanceTests documents — a
+///   topped-up hero pushes into stage-2 floors that kill, rather than banking a shallow clear.
+///
+///   2026-09-02 re-measurement (current build, origin/main@e7cca3d5b91deda59ee494e8eae426595c67c1b9,
+///   six weeks and ~20 units later — P2-LONG-23):
+///     NEVER-SEND     : deaths=266  expeditions=4328  targetReached=1222  deliveries=0   salveUses=698
+///     SEND-BELOW-40% : deaths=266  expeditions=4328  targetReached=1222  deliveries=0   salveUses=698
+///     Δ deaths=0      Δ targetReached=0     deliveries=0 — the two arms are now BYTE-IDENTICAL.
+///   Finding (09-02): the send trigger does not merely fire less often — it never fires at all. A
+///   targeted diagnostic over seed 2026 alone (100 days, 200 camped-party observations) found the
+///   MINIMUM hp% ever observed on a camped hero was 60%; nothing ever camps below the 40% threshold
+///   this verb targets, so SEND-BELOW-40% and NEVER-SEND submit the identical action stream and
+///   produce identical worlds. Total sweep-wide deaths also fell ~65% (768 → 266) across the same
+///   six weeks. Read together: the 07-18 mechanism (a floor-1 checkpoint sometimes parking a hero in
+///   the needy-but-not-retreating band, where topping them up pushes them into a stage-2 floor that
+///   kills) has not shrunk, it has been balanced away — heroes now clear the floor-1 checkpoint
+///   healthy enough that the verb's own targeting condition is never met on this seed range.
+///
+/// STOP-AND-REPORT (P2-KTD10): this is not a smaller or reversed effect to re-tune around, it is an
+/// A/B that currently measures nothing (zero engagement in both arms) — §11.3 R1's pending ruling
+/// (default (c), damp risk-compensation only) was weighed against evidence that no longer reproduces
+/// on the current build, and this comment does not invent a new threshold or re-derive a lever
+/// direction from it. The PER-INSTANCE claim is unaffected — the marquee test still proves a
+/// delivered-salve PotionLifesave end-to-end with zero attribution edits whenever the verb IS used —
+/// but the AGGREGATE risk-compensation mechanism this file was written to document cannot currently
+/// be observed at all on the seed range measured, so it cannot currently justify tuning
+/// CampCheckpointDepth / the send threshold / the fee in either direction. Before R1 rules, the open
+/// question is whether ANY seed range still parks a hero in the targeted band post-checkpoint, or
+/// whether the checkpoint's own HP distribution has moved enough that the send verb's condition
+/// needs to move with it.
 /// </summary>
 public class CampProvisioningBalanceTests
 {
