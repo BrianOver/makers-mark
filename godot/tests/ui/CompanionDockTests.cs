@@ -235,9 +235,11 @@ public class CompanionDockTests
     /// on first touch rather than as an eleventh numbered milestone, because the owner asked for it
     /// to "become the player's job to reference/utilize" — a habit, not a beat to complete.
     ///
-    /// <para>Asserts the lesson reaches the SCREEN, not that a method was called: the mentor banner
-    /// has to carry text a player could read. A test that only checked the first-touch id was
-    /// consumed would pass just as well for a lesson that renders nothing.</para>
+    /// <para>P2-ONBOARD-02 (§11.15): no longer a <see cref="GodotClient.Ui.MentorBanner"/> popup —
+    /// register #160's whole point is that the docket stays open WHILE the player works the forge,
+    /// which is exactly when a floating popup covering the screen hurt most. The lesson now renders
+    /// as this dock's own once-ever header caption; asserts the caption reaches the SCREEN (visible,
+    /// with real text), not that a method was called.</para>
     /// </summary>
     [TestCase]
     public void OpeningTheDocket_TeachesItOnce_AndNeverNags()
@@ -249,21 +251,27 @@ public class CompanionDockTests
 
             ui.Docket.Open();
 
-            var banner = Find<Label>(ui, "MentorBannerText");
-            AssertThat(banner.Text)
+            var caption = Find<Label>(ui.Docket, "OnceEverCaption");
+            AssertThat(caption.Visible)
+                .OverrideFailureMessage("Opening 'Tomorrow at the Counter' for the first time taught the player nothing.")
+                .IsTrue();
+            AssertThat(caption.Text)
                 .OverrideFailureMessage(
                     "Opening 'Tomorrow at the Counter' for the first time taught the player nothing. "
-                    + $"The mentor banner reads '{banner.Text}'.")
+                    + $"The docket's own caption reads '{caption.Text}'.")
                 .Contains("tomorrow's counter");
 
             // Second open: the once-ever contract lives in TutorialFlow.ConsumeFirstTouch, and this
             // is the half that matters for a screen the player is supposed to keep coming back to —
-            // a reference tool that lectures every time is a reference tool nobody opens.
+            // a reference tool that lectures every time is a reference tool nobody opens. The
+            // caption is a STABLE sibling of the docket's own scrollable body (never cleared by
+            // RefreshBody), so it stays exactly as it was rather than a MentorBanner's "did it
+            // re-show" check.
+            var before = caption.Text;
             ui.Docket.Close();
-            var before = banner.Text;
             ui.Docket.Open();
 
-            AssertThat(banner.Text)
+            AssertThat(caption.Text)
                 .OverrideFailureMessage(
                     "The docket re-taught itself on a second open. A tool the player is meant to "
                     + "consult all day must say its piece once.")

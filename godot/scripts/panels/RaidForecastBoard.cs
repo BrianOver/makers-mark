@@ -28,6 +28,7 @@ namespace GodotClient.Panels;
 public partial class RaidForecastBoard : Control
 {
     private Label? _title;
+    private Label? _caption;
     private VBoxContainer? _body;
 
     /// <summary>Number of parties rendered by the last <see cref="ShowForTomorrow"/> call — test
@@ -56,6 +57,17 @@ public partial class RaidForecastBoard : Control
     public event Action? ForgeOneRequested;
 
     public override void _Ready() => EnsureBuilt();
+
+    /// <summary>P2-ONBOARD-02: sets the once-ever "forecast-board-taught" caption — called from
+    /// <see cref="ShowForecastBoardLesson"/> the ONE time <see
+    /// cref="TutorialFlow.ConsumeFirstTouch"/> ever returns non-null for that id. Replaces the old
+    /// floating <see cref="MentorBanner"/> popup that used to fire the instant this board opened.</summary>
+    public void ShowHeaderCaption(string text)
+    {
+        EnsureBuilt();
+        _caption!.Text = text;
+        _caption.Visible = true;
+    }
 
     /// <summary>
     /// Populate the board from <see cref="RaidForecast.ForTomorrow"/> against <paramref name="state"/>
@@ -169,15 +181,23 @@ public partial class RaidForecastBoard : Control
     /// before it happens (U10's own class doc, "surface scarcity in the HUD"). Fires through the
     /// SAME first-touch engine and shared banner Wave C's dilemma lessons use.
     ///
-    /// <para>Deliberately NOT <c>preempt: true</c> — this is the generic orientation note, so it is
-    /// the one that yields when <see cref="ShowMusterGearGapLesson"/> also fires this same call.</para>
+    /// <para>P2-ONBOARD-02 (§11.15): no longer a <see cref="MentorBanner"/> popup — a rendered pass
+    /// found Bryn's banner covering nearly every first-opened panel, and this was one of the four
+    /// lessons firing on OPEN into that centred card. The words are unchanged; they now render as
+    /// this board's own once-ever header caption (<see cref="ShowHeaderCaption"/>) instead.</para>
     /// </summary>
-    private void ShowForecastBoardLesson() =>
-        Mentor?.ShowFirstTouch(Tutorial?.ConsumeFirstTouch(
-            "forecast-board-taught",
-            MentorVoice.Speak(
-                "This is a preview, not a promise — tomorrow's likely muster, projected off tonight's "
-                + "roster. Whatever you still buy or craft before morning can change what it shows here.")));
+    private void ShowForecastBoardLesson()
+    {
+        if (Tutorial?.ConsumeFirstTouch(
+                "forecast-board-taught",
+                MentorVoice.Speak(
+                    "This is a preview, not a promise — tomorrow's likely muster, projected off tonight's "
+                    + "roster. Whatever you still buy or craft before morning can change what it shows here."))
+            is { } caption)
+        {
+            ShowHeaderCaption(caption);
+        }
+    }
 
     /// <summary>
     /// U-T2 Wave D (dilemma #3, "the muster speaks", R14.7): names the empty-slot-versus-full-slot
@@ -186,12 +206,16 @@ public partial class RaidForecastBoard : Control
     /// made of, this was one of the ones never taught. Wording matches <c>docs/design/THE-GAME.md</c>
     /// §3.5's own dilemma #3 sentence verbatim (already owner-approved language).
     ///
-    /// <para><c>preempt: true</c> — this is the SAME collision Wave B's mark-read lesson found
-    /// against the quench lesson: a fresh campaign's very first <see cref="ShowForTomorrow"/> call
-    /// can reach BOTH <see cref="ShowForecastBoardLesson"/> (fires first, generic) and this one
-    /// (fires second, specific) in the same synchronous call. A live, actionable dilemma outranks a
-    /// merely-still-open "here is what this screen is" note — see <see
-    /// cref="MentorBanner.ShowFirstTouch"/>'s own doc for why preempting costs nothing.</para>
+    /// <para><c>preempt: true</c> — before P2-ONBOARD-02, this guarded the SAME collision Wave B's
+    /// mark-read lesson found against the quench lesson: a fresh campaign's very first <see
+    /// cref="ShowForTomorrow"/> call could reach BOTH <see cref="ShowForecastBoardLesson"/> (fires
+    /// first, generic) and this one (fires second, specific) in the same synchronous call. That
+    /// specific collision is retired now that the forecast board's own generic note is a header
+    /// caption rather than a banner entry (see <see cref="ShowForecastBoardLesson"/>'s own doc) —
+    /// <c>preempt</c> stays true regardless, since a live, actionable dilemma should still jump
+    /// ahead of whatever OTHER lesson-rank voice happens to be on screen from elsewhere in the
+    /// client when it fires; see <see cref="MentorBanner.ShowFirstTouch"/>'s own doc for why
+    /// preempting costs nothing.</para>
     /// </summary>
     private void ShowMusterGearGapLesson() =>
         Mentor?.ShowFirstTouch(
@@ -231,6 +255,12 @@ public partial class RaidForecastBoard : Control
         _title.Name = "ForecastTitle";
         _title.ThemeTypeVariation = GameTheme.HeaderThemeType;
         _title.AddThemeColorOverride("font_color", GameTheme.HeaderColor);
+
+        // P2-ONBOARD-02: a sibling of _title in the stable `box`, never a child of _body (which
+        // ShowForTomorrow's own Clear rebuilds every open) — survives every rebuild once
+        // ShowHeaderCaption sets it.
+        _caption = UiKit.OnceEverCaption();
+        box.AddChild(_caption);
 
         var scroll = new ScrollContainer
         {

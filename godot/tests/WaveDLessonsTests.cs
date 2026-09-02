@@ -186,15 +186,18 @@ public class WaveDLessonsTests
         }
     }
 
-    /// <summary>"the forecast board taught": fires the first time the board is EVER opened, AS
-    /// LONG AS the muster does not ALSO have something more specific to say the same tick — the
-    /// PR #575 fix cycle found the two lessons genuinely collide (a fresh campaign's starter
-    /// heroes always carry a gear gap, so <c>OpeningTheForecastBoardForTheFirstTime</c> and
-    /// <c>FirstForecastWithAGearGap</c> were unwinnable simultaneously under any single priority
-    /// order) and the coordinator ruled the muster dilemma outranks the generic orientation note
-    /// when both are eligible. This fixture fully gears every hero so NO party has a gap, isolating
-    /// the orientation lesson on its own — proving it still fires when the muster has nothing to
-    /// add, not that it wins a collision it no longer can.</summary>
+    /// <summary>"the forecast board taught": fires the first time the board is EVER opened.
+    ///
+    /// <para>Used to be a <see cref="GodotClient.Ui.MentorBanner"/> popup that genuinely collided
+    /// with the muster dilemma below (a fresh campaign's starter heroes always carry a gear gap, so
+    /// this test and <c>FirstForecastWithAGearGap</c> were unwinnable simultaneously under any
+    /// single banner priority order — PR #575's fix, "the muster dilemma outranks the generic
+    /// orientation note"). P2-ONBOARD-02 (§11.15) retires that collision entirely: this lesson is
+    /// now a header caption on <see cref="RaidForecastBoard"/> itself, a different surface from the
+    /// banner the muster dilemma still uses, so the two can never contend for the same screen again.
+    /// The fully-geared fixture below is no longer REQUIRED for that reason, but is kept — it still
+    /// proves the caption fires even on the common everyday case (a gap also present).</para>
+    /// </summary>
     [TestCase]
     public void OpeningTheForecastBoardForTheFirstTime_TeachesWhatItIs()
     {
@@ -217,12 +220,14 @@ public class WaveDLessonsTests
 
             ui.Forecast.ShowForTomorrow(ui.Adapter.CurrentState);
 
-            AssertThat(ui.Mentor.Visible)
+            var caption = Find<Label>(ui.Forecast, "OnceEverCaption");
+            AssertThat(caption.Visible)
                 .OverrideFailureMessage("The forecast board lesson never showed on its first-ever open.")
                 .IsTrue();
-            var text = Find<Label>(ui.Mentor, "MentorBannerText").Text;
-            AssertThat(text).Contains(MentorVoice.Name);
-            AssertThat(text).Contains("preview");
+            AssertThat(caption.Text).Contains("preview");
+            AssertThat(ui.Mentor.Visible)
+                .OverrideFailureMessage("The forecast board's own orientation note must render as its own caption, never the floating banner.")
+                .IsFalse();
         }
         finally
         {

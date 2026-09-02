@@ -70,6 +70,11 @@ public partial class DepthsPanel : SimPanel
     private GridContainer? _venueGrid;
     private VBoxContainer? _root;
 
+    /// <summary>P2-ONBOARD-02: the "read-only-surfaces" once-ever caption, a sibling of <see
+    /// cref="_venueGrid"/> — Refresh() only ever Clears the grid itself, so this survives every
+    /// rebuild once <see cref="ShowHeaderCaption"/> sets it.</summary>
+    private Label? _caption;
+
     /// <summary>The strip currently mounted here (test/tuning hook) — null while <see
     /// cref="ScryingMirror"/> has borrowed it instead (see <see cref="MountWatch"/>/<c>MainUi.Watch</c>).
     /// Computed off the actual current child rather than a cached field, so it can never answer
@@ -77,6 +82,17 @@ public partial class DepthsPanel : SimPanel
     public MineWatch? Watch => _root?.GetChildren().OfType<MineWatch>().FirstOrDefault();
 
     public override void _Ready() => EnsureBuilt();
+
+    /// <summary>P2-ONBOARD-02: <c>MainUi</c> calls this the ONE time <see
+    /// cref="TutorialFlow.ConsumeFirstTouch"/> ever returns the "read-only-surfaces" text for this
+    /// campaign — replaces the old floating <see cref="MentorBanner"/> popup that used to fire the
+    /// instant this panel opened.</summary>
+    public void ShowHeaderCaption(string text)
+    {
+        EnsureBuilt();
+        _caption!.Text = text;
+        _caption.Visible = true;
+    }
 
     /// <summary>
     /// U9 (world-and-interiors plan, KTD-4): accept the single shared <see cref="MineWatch"/>
@@ -226,6 +242,9 @@ public partial class DepthsPanel : SimPanel
             SizeFlagsVertical = SizeFlags.ExpandFill,
         };
         scroll.AddChild(body);
+
+        _caption = UiKit.OnceEverCaption();
+        body.AddChild(_caption);
 
         // GridContainer (not a flat VBox): venue tiles drop in as grid children with no layout rework.
         //

@@ -70,7 +70,24 @@ public partial class HeroPanel : SimPanel
 
     private VBoxContainer? _content;
 
+    /// <summary>P2-ONBOARD-02: the "read-only-surfaces" once-ever caption — built once, outside
+    /// <see cref="_content"/>'s own Clear/rebuild cycle, so it survives every later <see
+    /// cref="Refresh"/> once <see cref="ShowHeaderCaption"/> sets it. See <see
+    /// cref="UiKit.OnceEverCaption"/>'s own doc.</summary>
+    private Label? _caption;
+
     public override void _Ready() => EnsureBuilt();
+
+    /// <summary>P2-ONBOARD-02: <c>MainUi</c> calls this the ONE time <see
+    /// cref="TutorialFlow.ConsumeFirstTouch"/> ever returns the "read-only-surfaces" text for this
+    /// campaign — replaces the old floating <see cref="MentorBanner"/> popup that used to fire the
+    /// instant this panel opened.</summary>
+    public void ShowHeaderCaption(string text)
+    {
+        EnsureBuilt();
+        _caption!.Text = text;
+        _caption.Visible = true;
+    }
 
     public override void Refresh()
     {
@@ -326,6 +343,11 @@ public partial class HeroPanel : SimPanel
         {
             body.AddChild(banner);
         }
+
+        // P2-ONBOARD-02: a sibling of _content, never a child of it — Refresh() only ever Clears
+        // _content, so this survives every rebuild once ShowHeaderCaption sets it.
+        _caption = UiKit.OnceEverCaption();
+        body.AddChild(_caption);
 
         _content = new VBoxContainer { Name = "HeroCardContent" };
         body.AddChild(_content);

@@ -49,6 +49,7 @@ namespace GodotClient.Panels;
 public partial class LegendsWall : Control
 {
     private Label? _title;
+    private Label? _caption;
     private VBoxContainer? _body;
     private ProvenanceCard? _provenance;
 
@@ -76,6 +77,17 @@ public partial class LegendsWall : Control
     public int LegendItemCount { get; private set; }
 
     public override void _Ready() => EnsureBuilt();
+
+    /// <summary>P2-ONBOARD-02: sets the once-ever "legends-wall-taught" caption — called from <see
+    /// cref="ShowWallLesson"/> the ONE time <see cref="TutorialFlow.ConsumeFirstTouch"/> ever
+    /// returns non-null for that id. Replaces the old floating <see cref="MentorBanner"/> popup
+    /// that used to fire the instant this wall opened.</summary>
+    public void ShowHeaderCaption(string text)
+    {
+        EnsureBuilt();
+        _caption!.Text = text;
+        _caption.Visible = true;
+    }
 
     /// <summary>Populate from <paramref name="state"/> and open the overlay.</summary>
     public void ShowWall(GameState state)
@@ -293,17 +305,29 @@ public partial class LegendsWall : Control
     /// Fires the first time the player ever sees a wall with anything on it. Link 5 is the chain's
     /// last link — the outcome becoming the town's memory with the player's name in it — and this is
     /// the screen it pays out on, so it explains what the three blocks below are and that they are
-    /// permanent. Not <c>preempt</c>: it is the generic orientation note, so it yields to
-    /// <see cref="ShowHonorLesson"/> if a player's first-ever visit is also their first-ever Honor.
+    /// permanent.
+    ///
+    /// <para>P2-ONBOARD-02 (§11.15): no longer a <see cref="MentorBanner"/> popup — a rendered pass
+    /// found Bryn's banner covering nearly every first-opened panel, and this was one of the four
+    /// lessons firing on OPEN into that centred card. The words are unchanged; they now render as
+    /// this wall's own once-ever header caption (<see cref="ShowHeaderCaption"/>) instead, which
+    /// also retires the "yields to Honor/Reforge" collision <see cref="ShowHonorLesson"/>/
+    /// <see cref="ShowReforgeLesson"/>'s own docs used to name — this lesson no longer touches the
+    /// banner queue at all, so there is nothing left for either of them to preempt.</para>
     /// </summary>
-    private void ShowWallLesson() =>
-        Mentor?.ShowFirstTouch(
-            Tutorial?.ConsumeFirstTouch(
+    private void ShowWallLesson()
+    {
+        if (Tutorial?.ConsumeFirstTouch(
                 "legends-wall-taught",
                 MentorVoice.Speak(
                     "This is the town's memory, and it is the only permanent thing here — the fallen, "
                     + "the deepest floors anyone reached, and the pieces that got them there with your "
-                    + "mark still on them. Nobody comes back off this wall.")));
+                    + "mark still on them. Nobody comes back off this wall."))
+            is { } caption)
+        {
+            ShowHeaderCaption(caption);
+        }
+    }
 
     /// <summary>
     /// Fires the first time the player ever performs the farewell rite. Honor is link 5's own verb
@@ -312,6 +336,11 @@ public partial class LegendsWall : Control
     /// "— honored" on the next refresh, and nothing ever said what it was for or that it is once per
     /// hero, forever. Fired on the press, before the queue, so the lesson lands with the act rather
     /// than a phase tick later.
+    ///
+    /// <para>P2-ONBOARD-02: <c>preempt: true</c> no longer guards a collision against <see
+    /// cref="ShowWallLesson"/> (that lesson is a header caption now, never a banner entry) — kept
+    /// true regardless, since an ACT lesson should still jump ahead of whatever OTHER lesson-rank
+    /// voice happens to be on screen when the rite is performed.</para>
     /// </summary>
     private void ShowHonorLesson() =>
         Mentor?.ShowFirstTouch(
@@ -327,16 +356,14 @@ public partial class LegendsWall : Control
     /// presses a Reforge button — a fallen hero's worn heirloom, remade in a recipe/material the
     /// player now chooses, same forge and same mark as any other craft.
     ///
-    /// <para><b>Gained <c>preempt: true</c> when <see cref="ShowWallLesson"/> was added, and the
-    /// reason is a sharp edge in the shared contract worth naming here.</b>
-    /// <c>TutorialFlow.ConsumeFirstTouch</c> marks an id fired and returns its copy; the banner's
-    /// own <c>!preempt &amp;&amp; Visible</c> check then DISCARDS that copy if a banner is already
-    /// up. So a yielded lesson is not deferred — it is consumed and never shown again, for the whole
-    /// campaign. Before the wall's orientation note existed nothing was ever up when this fired, so
-    /// the default was harmless; with it, the first-ever Reforge press in the same visit as the
-    /// first-ever wall open would have silently eaten this lesson (caught by
-    /// <c>FirstReforgePress_TeachesTheReforgeLesson</c>, which is exactly what that test is for).
-    /// An ACT's lesson preempts the generic orientation note; the note is the thing that yields.</para>
+    /// <para><b>Gained <c>preempt: true</c> when <see cref="ShowWallLesson"/> was a banner entry,
+    /// and the history is worth keeping even though P2-ONBOARD-02 retired that specific
+    /// collision.</b> <see cref="ShowWallLesson"/> now renders as this wall's own header caption
+    /// (<see cref="ShowHeaderCaption"/>) and never touches the banner queue, so a fresh visit can
+    /// no longer reach both it and this lesson in the banner in the same call — the exact race
+    /// <c>FirstReforgePress_TeachesTheReforgeLesson</c> was written against. <c>preempt</c> stays
+    /// true regardless: an ACT lesson should still jump ahead of whatever OTHER lesson-rank voice
+    /// happens to be on screen when Reforge is pressed.</para>
     /// </summary>
     private void ShowReforgeLesson() =>
         Mentor?.ShowFirstTouch(
@@ -491,6 +518,12 @@ public partial class LegendsWall : Control
         _title.Name = "LegendsWallTitle";
         _title.ThemeTypeVariation = GameTheme.HeaderThemeType;
         _title.AddThemeColorOverride("font_color", GameTheme.HeaderColor);
+
+        // P2-ONBOARD-02: a sibling of _title in the stable `box`, never a child of _body (which
+        // ShowWall's own Clear rebuilds every open) — survives every rebuild once
+        // ShowHeaderCaption sets it.
+        _caption = UiKit.OnceEverCaption();
+        box.AddChild(_caption);
 
         var scroll = new ScrollContainer
         {

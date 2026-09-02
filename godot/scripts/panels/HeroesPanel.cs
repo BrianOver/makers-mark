@@ -84,7 +84,24 @@ public partial class HeroesPanel : SimPanel
     /// <see cref="EnsureBuilt"/> so it draws over the roster/detail split.</summary>
     private ProvenanceCard? _provenance;
 
+    /// <summary>P2-ONBOARD-02: the "read-only-surfaces" once-ever caption, parked above <see
+    /// cref="_rosterGrid"/> inside a stable wrapper <see cref="EnsureBuilt"/> builds ONCE — never a
+    /// child of <see cref="_detail"/>, which <see cref="RenderDetail"/> Clears on every hero
+    /// selection (that would wipe the caption the instant the player clicked a different card).</summary>
+    private Label? _caption;
+
     public override void _Ready() => EnsureBuilt();
+
+    /// <summary>P2-ONBOARD-02: <c>MainUi</c> calls this the ONE time <see
+    /// cref="TutorialFlow.ConsumeFirstTouch"/> ever returns the "read-only-surfaces" text for this
+    /// campaign — replaces the old floating <see cref="MentorBanner"/> popup that used to fire the
+    /// instant this panel opened.</summary>
+    public void ShowHeaderCaption(string text)
+    {
+        EnsureBuilt();
+        _caption!.Text = text;
+        _caption.Visible = true;
+    }
 
     public override void Refresh()
     {
@@ -440,13 +457,22 @@ public partial class HeroesPanel : SimPanel
         };
         _split.AddChild(_rosterScroll);
 
+        // P2-ONBOARD-02: a stable wrapper so the caption can sit ABOVE the grid without becoming
+        // ScrollContainer's second direct child (it only ever manages one). Refresh() only ever
+        // Clears _rosterGrid itself, never this wrapper, so the caption survives every rebuild.
+        var rosterColumn = new VBoxContainer { Name = "RosterColumn", SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        _rosterScroll.AddChild(rosterColumn);
+
+        _caption = UiKit.OnceEverCaption();
+        rosterColumn.AddChild(_caption);
+
         _rosterGrid = new GridContainer
         {
             Name = "RosterGrid",
             Columns = RosterColumns,
             SizeFlagsHorizontal = SizeFlags.ExpandFill,
         };
-        _rosterScroll.AddChild(_rosterGrid);
+        rosterColumn.AddChild(_rosterGrid);
 
         // Horizontal scroll disabled (U7/R7): the detail column follows the pane width so
         // autowrap labels wrap on real width instead of collapsing to 1 char per line.
