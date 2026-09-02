@@ -1,4 +1,7 @@
 using System;
+using System.Collections.Immutable;
+using System.Linq;
+using GameSim;
 using GameSim.Advisor;
 using GameSim.Contracts;
 using Godot;
@@ -75,11 +78,19 @@ public partial class CommissionBoard : Control
 
         Visible = true;
 
+        // U27 (§11.14.14, dilemma #1, R14.7): fires at RENDER now, not on the Accept press — see
+        // ShowHoldOrSellLesson's own doc for why. Checked every open, ahead of the delivery
+        // dormant act below (both are independent once-ever first-touches; this one simply has the
+        // earlier moment in a commission's own life to key on).
+        if (commissions.Any(c => !c.Accepted))
+        {
+            ShowHoldOrSellLesson();
+        }
+
         // U24 (§11.14.14, KTD2): the commission channel's dormant act — see
         // TutorialFlow.ConsumeCommissionDeliveryLesson's own doc. Checked every time this board
-        // opens, never on the Accept press itself (that click already spends its own first-touch
-        // banner — ShowHoldOrSellLesson, below). At most one of the two fires per open: the forward
-        // lesson consumes itself once ever, so a later open falls through to the honest close.
+        // opens. At most one of the two fires per open: the forward lesson consumes itself once
+        // ever, so a later open falls through to the honest close.
         if (Tutorial?.ConsumeCommissionDeliveryLesson(state) is { } deliveryLesson)
         {
             Mentor?.Show(MentorVoice.Speak(deliveryLesson));
@@ -96,6 +107,19 @@ public partial class CommissionBoard : Control
     /// cref="ModalEscape"/>). Before this it only closed via its own ✕ button (the whole-game
     /// sweep's own recorded finding).</summary>
     public override void _Input(InputEvent @event) => ModalEscape.TryClose(@event, GetViewport(), Visible, Close);
+
+    /// <summary>U27 (§11.14.14, dilemma #1): shot-harness bridge (<c>tools/shot_harness.gd</c>'s
+    /// "CommissionDilemma" state) — a fresh day-1 campaign has no open commission yet to prove the
+    /// render-time hold-or-sell fix against, so this stages one against a throwaway
+    /// <see cref="GameComposition.NewCampaign"/> and renders it exactly the way a real Morning
+    /// would. Display-only, same "synthetic state, never mutates the live Adapter" idiom
+    /// <c>MainUi.Dev_ShowProvenanceCardOverLegends</c> already uses for a fact a fresh campaign
+    /// does not naturally have on day 1.</summary>
+    public void Dev_ShowSampleOpenCommission() =>
+        ShowOpen(GameComposition.NewCampaign(seed: 27099) with
+        {
+            Commissions = ImmutableList.Create(new Commission(new HeroId(1), ItemSlot.Weapon, QualityGrade.Fine, DeadlineDay: 12, PremiumGold: 30)),
+        });
 
     private void RenderCommission(GameState state, Commission commission)
     {
@@ -158,7 +182,6 @@ public partial class CommissionBoard : Control
             // other queue-then-play call site in this codebase (the button is only enabled when
             // the action is legal).
             GodotClient.Audio.AudioDirector.For(this)?.Play(GodotClient.Audio.Cue.Click);
-            ShowHoldOrSellLesson();
         };
         accept.Disabled = Adapter is null || !acceptLegal;
         accept.TooltipText = Adapter is null
@@ -189,11 +212,16 @@ public partial class CommissionBoard : Control
 
     /// <summary>
     /// U-T2 Wave C (§11.14.4, Act II, dilemma #1, R14.7 "one sentence each, both sides, no
-    /// recommendation"): names the hold-or-sell dilemma out loud the first time the player EVER
-    /// accepts a commission — the moment they are choosing to hold a slot for one named hero
-    /// rather than sell freely off the shelf. Fires once per campaign through the SAME first-touch
-    /// engine and shared banner Wave C's pricing lesson uses (<see cref="TutorialFlow.ConsumeFirstTouch"/>,
-    /// <see cref="MentorBanner"/>) — never a third mechanism. Null-tolerant.
+    /// recommendation"): names the hold-or-sell dilemma out loud.
+    ///
+    /// <para>U27 (§11.14.14): moved off the Accept press and onto <see cref="ShowOpen"/>'s own
+    /// render — the FIRST time the player EVER sees an open (not-yet-decided) commission, before
+    /// either button is pressed. The old wiring taught nothing to a player who declined (Accept was
+    /// the only call site), which reads Accept as the "correct" arm of a dilemma R14.7 forbids
+    /// tilting — the exact defect this unit exists to fix. Fires once per campaign through the SAME
+    /// first-touch engine and shared banner Wave C's pricing lesson uses (<see
+    /// cref="TutorialFlow.ConsumeFirstTouch"/>, <see cref="MentorBanner"/>) — never a third
+    /// mechanism. Null-tolerant.</para>
     ///
     /// <para>U23 (§11.14.14, "the shelf is a public place"): one fact makes three others
     /// derivable, so it is taught here, once, rather than three times over. Verified against the

@@ -177,27 +177,31 @@ public class DilemmaLessonsTests
         }
     }
 
-    /// <summary>Hold-or-sell is the other dilemma named in Wave C's own unit list — accepting a
-    /// commission is the moment the player chooses to hold a slot for one named hero rather than
-    /// sell freely off the shelf.</summary>
+    // ============================================================================================
+    // U27 (§11.14.14, dilemma #1, R14.7): hold-or-sell now fires at RENDER -- the moment an open
+    // commission appears with a live Accept/Decline pair -- never on the Accept press alone. The
+    // old wiring (ConsumeFirstTouch called from inside Accept's own Pressed handler) taught nothing
+    // to a player who declined, which is exactly the "only one arm gets the lesson" shape R14.7
+    // forbids. Moving it here means both arms, and neither press, are required to hear it.
+    // ============================================================================================
+
+    private static Commission OpenCommission(HeroId hero) =>
+        new(hero, ItemSlot.Weapon, QualityGrade.Fine, DeadlineDay: 12, PremiumGold: 30);
+
+    /// <summary>Hold-or-sell is the other dilemma named in Wave C's own unit list. The board renders
+    /// it the instant an undecided commission appears -- no press at all -- which is the direct
+    /// proof the old Accept-press-only wiring could never offer.</summary>
     [TestCase]
-    public void AcceptingACommissionForTheFirstTime_TeachesTheHoldOrSellDilemma()
+    public void OpenCommissionRenders_TeachesTheHoldOrSellDilemma_BeforeEitherPressEver()
     {
-        var commission = new Commission(new HeroId(1), ItemSlot.Weapon, QualityGrade.Fine, DeadlineDay: 12, PremiumGold: 30);
-        var state = GameComposition.NewCampaign(seed: 9402) with { Commissions = ImmutableList.Create(commission) };
+        var state = GameComposition.NewCampaign(seed: 9402) with { Commissions = ImmutableList.Create(OpenCommission(new HeroId(1))) };
         var ui = MountMainUi(new SimAdapter(state));
         try
         {
             ui.Commissions.ShowOpen(ui.Adapter.CurrentState);
 
-            PressEnabled(ui.Commissions, "CommissionAccept_1");
-
-            AssertThat(ui.Adapter.AppliedThisPhase.OfType<AcceptCommissionAction>().Any(a => a.Hero == new HeroId(1)))
-                .OverrideFailureMessage("Setup check: the Accept press did not queue an AcceptCommissionAction.")
-                .IsTrue();
-
             AssertThat(ui.Mentor.Visible)
-                .OverrideFailureMessage("The hold-or-sell dilemma never showed on the player's first-ever commission accept.")
+                .OverrideFailureMessage("The hold-or-sell dilemma never showed when an open commission rendered, before either button was pressed.")
                 .IsTrue();
             var text = Find<Label>(ui.Mentor, "MentorBannerText").Text;
             AssertThat(text).Contains(MentorVoice.Name);
@@ -209,6 +213,107 @@ public class DilemmaLessonsTests
             AssertThat(text)
                 .OverrideFailureMessage($"The hold-or-sell lesson never names the Unstock control. Copy: \"{text}\"")
                 .Contains("Unstock");
+
+            // The lesson having already fired must not stop the real press from queuing normally.
+            PressEnabled(ui.Commissions, "CommissionAccept_1");
+            AssertThat(ui.Adapter.AppliedThisPhase.OfType<AcceptCommissionAction>().Any(a => a.Hero == new HeroId(1)))
+                .OverrideFailureMessage("The Accept press did not queue an AcceptCommissionAction once the render-time lesson had already fired.")
+                .IsTrue();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>A player who DECLINES must be taught exactly as much as a player who accepts --
+    /// R14.7's "both sides" was a lie under the old wiring, where only the Accept press ever reached
+    /// ConsumeFirstTouch and a decliner heard nothing.</summary>
+    [TestCase]
+    public void DecliningACommissionForTheFirstTime_AlsoReceivedTheHoldOrSellDilemma()
+    {
+        var state = GameComposition.NewCampaign(seed: 9402) with { Commissions = ImmutableList.Create(OpenCommission(new HeroId(1))) };
+        var ui = MountMainUi(new SimAdapter(state));
+        try
+        {
+            ui.Commissions.ShowOpen(ui.Adapter.CurrentState);
+            AssertThat(ui.Mentor.Visible)
+                .OverrideFailureMessage("Setup check: the lesson never fired on render.")
+                .IsTrue();
+            ui.Mentor.Dismiss();
+
+            PressEnabled(ui.Commissions, "CommissionDecline_1");
+
+            AssertThat(ui.Adapter.AppliedThisPhase.OfType<DeclineCommissionAction>().Any(a => a.Hero == new HeroId(1)))
+                .OverrideFailureMessage("The Decline press did not queue a DeclineCommissionAction.")
+                .IsTrue();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>No open commission, nothing to decide -- the dilemma must stay silent (it may never
+    /// fire on a day the player is not actually facing this fork).</summary>
+    [TestCase]
+    public void NoOpenCommission_TheHoldOrSellDilemmaStaysSilent()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.Commissions.ShowOpen(ui.Adapter.CurrentState);
+
+            AssertThat(ui.Mentor.Visible)
+                .OverrideFailureMessage("The hold-or-sell dilemma fired with no open commission on the board.")
+                .IsFalse();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>An already-accepted commission renders no live Accept/Decline pair -- a settled
+    /// commission is not a fork, so the dilemma must not fire off it alone.</summary>
+    [TestCase]
+    public void OnlyAnAlreadyAcceptedCommissionRenders_TheHoldOrSellDilemmaStaysSilent()
+    {
+        var accepted = OpenCommission(new HeroId(1)) with { Accepted = true };
+        var state = GameComposition.NewCampaign(seed: 9402) with { Commissions = ImmutableList.Create(accepted) };
+        var ui = MountMainUi(new SimAdapter(state));
+        try
+        {
+            ui.Commissions.ShowOpen(ui.Adapter.CurrentState);
+
+            AssertThat(ui.Mentor.Visible)
+                .OverrideFailureMessage("The hold-or-sell dilemma fired off an already-accepted commission -- no live fork was ever on screen.")
+                .IsFalse();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>Once-ever across the whole campaign: a second board-open on a different hero's open
+    /// commission must not re-show it -- the same anti-nag contract every other first-touch lesson
+    /// here carries (the 1287x memorial-nag precedent).</summary>
+    [TestCase]
+    public void ASecondOpenCommission_DoesNotReshowTheHoldOrSellDilemma()
+    {
+        var state = GameComposition.NewCampaign(seed: 9402) with { Commissions = ImmutableList.Create(OpenCommission(new HeroId(1))) };
+        var ui = MountMainUi(new SimAdapter(state));
+        try
+        {
+            ui.Commissions.ShowOpen(ui.Adapter.CurrentState);
+            ui.Mentor.Dismiss();
+
+            ui.Commissions.ShowOpen(ui.Adapter.CurrentState with { Commissions = ImmutableList.Create(OpenCommission(new HeroId(2))) });
+
+            AssertThat(ui.Mentor.Visible)
+                .OverrideFailureMessage("The hold-or-sell dilemma fired a SECOND time -- the anti-nag pin failed.")
+                .IsFalse();
         }
         finally
         {
@@ -518,6 +623,173 @@ public class DilemmaLessonsTests
                 $"U40's tariff-fork lesson); found {untaught} still blocked/missing. If this grew, a " +
                 "dilemma silently lost its teaching without a citation; if it shrank further, this " +
                 "assertion is already wrong on its face -- fix it in the same diff.")
+            .IsEqual(0);
+    }
+
+    // ============================================================================================
+    // U27 (§11.14.14, R14.7): "the tutorial names the six dilemmas out loud -- one sentence each,
+    // both sides, no recommendation." The tests above each check ONE fork against a couple of
+    // hand-picked phrases (afford/counter, shelf/commission, empty slot/full one...); this is the
+    // corpus-wide tripwire -- every live dilemma text, gathered in one place, checked against the
+    // SAME bank of recommendation-signaling phrases. This is the single most load-bearing test in
+    // the unit: R14.7 is a design ruling a reviewer can forget to re-check on every future edit to
+    // any of these six lines, and this test is what makes forgetting go red instead of silent.
+    // ============================================================================================
+
+    /// <summary>Drives the real hold-or-sell render path (no press) and returns the banner text.</summary>
+    private static string CaptureHoldOrSellText()
+    {
+        var state = GameComposition.NewCampaign(seed: 27001) with { Commissions = ImmutableList.Create(OpenCommission(new HeroId(1))) };
+        var ui = MountMainUi(new SimAdapter(state));
+        try
+        {
+            ui.Commissions.ShowOpen(ui.Adapter.CurrentState);
+            return Find<Label>(ui.Mentor, "MentorBannerText").Text;
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>Drives the real first-ever-Stock render path and returns the banner text.</summary>
+    private static string CapturePricingText()
+    {
+        var baseState = GameComposition.NewCampaign(seed: 27002);
+        var item = TestBuckler(new ItemId(27002));
+        var state = baseState with { Items = baseState.Items.Add(item.Id.Value, item) };
+        var ui = MountMainUi(new SimAdapter(state));
+        try
+        {
+            ui.OpenPanel("Shop");
+            PressEnabled(ui.Shop, $"Stock_{item.Id.Value}");
+            return Find<Label>(ui.Mentor, "MentorBannerText").Text;
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>Drives the real forecast-board render path against a fresh campaign (starter heroes
+    /// reliably carry a gear gap, the same fixture <c>WaveDLessonsTests</c> relies on) and returns
+    /// the banner text.</summary>
+    private static string CaptureMusterSpeaksText()
+    {
+        var ui = MountMainUi(new SimAdapter(GameComposition.NewCampaign(seed: 27003)));
+        try
+        {
+            ui.Forecast.ShowForTomorrow(ui.Adapter.CurrentState);
+            return Find<Label>(ui.Mentor, "MentorBannerText").Text;
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>Drives the real first-ever-unlock render path (same fixture as
+    /// <see cref="Dilemma4_LessonNamesTheSlotCost_NeverDeniesIt"/>) and returns the Forge's own
+    /// mentor text.</summary>
+    private static string CaptureFirstTalentUnlockText()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.OpenPanel("Forge");
+            PressEnabled(ui.Forge, "Unlock_keen-eye");
+            return Find<Label>(ui.Forge, "ForgeMentorText").Text;
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>Drives the real first-tariff render path (same fixture as
+    /// <see cref="FirstTariffApplied_TeachesTheTariffForkDilemma"/>) and returns the banner text.</summary>
+    private static string CaptureTariffForkText()
+    {
+        var baseState = GameComposition.NewCampaign(ScriptedSession.Seed);
+        var state = baseState with
+        {
+            EventLog = baseState.EventLog.Add(
+                new TariffApplied(FactionRegistry.DeepveinId, "copper", BaseLineCost: 100, PlayerCost: 90, Delta: -10)),
+        };
+        var ui = MountMainUi(new SimAdapter(state));
+        try
+        {
+            ui.Adapter.Queue(new BuyMaterialAction(ScriptedSession.CraftMaterial, ScriptedSession.CopperNeeded));
+            return Find<Label>(ui.Mentor, "MentorBannerText").Text;
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>Dilemma #6 is taught by a NUMBERED step, not a first-touch lesson, so there is no
+    /// banner render to drive -- its one fixed copy lives on the registry row itself
+    /// (<see cref="TutorialStepDef.TeachNote"/>, the exact text <see cref="MentorVoice.CurrentLesson"/>
+    /// speaks verbatim), read directly rather than duplicated as a literal.</summary>
+    private static string VigilTeachNoteText() =>
+        TutorialFlow.Registry.First(def => def.Step == TutorialStep.Vigil).TeachNote;
+
+    /// <summary>
+    /// R14.7 as an executable tripwire: gathers every one of the six dilemmas' LIVE copy (driven
+    /// through its real surface, never a hand-retyped literal that could silently drift from what a
+    /// player actually reads) and checks each against one shared bank of recommendation-signaling
+    /// phrases. <see cref="MentorVoiceTests.HerOwnAuthoredLines_NeverReadAsACommand"/> already checks
+    /// the wider corpus for "!"/"must", narrowly by construction (that file's own doc); this widens
+    /// the phrase bank specifically for the six dilemmas, where a soft nudge ("the smart choice",
+    /// "you should", "better to") would defeat R14.7 just as surely as a bare command would, without
+    /// ever tripping the narrower check.
+    /// </summary>
+    [TestCase]
+    public void SixDilemmas_NoForkCopyRecommendsAnArm()
+    {
+        (string Dilemma, string Text)[] captured =
+        [
+            ("#1 hold-or-sell", CaptureHoldOrSellText()),
+            ("#2 pricing-as-a-decision", CapturePricingText()),
+            ("#3 the-muster-speaks", CaptureMusterSpeaksText()),
+            ("#4 first-talent-unlock", CaptureFirstTalentUnlockText()),
+            ("#5 the-tariff-fork", CaptureTariffForkText()),
+            ("#6 send-the-runner (TutorialStep.Vigil)", VigilTeachNoteText()),
+        ];
+
+        string[] recommendationSignals =
+        [
+            "you should", "we recommend", "i recommend", "recommend", " must ", "the best choice",
+            "the right choice", "the right call", "the smart choice", "the safe choice",
+            "better to ", "it's better", "always choose", "you'll want to", "make sure to",
+        ];
+
+        var problems = new System.Collections.Generic.List<string>();
+        foreach (var (dilemma, text) in captured)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                problems.Add($"{dilemma}: captured no text at all -- setup is broken, not a register defect.");
+                continue;
+            }
+
+            if (text.TrimEnd().EndsWith('!'))
+            {
+                problems.Add($"{dilemma}: ends with an exclamation -- reads as an order, not a dilemma. \"{text}\"");
+            }
+
+            foreach (var signal in recommendationSignals)
+            {
+                if (text.Contains(signal, System.StringComparison.OrdinalIgnoreCase))
+                {
+                    problems.Add($"{dilemma}: contains \"{signal}\" -- reads as a recommendation, which R14.7 forbids. \"{text}\"");
+                }
+            }
+        }
+
+        AssertThat(problems.Count)
+            .OverrideFailureMessage(string.Join("\n", problems))
             .IsEqual(0);
     }
 }
