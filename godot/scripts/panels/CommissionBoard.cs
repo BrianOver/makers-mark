@@ -4,6 +4,7 @@ using System.Linq;
 using GameSim;
 using GameSim.Advisor;
 using GameSim.Contracts;
+using GameSim.Heroes;
 using Godot;
 using GodotClient.Ui;
 
@@ -130,7 +131,7 @@ public partial class CommissionBoard : Control
         var body = new VBoxContainer();
         card.AddChild(body);
 
-        AddHeader(body, $"{heroName} wants a {commission.MinQuality} {commission.Slot} or better");
+        AddHeader(body, $"{heroName} wants a {commission.MinQuality} {commission.Slot} or better{CommissionSystem.SlotHonestyNote(commission.Slot)}");
 
         // Playtest-pilot3 finding 2: CommissionSystem's own expiry sweep (Heroes/CommissionSystem.cs,
         // ExpireCommissions) only runs when Morning's phase systems actually process — the tick that

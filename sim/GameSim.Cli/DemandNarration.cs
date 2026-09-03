@@ -119,7 +119,7 @@ public static class DemandNarration
         {
             foreach (var c in snapshot.OpenCommissions)
             {
-                lines.Add($"    {c.Hero} {c.HeroName} wants a {c.MinQuality}+ {c.Slot}, premium {c.PremiumGold}g, due day {c.DeadlineDay}");
+                lines.Add($"    {c.Hero} {c.HeroName} wants a {c.MinQuality}+ {c.Slot}, premium {c.PremiumGold}g, due day {c.DeadlineDay}{CommissionSystem.SlotHonestyNote(c.Slot)}");
             }
         }
 
@@ -199,7 +199,7 @@ public static class DemandNarration
         }
 
         var gaps = string.Join("; ", commissions.Select(c =>
-            $"{c.HeroName} wants a {c.MinQuality}+ {c.Slot} (+{c.PremiumGold}g, due day {c.DeadlineDay})"));
+            $"{c.HeroName} wants a {c.MinQuality}+ {c.Slot} (+{c.PremiumGold}g, due day {c.DeadlineDay}){CommissionSystem.SlotHonestyNote(c.Slot)}"));
         return $"commissions: {commissions.Count} open — {gaps}";
     }
 

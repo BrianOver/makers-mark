@@ -92,11 +92,24 @@ public sealed record Hero(
     /// </summary>
     public int LadderRank { get; init; } = 0;
 
-    /// <summary>Simple additive gear score used by shopping and floor gates. Integer math only.</summary>
+    /// <summary>
+    /// Simple additive gear score used by shopping (<see cref="GameSim.Heroes.ShoppingAi"/>) —
+    /// NOT floor gates. This doc previously claimed "and floor gates" and was wrong: the floor-gate
+    /// number is <c>CombatMath.EffectivePower</c>, a separate formula this method has no part in
+    /// (P2-HONEST-11 correction, owner ruling 2026-09-03).
+    ///
+    /// <para>Weapon/Shield/Armor only: <see cref="GearSet.Trinket"/> is deliberately excluded.
+    /// P2-HONEST-11 (P2-OQ7 resolved honesty over teeth) declared the trinket the modifier-only
+    /// slot — its Attack/Defense never reach combat (<c>CombatMath.HeroAttack</c>/<c>HeroDefense</c>
+    /// read Weapon and Shield+Armor respectively, never Trinket), so a hero's willingness to buy one
+    /// must not be driven by stats that do nothing underground. Summing Trinket here used to make
+    /// heroes pay real gold for that illusion; a trinket's only real value is its craft modifier,
+    /// which an integer stat sum cannot see. Integer math only.</para>
+    /// </summary>
     public static int GearScore(GearSet gear, ImmutableSortedDictionary<int, Item> items)
     {
         var score = 0;
-        foreach (var slot in new[] { gear.Weapon, gear.Shield, gear.Armor, gear.Trinket })
+        foreach (var slot in new[] { gear.Weapon, gear.Shield, gear.Armor })
         {
             if (slot is { } id && items.TryGetValue(id.Value, out var item))
             {

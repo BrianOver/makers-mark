@@ -235,4 +235,30 @@ public class CommissionSystemTests
 
         Assert.Equal(RunDay(), RunDay());
     }
+
+    /// <summary>
+    /// P2-HONEST-11 (owner ruling 2026-09-03, P2-OQ7 resolved honesty over teeth): every
+    /// player-facing rendering of a commission's slot appends <see cref="CommissionSystem.SlotHonestyNote"/>
+    /// after its own sentence — deny-by-default over the real <see cref="ItemSlot"/> values (not a
+    /// hand-typed pair), so a future sixth slot is covered automatically. Only Trinket gets a note,
+    /// and it must actually name what the note is for (a favor, not combat weight) rather than just
+    /// being non-empty.
+    /// </summary>
+    [Fact]
+    public void SlotHonestyNote_IsEmptyForEverySlotExceptTrinket_AndNamesTheFavorForTrinket()
+    {
+        foreach (var slot in Enum.GetValues<ItemSlot>())
+        {
+            var note = CommissionSystem.SlotHonestyNote(slot);
+            if (slot == ItemSlot.Trinket)
+            {
+                Assert.False(string.IsNullOrWhiteSpace(note));
+                Assert.Contains("favor", note, StringComparison.OrdinalIgnoreCase);
+            }
+            else
+            {
+                Assert.Equal(string.Empty, note);
+            }
+        }
+    }
 }
