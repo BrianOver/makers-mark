@@ -124,6 +124,24 @@ public class BatchRunnerTests : IDisposable
     }
 
     [Fact]
+    public void Policy_HandForge_IsSelectableAndTagsItsOwnFilename()
+    {
+        // 2026-09-03 owner ruling: HandForgePlayer was previously unreachable from the batch farm
+        // (only baseline/counter/apprentice existed, and none of them ever hand-forges). Selecting
+        // it must (a) actually run HandForgePlayer's hand-forge-plus-echo loop and (b) tag its own
+        // filename distinctly so it never collides with the other policies' corpora.
+        var args = BatchRunner.Parse(["--seeds", "1", "--days", "3", "--out", _dir, "--policy", "handforge"], TextWriter.Null);
+        Assert.NotNull(args);
+        Assert.Equal(BatchRunner.Policy.HandForge, args!.PlayerPolicy);
+
+        Assert.Equal(0, BatchRunner.Run(args, TextWriter.Null, TextWriter.Null));
+
+        var file = Assert.Single(Directory.GetFiles(_dir, "batch-seed*-days3-handforge.json"));
+        var chronicle = ChronicleCodec.Deserialize(File.ReadAllText(file));
+        Assert.Equal(4, chronicle.Day); // ran through the END of day 3, same as the baseline path
+    }
+
+    [Fact]
     public void SweepCleansStaleBatchFiles_ButSingleSeedRepro_DoesNot()
     {
         // A sweep owns the dir's batch-*.json namespace (stale params would skew corpus baselines);
