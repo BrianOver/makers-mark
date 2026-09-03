@@ -303,8 +303,24 @@ public class AtomicEquivalenceTests
     // same both-unchanged signature the L5/U4/T6 and dead-hero-commission entries above recorded.
     // The 100-day Balance gate is untouched by a contract that no rule reads. Pure serialized-content
     // movement; never a routing, combat, or economy decision.
+    // 2026-09-03 (P2-PROOF-02/03, "the retention producer"): re-baselined for the producer that
+    // populates the P2-PROOF-01 fields. ExpeditionResolver.BuildResult now snapshots every party
+    // member into ExpeditionResult.PartyAtDeparture (id, name, class, level, MaxHp, gear ids) and
+    // ExpeditionRevealSystem.Process now moves the reveal's consumed PendingExpeditions into
+    // GameState.LastNightExpeditions wholesale instead of dropping it. Both are pure reads/writes
+    // over already-computed party/result data — no RNG, no new draw site — so PhaseBNoDrawGateTests'
+    // RngState pin (`Inc` AND `State`) stays byte-identical (see that file's matching entry: this
+    // producer needed none, because nothing moved). What moves THIS hash is pure serialized-content:
+    // every hero on the idle trace who ever marches now carries a non-empty PartyAtDeparture snapshot
+    // in every ExpeditionResult, and the Evening reveal now leaves one night's worth of
+    // ExpeditionResult objects sitting in LastNightExpeditions instead of an empty list — both new
+    // values in the save JSON, same class as the L0/SignedName/Memorial.Honored field additions
+    // above. Confirmed draw-free: the snapshot reads only Hero fields already in hand at BuildResult
+    // (no rng parameter touched) and the reveal change is a dictionary/list re-point, not a
+    // computation. The 100-day Balance gate is untouched (no rule reads either field yet — the
+    // TellingQuery reader is a pure sim-side query with zero engine wiring in this PR).
     private const string ExpectedPreCounterSha256 =
-        "7EB41A00EAD6D5A278EA1AA5C274733C465CE422C3B3C1C4A5CEC72B005E9FF7";
+        "F5488949CB39A39B47F99A4F1EDD27457D7523DBFA9A7ED171FF8DE50F8D8B6D";
 
     [Fact]
     public void ThirtyDayRun_NoCounterActions_IsByteIdenticalToPrePa3Kernel()

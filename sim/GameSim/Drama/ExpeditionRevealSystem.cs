@@ -58,6 +58,9 @@ public sealed class ExpeditionRevealSystem : IPhaseSystem
         return state with
         {
             PendingExpeditions = ImmutableList<ExpeditionResult>.Empty,
+            // P2-PROOF-01/02: move rather than drop — LastNightExpeditions replaces wholesale
+            // (one night, bounded by construction), so a recorded fight survives its own reveal.
+            LastNightExpeditions = state.PendingExpeditions,
             OpenOreOffers = market.ToImmutable(), // yesterday's unsold offers are gone
         };
     }
