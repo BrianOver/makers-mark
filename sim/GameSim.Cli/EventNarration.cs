@@ -78,7 +78,7 @@ public static class EventNarration
         CommissionFulfilled fulfilled =>
             $"  $ commission fulfilled — {HeroName(state, fulfilled.Hero)} pays a {fulfilled.Premium}g premium for {ItemName(state, fulfilled.Item)}",
         CommissionExpired expired =>
-            $"  ~ commission expired — {HeroName(state, expired.Hero)} needed a {expired.Slot} by the deadline, unfilled",
+            $"  ~ commission expired — {HeroName(state, expired.Hero)} needed a {expired.Slot} by the deadline, unfilled{CommissionSystem.SlotHonestyNote(expired.Slot)}",
         ItemSigned signed =>
             $"  ★ {ItemName(state, signed.Item)} signed into legend as \"{signed.SignedName}\"",
 

@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using GameSim.Contracts;
+using GameSim.Heroes;
 using Godot;
 
 namespace GodotClient.Ui;
@@ -164,11 +165,11 @@ public partial class AdventureTicker : PanelContainer
 
         CommissionPosted e =>
             $"{HeroName(state, e.Hero)} wants {e.Slot} work, {e.MinQuality} or better, by day {e.DeadlineDay} " +
-            $"— {e.PremiumGold}g over list.",
+            $"— {e.PremiumGold}g over list{CommissionSystem.SlotHonestyNote(e.Slot)}.",
         CommissionFulfilled e =>
             $"{HeroName(state, e.Hero)} takes delivery of {ItemName(state, e.Item)} — {e.Premium}g premium.",
         CommissionExpired e =>
-            $"{HeroName(state, e.Hero)} gave up waiting on that {e.Slot} commission.",
+            $"{HeroName(state, e.Hero)} gave up waiting on that {e.Slot} commission{CommissionSystem.SlotHonestyNote(e.Slot)}.",
 
         // U3: these two fired into total silence for as long as they've existed (Wave 4 and
         // Wave 4c respectively) — no ticker case, no player-visible feedback at all. Signing a

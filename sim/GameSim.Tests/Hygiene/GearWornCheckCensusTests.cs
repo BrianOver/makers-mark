@@ -1,6 +1,8 @@
+using System.Collections.Immutable;
 using System.Reflection;
 using System.Text.RegularExpressions;
 using GameSim.Contracts;
+using GameSim.Expedition;
 
 namespace GameSim.Tests.Hygiene;
 
@@ -41,9 +43,22 @@ public class GearWornCheckCensusTests
 
     /// <summary>(relative path, statement snippet) → reason citing the ruling that grants the
     /// exception — same citation contract as <c>ClientAuthorityCensusTests.Exceptions</c>.</summary>
-    private static readonly Dictionary<(string File, string Statement), string> Exceptions = new();
+    private static readonly Dictionary<(string File, string Statement), string> Exceptions = new()
+    {
+        // P2-HONEST-11 (owner ruling 2026-09-03, P2-OQ7 resolved honesty over teeth): the
+        // BreakpointClear loop's array used to carry all four slots (#667's fix for THIS census),
+        // which was itself the false-coverage bug the ruling exists to correct — CombatMath never
+        // reads Gear.Trinket, so the array iterating it could never fire. The trinket stays the
+        // modifier-only slot; this is the one worn-gear-group array allowed to omit a slot, and
+        // BreakpointClearArray_OnlyReferencesSlots_CombatMathActuallyReads below proves — from
+        // CombatMath's own behavior, not by assertion — that it omits exactly the right one.
+        [("Expedition/AttributionEngine.cs", " hero.Gear.Weapon, hero.Gear.Shield, hero.Gear.Armor ")] =
+            "P2-HONEST-11 / P2-OQ7 (owner ruling 2026-09-03): Trinket contributes no stats to " +
+            "CombatMath.EffectivePower, so a counterfactual removal of a trinket can never move " +
+            "PartyAveragePower — the omission here is deliberate honesty, not a regression.",
+    };
 
-    private const int ExpectedExceptionCount = 0;
+    private const int ExpectedExceptionCount = 1;
 
     [Fact]
     public void GearSetHasTheSlotsThisCensusExpects()
@@ -137,6 +152,74 @@ public class GearWornCheckCensusTests
             """;
 
         Assert.Empty(FindWornGearStatements(statFormula));
+    }
+
+    /// <summary>
+    /// P2-HONEST-11 (owner ruling 2026-09-03, P2-OQ7 resolved honesty over teeth): the regression
+    /// proof that the dead attribution branch is actually gone and cannot silently come back.
+    ///
+    /// <para>A behavioral test alone cannot prove this — <c>CombatMath.EffectivePower</c> already
+    /// ignores <c>Gear.Trinket</c>, so removing a trinket item from the counterfactual pass has
+    /// ZERO effect on <c>PartyAveragePower</c> whether or not the loop iterates Trinket at all.
+    /// "No beat fires" would pass identically for the old, false-coverage loop and the fixed one —
+    /// exactly the "looks like coverage but isn't" shape this whole unit exists to fix. Only the
+    /// SOURCE can tell them apart, so this reads it, like every other fact in this file.</para>
+    ///
+    /// <para>Deny-by-default over <em>discovered</em> slots, not a hand-typed pair: for each
+    /// <see cref="GearSet"/> slot this behaviorally determines whether filling it with a
+    /// stat-carrying item moves <c>CombatMath.EffectivePower</c> at all, then asserts
+    /// AttributionEngine's BreakpointClear array references a slot if and only if it does. This
+    /// tracks <c>CombatMath</c>'s real behavior — if a future change ever gives Trinket real combat
+    /// stats (the "teeth" arm this ruling did NOT choose) without updating this loop, or if Weapon/
+    /// Shield/Armor ever silently drop out, this fact catches either direction.</para>
+    /// </summary>
+    [Fact]
+    public void BreakpointClearArray_OnlyReferencesSlots_CombatMathActuallyReads()
+    {
+        var code = StripComments(File.ReadAllText(Path.Combine(SimRoot(), "Expedition", "AttributionEngine.cs")));
+        var statement = FindWornGearStatements(code)
+            .SingleOrDefault(s => s.Contains(".Weapon", StringComparison.Ordinal));
+
+        Assert.False(string.IsNullOrEmpty(statement),
+            "Could not find AttributionEngine's BreakpointClear worn-gear array — if the loop moved "
+            + "or was rewritten, this test no longer proves anything about it and needs updating, "
+            + "not deleting.");
+
+        foreach (var slot in SlotProperties)
+        {
+            var referenced = statement!.Contains("." + slot, StringComparison.Ordinal);
+            var feedsEffectivePower = SlotFeedsEffectivePower(slot);
+
+            Assert.True(referenced == feedsEffectivePower,
+                $"BreakpointClear's worn-gear array {(feedsEffectivePower ? "must" : "must NOT")} "
+                + $"reference Gear.{slot} — CombatMath.EffectivePower "
+                + $"{(feedsEffectivePower ? "reads" : "never reads")} it (discovered behaviorally, "
+                + "not hand-typed). A counterfactual removal of a stat-inert item can never move "
+                + "PartyAveragePower, so the loop must never iterate a slot the formula ignores — "
+                + "that was the dead, false-coverage branch P2-HONEST-11 deleted.");
+        }
+    }
+
+    /// <summary>Whether filling <paramref name="slotName"/> with a stat-carrying item moves
+    /// <see cref="CombatMath.EffectivePower"/> at all — the behavioral discovery
+    /// <see cref="BreakpointClearArray_OnlyReferencesSlots_CombatMathActuallyReads"/> builds its
+    /// expectation from, rather than a hand-typed "Weapon/Shield/Armor, not Trinket" list.</summary>
+    private static bool SlotFeedsEffectivePower(string slotName)
+    {
+        var slot = Enum.Parse<ItemSlot>(slotName);
+        var probe = new Item(
+            new ItemId(1), "probe", "Probe", slot, QualityGrade.Common,
+            new ItemStats(Attack: 9, Defense: 9, Weight: 1),
+            new MakersMark("You", 1), ImmutableList<ItemHistoryEntry>.Empty);
+        var items = ImmutableSortedDictionary<int, Item>.Empty.Add(1, probe);
+
+        var geared = new Hero(
+            new HeroId(1), "Probe", "vanguard", Level: 1, MaxHp: 30, Gold: 0,
+            GearSet.Empty.WithSlot(slot, probe.Id), ImmutableList<ItemMemory>.Empty,
+            Alive: true, DeepestFloorReached: 0, DiedOnDay: null);
+        var bare = geared with { Gear = GearSet.Empty };
+
+        return CombatMath.EffectivePower(geared, items) != CombatMath.EffectivePower(bare, items);
     }
 
     private static readonly Regex ArrayLiteral = new(@"new\[\]\s*\{([^{}]*)\}", RegexOptions.Singleline);

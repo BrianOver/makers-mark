@@ -5,6 +5,7 @@ using GameSim.Classes;
 using GameSim.Contracts;
 using GameSim.Drama;
 using GameSim.Factions;
+using GameSim.Heroes;
 using GameSim.Kernel;
 using Godot;
 using GodotClient.Ui;
@@ -271,7 +272,7 @@ public partial class TavernPanel : SimPanel
         var line = kind switch
         {
             PursuedThreadKind.Commission => OpenCommissionFor(state, hero.Id) is { } commission
-                ? $"Asking: {commission.MinQuality} {commission.Slot} by day {commission.DeadlineDay}, +{commission.PremiumGold}g over list."
+                ? $"Asking: {commission.MinQuality} {commission.Slot} by day {commission.DeadlineDay}, +{commission.PremiumGold}g over list{CommissionSystem.SlotHonestyNote(commission.Slot)}."
                 : null,
             PursuedThreadKind.Ore => OpenOreOfferFor(state, hero.Id) is { } offer
                 ? $"Offering: {offer.Quantity}x {offer.MaterialKey} at {offer.UnitPrice}g each."
@@ -359,7 +360,7 @@ public partial class TavernPanel : SimPanel
         AddLabel(
             parent,
             $"  {hero.Name} wants a {commission.MinQuality} {commission.Slot} or better by day "
-            + $"{commission.DeadlineDay}, +{commission.PremiumGold}g over list.");
+            + $"{commission.DeadlineDay}, +{commission.PremiumGold}g over list{CommissionSystem.SlotHonestyNote(commission.Slot)}.");
 
         var row = AddRow(parent);
         var legal = state.Phase == DayPhase.Morning;

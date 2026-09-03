@@ -4,8 +4,10 @@ using GameSim.Contracts;
 namespace GameSim.Tests.Heroes;
 
 /// <summary>
-/// The P2 Trinket gear slot (contract only — content arrives with later add-ons):
-/// Slot/WithSlot address it and GearScore counts its Attack + Defense.
+/// The P2 Trinket gear slot: Slot/WithSlot address it like any other slot, but
+/// <see cref="Hero.GearScore"/> does NOT count its Attack + Defense (P2-HONEST-11, owner ruling
+/// 2026-09-03) — the trinket is the modifier-only slot; its stats never reach combat, so the
+/// shopping score must not pay for them either.
 /// </summary>
 public class TrinketGearSetTests
 {
@@ -36,12 +38,16 @@ public class TrinketGearSetTests
     }
 
     [Fact]
-    public void GearScore_IncludesTrinketAttackAndDefense()
+    public void GearScore_ExcludesTrinketAttackAndDefense()
     {
+        // P2-HONEST-11 (owner ruling 2026-09-03): a trinket's Attack/Defense never reach
+        // CombatMath, so GearScore — the number that drives what heroes are willing to buy —
+        // must stop paying for them too. Equipping a stat-carrying trinket must not move the
+        // score at all, empty slot or not.
         var charm = Charm(1, attack: 2, defense: 3);
         var items = ImmutableSortedDictionary<int, Item>.Empty.Add(1, charm);
 
         Assert.Equal(0, Hero.GearScore(GearSet.Empty, items));
-        Assert.Equal(5, Hero.GearScore(GearSet.Empty.WithSlot(ItemSlot.Trinket, charm.Id), items));
+        Assert.Equal(0, Hero.GearScore(GearSet.Empty.WithSlot(ItemSlot.Trinket, charm.Id), items));
     }
 }

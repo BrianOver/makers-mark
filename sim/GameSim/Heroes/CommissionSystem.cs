@@ -318,6 +318,21 @@ public sealed class CommissionSystem : IPhaseSystem
         }
     }
 
+    /// <summary>
+    /// P2-HONEST-11 (owner ruling 2026-09-03, P2-OQ7 resolved honesty over teeth): every
+    /// player-facing rendering of a commission's wanted slot appends this after its own sentence,
+    /// so a trinket ask reads as what it is — a favor, not a repair. Trinket stats never reach
+    /// <c>CombatMath</c> (Weapon feeds Attack, Shield+Armor feed Defense — <see
+    /// cref="GameSim.Expedition.CombatMath.EffectivePower"/>) and no longer feed <see
+    /// cref="Hero.GearScore"/> either, so the only honest thing a trinket commission can promise is
+    /// the favor of a named request, never combat weight. Empty for every other slot: the
+    /// Weapon/Shield/Armor/Consumable sentence a caller builds is untouched, byte-identical to
+    /// before this ruling — the exact sentences <c>UnsilencedEventTests</c> and
+    /// <c>TavernActsTests</c> already pin for a Weapon commission keep passing unchanged.
+    /// </summary>
+    public static string SlotHonestyNote(ItemSlot slot) =>
+        slot == ItemSlot.Trinket ? " — a favor, not fighting gear" : string.Empty;
+
     /// <summary>Applies a signed mood delta to one hero (mirrors the counter-haggle mood-bump idiom in
     /// <c>HaggleResolver.CloseSale</c> — unclamped, since <see cref="Hero.MoodPermille"/> is
     /// documented as a signed, unbounded opinion score). A no-op if the hero is no longer in the

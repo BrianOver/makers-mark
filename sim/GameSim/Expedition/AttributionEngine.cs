@@ -120,7 +120,23 @@ public static class AttributionEngine
 
                 foreach (var hero in floorStartFighters)
                 {
-                    foreach (var itemId in new[] { hero.Gear.Weapon, hero.Gear.Shield, hero.Gear.Armor, hero.Gear.Trinket })
+                    // P2-HONEST-11 (owner ruling 2026-09-03, P2-OQ7 resolved honesty over teeth):
+                    // Trinket is deliberately ABSENT from this array. #667 (see git history) added
+                    // it here to close the T10 U48 worn-check-completeness gap, but that made this
+                    // loop false coverage rather than real coverage: CombatMath.EffectivePower
+                    // (:60-61 of CombatMath.cs) sums HeroAttack (Weapon only) + HeroDefense
+                    // (Shield+Armor only) and never reads Gear.Trinket, so removing a player-crafted
+                    // trinket from `items` below cannot move PartyAveragePower by even one point —
+                    // the arm could never fire, for any trinket, ever. The owner ruled honesty over
+                    // giving the trinket slot real combat stats (the other arm, P2-HONEST-11's
+                    // "teeth"): the trinket stays the modifier-only slot, so this loop stays
+                    // Weapon/Shield/Armor — the exact slots the formula above actually reads.
+                    // GearWornCheckCensusTests pins BOTH directions: a dedicated fact proves this
+                    // array can never silently regain Trinket without CombatMath also reading it,
+                    // and a cited exception lets this be the one worn-gear-group array that is
+                    // allowed to omit a slot. Do not "fix" this back without giving CombatMath a
+                    // real trinket-stat reader first.
+                    foreach (var itemId in new[] { hero.Gear.Weapon, hero.Gear.Shield, hero.Gear.Armor })
                     {
                         if (itemId is not { } id || !IsPlayerCrafted(id, items))
                         {

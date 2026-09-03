@@ -89,7 +89,7 @@ public static class ObjectiveAdvisor
             {
                 suggestions.Add(new Suggestion(accept,
                     $"Accept {commission.HeroName}'s commission — {commission.Slot} at {commission.MinQuality}+ quality " +
-                    $"for a {commission.PremiumGold}g premium (due day {commission.DeadlineDay})."));
+                    $"for a {commission.PremiumGold}g premium (due day {commission.DeadlineDay}){GameSim.Heroes.CommissionSystem.SlotHonestyNote(commission.Slot)}."));
             }
         }
 

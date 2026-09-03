@@ -24,6 +24,10 @@ public class AttributionTests
         new ItemId(id), "chain-vest", "Common Chain Vest", ItemSlot.Armor, QualityGrade.Common,
         new ItemStats(0, defense, 4), Mark: null, ImmutableList<ItemHistoryEntry>.Empty);
 
+    private static Item PlayerTrinket(int id, int attack, int defense) => new(
+        new ItemId(id), "monocle", "Fine Targeting Monocle", ItemSlot.Trinket, QualityGrade.Fine,
+        new ItemStats(attack, defense, 1), new MakersMark("You", 1), ImmutableList<ItemHistoryEntry>.Empty);
+
     private static Hero HeroWith(int id, GearSet gear, int hp = 30) => new(
         new HeroId(id), "Torvald", "vanguard", Level: 3, MaxHp: hp, Gold: 50,
         gear, ImmutableList<ItemMemory>.Empty, Alive: true, DeepestFloorReached: 4, DiedOnDay: null);
@@ -95,6 +99,35 @@ public class AttributionTests
             var result = ExpeditionResolver.Resolve(
                 ImmutableList.Create(hero), items, VenueRegistry.Mine, targetFloor: 3, new Pcg32(RngState.FromSeed(seed)));
             Assert.DoesNotContain(result.Beats, b => b.Item == armor.Id);
+        }
+    }
+
+    /// <summary>
+    /// P2-HONEST-11 (owner ruling 2026-09-03): a player-crafted trinket, even one carrying real
+    /// Attack/Defense stats a recipe author gave it, must NEVER earn a BreakpointClear beat —
+    /// <see cref="CombatMath.EffectivePower"/> never reads <see cref="GearSet.Trinket"/>, so no
+    /// removal of it can ever be gate-decisive. Stacked stats (Attack 30, Defense 30) and a party
+    /// hovering right at a floor gate give the loop every chance to fire if it still iterated the
+    /// slot; across many seeds, it never does. Complements the structural proof in
+    /// <c>GearWornCheckCensusTests.BreakpointClearArray_OnlyReferencesSlots_CombatMathActuallyReads</c>
+    /// (a behavioral pass alone can't distinguish "never iterates Trinket" from "iterates it but it
+    /// no-ops" — only reading the source can — so both tests exist together).
+    /// </summary>
+    [Fact]
+    public void NoBreakpointClearBeat_EverAttributesToATrinket()
+    {
+        var trinket = PlayerTrinket(1, attack: 30, defense: 30);
+        var weapon = PlayerWeapon(2, attack: 6);
+        var gear = new GearSet(weapon.Id, null, null, trinket.Id);
+        var items = ImmutableSortedDictionary<int, Item>.Empty.Add(1, trinket).Add(2, weapon);
+
+        for (ulong seed = 0; seed < 100; seed++)
+        {
+            var hero = HeroWith(1, gear);
+            var result = ExpeditionResolver.Resolve(
+                ImmutableList.Create(hero), items, VenueRegistry.Mine, targetFloor: 3, new Pcg32(RngState.FromSeed(seed)));
+
+            Assert.DoesNotContain(result.Beats, b => b.Beat == BeatType.BreakpointClear && b.Item == trinket.Id);
         }
     }
 
