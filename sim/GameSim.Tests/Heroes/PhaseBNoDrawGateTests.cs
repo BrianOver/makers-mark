@@ -125,6 +125,13 @@ public class PhaseBNoDrawGateTests
         // both-unchanged signature as L5/U4/T6. The AtomicEquivalenceTests SHA256 DOES move (which
         // hero gets the freed commission board slot, and when, differs) — pure serialized-content
         // change on a stream this exact assertion proves is untouched.
+        // 2026-09-03 (BatchEchoFloor 550 -> 800, owner ruling dated 2026-09-03): **NO-OP — neither
+        // `Inc` nor `State` moves.** See AtomicEquivalenceTests.cs's matching ledger entry for the
+        // full account: this idle trace's driver, BaselinePlayer, never submits a hand-forge
+        // (ForgeTraceInput), so GameState.Player.BatchEcho stays null all 30 days and the raised
+        // constant is never read on this trace at all — not "reads it and it's a no-op," never
+        // reached. Confirmed directly: this test itself is one of the 1785/1785 green fast-lane
+        // tests both before and after the change, same pinned value both times.
         Assert.Equal(new RngState(4182585629336870939UL, 13279888329118852579UL), state.Rng);
     }
 }
