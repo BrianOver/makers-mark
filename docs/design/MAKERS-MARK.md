@@ -5136,17 +5136,6 @@ deliberately still open and says why.
   the in-game book so divergence is structurally impossible — *recommended*: a real file the
   player keeps is half the idea's power. It is also the one place this game writes to disk on the
   player's behalf, which is the owner's call, not a default.
-- **P2-OQ6. `BatchEchoFloor = 550` — a stale comment, or a real value bug?** Found by the
-  `P2-HONEST` sweep (#667) and deliberately left unfixed there, because it is a value change
-  rather than a comment fix. `sim/GameSim/Crafting/CraftingHandlers.cs` declares
-  `BatchEchoFloor = 550` with a doc comment calling it *"the ordinary auto-craft baseline"* —
-  but `QualityRoller.AutoCraftGrade` moved to **800** in PR #583 on 2026-08-17. So either the
-  comment is a fourth instance of the stale-constant family this program is already building a
-  tripwire for, or the floor itself was tuned against a baseline that has since moved and the
-  batch-echo mechanism has been quietly mis-calibrated for two weeks. **Determining which is
-  cheap; changing the value is a balance ceremony.** Answer before `P2-HONEST`'s comment census
-  lands, or the census will flag it and force the question anyway.
-
 - **P2-OQ5. The faction cut — STILL OPEN, deliberately, and now half-unblocked.**
   `P2-MEMORY-09` landed in #657, so the layer's copy no longer advertises a surcharge the sim
   cannot charge and the precondition this question set for itself is met on that side. What still
@@ -5198,6 +5187,70 @@ default applied.**
   produced the 72 `cooled` variants. Note for whichever way it goes: `P2-MEMORY-12` retires the
   marquee, so the line's only surviving renderer becomes the book's day pages via `FormatLine`;
   a cut is cheapest before that move, not after.
+
+- **P2-OQ9. The hand-forge quality curve — investigated 2026-09-03, not a P2 dossier fork; parked
+  here because this is where the plan's open questions live.** Companion to the mastery pin
+  `ForgeMasteryPinTests` records at the code level (2026-09-03 owner ruling: talents are mastery,
+  mastery means certainty). The owner asked for the curve measured on its own — no retune, no
+  balance value touched. **Measured** (20 seeds x 100 days, `HandForgePlayer`, the exact sweep
+  `HandForgePlayer`'s own class doc cites, independently re-run for this question): the cited
+  distribution reproduces exactly — 1,522 items, Poor 0.0%, Common 0.0%, Fine 2.0% (30), Superior
+  46.3% (705), Masterwork 51.7% (787), 98.0% Superior-or-better. One number in the shipped comment
+  does NOT reproduce: `HandForgePlayer.cs` claims 743 hand-forges; this measurement counts 424 —
+  same "every one lands at SeedGrade 1000" property, different count. Worth a follow-up correction,
+  out of scope here.
+
+  **Is it the talents or the policy?** Re-run identically with every `UnlockTalentAction` stripped
+  (test-local wrapper only, per this question's own instruction not to ship a fifth harness
+  policy) — the talents, unambiguously. Masterwork share: 51.7% -> **0.0%** (0 of 1,458 items,
+  zero exceptions across all 20 seeds). Every one of the 219 talent-less hand-forges lands at
+  SeedGrade exactly 800 — `QualityRoller.AutoCraftGrade`, the SAME grade the null-performance
+  auto-craft path already uses — and the resulting Fine/Superior split (9.5%/90.5%) statistically
+  matches auto-craft's own band arithmetic at that grade. Auto-craft is separately hard-capped at
+  Superior by construction (pinned by `ActiveQualityModelTests.AutoCraft_NeverMasterwork_
+  AcrossAllRollsAndMaterialGrades`); hand-forging without the two mastery talents never needs that
+  cap to stay out of Masterwork — it simply never rolls high enough. **So until both talents are
+  earned, hand-forging buys no quality edge over clicking auto-craft** — only the flavor extras
+  (`CraftSubScores`, a `ForgeMoment` history line, Signed-Works eligibility, batch-echo seeding).
+
+  **Is it a progression or a flat line?** Flat, both ways — a step function, not a climb.
+  `BaselinePlayer`'s talent order (keen-eye day 1, master-touch day 2, legendary-craft day 3, every
+  seed) means Legendary Craft is already unlocked in day 3's own Morning phase, before that same
+  day's Expedition hand-forge — the FIRST hand-forge of every campaign, in all 20 seeds, both runs.
+  With talents: Masterwork share is 43.1% in days 1-25 (733 items) and stays in the same order
+  through days 76-100 (26.9%, but only 26 items in that window — noisy, not a trend: campaign
+  crafting volume collapses from ~29/day early to ~1/day late, most plausibly because a
+  Superior-or-better-saturated roster stops presenting `HasBuyer` gaps). Without talents: 0%
+  Masterwork start to finish (7.9% Fine / 92.1% Superior early, 11.1%/88.9% late), and volume holds
+  up much better late (208 items in days 76-100 vs 26) — a roster stuck at Superior keeps needing
+  upgrades longer. Neither run shows a smith "growing into" Masterwork; the ceiling is set entirely
+  by which side of day 3 a hand-forge falls on.
+
+  **What does 98% Superior-or-better do to the economy?** `WillingnessModel.
+  QualityWillingnessBonusPermille` grants Masterwork +220 permille and Superior +130 permille onto
+  a buyer's effective price factor (Poor -120, by contrast) — built, per that file's own doc
+  comment, so "a Masterwork earns real price tolerance, Poor gear gets lowballed." `ItemForge`
+  separately scales base stats 160% at Masterwork vs 135% at Superior vs 100% at Common. Both
+  mechanisms assume Masterwork is the exceptional case. At 51.7%, once both talents are in it is
+  the MODAL case, every hand-forge, for the rest of every 100-day campaign — Poor and Common (the
+  bonus table's steepest penalties) become unreachable by hand-forging entirely (0 of 1,522 items).
+  The premium is real and the stat gap is real; what has moved is how ORDINARY earning it is.
+
+  **Not costed, because the owner asked for measurement, not a retune. Recommendation (cheapest
+  first):** (a) *Measure a second talent-pacing policy before concluding anything is wrong* — the
+  entire 51.7%/0% swing rides on one scripted, unconditional talent order; nothing yet shows what a
+  policy that spends the point elsewhere first, or waits, produces. Cheap: another test-project
+  harness variant + sweep, zero balance/golden risk, and it is the only option that doesn't risk
+  tuning against a curve that may not resemble real play. (b) *Re-pace the unlock order itself*
+  (e.g. gate the mastery pair behind cost or a later prerequisite) — a balance re-baseline, and it
+  collides with `P2-ONBOARD`'s Warrant: the curated day-1-7 seed search is measured against this
+  exact `BaselinePlayer` schedule, so moving it re-opens that measurement too. (c) *Re-normalize
+  `QualityWillingnessBonusPermille`/`ItemForge`'s stat table around the distribution hand-forging
+  actually produces* — a balance re-baseline touching every haggle/pricing fixture that crafts a
+  non-Common item. (d) *Leave the mechanics; fix the framing* — item flavor text, Signed-Works
+  language, any copy that implies "Masterwork is rare" — cheapest, zero balance/golden risk, and
+  compatible with the Task 1 ruling that this ceiling is the intended reward for two earned
+  talents, not a bug.
 
 ## What must survive, named so this program cannot quietly discard it
 
