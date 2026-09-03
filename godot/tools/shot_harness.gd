@@ -121,10 +121,10 @@ const KNOWN_STATES := [
 	"BellTray", "Bestiary", "Camp", "Chronicle", "CommissionDilemma", "Counter", "Demand",
 	"DepthsPanel", "Docket",
 	"ForgeAnvil", "ForgeAnvilEmpty", "ForgeExit", "ForgeFlavor", "ForgeLadder", "ForgePanel",
-	"ForgeShelf", "GatedCounterEmptyShelf", "GateNight", "HeroCandidateOpen", "HeroCards",
-	"HeroErrand", "Ledger", "LedgerProvenance", "Lessons", "MineGateFocus", "Mirror",
+	"ForgeShelf", "ForgeTrinket", "GatedCounterEmptyShelf", "GateNight", "HeroCandidateOpen", "HeroCards",
+	"HeroErrand", "HeroTrinket", "Ledger", "LedgerProvenance", "Lessons", "MineGateFocus", "Mirror",
 	"OccupancyCorner", "Primer", "Provenance", "ReturnAtNight", "ReturnEmerge", "ReturnQuestEmpty",
-	"SendOff", "ShopPanel", "SplitLessons", "SystemMenu", "TavernPanel", "TownOverview",
+	"SendOff", "ShopPanel", "ShopTrinket", "SplitLessons", "SystemMenu", "TavernPanel", "TownOverview",
 	"TutorialLookIn", "TutorialOffCamera", "Watch", "WarrantFirstMorning",
 ]
 
@@ -482,6 +482,31 @@ func _process(_delta: float) -> bool:
 		elif _state == "DepthsPanel":
 			if _ui.has_method("OpenPanel"):
 				_ui.call("OpenPanel", "Depths")
+		elif _state == "ForgeTrinket":
+			# P2-HONEST-11 visible half: open the Forge drawer here -- SHOT_PROFESSION=engineering
+			# (set on the launching process, same contract as the "SHOT_PROFESSION=alchemy plus
+			# SHOT_STATE=Forge" precedent in this file's own header) supplies the one starting
+			# profession with a Trinket recipe (engineering-utility-multitool). The second beat
+			# (frame 120 below) scrolls the recipe list down to that card specifically -- it sorts
+			# (Tier, then RecipeId) well below this profession's Weapon/Shield/Armor Tier-1 cards,
+			# same ensure_control_visible idiom as ForgeLadder above.
+			if _ui.has_method("OpenPanel"):
+				_ui.call("OpenPanel", "Forge")
+		elif _state == "HeroTrinket":
+			# P2-HONEST-11 visible half: open the Heroes drawer here; the second beat (frame 90
+			# below) calls HeroesPanel's own dev bridge (Dev_ShowSampleTrinketGear) to equip a real
+			# roster hero with a synthetic modifier-carrying Trinket, so the receipt proves the GEAR
+			# row renders the modifier chip instead of the Atk/Def numbers CombatMath never reads
+			# for that slot.
+			if _ui.has_method("OpenPanel"):
+				_ui.call("OpenPanel", "Heroes")
+		elif _state == "ShopTrinket":
+			# P2-HONEST-11 visible half: open the Shop drawer here; the second beat (frame 90
+			# below) calls ShopPanel's own dev bridge (Dev_ShowSampleUnshelvedTrinket) to inject a
+			# synthetic, unshelved, modifier-less Trinket, so the receipt proves the Unshelved
+			# Crafts card renders the honesty-phrase fallback instead of a false Atk/Def number.
+			if _ui.has_method("OpenPanel"):
+				_ui.call("OpenPanel", "Shop")
 		elif _state == "Camp":
 			# Visual-check plan (2026-08-12): the winch-house slate (CampPanel, node name
 			# "CampModal") has no in-world hotspot and no drawer id of its own -- MainUi
@@ -837,6 +862,55 @@ func _process(_delta: float) -> bool:
 		var bell = _ui.find_child("AdvancePhase", true, false)
 		if bell:
 			bell.emit_signal("pressed")
+	# HeroTrinket/ShopTrinket's second beat: the drawer opened above (frame 60) has settled --
+	# reach the panel INSIDE DrawerHost specifically (not a bare find_child("Heroes", ...) off the
+	# whole tree, which would just as happily match Town2D's own "Heroes" Node2D root and silently
+	# miss the dev bridge) and call its own dev bridge, same "hand-built GameState, zero sim
+	# mutation" idiom as LedgerModal.Dev_ShowLedgerWithProvenanceBeat/
+	# CommissionBoard.Dev_ShowSampleOpenCommission above.
+	if _state == "HeroTrinket" and _frames == 90:
+		var hero_trinket_drawer = _ui.find_child("DrawerHost", true, false)
+		var hero_trinket_panel = hero_trinket_drawer.find_child("Heroes", true, false) if hero_trinket_drawer else null
+		if hero_trinket_panel and hero_trinket_panel.has_method("Dev_ShowSampleTrinketGear"):
+			hero_trinket_panel.call("Dev_ShowSampleTrinketGear")
+		else:
+			push_error("[shot] SHOT_STATE=HeroTrinket could not reach HeroesPanel.Dev_ShowSampleTrinketGear -- "
+				+ "the shot below is a plain roster and proves nothing about the trinket chip fix.")
+	if _state == "ShopTrinket" and _frames == 90:
+		var shop_trinket_drawer = _ui.find_child("DrawerHost", true, false)
+		var shop_trinket_panel = shop_trinket_drawer.find_child("Shop", true, false) if shop_trinket_drawer else null
+		if shop_trinket_panel and shop_trinket_panel.has_method("Dev_ShowSampleUnshelvedTrinket"):
+			shop_trinket_panel.call("Dev_ShowSampleUnshelvedTrinket")
+		else:
+			push_error("[shot] SHOT_STATE=ShopTrinket could not reach ShopPanel.Dev_ShowSampleUnshelvedTrinket -- "
+				+ "the shot below is a plain shelf and proves nothing about the trinket chip fix.")
+	# HeroTrinket/ShopTrinket's third beat: the dev bridge above (frame 90) has rebuilt the
+	# panel's content -- scroll each panel's own content ScrollContainer (found scoped under
+	# DrawerHost -> the panel's own root, same collision-avoidance reasoning as the frame-90
+	# block above -- SimPanel.BuildScrollBody names EVERY panel's scroll body the generic
+	# "Scroll", so a bare find_child("Scroll", ...) off the whole tree could just as easily
+	# resolve a different registered panel's scroll node) down to the staged trinket card, which
+	# sits below the fold on a fresh day-1 roster/shelf.
+	if _state == "HeroTrinket" and _frames == 120:
+		var hero_trinket_drawer2 = _ui.find_child("DrawerHost", true, false)
+		var hero_trinket_panel2 = hero_trinket_drawer2.find_child("Heroes", true, false) if hero_trinket_drawer2 else null
+		var hero_trinket_detail_scroll = hero_trinket_panel2.find_child("DetailScroll", true, false) if hero_trinket_panel2 else null
+		var hero_trinket_provenance = hero_trinket_panel2.find_child("Provenance_90301", true, false) if hero_trinket_panel2 else null
+		if hero_trinket_detail_scroll and hero_trinket_provenance:
+			hero_trinket_detail_scroll.ensure_control_visible(hero_trinket_provenance)
+		else:
+			push_error("[shot] SHOT_STATE=HeroTrinket could not find DetailScroll/Provenance_90301 -- "
+				+ "the shot below may not show the Trinket gear row.")
+	if _state == "ShopTrinket" and _frames == 120:
+		var shop_trinket_drawer2 = _ui.find_child("DrawerHost", true, false)
+		var shop_trinket_panel2 = shop_trinket_drawer2.find_child("Shop", true, false) if shop_trinket_drawer2 else null
+		var shop_trinket_content_scroll = shop_trinket_panel2.find_child("Scroll", true, false) if shop_trinket_panel2 else null
+		var shop_trinket_card = shop_trinket_panel2.find_child("UnshelvedCard_90302", true, false) if shop_trinket_panel2 else null
+		if shop_trinket_content_scroll and shop_trinket_card:
+			shop_trinket_content_scroll.ensure_control_visible(shop_trinket_card)
+		else:
+			push_error("[shot] SHOT_STATE=ShopTrinket could not find Scroll/UnshelvedCard_90302 -- "
+				+ "the shot below may not show the unshelved trinket card.")
 	# Mirror's second beat: the bell above (frame 60) has landed a party in Expedition by now --
 	# open the Scrying Mirror directly (ShowMirror is phase-ungated by design; see ScryingMirror
 	# and MainUi's new Watch control) so the receipt shows real roll-call/"CARRYING YOUR WORK"
@@ -952,6 +1026,17 @@ func _process(_delta: float) -> bool:
 		var last_ladder_card = _ui.find_child("RecipeCard_emberglass-draught", true, false)
 		if craft_scroll and last_ladder_card:
 			craft_scroll.ensure_control_visible(last_ladder_card)
+	if _state == "ForgeTrinket" and _frames == 120:
+		# The trinket recipe (engineering-utility-multitool) sorts (Tier, then RecipeId) behind
+		# this profession's Weapon/Shield/Armor Tier-1 cards, same "below the fold" shape
+		# ForgeLadder's own block above exists for.
+		var forge_trinket_scroll = _ui.find_child("CraftScroll", true, false)
+		var forge_trinket_card = _ui.find_child("RecipeCard_engineering-utility-multitool", true, false)
+		if forge_trinket_scroll and forge_trinket_card:
+			forge_trinket_scroll.ensure_control_visible(forge_trinket_card)
+		else:
+			push_error("[shot] SHOT_STATE=ForgeTrinket could not find CraftScroll/RecipeCard_engineering-utility-multitool -- "
+				+ "the shot below does not show the trinket recipe card. Was SHOT_PROFESSION=engineering set?")
 	if _state == "ForgeShelf" and _frames == 200:
 		# U3: the shelf station's own RaisePick -- the exact call a click/E-interact fires
 		# (Building2D.Configure names each station node "Building_{key}").
