@@ -19,7 +19,7 @@ namespace GameSim.Cli;
 public static class BatchRunner
 {
     public const string Usage =
-        "usage: batch --seeds <count> [--seed <startSeed>] [--days <days>] [--out <dir>] [--policy baseline|counter|apprentice|handforge]";
+        "usage: batch --seeds <count> [--seed <startSeed>] [--days <days>] [--out <dir>] [--policy baseline|counter|apprentice|handforge|latemastery]";
 
     /// <summary>
     /// The player policy a sweep drives (U0: <see cref="CounterPlayer"/> was previously
@@ -31,6 +31,10 @@ public static class BatchRunner
     /// 2026-09-03 owner ruling adds <see cref="Policy.HandForge"/> (<see cref="HandForgePlayer"/>) —
     /// the first policy on this axis that actually hand-forges (submits a real
     /// <c>ForgeTraceInput</c>), closing the coverage blind spot #686 found.
+    /// P2-OQ9's second talent-pacing measurement adds <see cref="Policy.LateMastery"/>
+    /// (<see cref="LateMasteryPlayer"/>) — the same hand-forge loop, with the two mastery talents
+    /// deferred behind every other node the tree allows, so the resulting quality curve can be
+    /// compared against <see cref="Policy.HandForge"/>'s greedy-order one.
     /// </summary>
     public enum Policy
     {
@@ -38,6 +42,7 @@ public static class BatchRunner
         Counter,
         Apprentice,
         HandForge,
+        LateMastery,
     }
 
     /// <summary>Parsed batch parameters. Defaults: 20 seeds starting at 1, 100 days, runs/, baseline policy.</summary>
@@ -112,8 +117,11 @@ public static class BatchRunner
             case "handforge":
                 policy = Policy.HandForge;
                 break;
+            case "latemastery":
+                policy = Policy.LateMastery;
+                break;
             default:
-                error.WriteLine($"batch: unknown --policy '{policyArg}' (expected 'baseline', 'counter', 'apprentice', or 'handforge')");
+                error.WriteLine($"batch: unknown --policy '{policyArg}' (expected 'baseline', 'counter', 'apprentice', 'handforge', or 'latemastery')");
                 error.WriteLine(Usage);
                 return null;
         }
@@ -128,6 +136,7 @@ public static class BatchRunner
         Policy.Counter => "counter",
         Policy.Apprentice => "apprentice",
         Policy.HandForge => "handforge",
+        Policy.LateMastery => "latemastery",
         _ => "baseline",
     };
 
@@ -138,6 +147,7 @@ public static class BatchRunner
         Policy.Counter => CounterPlayer.ActionsFor,
         Policy.Apprentice => ApprenticePlayer.ActionsFor,
         Policy.HandForge => HandForgePlayer.ActionsFor,
+        Policy.LateMastery => LateMasteryPlayer.ActionsFor,
         _ => BaselinePlayer.ActionsFor,
     };
 

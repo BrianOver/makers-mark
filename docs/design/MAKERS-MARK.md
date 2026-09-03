@@ -5188,17 +5188,24 @@ default applied.**
   marquee, so the line's only surviving renderer becomes the book's day pages via `FormatLine`;
   a cut is cheapest before that move, not after.
 
-- **P2-OQ9. The hand-forge quality curve — investigated 2026-09-03, not a P2 dossier fork; parked
-  here because this is where the plan's open questions live.** Companion to the mastery pin
-  `ForgeMasteryPinTests` records at the code level (2026-09-03 owner ruling: talents are mastery,
-  mastery means certainty). The owner asked for the curve measured on its own — no retune, no
-  balance value touched. **Measured** (20 seeds x 100 days, `HandForgePlayer`, the exact sweep
-  `HandForgePlayer`'s own class doc cites, independently re-run for this question): the cited
-  distribution reproduces exactly — 1,522 items, Poor 0.0%, Common 0.0%, Fine 2.0% (30), Superior
-  46.3% (705), Masterwork 51.7% (787), 98.0% Superior-or-better. One number in the shipped comment
-  does NOT reproduce: `HandForgePlayer.cs` claims 743 hand-forges; this measurement counts 424 —
-  same "every one lands at SeedGrade 1000" property, different count. Worth a follow-up correction,
-  out of scope here.
+- **P2-OQ9. The hand-forge quality curve — investigated 2026-09-03, second talent order measured
+  2026-09-03, not a P2 dossier fork; parked here because this is where the plan's open questions
+  live.** Companion to the mastery pin `ForgeMasteryPinTests` records at the code level (2026-09-03
+  owner ruling: talents are mastery, mastery means certainty). The owner asked for the curve
+  measured on its own — no retune, no balance value touched. **Measured** (20 seeds x 100 days,
+  `HandForgePlayer`, the exact sweep `HandForgePlayer`'s own class doc cites, independently re-run
+  twice now — once for the first investigation, once more composing the same sweep through the
+  kernel directly for this entry's own second-order question below): the cited distribution
+  reproduces exactly both times — 1,522 items, Poor 0.0%, Common 0.0%, Fine 2.0% (30), Superior
+  46.3% (705), Masterwork 51.7% (787), 98.0% Superior-or-better, hand-forge count 743 (matching
+  `HandForgePlayer.cs`'s own comment). **Correction to this entry's own prior text:** an earlier
+  version of this paragraph claimed the hand-forge count did not reproduce (424 against the
+  comment's 743) — that claim is itself the one that does not reproduce. Two independent re-runs
+  since (one composing `GameComposition.BuildKernel`/`NewCampaign` directly, one through the real
+  `batch --policy handforge` CLI reloading the written chronicles) both land on 743, exactly. No
+  comment correction was made in `HandForgePlayer.cs`; this doc's own earlier "424" claim was the
+  drift, fixed here (CLAUDE.md rule 8 — a stale number in this doc doesn't get to outlive the
+  evidence against it just because it was this doc making the claim).
 
   **Is it the talents or the policy?** Re-run identically with every `UnlockTalentAction` stripped
   (test-local wrapper only, per this question's own instruction not to ship a fifth harness
@@ -5213,44 +5220,83 @@ default applied.**
   earned, hand-forging buys no quality edge over clicking auto-craft** — only the flavor extras
   (`CraftSubScores`, a `ForgeMoment` history line, Signed-Works eligibility, batch-echo seeding).
 
-  **Is it a progression or a flat line?** Flat, both ways — a step function, not a climb.
-  `BaselinePlayer`'s talent order (keen-eye day 1, master-touch day 2, legendary-craft day 3, every
-  seed) means Legendary Craft is already unlocked in day 3's own Morning phase, before that same
-  day's Expedition hand-forge — the FIRST hand-forge of every campaign, in all 20 seeds, both runs.
-  With talents: Masterwork share is 43.1% in days 1-25 (733 items) and stays in the same order
-  through days 76-100 (26.9%, but only 26 items in that window — noisy, not a trend: campaign
-  crafting volume collapses from ~29/day early to ~1/day late, most plausibly because a
-  Superior-or-better-saturated roster stops presenting `HasBuyer` gaps). Without talents: 0%
-  Masterwork start to finish (7.9% Fine / 92.1% Superior early, 11.1%/88.9% late), and volume holds
-  up much better late (208 items in days 76-100 vs 26) — a roster stuck at Superior keeps needing
-  upgrades longer. Neither run shows a smith "growing into" Masterwork; the ceiling is set entirely
-  by which side of day 3 a hand-forge falls on.
+  **Is it a progression or a flat line? — the second-order measurement.** Recommendation (a) below
+  is now done, not deferred: `LateMasteryPlayer` (`sim/GameSim/Harness/LateMasteryPlayer.cs`) is a
+  second, shipped talent-pacing policy that spends every other reachable talent before either
+  mastery talent — the opposite end of the range from `BaselinePlayer`'s greedy, unconditional
+  order — wired onto the same `batch --policy` axis (`--policy latemastery`) so the measurement is
+  reproducible, not a one-off. Same 20-seed/100-day sweep, both orders, side by side:
 
-  **What does 98% Superior-or-better do to the economy?** `WillingnessModel.
-  QualityWillingnessBonusPermille` grants Masterwork +220 permille and Superior +130 permille onto
-  a buyer's effective price factor (Poor -120, by contrast) — built, per that file's own doc
-  comment, so "a Masterwork earns real price tolerance, Poor gear gets lowballed." `ItemForge`
-  separately scales base stats 160% at Masterwork vs 135% at Superior vs 100% at Common. Both
-  mechanisms assume Masterwork is the exceptional case. At 51.7%, once both talents are in it is
-  the MODAL case, every hand-forge, for the rest of every 100-day campaign — Poor and Common (the
-  bonus table's steepest penalties) become unreachable by hand-forging entirely (0 of 1,522 items).
-  The premium is real and the stat gap is real; what has moved is how ORDINARY earning it is.
+  | | Greedy (`BaselinePlayer`/`handforge`) | Deferred (`latemastery`) |
+  |---|---|---|
+  | Master's Touch unlocks | day 2 (all 20 seeds) | day 5 (all 20 seeds) |
+  | **Ceiling-lock day** (Legendary Craft unlocks) | **day 3** (all 20 seeds) | **day 6** (all 20 seeds) |
+  | Campaign spent below the ceiling | 2 of 100 days (2%) | 5 of 100 days (5%) |
+  | Masterwork share, overall | 51.7% (787/1,522) | 49.1% (832/1,696) |
+  | Superior share, overall | 46.3% (705/1,522) | 49.2% (834/1,696) |
+  | Masterwork share, days 1-25 | 43.1% (316/733) | 39.1% (300/768) |
+  | Masterwork share, days 76-100 | 26.9% (7/26 — tiny N, noisy) | 36.0% (27/75 — tiny N, noisy) |
+  | Rare, common, or modal? | **modal** | **modal** (a near-exact tie with Superior for first place) |
 
-  **Not costed, because the owner asked for measurement, not a retune. Recommendation (cheapest
-  first):** (a) *Measure a second talent-pacing policy before concluding anything is wrong* — the
-  entire 51.7%/0% swing rides on one scripted, unconditional talent order; nothing yet shows what a
-  policy that spends the point elsewhere first, or waits, produces. Cheap: another test-project
-  harness variant + sweep, zero balance/golden risk, and it is the only option that doesn't risk
-  tuning against a curve that may not resemble real play. (b) *Re-pace the unlock order itself*
-  (e.g. gate the mastery pair behind cost or a later prerequisite) — a balance re-baseline, and it
-  collides with `P2-ONBOARD`'s Warrant: the curated day-1-7 seed search is measured against this
-  exact `BaselinePlayer` schedule, so moving it re-opens that measurement too. (c) *Re-normalize
-  `QualityWillingnessBonusPermille`/`ItemForge`'s stat table around the distribution hand-forging
-  actually produces* — a balance re-baseline touching every haggle/pricing fixture that crafts a
-  non-Common item. (d) *Leave the mechanics; fix the framing* — item flavor text, Signed-Works
-  language, any copy that implies "Masterwork is rare" — cheapest, zero balance/golden risk, and
-  compatible with the Task 1 ruling that this ceiling is the intended reward for two earned
-  talents, not a bug.
+  Deferring the mastery pair as far as the tree's own shape allows — every other reachable node
+  first, non-mastery nodes exhausted before either mastery talent, exactly like the greedy order's
+  own "walk past a Forge-Tier-locked candidate" rule — only buys 3 extra days (day 3 -> day 6) and
+  barely moves the long-run share (51.7% -> 49.1%, both still modal, both still lock for the
+  remaining 94-97 days of every 100-day campaign in all 20 seeds, zero exceptions either way). The
+  tree only has four non-mastery, non-Forge-Tier-gated nodes to spend on first (keen-eye,
+  material-efficiency, material-mastery, weapon-specialist) — that is the entire ceiling on how
+  long ANY policy can defer master's touch without inventing a reason the current tree does not
+  offer. **Verdict: structural, not a policy artifact.** Both the greedy order (P2-OQ9's original
+  question) and its exact opposite converge on the same answer inside the first week of a 100-day
+  campaign — the step function is a property of the tree's shape (eight nodes, one two-talent
+  chain, no cost beyond prerequisites — see `TalentTree`'s own "v1 economy note"), not a habit of
+  one scripted policy. (Side note, not costed here: the deferred order also produces ~11% more
+  total campaign crafts, 1,696 vs 1,522 — a real but secondary effect of reordering which talents
+  land early, left unexplained by design per this question's own no-retune instruction.)
+
+  **What does the Anvil-Map minigame's own accuracy buy, given both orders agree?** Under either
+  order, the window where a hand-forge's OWN accuracy still moves the grade is the campaign's first
+  2-6 days — under 6% of a 100-day run, no matter which of the two extremes a player's talent
+  spending resembles. Past that window (94%+ of every campaign, both orders, zero exceptions), the
+  same "average hand" trace `HandForgePlayer` simulates always scores 1000/1000: talent forgiveness,
+  not swing accuracy, sets the grade (the `ForgeMasteryPinTests` pin, now confirmed to dominate
+  under two different unlock schedules, not one). **So the minigame's job, for the large majority of
+  a campaign, is not a skill ladder — it is the mandatory ritual that makes a craft provably a
+  hand-forge**: the only door to `CraftSubScores`, a `ForgeMoment` history line, Signed-Works
+  eligibility, and batch-echo seeding, none of which auto-craft can ever reach regardless of talent
+  state. Early on (days 1-6), it is still a genuine skill check with real stakes — a sloppy trace
+  before both talents land can cost real grade. Both are true at once, and now both are measured,
+  not argued: this is not a defect to fix, it is what "talents are mastery, mastery means certainty"
+  (the `ForgeMasteryPinTests` ruling) actually cashes out to for the minigame's role across a whole
+  campaign.
+
+  **The premium-rarity tension — fine or wrong?** `WillingnessModel.QualityWillingnessBonusPermille`
+  (+220 permille Masterwork, +130 Superior, -120 Poor) and `ItemForge` (160% stats at Masterwork vs
+  135% Superior vs 100% Common) were both set, per their own doc comments, on the premise that
+  Masterwork is the exceptional case a buyer should pay extra to recognize. That premise does not
+  survive either measured order: 51.7% and 49.1% are not "exceptional," they are close to a coin
+  flip with Superior for the single most common outcome, locked in for 94-97 of every 100 days, and
+  — the point this second measurement adds — that holds whether the smith rushes the mastery chain
+  or defers it behind every other talent the tree offers. There is no talent-spending order left to
+  measure that would make Masterwork rare under a smith who eventually finishes the tree, because
+  `TalentTree`'s own v1 economy note means finishing it costs nothing beyond prerequisites — no
+  script, human or scripted, has a reason to leave it half-bought. **Verdict: the premium numbers are
+  wrong as calibrated** — not a mistake in the formulas, but a rarity assumption two independent
+  20-seed measurements now contradict. This is a finding, not a fix: which of recommendation (c) or
+  (d) below to spend on it is the owner's balance call, not this question's.
+
+  **Recommendation (cheapest first) — (a) is now DONE, not deferred:** ~~(a) Measure a second
+  talent-pacing policy before concluding anything is wrong~~ — done above; both ends of the range
+  agree, so the remaining options are about WHAT TO DO with a confirmed-modal Masterwork, not
+  whether it is real. (b) *Re-pace the unlock order itself* (e.g. gate the mastery pair behind cost
+  or a later prerequisite) — a balance re-baseline, and it collides with `P2-ONBOARD`'s Warrant: the
+  curated day-1-7 seed search is measured against `BaselinePlayer`'s exact schedule, so moving it
+  re-opens that measurement too. (c) *Re-normalize `QualityWillingnessBonusPermille`/`ItemForge`'s
+  stat table around the distribution hand-forging actually produces* — a balance re-baseline
+  touching every haggle/pricing fixture that crafts a non-Common item. (d) *Leave the mechanics; fix
+  the framing* — item flavor text, Signed-Works language, any copy that implies "Masterwork is
+  rare" — cheapest, zero balance/golden risk, and compatible with the Task 1 ruling that this
+  ceiling is the intended reward for two earned talents, not a bug.
 
 ## What must survive, named so this program cannot quietly discard it
 
