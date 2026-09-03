@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Linq;
 using GameSim.Classes;
 using GameSim.Contracts;
@@ -83,6 +84,12 @@ public partial class HeroesPanel : SimPanel
     /// contained (this unit's scope keeps MainUi untouched), added as the LAST child in
     /// <see cref="EnsureBuilt"/> so it draws over the roster/detail split.</summary>
     private ProvenanceCard? _provenance;
+
+    /// <summary>Dev/receipt-only override, mirroring <c>LedgerModal</c>'s own <c>_devStagedState</c>
+    /// idiom ("hand-built GameState, zero sim mutation"): null in every real session — only
+    /// <see cref="Dev_ShowSampleTrinketGear"/>, reachable exclusively through
+    /// <c>shot_harness.gd</c>'s <c>call()</c> bridge, ever sets it.</summary>
+    private GameState? _devStagedState;
 
     /// <summary>P2-ONBOARD-02: the "read-only-surfaces" once-ever caption — lives in its OWN row
     /// above <see cref="_split"/> (see <see cref="EnsureBuilt"/>), never inside <see
@@ -170,7 +177,7 @@ public partial class HeroesPanel : SimPanel
             button.SetPressedNoSignal(id == heroValue);
         }
 
-        var state = Adapter!.CurrentState;
+        var state = _devStagedState ?? Adapter!.CurrentState;
         Clear(_detail!);
         if (!state.Heroes.TryGetValue(heroValue, out var hero))
         {
@@ -227,11 +234,18 @@ public partial class HeroesPanel : SimPanel
 
         AddHeader(_detail!, "GEAR:");
         var roleColor = ClassColors.RoleColor(hero.ClassId);
+        // Trinket joins the loop (P2-HONEST-11 visible half): this row used to stop at
+        // Weapon/Shield/Armor, so a hero's equipped trinket — the sim's own fourth gear slot,
+        // GearSet.Trinket — never rendered here at all, honest or not. Chip rendering below
+        // routes a Trinket slot through UiKit.TrinketChips instead of the Atk/Def chips the other
+        // three slots get, so adding it never risks the false-combat-number lie this unit exists
+        // to close.
         foreach (var (slot, itemId) in new (ItemSlot, ItemId?)[]
                  {
                      (ItemSlot.Weapon, hero.Gear.Weapon),
                      (ItemSlot.Shield, hero.Gear.Shield),
                      (ItemSlot.Armor, hero.Gear.Armor),
+                     (ItemSlot.Trinket, hero.Gear.Trinket),
                  })
         {
             var row = AddRow(_detail!);
@@ -268,8 +282,15 @@ public partial class HeroesPanel : SimPanel
             row.AddChild(infoCol);
             AddLabel(infoCol, $"  {slot}: {item.Name} [{item.Quality}] — {mark}");
             var chipRow = AddRow(infoCol);
-            chipRow.AddChild(StatChip("Atk", $"{item.Stats.Attack}"));
-            chipRow.AddChild(StatChip("Def", $"{item.Stats.Defense}"));
+            if (slot == ItemSlot.Trinket)
+            {
+                UiKit.TrinketChips(chipRow, item);
+            }
+            else
+            {
+                chipRow.AddChild(StatChip("Atk", $"{item.Stats.Attack}"));
+                chipRow.AddChild(StatChip("Def", $"{item.Stats.Defense}"));
+            }
 
             // U5: "your craft writes the legends" made touchable — open the item's provenance
             // card (History entries + maker's mark + forge sub-scores) on click.
@@ -323,6 +344,45 @@ public partial class HeroesPanel : SimPanel
 
         return ("restless",
             $"{entry.StreakDays} days since a purchase — stock something this hero actually wants.");
+    }
+
+    /// <summary>
+    /// Dev/receipt tool only (never called from real play), reachable via <c>shot_harness.gd</c>'s
+    /// <c>call()</c> bridge — the P2-HONEST-11 visible-half receipt: a real roster hero, off the
+    /// live <c>Adapter.CurrentState</c> (same "hand-built GameState, zero sim mutation" idiom as
+    /// <see cref="LedgerModal.Dev_ShowLedgerWithProvenanceBeat"/>/
+    /// <c>MainUi.Dev_ShowProvenanceCardOverLegends</c>), equipped with a synthetic Trinket carrying
+    /// a stamped Leech Rune — so <c>SHOT_STATE=HeroTrinket</c> can photograph the roster's GEAR row
+    /// rendering a trinket's real contribution (a craft-modifier chip) instead of the Atk/Def
+    /// numbers <c>CombatMath</c> never reads for that slot, without depending on RNG or a real
+    /// craft ever landing one this run.
+    /// </summary>
+    public void Dev_ShowSampleTrinketGear()
+    {
+        if (Adapter is null || Adapter.CurrentState.Heroes.IsEmpty)
+        {
+            return;
+        }
+
+        EnsureBuilt();
+        var heroId = Adapter.CurrentState.Heroes.Keys.First();
+        var itemId = new ItemId(90301);
+        var item = new Item(
+            itemId, "recipe-receipt-trinket", "Lucky Charm", ItemSlot.Trinket, QualityGrade.Fine,
+            new ItemStats(0, 0, 1), new MakersMark("You", CraftedOnDay: 1), ImmutableList<ItemHistoryEntry>.Empty)
+        {
+            Rune = new CraftModifier(GameSim.Crafting.CraftModifiers.LeechRune, ModifierFamily.Rune, Tier: 1),
+        };
+
+        var baseState = Adapter.CurrentState;
+        var heroBefore = baseState.Heroes[heroId];
+        _devStagedState = baseState with
+        {
+            Items = baseState.Items.SetItem(itemId.Value, item),
+            Heroes = baseState.Heroes.SetItem(
+                heroId, heroBefore with { Gear = heroBefore.Gear with { Trinket = itemId } }),
+        };
+        RenderDetail(heroId);
     }
 
     /// <summary>U5: open the self-contained provenance popup for a gear item's ItemId, reading

@@ -302,6 +302,45 @@ public static class UiKit
         return chip;
     }
 
+    /// <summary>
+    /// P2-HONEST-11 (#685, sim half) proved <c>CombatMath</c> never reads a Trinket's stats —
+    /// Weapon feeds Attack, Shield+Armor feed Defense, Trinket feeds neither. This is the ONE
+    /// place a trinket's chip row gets built (Forge recipe card, hero roster, shop shelf all call
+    /// it) so the visible half can't drift into three different lies: one chip per stamped craft
+    /// modifier (<see cref="GameSim.Contracts.Item.Modifiers"/>, family label + display name off
+    /// <see cref="GameSim.Crafting.CraftModifiers.Definition"/>) — the trinket's actual
+    /// contribution underground — or, carrying none, <see cref="TrinketHonestyPhrase"/>. Never an
+    /// Atk/Def chip: that number is real for the other three slots and zero-effect here, and
+    /// printing it either way is the exact lie a player reads as "this fights."
+    /// </summary>
+    public static void TrinketChips(HBoxContainer row, GameSim.Contracts.Item item)
+    {
+        var any = false;
+        foreach (var mod in item.Modifiers)
+        {
+            var def = GameSim.Crafting.CraftModifiers.Definition(mod.Id);
+            row.AddChild(StatChip(
+                GameSim.Crafting.CraftModifiers.FamilyLabel(mod.Family), def?.DisplayName ?? mod.Id, ChipTone.Accent));
+            any = true;
+        }
+
+        if (!any)
+        {
+            row.AddChild(StatChip("Trinket", TrinketHonestyPhrase));
+        }
+    }
+
+    /// <summary>
+    /// Bare chip-value form of <see cref="GameSim.Heroes.CommissionSystem.SlotHonestyNote"/> for
+    /// <see cref="GameSim.Contracts.ItemSlot.Trinket"/> — that method returns a sentence suffix
+    /// (<c>" — a favor, not fighting gear"</c>) meant to trail a commission line; a chip wants the
+    /// bare phrase. Trimmed at runtime off the live method rather than re-typed, so a card and a
+    /// commission thread can never drift into two different phrasings of the same honesty note.
+    /// </summary>
+    public static readonly string TrinketHonestyPhrase =
+        GameSim.Heroes.CommissionSystem.SlotHonestyNote(GameSim.Contracts.ItemSlot.Trinket)
+            .TrimStart(' ', '—');
+
     /// <summary>A tighter <see cref="StatChip"/> for cramped card real estate (U4: the hero
     /// roster card needs 3 chips — Lv/Gold/Deepest — across a ~140px-wide card; the full chip's
     /// <see cref="GameTheme.PanelStyle"/> margins alone (12px/side) ate ~270px across 3). Shrinks

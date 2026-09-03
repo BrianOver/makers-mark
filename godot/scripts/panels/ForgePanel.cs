@@ -860,8 +860,22 @@ public partial class ForgePanel : SimPanel
                 headerRow.AddChild(infoCol);
                 AddLabel(infoCol, $"{recipe.Name} (t{recipe.Tier} {recipe.Slot})");
                 var outputRow = AddRow(infoCol);
-                outputRow.AddChild(StatChip("Atk", $"{recipe.BaseStats.Attack}"));
-                outputRow.AddChild(StatChip("Def", $"{recipe.BaseStats.Defense}"));
+                // P2-HONEST-11 (sim half, #685): CombatMath never reads a Trinket's stats, so a
+                // trinket recipe card printing Atk/Def is the exact lie a player reads as "this
+                // fights." Composition (which modifier, if any) is chosen per-craft in the
+                // Modifiers section below, not per-recipe, so the card can't yet name a specific
+                // one — UiKit.TrinketChips' fallback phrase (the same one CommissionSystem.
+                // SlotHonestyNote already shipped for commission copy) names the truth instead.
+                if (recipe.Slot == ItemSlot.Trinket)
+                {
+                    outputRow.AddChild(StatChip("Trinket", UiKit.TrinketHonestyPhrase));
+                }
+                else
+                {
+                    outputRow.AddChild(StatChip("Atk", $"{recipe.BaseStats.Attack}"));
+                    outputRow.AddChild(StatChip("Def", $"{recipe.BaseStats.Defense}"));
+                }
+
                 outputRow.AddChild(StatChip("Wt", $"{recipe.BaseStats.Weight}"));
 
                 // Affordability lighting (KTD5) is a VISUAL MIRROR ONLY, read off the same

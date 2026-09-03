@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Linq;
 using GameSim.Advisor;
 using GameSim.Contracts;
@@ -109,6 +110,12 @@ public partial class ShopPanel : SimPanel
     /// existing shelf/reprice/unstock controls remain live throughout).</summary>
     private CounterPanel? _counter;
 
+    /// <summary>Dev/receipt-only override, mirroring <c>LedgerModal</c>'s own <c>_devStagedState</c>
+    /// idiom ("hand-built GameState, zero sim mutation"): null in every real session — only
+    /// <see cref="Dev_ShowSampleUnshelvedTrinket"/>, reachable exclusively through
+    /// <c>shot_harness.gd</c>'s <c>call()</c> bridge, ever sets it.</summary>
+    private GameState? _devStagedState;
+
     public override void _Ready() => EnsureBuilt();
 
     /// <summary>Shrink-center a <see cref="StatChip"/> in a <see cref="VBoxContainer"/> info column
@@ -131,7 +138,7 @@ public partial class ShopPanel : SimPanel
             return;
         }
 
-        var state = Adapter.CurrentState;
+        var state = _devStagedState ?? Adapter.CurrentState;
         _counter!.Bind(Adapter); // PA7: re-bind (idempotent) so the counter body tracks this tick
         // U25 (§11.14.14, KTD2): the counter's own fleece dormant act needs the SAME Tutorial/Mentor
         // collaborators this panel already carries — re-assigned every refresh (idempotent, same
@@ -443,8 +450,19 @@ public partial class ShopPanel : SimPanel
                 IconRegistry.Slot(item.Slot), item.Name));
 
             var chipRow = AddRow(cardBody);
-            chipRow.AddChild(StatChip("Atk", $"{item.Stats.Attack}"));
-            chipRow.AddChild(StatChip("Def", $"{item.Stats.Defense}"));
+            // P2-HONEST-11 (sim half, #685): CombatMath never reads a Trinket's stats — printing
+            // its Atk/Def here was the exact lie a player reads as "this fights." UiKit.
+            // TrinketChips shows the trinket's real contribution (its stamped craft modifiers, if
+            // any) instead.
+            if (item.Slot == ItemSlot.Trinket)
+            {
+                UiKit.TrinketChips(chipRow, item);
+            }
+            else
+            {
+                chipRow.AddChild(StatChip("Atk", $"{item.Stats.Attack}"));
+                chipRow.AddChild(StatChip("Def", $"{item.Stats.Defense}"));
+            }
 
             // UI-5: Stock is this row's one gate-checked action — the exact soldConsumable gate
             // below (U6, mirroring ShopHandlers.ApplyStock check 3b: existence/provenance/equipped
@@ -541,6 +559,36 @@ public partial class ShopPanel : SimPanel
             AddLabel(infoCol, $"{entry.Item} {item.Name} [{item.Quality}]");
             AddChip(infoCol, StatChip("Price", $"{entry.Price}g"));
         }
+    }
+
+    /// <summary>
+    /// Dev/receipt tool only (never called from real play), reachable via <c>shot_harness.gd</c>'s
+    /// <c>call()</c> bridge — the P2-HONEST-11 visible-half receipt: a synthetic, unshelved,
+    /// player-crafted Trinket with NO craft modifier stamped, off the live <c>Adapter.CurrentState</c>
+    /// (same "hand-built GameState, zero sim mutation" idiom as
+    /// <see cref="LedgerModal.Dev_ShowLedgerWithProvenanceBeat"/>), so <c>SHOT_STATE=ShopTrinket</c>
+    /// can photograph the Unshelved Crafts card rendering <see cref="UiKit.TrinketChips"/>' honesty-
+    /// phrase fallback ("a favor, not fighting gear") instead of the Atk/Def numbers
+    /// <c>CombatMath</c> never reads for that slot, without depending on a real craft ever landing
+    /// one this run. <see cref="Dev_ShowSampleTrinketGear"/> in <c>HeroesPanel</c> is this receipt's
+    /// twin for the OTHER branch (a modifier actually stamped).
+    /// </summary>
+    public void Dev_ShowSampleUnshelvedTrinket()
+    {
+        if (Adapter is null)
+        {
+            return;
+        }
+
+        EnsureBuilt();
+        var itemId = new ItemId(90302);
+        var item = new Item(
+            itemId, "recipe-receipt-trinket", "Lucky Charm", ItemSlot.Trinket, QualityGrade.Common,
+            new ItemStats(0, 0, 1), new MakersMark("You", CraftedOnDay: 1), ImmutableList<ItemHistoryEntry>.Empty);
+
+        var baseState = Adapter.CurrentState;
+        _devStagedState = baseState with { Items = baseState.Items.SetItem(itemId.Value, item) };
+        Refresh();
     }
 
     /// <summary>U5: open the self-contained provenance popup for a shelf/unshelved item's
