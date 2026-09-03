@@ -126,6 +126,52 @@ public class LessonsPanelTests
         }
     }
 
+    /// <summary>
+    /// P2-ONBOARD-06 (§11.15), deletion #5: BuyMaterial and Craft share DisplayIndex 1 (TutorialStepDef's
+    /// own doc), and before this unit each got its own card — two "◆ The Mark · 1 of 1" cards in a
+    /// row for what the player experiences as one step. This pins the merge directly: exactly one
+    /// card for slot 1, and it still carries BOTH steps' own TeachNote text (no lesson content lost
+    /// to the merge, only the duplicate header).
+    /// </summary>
+    [TestCase]
+    public void LessonsPanel_RendersExactlyOneCard_ForTheSharedMarkSlot_CarryingBothTeachNotes()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.OpenPanel("Lessons");
+
+            AssertThat(ui.Lessons.FindChild("Lesson_1_Craft", recursive: true, owned: false))
+                .OverrideFailureMessage("A second card for the shared Mark slot still exists — the duplicate was not removed.")
+                .IsNull();
+
+            var buyDef = TutorialFlow.Registry.First(d => d.Step == TutorialStep.BuyMaterial);
+            var craftDef = TutorialFlow.Registry.First(d => d.Step == TutorialStep.Craft);
+            AssertThat(buyDef.DisplayIndex)
+                .OverrideFailureMessage("Fixture guard: BuyMaterial and Craft no longer share a display slot.")
+                .IsEqual(craftDef.DisplayIndex);
+
+            var card = Find<Control>(ui.Lessons, "Lesson_1_BuyMaterial");
+            var text = RenderedText(card);
+            AssertThat(text.Contains(ObjectiveTracker.Plain(buyDef.TeachNote), StringComparison.Ordinal))
+                .OverrideFailureMessage("The merged slot-1 card lost BuyMaterial's own TeachNote.")
+                .IsTrue();
+            AssertThat(text.Contains(ObjectiveTracker.Plain(craftDef.TeachNote), StringComparison.Ordinal))
+                .OverrideFailureMessage("The merged slot-1 card lost Craft's own TeachNote.")
+                .IsTrue();
+
+            // Exactly one "The Mark · 1 of 1" header line, not two.
+            var headerCount = text.Split("The Mark · 1 of 1", StringSplitOptions.None).Length - 1;
+            AssertThat(headerCount)
+                .OverrideFailureMessage($"Expected exactly one \"The Mark · 1 of 1\" header, found {headerCount}: \"{text}\"")
+                .IsEqual(1);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
     /// <summary>Once the chain is inactive, nothing is "current" — no card should claim the filled
     /// marker (there is no live step left to point at).</summary>
     [TestCase]

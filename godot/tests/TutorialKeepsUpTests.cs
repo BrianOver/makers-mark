@@ -192,15 +192,20 @@ public class TutorialKeepsUpTests
     }
 
     /// <summary>
-    /// The card must stop telling the player to walk somewhere they are already standing.
+    /// The card must never tell the player to walk somewhere — that was the root of "The tutorial isn't
+    /// updating despite entering the forge": step 1 completes on the PURCHASE, not the arrival, but the OLD
+    /// instruction read "Walk to the Forge and click it — Buy 2 copper", so doing the first clause and seeing
+    /// the line unchanged read as stuck.
     ///
-    /// <para>This is what "The tutorial isn't updating despite entering the forge" actually was. The step
-    /// machine was correct — step 1 completes on the PURCHASE, not the arrival — but the instruction reads
-    /// "Walk to the Forge and click it — Buy 2 copper", so doing the first clause and seeing the line
-    /// unchanged reads as stuck. Telling someone to do a thing they have just done is the defect.</para>
+    /// <para>P2-ONBOARD-06 (§11.15), deletion #2 removed the WHERE clause entirely rather than patching its
+    /// staleness: <see cref="Ui.TutorialOverlay"/>'s own pulse (already shipped, T10) is now the ONLY place
+    /// on screen that answers "where," so the card's own text is WHAT-only and cannot go stale by opening or
+    /// closing a drawer — there is no location claim left in it to disagree with reality. This test proves
+    /// that directly: the same action-only text, readable and non-overlapping, whether the drawer is closed
+    /// or open.</para>
     /// </summary>
     [TestCase]
-    public async Task OpeningTheStepsBuilding_StopsTheCardTellingYouToWalkThere()
+    public async Task TheCardNeverNamesAWalkDestination_ClosedOrOpen()
     {
         var ui = MountMainUi();
         try
@@ -210,10 +215,11 @@ public class TutorialKeepsUpTests
 
             var closed = ui.Tutorial.TopSlotText(ui.Adapter.CurrentState, null);
             AssertThat(closed!.Contains("Walk to"))
-                .OverrideFailureMessage(
-                    $"With the drawer closed the tutorial should be directing the player somewhere, but reads " +
-                    $"\"{closed}\".")
-                .IsTrue();
+                .OverrideFailureMessage($"With the drawer closed the card still names a walk destination: \"{closed}\".")
+                .IsFalse();
+            AssertThat(closed.Contains("You're at"))
+                .OverrideFailureMessage($"With the drawer closed the card still claims arrival: \"{closed}\".")
+                .IsFalse();
 
             ui.OpenPanel("Forge");
             await player.WaitForLayout(ui.Drawer.CurrentContent!);
@@ -221,16 +227,20 @@ public class TutorialKeepsUpTests
             var open = ui.Tutorial.TopSlotText(ui.Adapter.CurrentState, ui.Drawer.CurrentPanelId);
 
             AssertThat(open!.Contains("Walk to"))
-                .OverrideFailureMessage(
-                    $"The Forge is open and the tutorial still says \"{open}\". It is telling the player to " +
-                    "walk to the room they are standing in, which is exactly why the card read as stuck.")
+                .OverrideFailureMessage($"The Forge is open and the card names a walk destination: \"{open}\".")
+                .IsFalse();
+            AssertThat(open.Contains("You're at"))
+                .OverrideFailureMessage($"The Forge is open and the card still claims arrival: \"{open}\".")
                 .IsFalse();
 
-            AssertThat(open.Contains("You're at"))
-                .OverrideFailureMessage($"The tutorial should acknowledge arrival, but reads \"{open}\".")
-                .IsTrue();
+            // No WHERE claim left to go stale — closed and open must read identically.
+            AssertThat(open)
+                .OverrideFailureMessage(
+                    $"The action-only card changed text between closed (\"{closed}\") and open (\"{open}\") — " +
+                    "it should no longer depend on drawer state at all.")
+                .IsEqual(closed);
 
-            // And the acknowledgement must reach the SCREEN on open, not wait for the next state change.
+            // The card must reach the SCREEN on open, not wait for the next state change.
             var tracker = ui.FindChild("ObjectiveTracker", recursive: true, owned: false) as Control;
             var trackerLines = tracker is null
                 ? "(no ObjectiveTracker)"
@@ -239,11 +249,10 @@ public class TutorialKeepsUpTests
                     .OfType<Label>()
                     .Select(l => $"[vis={l.IsVisibleInTree()}] {l.Text}"));
 
-            AssertThat(player.Sees("You're at"))
+            AssertThat(player.Sees("Buy"))
                 .OverrideFailureMessage(
-                    "The tutorial acknowledges arrival in its own text but the player cannot READ it. Either " +
-                    "the HUD was not refreshed on open, or the card is hidden while a drawer is up — and the " +
-                    "second one is the real reported bug: opening the Forge made the instruction vanish.\n" +
+                    "The tutorial's own action text is not readable on screen with the Forge open. Either the " +
+                    "HUD was not refreshed on open, or the card is hidden while a drawer is up.\n" +
                     $"Tracker labels:\n      {trackerLines}\n\nOn screen:\n{player.Screen()}")
                 .IsTrue();
 

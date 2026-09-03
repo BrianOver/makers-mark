@@ -102,9 +102,9 @@ public class MentorVoiceTests
     /// <c>MainUi.cs</c>, <c>ForgePanel.cs</c>, <c>ShopPanel.cs</c>, <c>CommissionBoard.cs</c>,
     /// <c>LegendsWall.cs</c>, <c>RaidForecastBoard.cs</c>, and <c>ProgressionPanel.cs</c>'s own
     /// duplicate of the second-profession line) expose their lesson text as a named constant the
-    /// way <see cref="MentorVoice.GreetingLine"/>/<see cref="MentorVoice.RestingLine"/> do, so
-    /// there is nothing to reference by symbol yet — consolidating the whole corpus into one place
-    /// so tests can check it by symbol instead of by copy is a later unit's job, not this one's.
+    /// way <see cref="MentorVoice.RestingLine"/> does, so there is nothing to reference by symbol
+    /// yet — consolidating the whole corpus into one place so tests can check it by symbol instead
+    /// of by copy is a later unit's job, not this one's.
     ///
     /// <para>Deliberately excludes two things. <b><see cref="TutorialFlow.Registry"/>'s own
     /// <c>TeachNote</c> strings</b> — <see cref="MentorVoice.CurrentLesson"/> quotes them verbatim,
@@ -117,12 +117,12 @@ public class MentorVoiceTests
     /// </summary>
     private static readonly string[] HerFullCorpus =
     [
-        MentorVoice.GreetingLine,
         MentorVoice.RestingLine,
 
-        // TutorialFlow.cs — U16 (§11.14.14): the first-morning cold-open beat. A symbol reference,
-        // not a copy, like the two lines immediately above (both already named constants) — unlike
-        // most of this corpus, there was never a reason to inline this one at its own call site.
+        // TutorialFlow.cs — beat 0, the cold open (P2-ONBOARD-06, §11.15, replacing U16's own
+        // first-morning text — deletion #1). A symbol reference, not a copy, like the line
+        // immediately above (already a named constant) — unlike most of this corpus, there was
+        // never a reason to inline this one at its own call site.
         TutorialFlow.FirstMorningBeatText,
 
         // MainUi.cs
@@ -249,25 +249,25 @@ public class MentorVoiceTests
     }
 
     /// <summary>
-    /// U16 (§11.14.14, "the first thing any player ever reads"): the cold-open beat's own three
-    /// facts, pinned by content — not just "this text exists somewhere," but that a reader is
-    /// actually told (1) they ARE the smith, (2) they never go down into the Mine, and (3) no hero
-    /// here ever takes an order from them (law 1). Each assertion quotes the exact clause that
-    /// carries the fact, so a future rewording that drops one silently is the thing this test is
-    /// FOR catching, not a false alarm to work around.
+    /// P2-ONBOARD-06 (§11.15, beat 0, replacing U16's own text — deletion #1): the cold-open beat's
+    /// own three facts, pinned by content — not just "this text exists somewhere," but that a
+    /// reader is actually told (1) the bench, and so the mark, is now theirs, (2) they never go
+    /// down into the Mine, and (3) no hero here ever takes an order from them (law 1). Each
+    /// assertion quotes the exact clause that carries the fact, so a future rewording that drops
+    /// one silently is the thing this test is FOR catching, not a false alarm to work around.
     /// </summary>
     [TestCase]
     public void FirstMorningBeatText_NamesAllThreeFacts()
     {
         var text = TutorialFlow.FirstMorningBeatText;
 
-        AssertThat(text.Contains("You're the smith now"))
-            .OverrideFailureMessage("The beat never states plainly that the player IS the smith.")
+        AssertThat(text.Contains("the last smith's, and now yours"))
+            .OverrideFailureMessage("The beat never states that the bench — and the mark — is now the player's own.")
             .IsTrue();
         AssertThat(text.Contains("You don't") && text.Contains("go down into the Mine"))
             .OverrideFailureMessage("The beat never states that the player never descends into the Mine.")
             .IsTrue();
-        AssertThat(text.Contains("Nobody in this town takes an order from you"))
+        AssertThat(text.Contains("no one in this town takes an order from you"))
             .OverrideFailureMessage("The beat never states law 1 — that no hero here takes an order from the player.")
             .IsTrue();
     }

@@ -63,32 +63,26 @@ public static class MentorVoice
     /// <see cref="InteriorLayout2D.StationSpec"/>'s own doc) — an invitation, not an instruction.</summary>
     public const string HoverLine = "Bryn, the journeyman — she watches the work here, and says what she's seen";
 
-    /// <summary>
-    /// Her greeting's own raw words — wrapped by <see cref="Speak"/> (never baked in here itself,
-    /// so it stays the SAME text whether it is read plain or spoken). Used as the STATIC table
-    /// default for <see cref="InteriorLayout2D.StationSpec.FlavorLine"/> — but honestly, that field
-    /// is dead for her specifically: <c>MainUi.OnStationActivated</c> special-cases her station id
-    /// and returns BEFORE the generic flavor-station branch that would ever read <c>FlavorLine</c>
-    /// (see that method's own doc), so this "Ask me anything" invitation has never once reached a
-    /// player and cannot today — pressing her always speaks <see cref="CurrentLesson"/> instead,
-    /// win or lose. It still earns its keep as the fallback the table-level reflective guards check
-    /// (<c>MentorVoiceTests.Station_IsHonestFlavor_NeverGatesAnyStepsCompletion</c> requires a
-    /// non-blank <c>FlavorLine</c> on every station), and as honest FOUNDATION for an ask-surface
-    /// that does not exist yet — U4 (§11.14.14) found this while fixing her one existing gesture
-    /// (the station press) and deliberately did not build one; a later unit owns making "ask me
-    /// anything" true.</summary>
-    public const string GreetingLine = "First time at the bench? Ask me anything — I've made every mistake already.";
-
     /// <summary>What she says once there is no active lesson left to quote (the apprenticeship
     /// dismissed or finished) — never silence, never a re-hash of a specific step (that would be a
     /// stale claim the moment the player has moved past it).</summary>
     public const string RestingLine =
         "The Lessons book keeps everything I've taught you so far — the rest of the workshop is yours now.";
 
-    /// <summary>The STATIC flavor toast (class doc, <see cref="GreetingLine"/>'s own remark) —
-    /// already wrapped in her voice, so a caller that never reaches <see cref="CurrentLesson"/> (the
-    /// table-level reflective guards) still sees a real, attributed line.</summary>
-    public static readonly string Greeting = Speak(GreetingLine);
+    /// <summary>The STATIC flavor toast used only as <see cref="Station"/>'s own
+    /// <see cref="InteriorLayout2D.StationSpec.FlavorLine"/> value. That field is dead for her
+    /// specifically — <c>MainUi.OnStationActivated</c> special-cases her station id and returns
+    /// BEFORE the generic flavor-station branch that would ever read it (see that method's own
+    /// doc), so pressing her always speaks <see cref="CurrentLesson"/> instead, win or lose. It
+    /// earns its keep only as the fallback the table-level reflective guards check
+    /// (<c>MentorVoiceTests.Station_IsHonestFlavor_NeverGatesAnyStepsCompletion</c> requires a
+    /// non-blank <c>FlavorLine</c> on every station) — deliberately <see cref="RestingLine"/>
+    /// itself, an already-reachable line (<see cref="CurrentLesson"/> speaks it once there is no
+    /// active step), rather than a second, permanently-unreachable string invented only to fill
+    /// this slot (P2-ONBOARD-06, §11.15, deletion #6: the old <c>GreetingLine</c>/<c>Greeting</c>
+    /// "Ask me anything" invitation this class used to carry here had never once reached a player
+    /// and could not — dead prose kept alive only by this same guard).</summary>
+    public static readonly string Greeting = Speak(RestingLine);
 
     /// <summary>
     /// Her physical presence (R14.5's "station-table row"): a flavor station (<c>Action: null</c> —

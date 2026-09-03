@@ -298,7 +298,7 @@ public class NewGameSelectTests
     // ── the New Game sub-flow (unchanged behavior, now reached via New Game) ───────────────────
 
     [TestCase]
-    public void Pick_ShowsPrimer_ListingAllFivePhases_WithClockNoteAndSeed_NeverTouchingAdapter()
+    public void Pick_ShowsPrimer_WithClockNoteAndSeed_NeverTouchingAdapter_AndNoPhaseLegend()
     {
         // P2-ONBOARD-05 (§11.15): a fresh profile's first blacksmith pick now prints the Warrant's
         // fiction name here instead of a raw seed (see WarrantSeedTests) — force "returning smith"
@@ -318,16 +318,11 @@ public class NewGameSelectTests
             AssertThat(Find<VBoxContainer>(screen, "Primer").Visible).IsTrue();
             AssertThat(MainUi.AdapterOverride).IsNull();
 
-            // 5-phase day, one line each, verbatim MainUi.PhaseLegend (R12) — never drifts.
-            // U2 (playtest-three plan): headers are PhaseVocab's words now, not the raw sim phases.
-            var phaseLegend = Find<Label>(screen, "PhaseLegend");
-            AssertThat(phaseLegend.Text).IsEqual(MainUi.PhaseLegend);
-            var lines = phaseLegend.Text.Split('\n');
-            AssertThat(lines.Length).IsEqual(5);
-            foreach (var phaseName in new[] { "Dawn/Prepare", "Quest", "Vigil", "Deep Vigil", "Night" })
-            {
-                AssertThat(lines.Any(line => line.StartsWith(phaseName))).IsTrue();
-            }
+            // P2-ONBOARD-06 (§11.15), deletion #8: the primer's own five-line phase legend is gone
+            // — the SAME copy (MainUi.PhaseLegend) still lives on the in-game HUD's phase-chip
+            // tooltip (MainUiTests pins that), so this is a straight regression pin, not a moved
+            // assertion.
+            AssertThat(screen.FindChild("PhaseLegend", recursive: true, owned: false)).IsNull();
 
             // Clock behavior explainer (R7/R8/KTD3 copy) and the exact seed about to be used.
             AssertThat(Find<Label>(screen, "ClockNote").Text).IsNotEmpty();

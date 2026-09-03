@@ -126,9 +126,22 @@ public partial class LessonsPanel : SimPanel
         // (which interleaves acts across the three in-game days). Each row's own numbering is
         // act-scoped too (TutorialFlow.ActPosition), matching the card's own "{Act} · N of M" prefix
         // exactly — the book and the card can never disagree about which chapter a step belongs to.
-        foreach (var def in TutorialFlow.Registry
-                     .OrderBy(d => (int)d.Act).ThenBy(d => d.DisplayIndex).ThenBy(d => (int)d.Step))
+        //
+        // P2-ONBOARD-06 (§11.15), deletion #5: grouped by DISPLAYED slot, one card per slot — not
+        // one card per raw TutorialStep. Before this unit, BuyMaterial and Craft (which share
+        // DisplayIndex 1 — TutorialStepDef's own doc) each got their own card, so the book showed
+        // two "◆ The Mark · 1 of 1" cards in a row for what the player experiences as ONE step.
+        // TutorialFlow.Checklist already dedupes this exact way (its own `seen.Add(def.DisplayIndex)`
+        // guard) for the checklist's card-diet reading; this loop now matches it. The slot's header
+        // reads the FIRST member's own Act/ShortLabel (BuyMaterial's — Registry declaration order —
+        // whose own ShortLabel, "Buy material, then craft your first item," already names both
+        // halves), and the body renders every member's TeachNote as its own paragraph, so no lesson
+        // this book used to hold two cards' worth of text for is lost to the merge.
+        foreach (var group in TutorialFlow.Registry
+                     .OrderBy(d => (int)d.Act).ThenBy(d => d.DisplayIndex).ThenBy(d => (int)d.Step)
+                     .GroupBy(d => d.DisplayIndex))
         {
+            var def = group.First();
             var row = rowsByDisplayIndex?.GetValueOrDefault(def.DisplayIndex);
             var isCurrent = row?.Current ?? false;
             var isDone = row?.Done ?? false;
@@ -168,8 +181,12 @@ public partial class LessonsPanel : SimPanel
             // (e.g. OpenCounter's own "**Present** a shelved item...") rendered the asterisks
             // literally in this permanent record. ObjectiveTracker.Plain is the SAME strip the
             // tutorial card and checklist already apply to the identical strings; this panel had
-            // simply never called it.
-            AddLabel(body, ObjectiveTracker.Plain(def.TeachNote));
+            // simply never called it. One label per group member, so a shared slot (BuyMaterial +
+            // Craft) still carries both TeachNotes, each its own paragraph.
+            foreach (var member in group)
+            {
+                AddLabel(body, ObjectiveTracker.Plain(member.TeachNote));
+            }
         }
 
         // §11.13 amendment (U6): the loss lesson — not one of the ten registry rows (it is dormant

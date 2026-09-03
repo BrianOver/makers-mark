@@ -1609,17 +1609,22 @@ public class TutorialFlowTests
     }
 
     [TestCase]
-    public void Step1Copy_NamesTheForge_AndIncludesAMovementHint()
+    public void Step1Copy_NamesTheAction_NeverWhereToWalk()
     {
-        // Playtest F6: the very first line a player ever sees must say WHERE to go (the Forge)
-        // and HOW to get there (walk/click-to-move) — not just the raw "buy 2 copper" verb.
+        // P2-ONBOARD-06 (§11.15), deletion #2: "all WHERE copy in cards" is gone — TutorialOverlay's
+        // own pulse (CurrentAnchor, shipped T10) already points at the Forge/shelf live on screen, so
+        // the card repeating "Walk to the Forge (WASD), press E" in prose was duplicate information,
+        // not a second safety net. This card's only remaining job is the action itself. Regression
+        // pin for the deletion, replacing the old positive assertion this same test used to make
+        // ("must say Forge and WASD") with its exact opposite.
         var ui = MountMainUi();
         try
         {
             var text = ui.Tutorial.TopSlotText(ui.Adapter.CurrentState)!;
             AssertThat(text).StartsWith("The Mark · 1/1:");
-            AssertThat(text).Contains("Forge");
-            AssertThat(text).Contains("WASD");
+            AssertThat(text).NotContains("Walk to");
+            AssertThat(text).NotContains("WASD");
+            AssertThat(text).Contains("Buy");
         }
         finally
         {
@@ -1628,13 +1633,18 @@ public class TutorialFlowTests
     }
 
     [TestCase]
-    public void PostBountyStep_NamesTheBountiesBoard_NotTheGate_AndAcknowledgesArrival()
+    public void PostBountyStep_AnchorsOnTheBountiesBoard_NotTheGate_AndTheCardNamesNoBuilding()
     {
         // Pre-existing dead end fixed in passing (StepBuilding's own doc): the step used to send the
         // player to the "Gate" building, which opens the Depths panel (the mine), not the bounty
-        // board — bounties live at the separately labelled "Bounties" noticeboard. A player who
-        // followed the old copy literally landed on the wrong panel and could never satisfy this
-        // step from there.
+        // board — bounties live at the separately labelled "Bounties" noticeboard. P2-ONBOARD-06
+        // (§11.15), deletion #2 deleted the card's own WHERE prose entirely, so the fact this once
+        // guarded belongs to the ANCHOR now, not to words in the card — TutorialRegistryConformanceTests
+        // resolves every anchor against the live building table, and this test pins the anchor's own
+        // target directly rather than sniffing for a building name in text that no longer carries one.
+        var def = TutorialFlow.Registry.First(d => d.Step == TutorialStep.PostBounty);
+        AssertThat(def.Anchor).IsEqual(TutorialAnchor.ForBuilding("noticeboard"));
+
         var ui = MountMainUi();
         try
         {
@@ -1647,23 +1657,13 @@ public class TutorialFlowTests
             // U28 (§11.14.14): PostBounty's own MinDay rose 1 -> 3 (that row's own comment), so its
             // live, actionable copy only renders once Day >= 3 — the SAME projection
             // TutorialCopyIsFollowableTests' own ActionableFor already uses for every day-3 row.
-            // This test is about the WORDS the step uses (the board, not the Gate), never about
-            // when it opens, so a `with { Day = 3 }` projection is the honest way to read them
-            // without simulating three real days.
             var day3 = ui.Adapter.CurrentState with { Day = 3 };
 
             var closed = ui.Tutorial.TopSlotText(day3, openPanelId: null)!;
-            AssertThat(closed)
-                .OverrideFailureMessage($"PostBounty copy still names the Gate (the mine), not the bounty board: \"{closed}\"")
-                .Contains("Bounties");
-            AssertThat(closed).NotContains("mine gate");
-
-            // Standing at the REAL panel this step means (per MainUi.OnTownBuildingClicked,
-            // "noticeboard"/"Bounties" -> "Bounties") must read as arrival, not as still walking.
-            var atBoard = ui.Tutorial.TopSlotText(day3, openPanelId: "Bounties")!;
-            AssertThat(atBoard)
-                .OverrideFailureMessage($"Standing at the Bounties board is not acknowledged: \"{atBoard}\"")
-                .Contains("You're at");
+            AssertThat(closed).NotContains("Gate");
+            AssertThat(closed).NotContains("Bounties");
+            AssertThat(closed).NotContains("You're at");
+            AssertThat(closed).Contains("POST BOUNTY");
         }
         finally
         {
