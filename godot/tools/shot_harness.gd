@@ -121,8 +121,10 @@ const KNOWN_STATES := [
 	"BellTray", "Bestiary", "Camp", "Chronicle", "CommissionDilemma", "Counter", "Demand",
 	"DepthsPanel", "Docket",
 	"ForgeAnvil", "ForgeAnvilEmpty", "ForgeExit", "ForgeFlavor", "ForgeLadder", "ForgePanel",
-	"ForgeShelf", "ForgeTrinket", "GatedCounterEmptyShelf", "GateNight", "HeroCandidateOpen", "HeroCards",
-	"HeroErrand", "HeroTrinket", "Ledger", "LedgerProvenance", "Lessons", "MineGateFocus", "Mirror",
+	"ForgeShelf", "ForgeTrinket", "GatedCounterEmptyShelf", "GateNight", "Graduation",
+	"HeroCandidateOpen", "HeroCards",
+	"HeroErrand", "HeroTrinket", "Ledger", "LedgerProvenance", "Lessons", "MemoryRow",
+	"MineGateFocus", "Mirror",
 	"OccupancyCorner", "Primer", "Provenance", "ReturnAtNight", "ReturnEmerge", "ReturnQuestEmpty",
 	"SendOff", "ShopPanel", "ShopTrinket", "SplitLessons", "SystemMenu", "TavernPanel", "TownOverview",
 	"TutorialLookIn", "TutorialOffCamera", "Watch", "WarrantFirstMorning",
@@ -461,6 +463,45 @@ func _process(_delta: float) -> bool:
 			else:
 				push_error("[shot] SHOT_STATE=Provenance could not reach Dev_ShowProvenanceCardOverLegends -- "
 					+ "a capture of the plain town under this name would read as a look nobody took.")
+				quit(1)
+				return false
+		elif _state == "MemoryRow":
+			# U32 (§11.14.14): the Memory act’s own row, live — a fresh day-1 campaign has no
+			# legend item yet to render the wall’s "LEGENDARY GEAR" section against, so this
+			# calls LegendsWall’s own shot-harness bridge (Dev_ShowWallWithMemoryRow) -- same
+			# "stage a synthetic state, never mutate the live Adapter" idiom the Provenance
+			# state above uses. Arms the row, opens the wall (which marks it Done inside
+			# ShowWall’s own NotifyLegendsWallOpened call), and renders the live
+			# "MemoryActRowNote" status line under the Legendary Gear section.
+			var legends_memory = _ui.find_child("LegendsWall", true, false)
+			if legends_memory and legends_memory.has_method("Dev_ShowWallWithMemoryRow"):
+				legends_memory.call("Dev_ShowWallWithMemoryRow")
+			else:
+				push_error("[shot] SHOT_STATE=MemoryRow could not reach LegendsWall.Dev_ShowWallWithMemoryRow -- "
+					+ "the shot below is the plain town and proves nothing about the Memory row.")
+				quit(1)
+				return false
+		elif _state == "Graduation":
+			# U32 (§11.14.14): graduation becomes event-shaped -- the receipt for the course
+			# ending on the FACT (the Memory row settling) rather than waiting on the day-8
+			# backstop. Dev_GraduateViaMemoryRow arms the row, opens the wall (Done), then
+			# re-advances so TutorialFlow.Advance’s own completion check actually fires --
+			# returns whether TutorialFlow.Completed is now true, so a silent no-op fails loud
+			# rather than photographing an ordinary town. The wall is closed again immediately
+			# (real play never leaves it open) so the second beat’s bell press (frame 90 below)
+			# lands on the live HUD, which is what actually shows the "quick-travel just
+			# unlocked" lesson banner -- the same tick MainUi.ShowQuickTravelUnlockedLessonIfEarned
+			# fires on in real play.
+			var legends_graduate = _ui.find_child("LegendsWall", true, false)
+			if legends_graduate and legends_graduate.has_method("Dev_GraduateViaMemoryRow"):
+				var graduated: bool = legends_graduate.call("Dev_GraduateViaMemoryRow")
+				if not graduated:
+					push_error("[shot] SHOT_STATE=Graduation: Dev_GraduateViaMemoryRow returned false -- "
+						+ "the course did not actually graduate, and the shot below proves nothing.")
+				legends_graduate.call("Close")
+			else:
+				push_error("[shot] SHOT_STATE=Graduation could not reach LegendsWall.Dev_GraduateViaMemoryRow -- "
+					+ "the shot below is the plain town and proves nothing about graduation.")
 				quit(1)
 				return false
 		elif _state == "CommissionDilemma":
@@ -927,6 +968,16 @@ func _process(_delta: float) -> bool:
 		var bell5 = _ui.find_child("AdvancePhase", true, false)
 		if bell5:
 			bell5.emit_signal("pressed")
+	# Graduation's second beat: TutorialFlow.Completed already flipped true synchronously inside
+	# the frame-60 dev bridge (a direct call, never routed through the HUD) -- pressing the real
+	# bell here is what actually runs MainUi.RefreshHud, the SAME tick
+	# ShowQuickTravelUnlockedLessonIfEarned fires the once-ever "quick-travel row just opened up
+	# top" banner on in real play (mirrors TutorialCompleting_TeachesThatQuickTravelJustUnlocked's
+	# own C# sequence: flip Completed off-HUD, then a real AdvancePhase is the tick that shows it).
+	if _state == "Graduation" and _frames == 90:
+		var bell6 = _ui.find_child("AdvancePhase", true, false)
+		if bell6:
+			bell6.emit_signal("pressed")
 	# TutorialOffCamera's second beat (P2-SCREEN-10): this state's whole point is proving the
 	# off-camera marker clears BOTH top-right docks, but the Tutorial dock never naturally shows
 	# this early -- both its rows (second profession, quick travel) gate on eligibility a fresh

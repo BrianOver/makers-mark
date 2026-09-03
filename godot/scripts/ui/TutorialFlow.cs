@@ -7,6 +7,7 @@ using GameSim.Expedition;
 using GameSim.Heroes;
 using GameSim.Professions;
 using Godot;
+using GodotClient.Panels;
 using GodotClient.Town2d;
 
 namespace GodotClient.Ui;
@@ -1930,6 +1931,16 @@ public sealed partial class TutorialFlow : PanelContainer
             ConsumeFirstTouch(LeavingARoomLessonId, MentorVoice.Speak(LeavingARoomLessonText));
         }
 
+        // U32 (§11.14.14): the Memory act's own arming — read every call, Active or not, Dismissed
+        // or not, the identical "not the tutorial's last lesson" shape ConsumeProofBeat's own
+        // remark already established for the sibling fact one link earlier (link 4). See
+        // MemoryActRow's own doc for what this arms.
+        if (_memoryRowArmedDay == 0 && LegendsWall.HasPlayerMarkedRecord(state))
+        {
+            _memoryRowArmedDay = state.Day;
+            Save();
+        }
+
         if (!Active)
         {
             return;
@@ -1960,6 +1971,19 @@ public sealed partial class TutorialFlow : PanelContainer
         }
 
         if (!Completed && state.Day >= ChainBackstopDay)
+        {
+            Complete();
+        }
+
+        // U32 (§11.14.14): graduation becomes event-shaped — the course ends the moment the fifth
+        // link's own row settles (Done or Skipped), same day it settles, rather than waiting on
+        // ChainBackstopDay regardless. An earlier EXIT, never a later one: ChainBackstopDay above
+        // still closes an unfinished run unconditionally (R14.6 keeps the pointed chain's own
+        // ceiling), and this simply lets a run that finished sooner leave sooner. Independent of
+        // TutorialStep.Commission's own registry-driven Complete() a few lines up — a commission
+        // that never gets offered again must not be the only fact standing between a player who
+        // has plainly finished and eight full days.
+        if (!Completed && MemoryActResolved(state))
         {
             Complete();
         }
@@ -2803,6 +2827,125 @@ public sealed partial class TutorialFlow : PanelContainer
     public static TutorialAnchor ProofBeatAnchor(string? openPanelId) =>
         AimAnchor(TutorialAnchor.ForPanelControl("Ledger", "LedgerCard_0"), openPanelId);
 
+    // ── U32 (§11.14.14): the Memory act's own dormant row — link 5, the last of the five, gets
+    // its row the SAME shape U30's Proof act (link 4) already established: armed off a durable
+    // EventLog fact, a one-night-one-day checklist window, "Done" the moment the player looks,
+    // "Skipped" honestly if they never do. Two differences from Proof, both deliberate: this row's
+    // own arming/resolving ALSO drives graduation (see Advance's own U32 remarks — link 5 closing
+    // is what "the course is actually done" means), and it carries no spoken Bryn line of its own
+    // — U33 gives her a graduation line; this unit ships the mechanism the fact rides on, not the
+    // voice, the identical division U29 drew between itself and U30-U33.
+
+    /// <summary>
+    /// U32: the Memory act's own place — 0 (not yet armed) is the safe default, mirroring <see
+    /// cref="_proofBeatDay"/> exactly. Set once, in <see cref="Advance"/>, the moment <see
+    /// cref="LegendsWall.HasPlayerMarkedRecord"/> first reads true — a Signed Work or <see
+    /// cref="GameSim.Drama.LegendQuery.FamousBeatThreshold"/>+ proven <see
+    /// cref="AttributionBeatEvent"/>s against a single item, i.e. an entry the wall's own
+    /// "LEGENDARY GEAR" section would render. Only a PLAYER-CRAFTED item can ever satisfy either
+    /// half (only forged work is ever signed; only forged work ever earns a beat), so this is
+    /// literally "the record carrying the player's mark" — never a memorial (a fallen hero's own
+    /// worn gear is named on the wall whether or not it was ever the player's), never a depths
+    /// record (a hero's own floor, nothing of the player's on it).
+    /// </summary>
+    private int _memoryRowArmedDay;
+
+    /// <summary>U32: whether the player has opened the Legends Wall at all since the row armed —
+    /// mirrors <see cref="_proofBeatCardOpened"/>'s own "purely observational" contract exactly
+    /// (<see cref="NotifyLegendsWallOpened"/> is the identical one-way ratchet <see
+    /// cref="NotifyLedgerOpened"/> already is for Proof).</summary>
+    private bool _memoryRowCardOpened;
+
+    /// <summary>
+    /// U32: <see cref="Panels.LegendsWall.ShowWall"/> calls this every time the wall opens — the
+    /// same funnel <see cref="NotifyLedgerOpened"/> already is for the Ledger. A no-op before the
+    /// row has ever armed or once <see cref="_memoryRowCardOpened"/> already reads true.
+    /// </summary>
+    public void NotifyLegendsWallOpened()
+    {
+        if (_memoryRowArmedDay > 0 && !_memoryRowCardOpened)
+        {
+            _memoryRowCardOpened = true;
+            Save();
+        }
+    }
+
+    /// <summary>
+    /// U32: the Memory act's own checklist row — "one night, one day, then an honest retire," the
+    /// identical KTD-H shape <see cref="LossActRow"/>/<see cref="ProofBeatRow"/> already establish.
+    /// Null before the act has armed, and null again two dawns after it (retired). While visible:
+    /// <see cref="ChecklistRow.Done"/> once the player has opened the wall at all since arming;
+    /// <see cref="ChecklistRow.Skipped"/> on the second day if they still have not — the honest
+    /// third state this whole file reserves for a step the chain carried the player past without
+    /// it ever being genuinely answered, never a false tick for a wall the player never actually
+    /// looked at.
+    /// </summary>
+    public ChecklistRow? MemoryActRow(GameState state)
+    {
+        if (_memoryRowArmedDay <= 0)
+        {
+            return null;
+        }
+
+        var dayOffset = state.Day - _memoryRowArmedDay;
+        if (dayOffset is < 0 or > 1)
+        {
+            return null; // before it woke (defensive), or past its one-night-one-day window
+        }
+
+        var done = _memoryRowCardOpened;
+        var skipped = dayOffset == 1 && !done;
+
+        return new ChecklistRow(
+            DisplayIndex: TotalSteps + 3,
+            Label: "Open the Legends Wall and see your mark stand",
+            Done: done,
+            Current: !done && !skipped,
+            VisitedAnchor: false,
+            GatingNote: !done && !skipped
+                ? "It's waiting on the wall — open it when you're ready." : null,
+            TeachNote: null,
+            Skipped: skipped);
+    }
+
+    /// <summary>
+    /// U32: whether link 5's own row has settled one way or the other — <see
+    /// cref="ChecklistRow.Done"/> the same day it arms (the player was already looking, or looks
+    /// immediately), or the window has simply run out (one day or more past arming, which covers
+    /// both the honest <see cref="ChecklistRow.Skipped"/> retire on day 1 and every day after).
+    /// Never armed at all (<see cref="_memoryRowArmedDay"/> still 0) reads false forever —
+    /// the honest absence <see cref="Advance"/>'s own U32 remark names: a player who never sells
+    /// gives the sim nothing to prove, so nothing here ever fires early for them, and
+    /// <see cref="ChainBackstopDay"/> is the only door left. This is <see cref="Advance"/>'s own
+    /// direct read, not <see cref="MemoryActRow"/>'s (a null return there cannot distinguish
+    /// "never armed" from "already retired" — this method can, because it still holds
+    /// <see cref="_memoryRowArmedDay"/> directly).
+    /// </summary>
+    private bool MemoryActResolved(GameState state)
+    {
+        if (_memoryRowArmedDay <= 0)
+        {
+            return false;
+        }
+
+        var dayOffset = state.Day - _memoryRowArmedDay;
+        return dayOffset == 0 ? _memoryRowCardOpened : dayOffset > 0;
+    }
+
+    /// <summary>
+    /// U32: the Memory act's own anchor — the wall's own "LEGENDARY GEAR" section (<see
+    /// cref="Panels.LegendsWall"/>'s <c>LegendItemsSection</c> container, present whenever that
+    /// header renders, holding whichever legend rows exist — the exact "point at whichever cards
+    /// are there, if any" job <see cref="TutorialAnchorKind.PanelSection"/> exists for, U8's own
+    /// doc), or the wall's own declared way in (<see cref="TutorialSurfaceRegistry"/>'s
+    /// <c>"Legends"</c> row, <c>"OpenLegends"</c>) while it is closed — the identical rule <see
+    /// cref="AimAnchor"/> already enforces for every other row naming a closed panel's own
+    /// contents, and the same shape <see cref="ProofBeatAnchor"/> already sets for its own sibling
+    /// row one link earlier.
+    /// </summary>
+    public static TutorialAnchor MemoryRecordAnchor(string? openPanelId) =>
+        AimAnchor(TutorialAnchor.ForPanelSection("Legends", "LegendItemsSection"), openPanelId);
+
     /// <summary>
     /// U25 (§11.14.14, KTD2): the counter's own dormant act — armed the first time EVER a haggle
     /// closes as a fleece. <see cref="CounterSaleClosed"/> carries no explicit "fleeced" flag (only
@@ -3192,6 +3335,11 @@ public sealed partial class TutorialFlow : PanelContainer
             // defaults (0 / false) — safe, the same "not armed yet" reading a fresh campaign gets.
             _proofBeatDay = data.ProofBeatDay;
             _proofBeatCardOpened = data.ProofBeatCardOpened;
+            // U32: an old save without either property below deserializes to the shared int/bool
+            // defaults (0 / false) — the identical safe reading the Proof act's own two properties
+            // just above already established.
+            _memoryRowArmedDay = data.MemoryRowArmedDay;
+            _memoryRowCardOpened = data.MemoryRowCardOpened;
             // U24 (§11.14.14): an old save without any of these four properties deserializes to
             // the shared-across-C# defaults (0/false) — safe, the same "never armed yet" starting
             // point a fresh campaign already has for every dormant act in this file.
@@ -3235,6 +3383,7 @@ public sealed partial class TutorialFlow : PanelContainer
                 HasSeenFleeceBeat = _hasSeenFleeceBeat,
                 HasSeenDemandBoardBeat = _hasSeenDemandBoardBeat, DemandBoardArmedDay = _demandBoardArmedDay,
                 ProofBeatDay = _proofBeatDay, ProofBeatCardOpened = _proofBeatCardOpened,
+                MemoryRowArmedDay = _memoryRowArmedDay, MemoryRowCardOpened = _memoryRowCardOpened,
                 DeliveryLessonHero = _deliveryLessonHero, DeliveryLessonSlot = _deliveryLessonSlot,
                 DeliveryLessonMinQuality = _deliveryLessonMinQuality,
                 DeliveryLessonDeadlineDay = _deliveryLessonDeadlineDay,
@@ -3526,6 +3675,16 @@ public sealed partial class TutorialFlow : PanelContainer
         /// ratchet — false is the safe default for a save from before this property existed (a
         /// pre-U30 campaign never tracked this fact either).</summary>
         public bool ProofBeatCardOpened { get; set; }
+
+        /// <summary>U32 (§11.14.14): the Memory act's own place — 0 (not yet armed) is the safe
+        /// default for a save from before this property existed, the identical precedent <see
+        /// cref="ProofBeatDay"/> already set for its own sibling act one link earlier.</summary>
+        public int MemoryRowArmedDay { get; set; }
+
+        /// <summary>U32: the Memory act's own "has the player opened the Legends Wall since
+        /// arming" ratchet — false is the safe default for a save from before this property
+        /// existed (a pre-U32 campaign never tracked this fact either).</summary>
+        public bool MemoryRowCardOpened { get; set; }
 
         /// <summary>U26 (§11.14.14): the demand-board beat's own once-ever flag — an old save
         /// without this property deserializes to false, the same safe default every sibling flag
