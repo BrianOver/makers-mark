@@ -872,6 +872,35 @@ public partial class MainUi : Control
         Legends.ShowWall(state);
     }
 
+    /// <summary>
+    /// P2-ONBOARD-07 (§11.15) shot-harness bridge: "eating her rule", live — reaching this beat for
+    /// real needs a pinned counter close whose buyer's <c>RelationshipBand</c> has already
+    /// reached Regular, or a fulfilled commission, neither of which a fresh day-1 campaign has. Same
+    /// "stage a synthetic state, never mutate the live Adapter" idiom
+    /// <see cref="Dev_ShowProvenanceCardOverLegends"/> already uses: a display-only <see
+    /// cref="GameState"/> copy carries one <see cref="CommissionFulfilled"/> event (the cheapest of
+    /// the beat's two arming facts — every commission carries a premium by construction), handed
+    /// straight to <see cref="TutorialFlow.ConsumeRuleRevisedBeat"/> and then to the SAME shared
+    /// <see cref="MentorBanner"/> production code renders through. Returns whether the beat actually
+    /// armed, so the harness can fail loudly rather than photograph a silent no-op.
+    /// </summary>
+    public bool Dev_ShowRuleRevisedBeat()
+    {
+        var state = Adapter.CurrentState with
+        {
+            EventLog = Adapter.CurrentState.EventLog.Add(
+                new CommissionFulfilled(new HeroId(1), new ItemId(1), Premium: 15)),
+        };
+
+        if (Tutorial.ConsumeRuleRevisedBeat(state) is not { } line)
+        {
+            return false;
+        }
+
+        Mentor.Show(MentorVoice.Speak(line), rank: MentorVoiceRank.Act);
+        return true;
+    }
+
     public override void _Process(double delta)
     {
         if (Clock is null)
@@ -956,6 +985,16 @@ public partial class MainUi : Control
                     Mentor.Show(
                         MentorVoice.Speak(proofBeat), rank: MentorVoiceRank.Act,
                         anchor: TutorialFlow.ProofBeatAnchor(CurrentOpenSurfaceId()));
+                }
+
+                // P2-ONBOARD-07 (§11.15): "eating her rule" — rides the SAME automatic-reveal-only
+                // wiring as the three acts above (all land at the identical Evening-reveal moment).
+                // No anchor of her own to point at (this is a reflection, not a pointer to press) —
+                // Act rank still earns her the pulse-priority slot the teaching lease grants Act-rank
+                // voices (TutorialAnchorArbiter's own doc), it simply has nowhere it wants to spend it.
+                if (Tutorial.ConsumeRuleRevisedBeat(Adapter.CurrentState) is { } ruleRevisedBeat)
+                {
+                    Mentor.Show(MentorVoice.Speak(ruleRevisedBeat), rank: MentorVoiceRank.Act);
                 }
 
                 // Only the automatic Return-Ritual reveal speaks. Reopening the ledger from the tray
@@ -4320,6 +4359,24 @@ public partial class MainUi : Control
             // sees the new room — the non-interior route below gets the same call for free at the
             // end of OpenPanel, which runs after Drawer.Open has set CurrentPanelId.
             Tutorial.NotifyEnteredBuilding(venueKey);
+
+            // P2-ONBOARD-07 (§11.15): beat 3, her rule, wrong on purpose — fires on the player's
+            // first ever real walk to the Shop's own room, before ANY pricing decision exists to
+            // collide with (never from ShopPanel.PlaceOnShelf: that site already owns "pricing-as-
+            // a-decision"'s own current-banner-line contract, and DilemmaLessonsTests reads Mentor's
+            // CURRENT text right off that press — a second first-touch queued from the identical
+            // call displaces it and breaks that suite's own "one dismiss clears the banner"
+            // assumption). "market" is a walkable-interior venue (this branch), not the drawer-only
+            // path below, so this has to live here — wired exactly like beat 0's
+            // FirstMorningBeatPending is, never inside TutorialFlow.NotifyEnteredBuilding itself
+            // (that method owns no Mentor reference and stays pure bookkeeping, class doc). A test
+            // driving TutorialFlow.NotifyEnteredBuilding directly (SplitLessonsTests) never reaches
+            // this line at all, so it is unaffected.
+            if (venueKey == "market")
+            {
+                Mentor.ShowFirstTouch(Tutorial.ConsumeGreedyRuleLesson());
+            }
+
             RefreshObjectiveLine();
             return;
         }

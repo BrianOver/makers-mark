@@ -81,6 +81,8 @@ public partial class LessonsPanel : SimPanel
         [TutorialFlow.SlotBudgetLessonId] = "The day's action slots",
         [TutorialFlow.StationPressLessonId] = "Stations, and pressing E",
         [TutorialFlow.LeavingARoomLessonId] = "Leaving a room",
+        // P2-ONBOARD-07 (§11.15): beat 3, her rule, wrong on purpose.
+        [TutorialFlow.GreedyRuleLessonId] = "Her rule, for pricing",
     };
 
     /// <summary>Copy for <paramref name="id"/>'s card heading — see <see cref="FirstTouchTitles"/>'s
@@ -223,6 +225,23 @@ public partial class LessonsPanel : SimPanel
 
             AddLabel(body, "◆ The proof, explained").AddThemeColorOverride("font_color", GameTheme.WarnColor);
             AddLabel(body, ObjectiveTracker.Plain(MentorVoice.Speak(proofLesson)));
+        }
+
+        // P2-ONBOARD-07 (§11.15): "eating her rule" — the redemption beat's own trailing card, same
+        // "not one of the ten registry rows, dormant until its own fact lands" shape as the loss and
+        // proof cards just above. RuleRevisedLessonText is RAW/unattributed, like every other Consume*
+        // text; wrapped in MentorVoice.Speak here for the identical reason ProofLessonText's own
+        // card is.
+        if (Tutorial?.RuleRevisedLessonText is { } ruleRevisedLesson)
+        {
+            var card = Card("Lesson_RuleRevised");
+            _content!.AddChild(card);
+
+            var body = new VBoxContainer();
+            card.AddChild(body);
+
+            AddLabel(body, "◆ Eating her rule").AddThemeColorOverride("font_color", GameTheme.WarnColor);
+            AddLabel(body, ObjectiveTracker.Plain(MentorVoice.Speak(ruleRevisedLesson)));
         }
 
         // U-T2-7 (Wave A substrate, §11.14.4): the first-touch tier's own permanent record — every
