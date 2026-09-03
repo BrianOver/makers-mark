@@ -32,12 +32,13 @@ public sealed class CraftingHandlers : IActionHandler
     /// <summary>Floor the echoed grade can never fall below (PKD4). At introduction (2026-07-24)
     /// this equalled <see cref="QualityRoller.AutoCraftGrade"/>, which was also 550 then, so an
     /// echoed craft could never land worse than a plain auto-craft. #583 (2026-08-17) raised
-    /// AutoCraftGrade to 800 without moving this floor, so that invariant no longer holds: a
-    /// floor-hit echo still lands Common/Fine (effective as low as 525 after jitter), the same
-    /// band a plain auto-craft used to land in before #583 and no longer does. Investigated
-    /// 2026-09-03 (Task 2) — real, reachable, not inert; value intentionally left untouched
-    /// pending an owner ruling on whether it should still track AutoCraftGrade.</summary>
-    private const int BatchEchoFloor = 550;
+    /// AutoCraftGrade to 800 without moving this floor, so that invariant broke silently: a
+    /// floor-hit echo landed Common/Fine (effective as low as 525 after jitter), the same band a
+    /// plain auto-craft landed in before #583 and no longer did — reproducing the pre-#583 defect
+    /// on the echo path alone. Investigated 2026-09-03 (Task 2, real/reachable, not inert); owner
+    /// ruled 2026-09-03 to restore the invariant. Raised to 800 here to match, so an echo can once
+    /// again never land worse than a plain auto-craft.</summary>
+    private const int BatchEchoFloor = 800;
 
     public bool CanHandle(PlayerAction action, DayPhase phase) =>
         action is CraftAction or UnlockTalentAction; // all phases legal

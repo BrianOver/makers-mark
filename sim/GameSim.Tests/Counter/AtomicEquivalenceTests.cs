@@ -319,6 +319,21 @@ public class AtomicEquivalenceTests
     // (no rng parameter touched) and the reveal change is a dictionary/list re-point, not a
     // computation. The 100-day Balance gate is untouched (no rule reads either field yet — the
     // TellingQuery reader is a pure sim-side query with zero engine wiring in this PR).
+    // 2026-09-03 (BatchEchoFloor 550 -> 800, owner ruling dated 2026-09-03, "the floor tracks the
+    // baseline"): **NO-OP — hash UNCHANGED, value not re-pinned.** BatchEchoFloor gates only an
+    // echoed AUTO-craft seeded by a preceding HAND-forge (a CraftAction whose Puzzle is a
+    // ForgeTraceInput — CraftingHandlers.cs's own BatchEcho comment, and the Wave 5 U23e entry
+    // above, both say so). Grepping every Harness/ policy confirms none ever constructs one:
+    // BaselinePlayer (this trace's own driver), MasterworkSeekingPlayer, ApprenticePlayer, and
+    // SkilledSmithPlayer all auto-craft or stamp a bare PerformanceGrade — only the Godot minigame
+    // and this file's sibling BatchEchoTests.cs ever submit a ForgeTraceInput. So
+    // GameState.Player.BatchEcho stays null the entire 30-day idle run exactly as before; raising
+    // the floor moves nothing this trace could ever reach. Same class as the L2 cohort-formation
+    // NO-OP above. Confirmed directly: the fast lane (which runs this exact test) is 1785/1785
+    // green both before and after with the constant changed, same hash both times, and the
+    // 100-day Balance gate is IDENTICALLY 67/67 both before and after for the same reason —
+    // BalanceSimTests drives BaselinePlayer.ActionsFor and MasterworkDominanceBalanceTests drives
+    // MasterworkSeekingPlayer, and neither ever hand-forges either.
     private const string ExpectedPreCounterSha256 =
         "F5488949CB39A39B47F99A4F1EDD27457D7523DBFA9A7ED171FF8DE50F8D8B6D";
 
