@@ -19,7 +19,7 @@ namespace GameSim.Cli;
 public static class BatchRunner
 {
     public const string Usage =
-        "usage: batch --seeds <count> [--seed <startSeed>] [--days <days>] [--out <dir>] [--policy baseline|counter|apprentice]";
+        "usage: batch --seeds <count> [--seed <startSeed>] [--days <days>] [--out <dir>] [--policy baseline|counter|apprentice|handforge]";
 
     /// <summary>
     /// The player policy a sweep drives (U0: <see cref="CounterPlayer"/> was previously
@@ -28,12 +28,16 @@ public static class BatchRunner
     /// P2-ONBOARD-03 adds <see cref="Policy.Apprentice"/> (<see cref="ApprenticePlayer"/>), the
     /// guided-course policy the P2-ONBOARD-04 seed search sweeps against — this axis was built
     /// forward-fit for exactly that (see this class's own doc comment).
+    /// 2026-09-03 owner ruling adds <see cref="Policy.HandForge"/> (<see cref="HandForgePlayer"/>) —
+    /// the first policy on this axis that actually hand-forges (submits a real
+    /// <c>ForgeTraceInput</c>), closing the coverage blind spot #686 found.
     /// </summary>
     public enum Policy
     {
         Baseline,
         Counter,
         Apprentice,
+        HandForge,
     }
 
     /// <summary>Parsed batch parameters. Defaults: 20 seeds starting at 1, 100 days, runs/, baseline policy.</summary>
@@ -105,8 +109,11 @@ public static class BatchRunner
             case "apprentice":
                 policy = Policy.Apprentice;
                 break;
+            case "handforge":
+                policy = Policy.HandForge;
+                break;
             default:
-                error.WriteLine($"batch: unknown --policy '{policyArg}' (expected 'baseline', 'counter', or 'apprentice')");
+                error.WriteLine($"batch: unknown --policy '{policyArg}' (expected 'baseline', 'counter', 'apprentice', or 'handforge')");
                 error.WriteLine(Usage);
                 return null;
         }
@@ -120,6 +127,7 @@ public static class BatchRunner
     {
         Policy.Counter => "counter",
         Policy.Apprentice => "apprentice",
+        Policy.HandForge => "handforge",
         _ => "baseline",
     };
 
@@ -129,6 +137,7 @@ public static class BatchRunner
     {
         Policy.Counter => CounterPlayer.ActionsFor,
         Policy.Apprentice => ApprenticePlayer.ActionsFor,
+        Policy.HandForge => HandForgePlayer.ActionsFor,
         _ => BaselinePlayer.ActionsFor,
     };
 
