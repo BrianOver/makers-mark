@@ -507,10 +507,10 @@ runs out of meaning on screen, and nothing in CI proves a campaign can end.
 Six one-liners. Each names its default so silence has a meaning. R1 was originally a
 genuine fork this plan refused to assume — it gates the vigil, the game's most-invested
 surface, and each branch sends different work; the external-review lap (§12) argued it into
-a recorded default of (c), but the fork below is preserved in full and the line is still
-the owner's to write.
+a recorded default of (c). The fork is preserved in full below for the record, but R1 no
+longer needs a line written — see the retirement immediately after it.
 
-**R1 — the provisioning irony (§9.9). The fork, explicitly:**
+**R1 — the provisioning irony (§9.9). RETIRED AS MOOT, 2026-09-03.** The fork, as it stood:
 - **(a) It is a tragedy — keep it and surface it.** Consequence: the vigil's flagship verb
   stays measured-harmful at scale *on purpose*; a session adds the honest telling (gossip
   and chronicle lines — "the well-supplied dare too much"); V-3's hero-chips ride along.
@@ -526,10 +526,33 @@ the owner's to write.
 
 **Recorded default (2026-08-06, §12): (c)** — a tragedy requires a tradeoff, and a verb that
 loses on both measured axes is a dominated verb, not a theme (§9.9's amendment carries the
-full argument). Silence now means (c); a one-line veto restores (a) or (b).
+full argument). That default never got ruled or vetoed; it stayed pending for six weeks. It
+does not need to be now, because the evidence it would have been ruled on no longer exists.
 
-Until R1 lands, **no further vigil work ships** (this is the plan's one amendment to
-§9.6's blessed order — V-3 waits here, not first).
+**Why it is moot.** R1's whole evidence base was `CampProvisioningBalanceTests`' 2026-07-18
+measurement of the camp send verb. `P2-LONG-23` (#678) re-ran the identical A/B on the
+current build (`origin/main@e7cca3d5b91deda59ee494e8eae426595c67c1b9`):
+
+| | 2026-07-18 | 2026-09-02 |
+|---|---|---|
+| NEVER-SEND | deaths 768, exp 3518, targetReached 1234, deliveries 0 | deaths **266**, exp 4328, targetReached 1222, deliveries 0 |
+| SEND-BELOW-40% | deaths 797, exp 3523, targetReached 1222, deliveries 62 | deaths **266**, exp 4328, targetReached 1222, deliveries **0** |
+| Δ | deaths +29, targetReached −12 | **0, 0 — byte-identical** |
+
+The risk-compensation effect the fork was arguing over is gone, not shrunk and not reversed:
+minimum camped-hero HP across 100 days (seed 2026) is now **60%**, so nothing ever reaches
+the sub-40% band the send verb targets, and both arms submit the identical action stream.
+Sweep-wide deaths fell ~65% over the same six weeks. There is no provisioning irony left to
+surface, retune, or split — R1's fork describes a mechanism the current build can no longer
+produce. What replaced it is a different, live defect — the send verb's arm never fires at
+all — booked as its own unit, `P2-LONG-24`, below.
+
+**The freeze is lifted, explicitly.** "Until R1 lands, no further vigil work ships" (the
+plan's one amendment to §9.6's blessed order, recorded 2026-08-06) is **void as of
+2026-09-03**. There is no R1 left to land, and the freeze had already been stepped over
+repeatedly in the six weeks it sat unruled — a dead freeze nobody is honouring is worse than
+no freeze. Vigil work ships under the plan's normal gates from here, same as every other
+surface.
 
 **R2 — the unreachable endgame (§9.10). RULED 2026-08-07: BUILD.** The owner's
 instruction — *"get all current recommendations from the docs and items that CLI, but somehow not
@@ -4972,6 +4995,43 @@ beside `P2-MEMORY-03`, whose grammar it extends.
 - Verification: the Balance gate run and its own output quoted (both arms complete, per the test's
   stated assertion); the fast lane green; the numbers and their date in the PR body, and the plan
   amended in the same PR if they contradict it (§11.6 rule 5).
+
+#### P2-LONG-24. Why the vigil's send verb never fires
+
+- Goal: `§11.3` retires R1 as moot because its evidence base stopped reproducing — but the
+  mechanism underneath it didn't get safer, it got unreachable. `P2-LONG-23` (#678) shows
+  SEND-BELOW-40% delivering zero supplies across a 2000 party-day sweep because no camped hero
+  is ever observed below 60% HP. One of the six decisions (link 2, decision 6: send the runner
+  or trust their judgment) has an arm nothing in the current build ever triggers. Find out why
+  before deciding what, if anything, to change — this is a dead-verb defect, not yet a fix.
+- Requirements: §11.3 R1 (retired; the evidence base this unit inherits); `P2-LONG-23` (#678,
+  the re-measurement that found it); P2-KTD10 (measure before spending a re-baseline; a unit
+  that discovers its premise moved stops and reports)
+- Files: `sim/GameSim/Expedition/ExpeditionResolver.cs` (the checkpoint-park and too-hurt-quaff
+  logic, `:99-128,341-384`), `sim/GameSim.Tests/Balance/CampProvisioningBalanceTests.cs` (the
+  scripted A/B and its diagnostic), `sim/GameSim/Harness/BaselinePlayer.cs` (whether the
+  scripted policy ever produces the state a real player's party would reach)
+- Approach: investigate, do not presume the fix — three candidate causes, none pre-ruled, and
+  they imply different owners:
+  1. **The 40% threshold is wrong.** Measure where camped-hero HP actually clusters at
+     checkpoint-park time (the full distribution, not just the observed minimum) — the send
+     verb may simply be aimed at a band that was never where parked heroes sit.
+  2. **Hero survivability rose out from under it.** Sweep-wide deaths fell ~65% over the same
+     six weeks the effect vanished in; if the checkpoint depth or the too-hurt exit now keeps
+     heroes healthier than the send verb's target band, the fix is a checkpoint/threshold
+     retune, not a cosmetic one.
+  3. **The harness never provokes the state.** `BaselinePlayer`'s scripted policy may simply
+     never push a party into the risk a real human player would take, in which case the verb
+     could be reachable in real play and this is a harness ceiling, not a game one.
+
+  Distinguish these before proposing a fix; only one of the three is free, and none of them is
+  assumed here.
+- Test scenarios: a diagnostic report of the camped-hero HP distribution at park time across
+  the 20-seed sweep (not just the minimum, which is already known to be 60%); whichever cause
+  is confirmed gets its own reproducing test before any fix is proposed.
+- Verification: fast lane green; this unit's own PR is a MEASUREMENT + finding, the same
+  discipline as `P2-LONG-23` — if it also proposes a fix, the fix is a separate follow-on unit,
+  never folded in silently.
 
 ## The verification contract
 

@@ -29,7 +29,14 @@ public sealed class CraftingHandlers : IActionHandler
     /// <summary>Per-mille the echoed grade decays per successive copy.</summary>
     private const int BatchEchoDecayPermille = 80;
 
-    /// <summary>Floor the echoed grade can never fall below — the ordinary auto-craft baseline (PKD4).</summary>
+    /// <summary>Floor the echoed grade can never fall below (PKD4). At introduction (2026-07-24)
+    /// this equalled <see cref="QualityRoller.AutoCraftGrade"/>, which was also 550 then, so an
+    /// echoed craft could never land worse than a plain auto-craft. #583 (2026-08-17) raised
+    /// AutoCraftGrade to 800 without moving this floor, so that invariant no longer holds: a
+    /// floor-hit echo still lands Common/Fine (effective as low as 525 after jitter), the same
+    /// band a plain auto-craft used to land in before #583 and no longer does. Investigated
+    /// 2026-09-03 (Task 2) — real, reachable, not inert; value intentionally left untouched
+    /// pending an owner ruling on whether it should still track AutoCraftGrade.</summary>
     private const int BatchEchoFloor = 550;
 
     public bool CanHandle(PlayerAction action, DayPhase phase) =>
