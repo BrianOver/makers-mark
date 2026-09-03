@@ -2940,6 +2940,229 @@ public class TutorialFlowTests
         }
     }
 
+    // ── U32 (§11.14.14): the Memory act's row, and graduation becomes event-shaped ─────────────
+
+    /// <summary>A Signed Work is the simplest fixture that satisfies
+    /// <see cref="GodotClient.Panels.LegendsWall.HasPlayerMarkedRecord"/> without scripting three
+    /// separate <see cref="AttributionBeatEvent"/>s — either half of that test (signed, or
+    /// beat-count) is "the record carrying the player's mark" equally.</summary>
+    private static GameState SignedLegendItemState(int day)
+    {
+        var baseState = GameComposition.NewCampaign(ScriptedSession.Seed);
+        var item = new Item(
+            new ItemId(9301), "test-recipe", "Test Legend Blade", ItemSlot.Weapon, QualityGrade.Masterwork,
+            new ItemStats(Attack: 5, Defense: 0, Weight: 1), new MakersMark("You", 1),
+            ImmutableList<ItemHistoryEntry>.Empty)
+        {
+            SignedName = "Test Legend",
+        };
+
+        return baseState with
+        {
+            Day = day,
+            Items = baseState.Items.Add(item.Id.Value, item),
+        };
+    }
+
+    [TestCase]
+    public void MemoryRow_RendersNothing_UntilTheWallHoldsAPlayerMarkedRecord()
+    {
+        var ui = MountMainUi(); // fresh campaign: no legend item yet
+        try
+        {
+            AssertThat(ui.Tutorial.MemoryActRow(ui.Adapter.CurrentState)).IsNull();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void MemoryRow_Arms_OnTheFirstPlayerMarkedRecord()
+    {
+        var ui = MountMainUi(new SimAdapter(SignedLegendItemState(day: 4)));
+        try
+        {
+            ui.Tutorial.Advance(ui.Adapter.CurrentState);
+
+            var row = ui.Tutorial.MemoryActRow(ui.Adapter.CurrentState);
+            AssertThat(row).IsNotNull();
+            AssertThat(row!.Value.Done).IsFalse();
+            AssertThat(row.Value.Skipped).IsFalse();
+            AssertThat(row.Value.Current).IsTrue();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void MemoryRow_Done_OnceTheWallHasBeenOpened()
+    {
+        var ui = MountMainUi(new SimAdapter(SignedLegendItemState(day: 4)));
+        try
+        {
+            ui.Tutorial.Advance(ui.Adapter.CurrentState);
+            var beforeOpen = ui.Tutorial.MemoryActRow(ui.Adapter.CurrentState);
+            AssertThat(beforeOpen).IsNotNull();
+            AssertThat(beforeOpen!.Value.Done).IsFalse();
+
+            ui.Tutorial.NotifyLegendsWallOpened();
+
+            var afterOpen = ui.Tutorial.MemoryActRow(ui.Adapter.CurrentState);
+            AssertThat(afterOpen).IsNotNull();
+            AssertThat(afterOpen!.Value.Done).IsTrue();
+            AssertThat(afterOpen.Value.Skipped).IsFalse();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>"One night, one day, then an honest retire" (KTD-H) — the identical shape
+    /// <see cref="ProofBeatRow_RetiresAtTheSecondDawn_AsSkipped_NeverAFalseTick"/> already proves
+    /// for the Proof act one link earlier; this is the third state's own proof for the fifth.</summary>
+    [TestCase]
+    public void MemoryRow_RetiresAtTheSecondDawn_AsSkipped_NeverAFalseTick()
+    {
+        var ui = MountMainUi(new SimAdapter(SignedLegendItemState(day: 4)));
+        try
+        {
+            ui.Tutorial.Advance(ui.Adapter.CurrentState); // arms at day 4, never opened
+
+            var nightOf = ui.Tutorial.MemoryActRow(ui.Adapter.CurrentState with { Day = 4 });
+            AssertThat(nightOf).IsNotNull();
+            AssertThat(nightOf!.Value.Skipped).IsFalse();
+
+            var dayAfter = ui.Tutorial.MemoryActRow(ui.Adapter.CurrentState with { Day = 5 });
+            AssertThat(dayAfter)
+                .OverrideFailureMessage("Never opened by the day after — must render Skipped, not vanish silently.")
+                .IsNotNull();
+            AssertThat(dayAfter!.Value.Skipped).IsTrue();
+            AssertThat(dayAfter.Value.Done).IsFalse();
+
+            var secondDawn = ui.Tutorial.MemoryActRow(ui.Adapter.CurrentState with { Day = 6 });
+            AssertThat(secondDawn)
+                .OverrideFailureMessage("The row must retire (vanish) at the second dawn — KTD-H's anti-nag rule.")
+                .IsNull();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>Graduation fires on the FACT, the same day the row settles Done, well ahead of
+    /// <see cref="TutorialFlow.ChainBackstopDay"/> — the headline behavior this unit exists to
+    /// ship (§11.14.14 U32's own approach: "completion fires when the Memory act's last row
+    /// resolves").</summary>
+    [TestCase]
+    public void Graduation_FiresEarly_WhenTheMemoryRowIsReadTheSameDayItArms()
+    {
+        var ui = MountMainUi(new SimAdapter(SignedLegendItemState(day: 4)));
+        try
+        {
+            AssertThat(ui.Tutorial.Completed).IsFalse();
+
+            ui.Tutorial.Advance(ui.Adapter.CurrentState); // arms the row at day 4
+            AssertThat(ui.Tutorial.Completed)
+                .OverrideFailureMessage("Arming alone must not graduate the course — only a settled row does.")
+                .IsFalse();
+
+            ui.Tutorial.NotifyLegendsWallOpened(); // read the same day it armed -> Done
+            ui.Tutorial.Advance(ui.Adapter.CurrentState);
+
+            AssertThat(ui.Tutorial.Completed)
+                .OverrideFailureMessage(
+                    "The Memory row settled (Done) on day 4 — the course must graduate that same day, " +
+                    "four days before the day-8 backstop.")
+                .IsTrue();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>The other settling direction — an honest Skipped retire ALSO graduates the course
+    /// (the row is settled either way), still well ahead of the backstop.</summary>
+    [TestCase]
+    public void Graduation_FiresOnTheSkippedRetire_WhenTheWallIsNeverOpened()
+    {
+        var ui = MountMainUi(new SimAdapter(SignedLegendItemState(day: 4)));
+        try
+        {
+            ui.Tutorial.Advance(ui.Adapter.CurrentState); // arms at day 4, never opened
+            AssertThat(ui.Tutorial.Completed).IsFalse();
+
+            var dayAfter = ui.Adapter.CurrentState with { Day = 5 };
+            ui.Tutorial.Advance(dayAfter);
+
+            AssertThat(ui.Tutorial.Completed)
+                .OverrideFailureMessage(
+                    "The Memory row retired Skipped on day 5 — that settling is still the course finishing, " +
+                    "three days before the backstop.")
+                .IsTrue();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>The other half of "the course ends when it is finished rather than on a date": a
+    /// player who never sells gives the sim nothing to prove, so the Memory row never arms at all
+    /// — <see cref="TutorialFlow.ChainBackstopDay"/> is the only door left, and it must close
+    /// honestly (the row reading absent, never falsely Done) rather than silently.</summary>
+    [TestCase]
+    public void Graduation_StillClosesAtTheBackstop_WhenTheMemoryRowNeverArms()
+    {
+        var ui = MountMainUi(); // fresh campaign: no legend item, ever
+        try
+        {
+            DriveDay1ToLookIn(ui); // day 1 driven for real; nothing here ever earns a legend item
+
+            CraftedAdvance(ui, day: 7);
+            AssertThat(ui.Tutorial.Completed)
+                .OverrideFailureMessage("The backstop fired before its own grace day.")
+                .IsFalse();
+            AssertThat(ui.Tutorial.MemoryActRow(ui.Adapter.CurrentState))
+                .OverrideFailureMessage("No legend item was ever created — the row must read absent, never falsely Done.")
+                .IsNull();
+
+            CraftedAdvance(ui, day: 8);
+            AssertThat(ui.Tutorial.Completed)
+                .OverrideFailureMessage("A run that never earned a legend item must still close, honestly, at the backstop.")
+                .IsTrue();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>Pure/static — the identical "point at the way in while closed" rule <see
+    /// cref="AimAnchor"/> already enforces for every PanelSection row, proven directly against
+    /// <see cref="TutorialFlow.MemoryRecordAnchor"/> with no campaign needed (mirrors
+    /// <see cref="ProofBeatAnchor_PointsAtTheWayIn_WhileTheLedgerIsClosed"/> for its own sibling
+    /// one link earlier).</summary>
+    [TestCase]
+    public void MemoryRecordAnchor_PointsAtTheWayIn_WhileTheWallIsClosed()
+    {
+        var closed = TutorialFlow.MemoryRecordAnchor(openPanelId: null);
+        AssertThat(closed).IsEqual(TutorialAnchor.ForHud("OpenLegends"));
+    }
+
+    [TestCase]
+    public void MemoryRecordAnchor_PointsAtTheLegendSection_WhileTheWallIsOpen()
+    {
+        var open = TutorialFlow.MemoryRecordAnchor(openPanelId: "Legends");
+        AssertThat(open).IsEqual(TutorialAnchor.ForPanelSection("Legends", "LegendItemsSection"));
+    }
+
     // ── U24 (§11.14.14, KTD2): the commission-delivery dormant act ─────────────────────────────
     // "Days 4-7 carry no numbered steps... Commission delivery is a dormant act armed on an
     // accepted commission, not a numbered row" (KTD2). Reads the tracked commission's own ask off

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Linq;
 using GameSim.Advisor;
 using GameSim.Contracts;
@@ -95,6 +96,12 @@ public partial class LegendsWall : Control
         EnsureBuilt();
         Clear(_body!);
 
+        // U32 (§11.14.14): the Memory act's own "did the player look" ratchet — mirrors
+        // TutorialFlow.NotifyLedgerOpened's identical funnel for the Proof act one link earlier.
+        // A no-op before the row has ever armed (LegendItems below is empty until then, so this
+        // simply has nothing to mark yet) or once it is already marked.
+        Tutorial?.NotifyLegendsWallOpened();
+
         var legendItems = LegendItems(state);
         LegendItemCount = legendItems.Count;
         ShowedEmptyState = state.Drama.Memorials.IsEmpty && state.Drama.DepthsBoard.IsEmpty && legendItems.Count == 0;
@@ -123,6 +130,66 @@ public partial class LegendsWall : Control
     }
 
     public void Close() => Visible = false;
+
+    /// <summary>U32 (§11.14.14) shot-harness bridge: stamps a Signed Work into a display-only
+    /// <see cref="GameState"/> copy, arms the Memory act's row against it (<see
+    /// cref="TutorialFlow.Advance"/>), and opens the wall — the SAME "stage a synthetic state,
+    /// never mutate the live Adapter" idiom <c>MainUi.Dev_ShowProvenanceCardOverLegends</c> already
+    /// uses. <see cref="ShowWall"/> itself marks the row Done (<see
+    /// cref="TutorialFlow.NotifyLegendsWallOpened"/> fires at its own top). Dev-only; nothing
+    /// production calls this.</summary>
+    public void Dev_ShowWallWithMemoryRow()
+    {
+        if (Adapter is null)
+        {
+            return;
+        }
+
+        var itemId = new ItemId(90101);
+        var item = new Item(
+            itemId, "recipe-signed-receipt", "Receipt Blade", ItemSlot.Weapon, QualityGrade.Masterwork,
+            new ItemStats(20, 0, 5), new MakersMark("You", 1), ImmutableList<ItemHistoryEntry>.Empty)
+        {
+            SignedName = "Shot Harness",
+        };
+        var state = Adapter.CurrentState with
+        {
+            Items = Adapter.CurrentState.Items.SetItem(itemId.Value, item),
+        };
+
+        Tutorial?.Advance(state);
+        ShowWall(state);
+    }
+
+    /// <summary>U32 shot-harness bridge: the same staged state as <see
+    /// cref="Dev_ShowWallWithMemoryRow"/>, carried one step further — arm, open (marking the row
+    /// Done), then re-advance so <see cref="TutorialFlow.Advance"/>'s own new U32 completion check
+    /// fires against the SAME settled state, for the graduation receipt. Returns whether it
+    /// actually did, so the harness can fail loudly rather than photograph a silent no-op.</summary>
+    public bool Dev_GraduateViaMemoryRow()
+    {
+        if (Adapter is null)
+        {
+            return false;
+        }
+
+        var itemId = new ItemId(90102);
+        var item = new Item(
+            itemId, "recipe-signed-receipt", "Receipt Blade", ItemSlot.Weapon, QualityGrade.Masterwork,
+            new ItemStats(20, 0, 5), new MakersMark("You", 1), ImmutableList<ItemHistoryEntry>.Empty)
+        {
+            SignedName = "Shot Harness Graduate",
+        };
+        var state = Adapter.CurrentState with
+        {
+            Items = Adapter.CurrentState.Items.SetItem(itemId.Value, item),
+        };
+
+        Tutorial?.Advance(state); // arms the row
+        ShowWall(state); // marks it Done (NotifyLegendsWallOpened, inside ShowWall)
+        Tutorial?.Advance(state); // the row has settled -> Complete()
+        return Tutorial?.Completed ?? false;
+    }
 
     /// <summary>Escape closes the legends wall — the shared mechanism (<see
     /// cref="ModalEscape"/>). Before this it only closed via its own ✕ button (the whole-game
@@ -444,21 +511,45 @@ public partial class LegendsWall : Control
     private void RenderLegendItems(GameState state, System.Collections.Generic.List<Item> legendItems)
     {
         AddHeader(_body!, "LEGENDARY GEAR");
+
+        // U32 (§11.14.14, container/section tutorial anchors): its own named container, mirroring
+        // U8's "FallenSection" precedent — present whether this section holds zero rows (the
+        // empty-state label below) or many, so a TutorialAnchorKind.PanelSection row
+        // (TutorialFlow.MemoryRecordAnchor) always has a stable Control to resolve.
+        var legendSection = new VBoxContainer { Name = "LegendItemsSection" };
+        _body!.AddChild(legendSection);
+
         if (legendItems.Count == 0)
         {
-            AddLabel(_body!, "  No legendary gear yet — a Signed Work or a proven hero of steel is still to come.");
+            AddLabel(legendSection, "  No legendary gear yet — a Signed Work or a proven hero of steel is still to come.");
             return;
         }
 
         foreach (var item in legendItems)
         {
-            var row = AddRow(_body!);
+            var row = AddRow(legendSection);
             var label = item.IsSigned
                 ? $"✦ {item.Name} — \"{item.SignedName}\""
                 : $"★ {item.Name} — {AttributionBeatCount(state, item.Id)} proven beats";
             var button = AddButton(row, $"Legend_{item.Id.Value}", label, () => OnShowProvenance(state, item.Id));
             button.SizeFlagsHorizontal = SizeFlags.ExpandFill;
             button.Alignment = HorizontalAlignment.Left;
+        }
+
+        // U32: the Memory act's own live status line — visible only for its one-night-one-day
+        // window (TutorialFlow.MemoryActRow's own doc), then gone, the identical "one night, one
+        // day, then an honest retire" contract the Loss/Proof acts already keep. NotifyLegendsWallOpened
+        // (called at the top of ShowWall, before this method ever runs) has already marked the row
+        // Done by the time this reads it, so the visible case here is always the acknowledgment —
+        // the "still waiting" gating note belongs to a surface that can be seen BEFORE the wall
+        // opens, which this unit does not add (see this unit's own PR body).
+        if (Tutorial?.MemoryActRow(state) is { } memoryRow)
+        {
+            var note = AddLabel(legendSection, memoryRow.Done
+                ? "  This is the town's memory now — your mark is on that line, and it does not clear."
+                : memoryRow.GatingNote ?? memoryRow.Label);
+            note.Name = "MemoryActRowNote";
+            note.AddThemeColorOverride("font_color", GameTheme.HeaderColor);
         }
     }
 
@@ -479,6 +570,15 @@ public partial class LegendsWall : Control
             .ThenBy(item => item.Id.Value)
             .ToList();
     }
+
+    /// <summary>U32 (§11.14.14): whether the wall's own "LEGENDARY GEAR" section holds at least one
+    /// entry — the town's record of an item literally carrying the player's mark (a Signed Work, or
+    /// <see cref="LegendQuery.FamousBeatThreshold"/>+ proven <see cref="AttributionBeatEvent"/>s;
+    /// only player-crafted work ever earns either — CLAUDE.md link 4's own "no participation
+    /// credit" rule). <see cref="Ui.TutorialFlow"/>'s own Memory-act row arms on this, reusing the
+    /// SAME test <see cref="LegendItems"/> already computes for the wall itself rather than
+    /// deriving the beat-count/signed fact a second way.</summary>
+    public static bool HasPlayerMarkedRecord(GameState state) => LegendItems(state).Count > 0;
 
     private static int AttributionBeatCount(GameState state, ItemId item) =>
         state.EventLog.OfType<AttributionBeatEvent>().Count(b => b.Item == item);
