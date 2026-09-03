@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using GameSim.Advisor;
 using GameSim.Contracts;
 using Godot;
 using GodotClient.Ui;
@@ -277,14 +278,28 @@ public partial class MarketLife2D : Node2D
     }
 
     /// <summary>
-    /// Bought-cheap → heart; bought-fair → smile. "Cheap" reuses <c>RivalCatalog</c>'s own
-    /// fair-market baseline — <c>(Attack + Defense) * 2</c> — as the reference the player's price
-    /// is judged against. Ported verbatim from the deleted <c>ShopStage.ClassifySale</c>.
+    /// Bought-cheap → heart; bought-fair → smile.
+    ///
+    /// <para>Baseline is <see cref="SuggestedPrice.For"/> — the SAME "what is this actually worth"
+    /// formula <c>ShopPanel</c>'s own price hints and the Advisor already use — not a second,
+    /// hand-rolled <c>(Attack + Defense) * 2</c> (the original, ported-verbatim-from-ShopStage
+    /// shape). That raw stat baseline was a THIRD independent copy of the exact formula
+    /// <see cref="SuggestedPrice"/>'s own doc says was already written out three times and caused
+    /// a real driver bug (Consumables, whose Attack/Defense are always 0, priced at 1g everywhere
+    /// that formula was read) — and it is now also wrong for <see cref="ItemSlot.Trinket"/> (P2-
+    /// HONEST-11, #685/#688): a trinket's Attack/Defense are real numbers that legitimately feed
+    /// <see cref="SuggestedPrice.For"/>'s pricing floor, but contribute nothing to
+    /// <c>CombatMath.EffectivePower</c> — so judging a trinket sale "a bargain" purely off its dead
+    /// combat stats, ignoring the same item's quality floor SuggestedPrice already blends in, read
+    /// a stat with zero fighting effect into whether a townsperson smiles or hearts. Routing through
+    /// <see cref="SuggestedPrice.For"/> fixes both: one formula for "fair price" everywhere in the
+    /// game, and a trinket judged by what it is actually suggested to sell for, not a stat
+    /// <c>CombatMath</c> ignores.</para>
     /// </summary>
     public static EmoteKind ClassifySale(Item item, int price)
     {
-        var baseline = (item.Stats.Attack + item.Stats.Defense) * 2;
-        return baseline > 0 && price < baseline ? EmoteKind.Heart : EmoteKind.Smile;
+        var baseline = SuggestedPrice.For(item);
+        return price < baseline ? EmoteKind.Heart : EmoteKind.Smile;
     }
 
     /// <summary>Passed-unaffordable → frown; every other pass reason → shrug. Ported verbatim
