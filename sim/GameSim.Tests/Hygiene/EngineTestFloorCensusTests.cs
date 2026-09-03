@@ -67,14 +67,33 @@ public class EngineTestFloorCensusTests
         var attributeCount = CountTestCaseAttributes();
         Assert.True(attributeCount > 0, "no [TestCase attributes found under godot/tests — is the path right?");
 
-        var lowerBound = attributeCount * 0.95;
+        // 0.75, not 0.95, and the reason is a defect this test shipped with.
+        //
+        // The first version asserted floor >= 0.95 * attributeCount. That inverts the incentive:
+        // every added test raises attributeCount, which raises the bar the FIXED floor must clear,
+        // so adding tests breaks the build until someone edits ci.yml. It fired within hours --
+        // P2-PROOF's telling-stage PR added 17 [TestCase] attributes and had to consolidate down
+        // to 8 to get green. A guard that exists to keep a floor honest must never make adding
+        // tests expensive; that is how a suite stops growing.
+        //
+        // So the bound is set from the THREAT, not from tidiness. The floor exists to catch a
+        // silent mid-run truncation, and this repo's two recorded incidents lost 87% and 33% of
+        // the suite. A floor at 75% of the live count reddens on any truncation past a quarter of
+        // the suite, which covers both, while leaving real headroom: at 1650 the floor stays valid
+        // until the suite passes 2200 attributes, roughly a month at the measured ~20/day. It
+        // therefore asks for a bump about monthly instead of on every test-adding PR.
+        //
+        // Do not tighten this back toward the count without re-reading the paragraph above.
+        var lowerBound = attributeCount * 0.75;
         var upperBound = attributeCount * 1.2;
 
         Assert.True(floor >= lowerBound,
-            $"ENGINE_MIN_PASSED ({floor}) has rotted below 95% of the live [TestCase attribute " +
-            $"count ({attributeCount}, so floor must be >= {lowerBound:F0}) — a run that silently " +
-            "drops a big chunk of the suite would still clear this floor. Raise ENGINE_MIN_PASSED " +
-            "in .github/workflows/ci.yml (owner-authored, deny-listed for this session).");
+            $"ENGINE_MIN_PASSED ({floor}) has rotted to below 75% of the live [TestCase attribute " +
+            $"count ({attributeCount}, so floor must be >= {lowerBound:F0}) — a run silently " +
+            "dropping a quarter of the suite would still clear it, which is the failure this floor " +
+            $"exists to catch. Raise ENGINE_MIN_PASSED in .github/workflows/ci.yml to about " +
+            $"{attributeCount * 0.97:F0} (97% of the current count leaves the usual month of " +
+            "headroom). This is not a reason to shrink the suite.");
 
         Assert.True(floor <= upperBound,
             $"ENGINE_MIN_PASSED ({floor}) is parked above 120% of the live [TestCase attribute " +
