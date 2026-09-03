@@ -87,17 +87,31 @@ public partial class MentorBanner : PanelContainer
 
     /// <summary>
     /// P2-ONBOARD-02 (§11.15): fixed footprint (px) of the docked box the banner card rests inside
-    /// — sized generously against the longest lesson line this class has ever carried (wrapped at
-    /// <see cref="CardBodyWidth"/>, plus the Dismiss button) so <see cref="CenterContainer"/> never
+    /// — sized generously against the longest lesson line this class had carried at the time (wrapped
+    /// at <see cref="CardBodyWidth"/>, plus the Dismiss button) so <see cref="CenterContainer"/> never
     /// has to center a card bigger than its own box (the exact overflow <see cref="CardBodyWidth"/>'s
     /// own doc already fixed once, at the window level — this is the same guard one level down, at
-    /// the dock's own box). If a future lesson's copy ever runs long enough to overflow this box
-    /// anyway, <see cref="CenterContainer"/> degrades the same safe direction the old FullRect
-    /// centering did: it overflows UPWARD, away from the drawer and the docket both, never sideways.
+    /// the dock's own box).
+    ///
+    /// <para><b>Corrected, measured (P2-ONBOARD-06, §11.15).</b> This doc used to claim that a card
+    /// taller than the box "degrades... it overflows UPWARD, away from the drawer and the docket
+    /// both, never sideways" — an assumption, never verified against a rendered frame.
+    /// <see cref="CenterContainer"/> in fact centers a taller child SYMMETRICALLY: it overflows both
+    /// the box's top AND bottom edges by half the excess each. Beat 0 (<c>TutorialFlow.FirstMorningBeatText</c>,
+    /// five paragraphs — by far the longest line this class has ever carried) measured this directly:
+    /// at the old 260px, its bottom half overflowed straight into <see cref="Ui.CompanionDock"/>'s
+    /// own reserved footprint below AND clipped against the window's own bottom edge, with the
+    /// Dismiss button rendered entirely off-screen. Raised alongside a wider <see
+    /// cref="CardBodyWidth"/> (that field's own doc) — height alone could not clear beat 0 without
+    /// pushing the box's own top past the header bar at this program's floor window size
+    /// (1152×648), so some of the fix trades width for fewer, shorter lines instead. <see
+    /// cref="PositionDock"/>'s own resting-position math (box center moves UP as this grows, box
+    /// bottom edge unchanged) is what makes a taller box the correct direction, not a coincidence —
+    /// re-measured against a rendered frame after the change, not assumed from the math alone.</para>
     /// </summary>
-    private const float DockWidth = 480f;
+    private const float DockWidth = 640f;
 
-    private const float DockHeight = 260f;
+    private const float DockHeight = 500f;
 
     /// <summary>Gap (px) kept between the docked box's resting edge and the window edge it sits
     /// against — the same order of magnitude <see cref="Ui.CompanionDock"/>'s own <c>Margin</c> uses
@@ -106,8 +120,18 @@ public partial class MentorBanner : PanelContainer
 
     /// <summary>Fixed card body width — see the "MentorBannerBody" node built in <see cref="Build"/>
     /// below (the WholeGameSweepTests overflow fix); pulled out to a named constant now that
-    /// <see cref="DockWidth"/> needs to stay wider than it.</summary>
-    private const float CardBodyWidth = 440f;
+    /// <see cref="DockWidth"/> needs to stay wider than it.
+    ///
+    /// <para>Widened alongside <see cref="DockHeight"/> (P2-ONBOARD-06, §11.15): beat 0's own five
+    /// paragraphs measured taller than even the raised <see cref="DockHeight"/> could clear at the
+    /// old 440px wrap width, so this trades some of that extra height back for width — fewer, longer
+    /// lines — rather than growing <see cref="DockHeight"/> alone toward the header bar above. Still
+    /// well clear of the drawer at this program's floor window size (1152×648): the docked box rests
+    /// at <see cref="DockMargin"/>..<c>DockMargin+DockWidth</c> = 16..656px, and nothing else ever
+    /// claims bottom-left screen space while this box is resting there (<see cref="PositionDock"/>'s
+    /// own doc).</para>
+    /// </summary>
+    private const float CardBodyWidth = 600f;
 
     /// <summary>Extra clearance (px) kept between the docked box and whatever live rect it was moved
     /// to avoid — enough that the pulsing outline's own glow never touches the card.</summary>

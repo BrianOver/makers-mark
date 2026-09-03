@@ -142,8 +142,12 @@ public partial class NewGameSelect : Control
 
     /// <summary>
     /// U7 (opener fantasy line): the one sentence this whole game is about — everything else on
-    /// this primer (phase legend, clock note, seed) explains HOW day 1 works; this states WHY it
-    /// matters, so the fantasy is never left implicit on the very first screen a player sees.
+    /// this primer (clock note, seed) explains HOW day 1 works; this states WHY it matters, so the
+    /// fantasy is never left implicit on the very first screen a player sees. P2-ONBOARD-06
+    /// (§11.15), deletion #8 removed the primer's own five-line phase legend — the SAME copy
+    /// (<see cref="MainUi.PhaseLegend"/>) still lives on the in-game HUD's own phase-chip tooltip,
+    /// so a genuinely new player still reaches it, on the screen it actually describes, rather than
+    /// reading it once, cold, before any phase has ever happened to make it concrete.
     /// </summary>
     private const string FantasyNote =
         "Heroes will buy this gear and carry it into the Mine — what it does down there is " +
@@ -600,15 +604,6 @@ public partial class NewGameSelect : Control
         {
             Name = "FantasyNote",
             Text = FantasyNote,
-            AutowrapMode = TextServer.AutowrapMode.WordSmart,
-        });
-
-        // Verbatim MainUi.PhaseLegend (R12): the same 5-phase, one-line-each copy the in-game
-        // HUD legend shows, so this primer can never drift from what the game explains later.
-        primer.AddChild(new Label
-        {
-            Name = "PhaseLegend",
-            Text = MainUi.PhaseLegend,
             AutowrapMode = TextServer.AutowrapMode.WordSmart,
         });
 

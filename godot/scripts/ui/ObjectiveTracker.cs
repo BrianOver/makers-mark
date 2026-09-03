@@ -422,9 +422,11 @@ public sealed partial class ObjectiveTracker : PanelContainer
     /// <summary>
     /// Strip the markdown emphasis the sim's advisor/tutorial strings carry. Those strings are
     /// shared with the CLI, where <c>**bold**</c> is meaningful; a Godot <see cref="Label"/> has no
-    /// markup parser, so it rendered the asterisks literally — the first tutorial step read
-    /// "Walk to the **Forge**". Presentation-side strip rather than a sim change, because the CLI
-    /// still wants the emphasis (and the sim must stay the single source of the wording).
+    /// markup parser, so before this fix it rendered the asterisks literally — the first tutorial
+    /// step's own bolded building name, back when the card still named one (P2-ONBOARD-06, §11.15,
+    /// deleted that WHERE clause entirely). Presentation-side strip rather than a sim change,
+    /// because the CLI still wants the emphasis (and the sim must stay the single source of the
+    /// wording).
     /// </summary>
     public static string Plain(string text) => text.Replace("**", string.Empty);
 

@@ -67,18 +67,28 @@ public class TutorialCopyIsFollowableTests
     /// </summary>
     private static readonly Dictionary<TutorialStep, string[]> MustName = new()
     {
-        // WHERE (the workshop) and HOW (walk with WASD, then E at a station — the gesture that
-        // opens the panel where buying and crafting both live).
-        [TutorialStep.BuyMaterial] = ["Forge", "WASD", "press E"],
-        [TutorialStep.Craft] = ["Forge", "press E"],
+        // P2-ONBOARD-06 (§11.15), deletion #2: "all WHERE copy in cards" is gone — TutorialOverlay's
+        // own pulse (already shipped, T10) is now the ONLY on-screen answer to "where," so BuyMaterial/
+        // Craft no longer name "Forge"/"WASD"/"press E" in their own text (StationPressLessonId's
+        // permanent Lessons-book entry teaches "press E at a station" instead, once, not on every
+        // card). What is left is the live ObjectiveAdvisor suggestion (already screen-real, since it
+        // is the same text the advisor's own panel shows) or, absent one, generic transaction prose —
+        // neither is fixed enough vocabulary for this join, so these two rows carry no MustName claim
+        // any more; EveryStepsCopy_IsNonEmpty_... still pins that the line itself is never blank.
+        [TutorialStep.BuyMaterial] = [],
+        [TutorialStep.Craft] = [],
 
-        // The owner's step 2, verbatim: "doesn't explain WHERE in the shop to add stuff". The
-        // section heading and the button's own word are the answer, and the button says Stock.
-        [TutorialStep.Shelve] = ["Shop", "Unshelved Crafts", "Stock"],
+        // The owner's step 2, verbatim: "doesn't explain WHERE in the shop to add stuff". P2-ONBOARD-06
+        // deleted the building name from this line (the overlay already points at the shop); the
+        // section heading and the button's own word are still the answer to "where in the shop", and
+        // the button still says Stock.
+        [TutorialStep.Shelve] = ["Unshelved Crafts", "Stock"],
 
-        [TutorialStep.PostBounty] = ["Bounties", "POST BOUNTY", "Post"],
+        [TutorialStep.PostBounty] = ["POST BOUNTY", "Post"],
 
-        // "HOW to watch them depart??" — the answer is a button somewhere else entirely.
+        // "HOW to watch them depart??" — the answer is a button somewhere else entirely. Unaffected by
+        // deletion #2: this clause describes the automatic camera pan, never an instruction to walk
+        // anywhere, so it is not WHERE copy and the building name stays.
         [TutorialStep.WatchDeparture] = ["Mine Gate", "top of the screen"],
 
         [TutorialStep.LookIn] = ["Watch", "top of the screen"],
@@ -86,8 +96,9 @@ public class TutorialCopyIsFollowableTests
         // — completion no longer requires a closed sale, so the copy no longer promises specific
         // Present/Accept/Hold Firm/Counter buttons (any one of several verbs satisfies the step;
         // naming all of them made the OLD copy read as a checklist of required presses). "Open
-        // Counter" is still the one verb the step actually gates on.
-        [TutorialStep.OpenCounter] = ["Shop", "Open Counter"],
+        // Counter" is still the one verb the step actually gates on. P2-ONBOARD-06 dropped "Shop"
+        // (the overlay already points at it).
+        [TutorialStep.OpenCounter] = ["Open Counter"],
         [TutorialStep.Vigil] = ["Send", "Recall"],
         [TutorialStep.EveningClose] = ["EVENING LEDGER", "ORE OFFERED", "Buy"],
 

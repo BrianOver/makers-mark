@@ -891,9 +891,10 @@ public sealed partial class TutorialFlow : PanelContainer
     /// hand off to the station. One anchor, two phases.</para>
     ///
     /// <para><paramref name="openPanelId"/> is the player's live location in panel-id vocabulary
-    /// (<c>MainUi.CurrentLocationPanelId</c>) — the same value <see cref="IsAtAnchor"/> reads, so
-    /// the pulse and the card's own "You're at the ..." acknowledgement can never disagree about
-    /// where the player is standing.</para>
+    /// (<c>MainUi.CurrentLocationPanelId</c>). P2-ONBOARD-06 (§11.15) deleted the card's own "You're
+    /// at the ..." arrival text (deletion #2: the pointer owns WHERE now) — this is the only place
+    /// arrival still changes what the player sees, handing the pulse off from the building to the
+    /// station inside it.</para>
     ///
     /// <para>U7 (§11.14.14): <paramref name="state"/> resolves the CURRENT step's own conditional
     /// existence (<see cref="ResolveExistence"/>) BEFORE aiming — a fallback anchor still gets the
@@ -1184,15 +1185,19 @@ public sealed partial class TutorialFlow : PanelContainer
     public string CopyFor(TutorialStep step, GameState state, string? openPanelId = null) =>
         StepText(ByStep[step], state, openPanelId);
 
-    /// <summary>Playtest F6: the first-day chain used to name the ACTION ("Buy 2 copper") but
-    /// never WHERE to go or HOW to get there, and during a phase that forbids the step's own
-    /// action (e.g. the Morning-only vendor mid-Expedition) it kept demanding the impossible
-    /// instruction with no "come back later" hint. Each step now names its target building via its
-    /// <see cref="TutorialStepDef.Anchor"/> — with a one-time movement hint on step 1 — and, when
-    /// <see cref="StepActionAvailable"/> (U13: judged by <c>ActionLegality.IsLegal</c> against the
-    /// row's own <see cref="TutorialStepDef.CanonicalAction"/>, not a restatement of its rules)
-    /// reads false, swaps in the deferred/"comes back" variant (<see cref="WaitText"/>) instead of
-    /// the raw actionable copy.</summary>
+    /// <summary>Playtest F6 named the original gap: the first-day chain used to name only the
+    /// ACTION ("Buy 2 copper") and never WHERE to go, which the F6-era card fixed with prose
+    /// ("Walk to the Forge (WASD), press E"). P2-ONBOARD-06 (§11.15) deletes that prose: <see
+    /// cref="TutorialOverlay"/>'s own pulse (<see cref="CurrentAnchor"/>, already shipped, T10)
+    /// now points at the exact building/station live on screen, so the card repeating it in words
+    /// was duplicate information, not a second safety net — the class of defect this method's own
+    /// doc used to warn about ("Brian's playtest: the tutorial isn't updating despite entering the
+    /// forge") cannot recur once there is no WHERE-claim left in the text to go stale. The card's
+    /// only remaining job is WHAT/WHY. When <see cref="StepActionAvailable"/> (U13: judged by
+    /// <c>ActionLegality.IsLegal</c> against the row's own <see
+    /// cref="TutorialStepDef.CanonicalAction"/>, not a restatement of its rules) reads false, this
+    /// swaps in the deferred/"comes back" variant (<see cref="WaitText"/>) instead of the raw
+    /// actionable copy.</summary>
     private string StepText(TutorialStepDef def, GameState state, string? openPanelId)
     {
         if (!StepActionAvailable(state, def))
@@ -1201,50 +1206,33 @@ public sealed partial class TutorialFlow : PanelContainer
         }
 
         var suggestions = ObjectiveAdvisor.Suggest(state);
-        // Not every step names a single town building (LookIn/Vigil/EveningClose/MeetHeroes/
-        // Commission anchor to a HUD control, not a walk-there destination) — building is empty
-        // for those, so GoTo/alreadyThere fall through harmlessly. The forge anchor's RENDERED
-        // name follows the workshop's current profession (BuildingDisplayName folds in U7's
-        // workshop vocab override) while `def.Anchor.Key` itself stays the stable routing
-        // vocabulary IsAtAnchor/PanelIdForVenue read — never rename the plumbing, only the text.
-        // U2 (tutorial-revamp plan, §11.13): a Station anchor's own Key is still the venue key (see
-        // TutorialAnchor's own doc), so the SAME "walk to the {building}" text generation applies
-        // to BuyMaterial/Craft unchanged now that they point at a Station, not a Building.
-        var building = def.Anchor.Kind is TutorialAnchorKind.Building or TutorialAnchorKind.Station
-            ? BuildingDisplayName(def.Anchor.Key!) : string.Empty;
-        var alreadyThere = building.Length > 0 && IsAtAnchor(def, openPanelId);
         var instruction = def.Step switch
         {
-            // U2 (tutorial-revamp plan, §11.13): dropped the trailing "Inside, press E at a
-            // station" sentence — genuinely redundant now that the overlay pulses the EXACT
-            // station (the anvil, the shelf), not just the building. Part of the card diet: the
-            // world shows where; the card only needs to say what/why.
-            // U2 follow-through (tutorial-revamp plan, §11.13): once inside, name the STATION
-            // still owed (the vendor, the anvil) — not the building the player is already
-            // standing in. Both nouns already exist for other copy in this same method (the
-            // vendor fallback below, `_workshopStationNoun` for Craft's own suggestion text), so
-            // this reuses them rather than inventing a third vocabulary source.
             TutorialStep.BuyMaterial or TutorialStep.Craft =>
-                $"{StepPrefix(def)}: {GoTo(building, includeMovementHint: def.Step == TutorialStep.BuyMaterial, alreadyThere, arrivedNoun: def.Step == TutorialStep.BuyMaterial ? "vendor" : _workshopStationNoun)} — " +
+                $"{StepPrefix(def)}: " +
                 (suggestions.Count > 0
                     ? suggestions[0].Reason
                     : $"Buy material at the vendor, then craft at the {_workshopStationNoun}."),
             TutorialStep.Shelve =>
-                $"{StepPrefix(def)}: {GoTo(building, includeMovementHint: false, alreadyThere)} — " +
+                $"{StepPrefix(def)}: " +
                 (suggestions.FirstOrDefault(s => s.Action is StockAction)?.Reason
                     ?? "Shelve your finished item so heroes can buy it.") +
                 " Find it under **Unshelved Crafts** and press **Stock** — or drag it to a **+ shelve here** slot.",
             TutorialStep.PostBounty =>
-                $"{StepPrefix(def)}: {GoTo(building, includeMovementHint: false, alreadyThere)} — under " +
-                "**POST BOUNTY** pick a floor, set the reward on the coins, then press **Post**. The gold goes now; " +
-                "the hero who gets there keeps it.",
+                $"{StepPrefix(def)}: Under **POST BOUNTY** pick a floor, set the reward on the coins, " +
+                "then press **Post**. The gold goes now; the hero who gets there keeps it.",
             // The departure is not a thing the player watches happen TO them: ending the Morning is
             // what causes it (MainUi.SoundTheTick pans the camera to the gate on the Morning tick).
             // Naming only the gate answered WHERE and left the owner's actual question — "HOW to
             // watch them depart??" — unanswered, because the answer is a button somewhere else.
+            // The camera-swing clause below describes an AUTOMATIC event, never an instruction to
+            // walk anywhere, so it is not WHERE copy this unit's deletion targets — kept, and reads
+            // the building's display name locally since StepText no longer computes it as shared
+            // plumbing for the (now-deleted) GoTo() call every other case used to share.
             TutorialStep.WatchDeparture =>
                 $"{StepPrefix(def)}: They leave when the Morning ends — press **{MorningBell(state)}**, " +
-                $"the wide button at the top of the screen. The view swings to the **{building}** and follows them out.",
+                $"the wide button at the top of the screen. The view swings to the " +
+                $"**{BuildingDisplayName(def.Anchor.Key!)}** and follows them out.",
             // Day-1 capstone: no town building — the taught affordance is the persistent Watch
             // control beside the bell (reachable through Expedition/Camp/ExpeditionDeep). "On the
             // bell row" named a piece of layout vocabulary that appears nowhere on screen. The day
@@ -1252,16 +1240,13 @@ public sealed partial class TutorialFlow : PanelContainer
             TutorialStep.LookIn =>
                 $"{StepPrefix(def)}: Press **👁 Watch**, beside the wide button at the top of the " +
                 "screen, to open the Scrying Mirror and look in on them — the day waits until you do.",
-            // U-T2-16 (#162 defects 3-4): ONE sentence — walk to the counter, press Open Counter,
-            // they speak first. Present/Suggest/Accept/Hold Firm/Counter (the OLD copy's own five
-            // controls) moved to this row's own TeachNote and the Lessons book; naming all of them
-            // here is what pushed this card to the very edge of ObjectiveTracker's own 3-line budget
+            // U-T2-16 (#162 defects 3-4): ONE sentence — press Open Counter, they speak first.
+            // Present/Suggest/Accept/Hold Firm/Counter (the OLD copy's own five controls) moved to
+            // this row's own TeachNote and the Lessons book; naming all of them here is what pushed
+            // this card to the very edge of ObjectiveTracker's own 3-line budget
             // (NoStepsCopy_OutgrowsTheObjectiveCardsOwnUnclampedLineBudget "passed only barely").
-            // arrivedNoun names the STATION (the counter itself), same idiom as BuyMaterial/Craft's
-            // own Station anchors, now that this step points at one too (U-T2-15).
             TutorialStep.OpenCounter =>
-                $"{StepPrefix(def)}: {GoTo(building, includeMovementHint: false, alreadyThere, arrivedNoun: "counter")} — " +
-                "press **Open Counter**; they speak first.",
+                $"{StepPrefix(def)}: Press **Open Counter**; they speak first.",
             // Vigil: no walk-there destination — the camp card opens itself the moment a party camps
             // below the checkpoint (CampPanel.ShowModal, called from MainUi's own SyncCampModal every
             // Camp tick); the lesson is which of its verbs to press. "The winch-house slate" and "the
@@ -1351,9 +1336,9 @@ public sealed partial class TutorialFlow : PanelContainer
     /// panelId switch, mirrored here) — needed because a walked arrival is observed through
     /// <paramref name="openPanelId"/>-shaped values in that vocabulary, not the venue-key
     /// vocabulary the anchor itself uses.</summary>
-    /// <summary>The one venue-key-to-panel-id mapping the whole class reads (<see cref="IsAtAnchor"/>,
-    /// <see cref="AimAnchor"/>, the card's own "You're at the ..." branch). Public so a test can
-    /// speak the same vocabulary rather than hardcoding a second copy of it.</summary>
+    /// <summary>The one venue-key-to-panel-id mapping the whole class reads (<see
+    /// cref="AimAnchor"/>). Public so a test can speak the same vocabulary rather than
+    /// hardcoding a second copy of it.</summary>
     public static string? PanelIdForVenue(string venueKey) => venueKey switch
     {
         "forge" => "Forge",
@@ -1363,80 +1348,6 @@ public sealed partial class TutorialFlow : PanelContainer
         "noticeboard" => "Bounties",
         _ => null,
     };
-
-    /// <summary>Whether the player is standing at <paramref name="def"/>'s own Building anchor
-    /// RIGHT NOW — either the caller's live location (<paramref name="openPanelId"/>, U5: now
-    /// covers a walkable interior too, via <c>MainUi.CurrentLocationPanelId</c>) matches, or <see
-    /// cref="NotifyEnteredBuilding"/>'s own ratchet already marked this step visited. The ratchet
-    /// half means an ack that already fired keeps reading true even if the LIVE location check
-    /// alone would flicker (e.g. a panel that closes itself mid-step).</summary>
-    private bool IsAtAnchor(TutorialStepDef def, string? openPanelId) =>
-        (openPanelId is not null && openPanelId == PanelIdForVenue(def.Anchor.Key!))
-        || _visitedAnchorForStep.Contains(def.DisplayIndex);
-
-    // U2 (tutorial-revamp plan, §11.13): shortened from "WASD, or click the ground to move" —
-    // part of the card diet (TutorialMaxLines 6->3): the overlay now pulses the exact station, so
-    // the text only needs to name the keys, not re-explain what they do.
-    //
-    // Trimmed again ("or click" dropped, tutorial-revamp wave): step 1's full line (prefix +
-    // this + the live advisor suggestion HeroShoppingSystem/ObjectiveAdvisor appends) still
-    // overflowed the card's own new 3-line/260px budget (HudBoundsTests.
-    // ObjectiveChip_HeightTracksContent_NotFixedEmptyPanel) even after that cut — every other
-    // step's copy already fits, so this is the one line still paying for the diet.
-    private const string MovementHint = "WASD";
-
-    /// <summary>
-    /// The "get to the right place" half of a step's instruction — or an acknowledgement that the player is
-    /// already there.
-    ///
-    /// <para><b>Why the acknowledgement matters.</b> Brian's playtest: "The tutorial isn't updating despite
-    /// entering the forge". The step machine was working correctly — step 1 needs the PURCHASE, not the
-    /// arrival — but the instruction reads "Walk to the Forge and click it — Buy 2 copper", so a player who
-    /// does the first clause and sees the text sit unchanged has every reason to conclude the tutorial is
-    /// stuck. Telling someone to do something they have just done is the bug.</para>
-    ///
-    /// <para>Once the step's own surface is open the copy names only what is LEFT, and the movement hint
-    /// drops away with it: repeating how to walk to a room you are standing in is noise.</para>
-    /// </summary>
-    private static string GoTo(string building, bool includeMovementHint, bool alreadyThere, string? arrivedNoun = null)
-    {
-        if (alreadyThere)
-        {
-            // U2 follow-through (tutorial-revamp plan, §11.13): once the player is inside, name
-            // the STATION still owed (the vendor, the anvil), never the building they are
-            // already standing in — "You're at the Forge" while the step still wants a purchase
-            // or a craft is the same "telling someone to do what they've just done" defect this
-            // method's own doc names, one layer in (caught by TutorialKeepsUpTests
-            // .OpeningTheStepsBuilding_StopsTheCardTellingYouToWalkThere's sibling check).
-            // `arrivedNoun` carries that word in for the Station-anchored steps (BuyMaterial/Craft,
-            // and — U-T2-15 — OpenCounter's own "counter" station); every other (Building-anchored)
-            // step has no station narrower than the building itself, so it keeps naming the
-            // building, unchanged.
-            return $"You're at the **{arrivedNoun ?? building}**";
-        }
-
-        // U2 (tutorial-revamp plan, §11.13): shortened "and press E, or click it" to "then press
-        // E" — part of the card diet. Drops the separately-named "or click it" alternate-entry
-        // gesture (a stranger who walks up and presses E, the more common path, still gets a
-        // complete instruction); the overlay's own pulse now carries the precision this used to
-        // spell out in prose. "press E" itself stays — TutorialCopyIsFollowableTests pins it as a
-        // literal substring for both BuyMaterial and Craft.
-        // Movement-hint branch (step 1 alone) drops the ARTICLE, not the verb — "Walk to
-        // **{building}**", never "Go to": TutorialKeepsUpTests
-        // .OpeningTheStepsBuilding_StopsTheCardTellingYouToWalkThere pins "Walk to" as the literal
-        // substring a closed drawer must show (and its ABSENCE once arrived), so the verb itself
-        // cannot change. Measured against a live mount
-        // (HudBoundsTests.ObjectiveChip_HeightTracksContent_NotFixedEmptyPanel), the full line —
-        // "Walk to the {building} ({WASD}), press E" plus the live advisor suggestion this step
-        // appends — still wrapped to one WordSmart line more than the article-less form does, at
-        // the card's 296px text width; dropping "the" saves the same width a swap to "Go to"
-        // did (two fewer characters) with room to spare, without touching the pinned verb. Every
-        // other step's copy keeps the full "Walk to the **{building}**" — this is the one line
-        // still paying for the diet.
-        return includeMovementHint
-            ? $"Walk to **{building}** ({MovementHint}), press **E**"
-            : $"Walk to the **{building}**, then press **E**";
-    }
 
     /// <summary>
     /// U13 (§11.14.14): whether <paramref name="def"/>'s own action is legal RIGHT NOW — asked of
@@ -2211,13 +2122,18 @@ public sealed partial class TutorialFlow : PanelContainer
     }
 
     // ── U16 (§11.14.14, "the first thing any player ever reads"): the first-morning cold open ──
+    // P2-ONBOARD-06 (§11.15), deletion #1: beat 0 replaces U16's own cold open in place — same
+    // once-ever id/pending mechanism, new content, quoted verbatim from the plan's beat sheet.
     //
     // The gap this closes: nothing on the front door (NewGameSelect's primer) or in the numbered
-    // course ever states law 1 ("influence never orders") or its two companion facts — the player
-    // IS the smith, and the player never descends. A player who tries to command a hero learns the
-    // rule only by its absence. This is the negative half the primer's own FantasyNote deliberately
-    // does not carry (that line says what the player's work is FOR; this says what the player is
-    // NOT), spoken once, before the numbered chain's first card (BuyMaterial) is the only thing on
+    // course ever states law 1 ("influence never orders") or its companion facts — the player IS
+    // the smith, the player never descends, and no hero here takes an order from them. A player
+    // who tries to command a hero used to learn the rule only by its absence. Beat 0 also absorbs
+    // the primer's own duplicated "inversion" duty (§11.15: "the premise is stated once by a
+    // face") — told through Bryn, at the bench, rather than restated in the primer's own prose (R3:
+    // no important information without a face), which is why the primer's FantasyNote stays (it
+    // says what the player's work is FOR) while this beat alone carries what the player is NOT.
+    // Spoken once, before the numbered chain's first card (BuyMaterial) is the only thing on
     // screen.
 
     /// <summary>
@@ -2231,7 +2147,8 @@ public sealed partial class TutorialFlow : PanelContainer
     public const string FirstMorningBeatId = "first-morning";
 
     /// <summary>
-    /// Bryn's cold open (U16). <see cref="MainUi.BuildUi"/> fires this — via <see
+    /// Bryn's cold open — beat 0 of the plan's beat sheet (P2-ONBOARD-06, §11.15), replacing U16's
+    /// own text in the same slot. <see cref="MainUi.BuildUi"/> fires this — via <see
     /// cref="ConsumeFirstTouch"/> then <see cref="MentorBanner.ShowFirstTouch"/> — only when <see
     /// cref="MainUi.FirstMorningBeatPending"/> is true, which <see cref="NewGameSelect.OnBeginPressed"/>
     /// sets on EVERY "Begin" press (both the ordinary and the returning-smith branch — see this
@@ -2244,12 +2161,15 @@ public sealed partial class TutorialFlow : PanelContainer
     /// cref="TutorialStep.BuyMaterial"/>, empty <see cref="FirstTouch"/>) — only the front door
     /// itself knows which one just happened.
     ///
-    /// <para><b>States the negative half only (constraint: never restate the primer's premise
-    /// line).</b> Names the three facts a new player is most likely to get wrong about this game:
-    /// they ARE the smith (first line), they never go down into the Mine themselves (second
-    /// paragraph's first sentence), and no hero here ever takes an order from them (second
-    /// paragraph's last sentence) — law 1, stated plainly, before it can be violated by a player's
-    /// own false assumption.</para>
+    /// <para><b>The plan's own five deliverable paragraphs, verbatim (§11.15, "Beat 0, at the
+    /// bench").</b> She introduces herself and the bench as now the player's own (paragraph 1);
+    /// tells the Stonewake story through a face — link 1's mark and link 4's proof, both stated
+    /// narratively rather than simulated, per the catch that reshaped this beat: a live item
+    /// authored with a predecessor's mark would corrupt link 4's "no participation credit" at the
+    /// exact moment the game is teaching it, so it is TOLD (paragraph 2); contrasts the smith who
+    /// never stamped anything and is forgotten (paragraph 3); states law 1 plainly — six heroes go
+    /// down, the player does not, and no one in this town takes an order from them (paragraph 4);
+    /// and invites the first craft (paragraph 5).</para>
     ///
     /// <para><b>She never orders, describing throughout.</b> Every sentence names what already is,
     /// never what the player should do next — <see
@@ -2257,8 +2177,7 @@ public sealed partial class TutorialFlow : PanelContainer
     /// her whole corpus (no "!", no " must "). That check is narrow by construction (an ending
     /// punctuation mark and one substring) — it would not catch a real second-person imperative
     /// with neither ("Stamp your gear before the day ends"), so this text was hand-checked against
-    /// that gap too: every sentence is declarative ("You're the smith now," "Nobody... takes an
-    /// order from you"), never an instruction.</para>
+    /// that gap too: every sentence is declarative, never an instruction.</para>
     ///
     /// <para><b>Independent of <see cref="Active"/>/<see cref="Dismissed"/></b> — same precedent as
     /// <see cref="ConsumeLedgerTip"/>/<see cref="ConsumeFirstTouch"/>'s own "the long tail's own
@@ -2271,13 +2190,17 @@ public sealed partial class TutorialFlow : PanelContainer
     /// else — never re-taught, never withheld from someone who is owed it.</para>
     /// </summary>
     public const string FirstMorningBeatText =
-        "Bryn. I kept this bench for the smith before you — good hands, and not one piece anyone "
-        + "remembers whose they were. You're the smith now.\n\n"
-        + "Six of them go down into the Mine. You don't — the ladder isn't yours, and neither is "
-        + "the fight down there. What's yours is what they carry, and only they decide whether to "
-        + "carry it. You can make it, price it, put it where they'll see it. Then they choose, "
-        + "every time. Nobody in this town takes an order from you — not them, not me.\n\n"
-        + "You'll stamp everything you make. I'd like to see what that turns into.";
+        "Bryn. Journeyman — the last smith's, and now yours, if you'll have me.\n\n"
+        + "Sixty years back a smith at this bench quenched a blade called Stonewake. Floor two of "
+        + "the Mine, it turned the blow that should have ended a digger named Petra Coalhand. She "
+        + "lived to be old and loud about it. The wall still keeps the line, and the smith's name "
+        + "is in it — because the mark on the steel proved whose work it was.\n\n"
+        + "The smith I served after never stamped a thing anyone checked. Good hands. Nobody "
+        + "remembers them.\n\n"
+        + "Six of them go down into the Mine now. You don't — the ladder isn't yours, and no one "
+        + "in this town takes an order from you. Not them. Not me. What's yours is what they "
+        + "carry, and carrying it is always their choice.\n\n"
+        + "So. One piece today, with your mark on it. I'd like to watch.";
 
     // ── P2-SCREEN-07 (§11.15): the TeachNote becomes Bryn's three lessons ───────────────────────
     //
