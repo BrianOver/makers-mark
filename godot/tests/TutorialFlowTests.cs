@@ -2153,7 +2153,7 @@ public class TutorialFlowTests
             var afterWarrant = ui.Adapter.CurrentState with { Day = ApprenticeWarrant.LastGraceDay + 1 };
             var beat = ui.Tutorial.ConsumeWarrantEndBeat(afterWarrant);
             AssertThat(beat).IsNotNull();
-            AssertThat(beat!).Contains("warrant ended at dawn");
+            AssertThat(beat!).Contains("Warrant ended at dawn");
 
             AssertThat(ui.Tutorial.ConsumeWarrantEndBeat(afterWarrant)).IsNull(); // once-ever
         }

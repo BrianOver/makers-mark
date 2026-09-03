@@ -300,6 +300,11 @@ public class NewGameSelectTests
     [TestCase]
     public void Pick_ShowsPrimer_ListingAllFivePhases_WithClockNoteAndSeed_NeverTouchingAdapter()
     {
+        // P2-ONBOARD-05 (§11.15): a fresh profile's first blacksmith pick now prints the Warrant's
+        // fiction name here instead of a raw seed (see WarrantSeedTests) — force "returning smith"
+        // so THIS test keeps proving SeedSource's own display path, undisturbed.
+        Ui.TutorialFlow.ResetForReturningSmith();
+
         var screen = Mount();
         screen.SeedSource = () => 999UL;
         try
@@ -331,6 +336,7 @@ public class NewGameSelectTests
         finally
         {
             Unmount(screen);
+            Ui.TutorialFlow.DeleteForTests(); // never leak "returning smith" into a later suite
         }
     }
 
