@@ -2485,8 +2485,19 @@ public sealed partial class TutorialFlow : PanelContainer
 
         _hasSeenWarrantEndBeat = true;
         Save();
-        return "The apprenticeship's warrant ended at dawn. From today the Mine keeps what it takes.";
+        return WarrantEndedBeatText;
     }
+
+    /// <summary>
+    /// P2-ONBOARD-05 (§11.15): named "the Warrant" — the same name the primer now prints where the
+    /// seed used to (<see cref="NewGameSelect.WarrantFictionName"/>) — so the morning this ends
+    /// visibly reads as the SAME bounded act the campaign opened on, not a second unnamed
+    /// mechanism. States only the mechanical fact <see cref="ApprenticeWarrant"/> already
+    /// guarantees (§11.13's canonical wording, <c>THE-GAME.md</c> §3.3) — never a script-dependent
+    /// beat (<c>WarrantCopyTrimTests</c>, <c>godot/tests/</c>, pins that this stays true).
+    /// </summary>
+    public const string WarrantEndedBeatText =
+        "The Warrant ended at dawn. From today the Mine keeps what it takes.";
 
     /// <summary>U5: once-ever consumed flag backing <see cref="ConsumeWarrantEndBeat"/> — persisted
     /// alongside <see cref="HasSeenLedgerTip"/> (same once-per-campaign contract).</summary>

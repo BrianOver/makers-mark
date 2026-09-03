@@ -87,6 +87,21 @@
 # through IconRegistry/AssetCatalog, so they cannot register a census row or otherwise enter the
 # production resolution path. Used to render the "would a smoother stride read as more alive"
 # receipt series for the owner's pick; no candidate here ships by default.
+#
+# P2-ONBOARD-05 (§11.15, "The Warrant ships"): SHOT_STATE=Primer and SHOT_STATE=WarrantFirstMorning
+# are the only two states that do NOT mount main_ui.tscn -- the Warrant's pinned seed and its
+# fiction name (NewGameSelect.WarrantFictionName) are decided entirely inside
+# NewGameSelect.OnProfessionPicked, so proving either one on screen needs the REAL front door.
+# Primer: New Game -> Pick_blacksmith, then captures the primer with the Warrant's name printed
+# where a raw seed number used to be. WarrantFirstMorning: the same two presses, then Begin --
+# the real GetTree().ChangeSceneToFile this fires is DEFERRED (the scene swap lands at idle time,
+# not inside the press that requested it), so _ui is re-polled from root every frame past the
+# press until the new MainUi is found, and the settle window is long enough for that swap plus
+# MainUi's own boot sequence (which is what shows Bryn's cold-open beat) to land. Both force-clear
+# user://tutorial_flow.json unconditionally at boot -- the SAME file SHOT_RESET_TUTORIAL=1 clears
+# opt-in elsewhere in this script, except here it is not optional: a stale file from an earlier
+# capture or a dev's own real play would make Ui.TutorialFlow.HasPriorProgress read true, and the
+# receipt would silently show a raw seed instead of the name it exists to prove.
 
 extends SceneTree
 
@@ -108,9 +123,9 @@ const KNOWN_STATES := [
 	"ForgeAnvil", "ForgeAnvilEmpty", "ForgeExit", "ForgeFlavor", "ForgeLadder", "ForgePanel",
 	"ForgeShelf", "GatedCounterEmptyShelf", "GateNight", "HeroCandidateOpen", "HeroCards",
 	"HeroErrand", "Ledger", "LedgerProvenance", "Lessons", "MineGateFocus", "Mirror",
-	"OccupancyCorner", "Provenance", "ReturnAtNight", "ReturnEmerge", "ReturnQuestEmpty", "SendOff",
-	"ShopPanel", "SplitLessons", "SystemMenu", "TavernPanel", "TownOverview", "TutorialLookIn",
-	"TutorialOffCamera", "Watch",
+	"OccupancyCorner", "Primer", "Provenance", "ReturnAtNight", "ReturnEmerge", "ReturnQuestEmpty",
+	"SendOff", "ShopPanel", "SplitLessons", "SystemMenu", "TavernPanel", "TownOverview",
+	"TutorialLookIn", "TutorialOffCamera", "Watch", "WarrantFirstMorning",
 ]
 
 # P2-SCREEN-09: the recipe id/talent node id sequence ForgeAnvilEmpty unlocks to drain the whole
@@ -247,8 +262,29 @@ func _initialize() -> void:
 		# driven off the same real per-frame delta), so this also catches MainUi's narrator toast
 		# (RejectionToastSeconds = 4s) still on screen, same as ReturnEmerge's own calibration.
 		_settle = 950
+	elif _state == "Primer":
+		# P2-ONBOARD-05: two synchronous button presses in one frame (see the _frames==60 dispatch
+		# below) -- no camera dolly, no scene change -- so the plain-town default settle is already
+		# generous.
+		_settle = 90
+	elif _state == "WarrantFirstMorning":
+		# P2-ONBOARD-05: Begin's own GetTree().ChangeSceneToFile is DEFERRED (the scene swap lands
+		# at idle time, not synchronously inside the press that requested it), so this needs real
+		# settle time past the press for the swap AND MainUi's own boot sequence (which is what
+		# shows Bryn's cold-open beat) to land -- longer than a camera ease, but nowhere near the
+		# Phase*/GateNight family's multi-second tint convergence.
+		_settle = 240
 	else:
 		_settle = 320
+	# P2-ONBOARD-05 (§11.15): unconditional, not the opt-in SHOT_RESET_TUTORIAL=1 below -- these two
+	# states exist specifically to prove Ui.TutorialFlow.HasPriorProgress reads false (a genuinely
+	# fresh profile), so a stale user://tutorial_flow.json left by an earlier capture or a dev's own
+	# real play on this machine would silently swap the receipt from "The Warrant" to a raw seed
+	# number and prove nothing about the fiction name this unit ships.
+	if _state == "Primer" or _state == "WarrantFirstMorning":
+		var warrant_tutorial_save_path := "user://tutorial_flow.json"
+		if FileAccess.file_exists(warrant_tutorial_save_path):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(warrant_tutorial_save_path))
 	# U5 (loop-legibility plan): SHOT_RESET_TUTORIAL=1 deletes the persisted
 	# user://tutorial_flow.json BEFORE the scene mounts -- TutorialFlow.Load() reads whatever
 	# that file says regardless of which fresh seed-2026 campaign SimAdapter just started, so a
@@ -261,7 +297,12 @@ func _initialize() -> void:
 		var tutorial_save_path := "user://tutorial_flow.json"
 		if FileAccess.file_exists(tutorial_save_path):
 			DirAccess.remove_absolute(ProjectSettings.globalize_path(tutorial_save_path))
-	_ui = load("res://scenes/panels/main_ui.tscn").instantiate()
+	# P2-ONBOARD-05: Primer/WarrantFirstMorning need the real front door -- see this file's own
+	# class-doc note above for why main_ui.tscn cannot show either receipt.
+	if _state == "Primer" or _state == "WarrantFirstMorning":
+		_ui = load("res://scenes/new_game_select.tscn").instantiate()
+	else:
+		_ui = load("res://scenes/panels/main_ui.tscn").instantiate()
 	root.add_child(_ui)
 	if _quiet:
 		_try_suppress_ambient_vfx() # in case a future refactor DOES build it synchronously
@@ -310,6 +351,27 @@ func _process(_delta: float) -> bool:
 	_frames += 1
 	if _quiet and not _ambient_suppressed:
 		_try_suppress_ambient_vfx()
+	# P2-ONBOARD-05: WarrantFirstMorning's Begin press (frame 60) fires a DEFERRED
+	# GetTree().ChangeSceneToFile -- the swap lands at Godot's own idle time, not synchronously
+	# inside that press -- so _ui (still the old NewGameSelect instance once the swap actually
+	# happens) is re-polled from root every frame past the press until the new MainUi shows up.
+	# Harmless once already swapped: find_child + an identity check is cheap, and re-running it
+	# every frame costs nothing this script does not already spend elsewhere (Watch/SendOff/Mirror
+	# above all poll similarly cheap node lookups on a schedule).
+	#
+	# ChangeSceneToFile normally frees the OLD current_scene for you -- but this harness never set
+	# SceneTree.current_scene (it mounted NewGameSelect by hand, root.add_child, the same way every
+	# other state here mounts main_ui.tscn), so ChangeSceneToFile has nothing registered to free and
+	# just adds MainUi as a SIBLING, leaving the old NewGameSelect orphaned but still fully alive and
+	# still drawing (measured: Begin/Back and the primer's own card bled through under the new
+	# MainUi's HUD at the bottom edge). This frees it explicitly the moment the swap is detected.
+	if _state == "WarrantFirstMorning" and _frames > 60:
+		var warrant_swapped_ui = root.find_child("MainUi", true, false)
+		if warrant_swapped_ui != null and warrant_swapped_ui != _ui:
+			var warrant_stale_new_game_select = _ui
+			_ui = warrant_swapped_ui
+			if is_instance_valid(warrant_stale_new_game_select):
+				warrant_stale_new_game_select.queue_free()
 	if (_state == "TownOverview" or _state == "OccupancyCorner") and _frames == 65:
 		# U-T3-3: Town2D.FollowPlayer() re-centers the camera on Player.GlobalPosition EVERY
 		# real engine frame -- a direct or even a set_deferred Cam.GlobalPosition write from
@@ -723,6 +785,24 @@ func _process(_delta: float) -> bool:
 			if night_bell:
 				for _i in range(4):
 					night_bell.emit_signal("pressed")
+		elif _state == "Primer" or _state == "WarrantFirstMorning":
+			# P2-ONBOARD-05: New Game -> Pick_blacksmith, both real Button.Pressed signals fired
+			# synchronously (a C# event, never CONNECT_DEFERRED) -- so the primer is already showing
+			# by the end of THIS frame, no second beat needed for the Primer receipt.
+			var warrant_new_game = _ui.find_child("NewGame", true, false)
+			if warrant_new_game:
+				warrant_new_game.emit_signal("pressed")
+			var warrant_pick_blacksmith = _ui.find_child("Pick_blacksmith", true, false)
+			if warrant_pick_blacksmith:
+				warrant_pick_blacksmith.emit_signal("pressed")
+			else:
+				push_error("[shot] SHOT_STATE=%s could not find Pick_blacksmith -- the shot below is the title menu and proves nothing about the Warrant." % _state)
+			if _state == "WarrantFirstMorning":
+				var warrant_begin = _ui.find_child("Begin", true, false)
+				if warrant_begin:
+					warrant_begin.emit_signal("pressed") # fires the deferred scene change -- see _process's own re-poll below
+				else:
+					push_error("[shot] SHOT_STATE=WarrantFirstMorning could not find Begin -- the shot below is the primer and proves nothing about the first morning.")
 		elif _ui.has_method("OnTownBuildingClicked"):
 			# Same entry point the town uses on building arrival (private C# method reached
 			# via the source-gen call() bridge).
@@ -958,7 +1038,12 @@ func _process(_delta: float) -> bool:
 ## the subject). It only says what is on top, loudly, on stderr. A receipt whose console output
 ## names a banner is a receipt somebody can catch; a receipt that says nothing cannot be.
 func _warn_about_covering_overlays() -> void:
-	if _ui == null:
+	# P2-ONBOARD-05: WarrantFirstMorning's own re-poll (_process, above) usually lands the swap to
+	# the new MainUi well before this ever runs, but a slow swap on a loaded machine could still
+	# leave _ui pointing at the old NewGameSelect instance, already queued_for_deletion by
+	# ChangeSceneToFile -- is_instance_valid catches BOTH null and "freed or about to be," which a
+	# bare null check does not.
+	if not is_instance_valid(_ui):
 		return
 	var covering: Array[String] = []
 	for node in _ui.find_children("*", "Control", true, false):

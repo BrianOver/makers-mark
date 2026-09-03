@@ -37,7 +37,10 @@ namespace GodotClient;
 /// adapter layer — never in sim/. Both the seed source and the scene change are injectable so
 /// engine tests can pin the seed and stub the swap. The seed is drawn ONCE per pick (on
 /// <see cref="OnProfessionPicked"/>) and reused by Begin, so the seed the primer displays is
-/// exactly the seed the campaign is built with.</para>
+/// exactly the seed the campaign is built with — EXCEPT a fresh profile's first blacksmith pick,
+/// which uses the pinned <see cref="WarrantSeed"/> instead (P2-ONBOARD-05, §11.15's "The
+/// Warrant") and prints its name in place of the raw number; see <see cref="WarrantSeed"/>'s own
+/// doc for exactly which picks qualify.</para>
 /// </summary>
 public partial class NewGameSelect : Control
 {
@@ -46,9 +49,50 @@ public partial class NewGameSelect : Control
 
     /// <summary>
     /// Campaign seed source — wall clock by default (legal in godot/, NEVER in sim/).
-    /// Tests may pin it for a deterministic campaign.
+    /// Tests may pin it for a deterministic campaign. Overridden by <see cref="WarrantSeed"/> for
+    /// a fresh profile's first blacksmith Begin — see <see cref="OnProfessionPicked"/>.
     /// </summary>
     public Func<ulong> SeedSource { get; set; } = static () => (ulong)Time.GetTicksUsec();
+
+    /// <summary>
+    /// P2-ONBOARD-05 (docs/design/MAKERS-MARK.md §11.15, "The Warrant"): the ONE seed a fresh
+    /// profile's first blacksmith Begin ever uses, in place of the wall clock — must equal
+    /// <c>OpeningCampaignPinTests.ChosenSeed</c> (<c>sim/GameSim.Tests/Harness/</c>), the pin this
+    /// value ships. Two conditions, both required (<see cref="OnProfessionPicked"/>):
+    ///
+    /// <para><b>Blacksmith only.</b> The pin was measured under <c>ApprenticePlayer</c> against
+    /// <c>GameComposition.NewCampaign(seed)</c>'s profession-less overload, which defaults to
+    /// blacksmith (<c>PlayerState.NewGame(int)</c>'s own doc) — and <c>ApprenticePlayer</c>'s one
+    /// gear recipe, "dagger", is a blacksmith recipe (<c>RecipeTable.cs</c>). A different pick
+    /// makes that craft illegal, which was never swept. So only a blacksmith pick gets the pin;
+    /// every other profession draws wall-clock exactly as before this unit — a real product gap
+    /// (three of four professions get no curated week), named here rather than silently
+    /// overclaimed. Closing it means re-running the seed search once per profession, which is
+    /// P2-ONBOARD-04/-05's own follow-up, not something re-derived by guessing here.</para>
+    ///
+    /// <para><b>Fresh profile only.</b> <see cref="Ui.TutorialFlow.HasPriorProgress"/> false — the
+    /// same signal that hides the returning-smith choice entirely (a true first-timer can never
+    /// reach "skip the course," so this need not also check that toggle). A second campaign and
+    /// any returning-smith start (run OR skip) draw wall-clock, matching T10's R30 exactly: the
+    /// warrant itself still holds either way (<see cref="SkipCourseNote"/>) — only the SEED is
+    /// gated, never the mechanism.</para>
+    ///
+    /// <para><b>Never promises more than the trim.</b> P2-ONBOARD-04's own perturbation sweep
+    /// found only five of the Warrant's seven measured beats survive how a player actually
+    /// diverges from the script that found this seed; <see cref="WarrantFictionName"/> and every
+    /// other string this unit authors state only the mechanical guarantee
+    /// (<c>ApprenticeWarrant.Covers</c>, true for ANY script) — never a specific day-N event.</para>
+    /// </summary>
+    public const ulong WarrantSeed = 1;
+
+    /// <summary>
+    /// P2-ONBOARD-05: prints where <c>"Seed: {number}"</c> used to print, for the one campaign
+    /// that seed actually names — a raw integer is jargon to a player (P2-HONEST's own rule: "no
+    /// raw permille or formula" reads the same way for a seed nobody but a tester can act on).
+    /// States only what <see cref="Expedition.ApprenticeWarrant"/> guarantees unconditionally
+    /// (§11.13's canonical wording, <c>THE-GAME.md</c> §3.3) — never a script-dependent beat.
+    /// </summary>
+    public const string WarrantFictionName = "The Warrant — through day three, the Mine keeps no one.";
 
     /// <summary>
     /// Scene-change hook: null = real <c>GetTree().ChangeSceneToFile</c>. Tests stub this
@@ -677,10 +721,14 @@ public partial class NewGameSelect : Control
     private const string RunCourseNote =
         "Runs the three-day apprenticeship course again, exactly like a first campaign.";
 
-    private const string SkipCourseNote =
-        "No numbered course this time — what you already learned stays in the Lessons book, and "
-        + "nothing you've already been taught fires twice. The warrant still stands: through day 3, "
-        + "the Mine doesn't keep anyone.";
+    /// <summary>P2-ONBOARD-05 (§11.15): the New-Game skip door's cost, verbatim from the plan's own
+    /// deliverable sentence — T10's R30, the returning smith's door, which KEEPS the warrant (never
+    /// harmonize this with <see cref="Ui.TutorialFlow.DismissConfirmCopy"/>'s mid-week ✕, R12,
+    /// which forfeits it — two different doors, two different rulings, both costs named).</summary>
+    public const string SkipCourseNote =
+        "The first week was set out for you — skipping it trades the guided shape for the open "
+        + "one. The warrant holds either way. What you already learned stays in the Lessons book, "
+        + "and nothing you've already been taught fires twice.";
 
     private void SetReturningSmithChoice(bool skip)
     {
@@ -693,8 +741,15 @@ public partial class NewGameSelect : Control
     private void OnProfessionPicked(string professionId)
     {
         _pendingProfessionId = professionId;
-        _pendingSeed = SeedSource(); // drawn once here; Begin reuses it (display == what ships)
-        _seedLabel.Text = $"Seed: {_pendingSeed}";
+
+        // P2-ONBOARD-05 (§11.15): The Warrant's pinned seed applies to exactly one door — a fresh
+        // profile's first BLACKSMITH Begin (see WarrantSeed's own doc for why both conditions are
+        // required). Every other pick — a different profession, or any pick once
+        // HasPriorProgress reads true — draws SeedSource() exactly as before this unit, still
+        // drawn once here and reused by Begin (display == what ships).
+        var isWarrant = !Ui.TutorialFlow.HasPriorProgress && professionId == ProfessionRegistry.BlacksmithId;
+        _pendingSeed = isWarrant ? WarrantSeed : SeedSource();
+        _seedLabel.Text = isWarrant ? WarrantFictionName : $"Seed: {_pendingSeed}";
 
         // U17: re-armed every time the primer mounts fresh — HasPriorProgress is re-checked against
         // the LIVE save (never cached from a previous pick), and the choice itself always resets to
