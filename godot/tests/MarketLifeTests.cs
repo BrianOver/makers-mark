@@ -153,14 +153,32 @@ public class MarketLifeTests
     }
 
     [TestCase]
-    public void ClassifySale_UndercutsRivalBaseline_IsHeart_AtOrAboveIsSmile()
+    public void ClassifySale_UndercutsSuggestedPrice_IsHeart_AtOrAboveIsSmile()
     {
-        // Baseline mirrors RivalCatalog's own fixed shelf-price formula: (Attack + Defense) * 2.
-        var item = TestWeapon(attack: 10, defense: 0); // baseline 20
+        // Baseline is GameSim.Advisor.SuggestedPrice.For — for a stat-heavy Common weapon its
+        // combat-stat term ((Attack + Defense) * 2 = 20) dominates the quality floor (8), so this
+        // case reads identically to the pre-fix (Attack + Defense) * 2 baseline it replaced.
+        var item = TestWeapon(attack: 10, defense: 0); // SuggestedPrice.For == 20
 
         AssertThat(MarketLife2D.ClassifySale(item, 15)).IsEqual(MarketLife2D.EmoteKind.Heart);
         AssertThat(MarketLife2D.ClassifySale(item, 20)).IsEqual(MarketLife2D.EmoteKind.Smile); // boundary
         AssertThat(MarketLife2D.ClassifySale(item, 25)).IsEqual(MarketLife2D.EmoteKind.Smile);
+    }
+
+    [TestCase]
+    public void ClassifySale_Trinket_JudgesAgainstSuggestedPrice_NotDeadCombatStats()
+    {
+        // P2-HONEST-11 (#685/#688) / this unit (2026-09-03): a Trinket's Attack/Defense are real
+        // numbers that feed SuggestedPrice.For's pricing floor but contribute NOTHING to
+        // CombatMath.EffectivePower. The OLD baseline here was the raw (Attack + Defense) * 2 —
+        // for this trinket that is 6, so a 7g sale never read as a bargain (7 is not < 6). The
+        // fixed baseline is SuggestedPrice.For (quality floor 8 dominates the stat term here), so
+        // the SAME 7g sale now correctly reads as undercutting what the item is actually suggested
+        // to be worth.
+        var item = TestTrinket(attack: 3, defense: 0); // stat term 6; SuggestedPrice.For == 8 (Common floor)
+
+        AssertThat(MarketLife2D.ClassifySale(item, 7)).IsEqual(MarketLife2D.EmoteKind.Heart);
+        AssertThat(MarketLife2D.ClassifySale(item, 8)).IsEqual(MarketLife2D.EmoteKind.Smile); // boundary
     }
 
     [TestCase]
@@ -410,6 +428,10 @@ public class MarketLifeTests
     private static Item TestWeapon(int attack, int defense) => new(
         new ItemId(1), "test-recipe", "Test Blade", ItemSlot.Weapon, QualityGrade.Common,
         new ItemStats(attack, defense, 2), new MakersMark("You", 1), ImmutableList<ItemHistoryEntry>.Empty);
+
+    private static Item TestTrinket(int attack, int defense) => new(
+        new ItemId(1), "test-recipe-trinket", "Test Charm", ItemSlot.Trinket, QualityGrade.Common,
+        new ItemStats(attack, defense, 1), new MakersMark("You", 1), ImmutableList<ItemHistoryEntry>.Empty);
 
     private static Hero Buyer(int id) => new(
         new HeroId(id), $"Buyer{id}", "striker", Level: 1, MaxHp: 24, Gold: 100,

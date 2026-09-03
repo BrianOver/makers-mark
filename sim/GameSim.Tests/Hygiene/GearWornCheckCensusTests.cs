@@ -17,10 +17,13 @@ namespace GameSim.Tests.Hygiene;
 ///
 /// <para>Reflects <see cref="GearSet"/>'s <c>ItemId?</c> properties — never a hardcoded slot list,
 /// so a future fifth slot is covered automatically — and requires every place in
-/// <c>sim/GameSim</c> that enumerates or equality-tests a hero's worn gear as a group to
-/// reference ALL of them. Deny-by-default, same idiom as
-/// <c>Presentation.ClientAuthorityCensusTests</c>: a pinned exception must cite the ruling that
-/// grants it.</para>
+/// <c>sim/GameSim</c> OR <c>godot/scripts</c> that enumerates or equality-tests a hero's worn gear
+/// as a group to reference ALL of them. Widened to <c>godot/scripts</c> (2026-09-03): the census
+/// only ever scanned <c>sim/</c>, which is exactly why <c>ShopPanel.UnshelvedPlayerCrafts</c>'s own
+/// equipped-filter drifted to this same T10 U48 shape — a worn trinket read as "unshelved" and
+/// stayed draggable — and survived until a human playtest found it by hand. Deny-by-default, same
+/// idiom as <c>Presentation.ClientAuthorityCensusTests</c>: a pinned exception must cite the ruling
+/// that grants it.</para>
 ///
 /// <para><b>Honesty framing (same disclaimer as the client census).</b> Not a parser — a
 /// structural regex heuristic aimed at the two shapes every real worn-check in this codebase
@@ -52,7 +55,7 @@ public class GearWornCheckCensusTests
         // modifier-only slot; this is the one worn-gear-group array allowed to omit a slot, and
         // BreakpointClearArray_OnlyReferencesSlots_CombatMathActuallyReads below proves — from
         // CombatMath's own behavior, not by assertion — that it omits exactly the right one.
-        [("Expedition/AttributionEngine.cs", " hero.Gear.Weapon, hero.Gear.Shield, hero.Gear.Armor ")] =
+        [("sim/GameSim/Expedition/AttributionEngine.cs", " hero.Gear.Weapon, hero.Gear.Shield, hero.Gear.Armor ")] =
             "P2-HONEST-11 / P2-OQ7 (owner ruling 2026-09-03): Trinket contributes no stats to " +
             "CombatMath.EffectivePower, so a counterfactual removal of a trinket can never move " +
             "PartyAveragePower — the omission here is deliberate honesty, not a regression.",
@@ -92,7 +95,7 @@ public class GearWornCheckCensusTests
     public void EveryWornGearGroupCheck_ReferencesEverySlot_UnlessPinnedWithAReason()
     {
         var violations = new List<string>();
-        foreach (var (relative, absolute) in SimSourceFiles())
+        foreach (var (relative, absolute) in CensusSourceFiles())
         {
             var code = StripComments(File.ReadAllText(absolute));
             foreach (var statement in FindWornGearStatements(code))
@@ -264,11 +267,17 @@ public class GearWornCheckCensusTests
         return source;
     }
 
-    private static List<(string Relative, string Absolute)> SimSourceFiles()
+    /// <summary>Every source file under BOTH scanned roots (<see cref="SimRoot"/> and
+    /// <see cref="GodotScriptsRoot"/>), relative-pathed against the repo root so a file under
+    /// <c>godot/scripts</c> and one under <c>sim/GameSim</c> can never collide on the same relative
+    /// key. Widened 2026-09-03 (same generator, one path wider): the two most recent instances of
+    /// this exact bug — <c>ShopPanel.UnshelvedPlayerCrafts</c>'s equipped filter — shipped and
+    /// survived precisely because this census only ever walked <c>sim/</c>.</summary>
+    private static List<(string Relative, string Absolute)> CensusSourceFiles()
     {
-        var root = SimRoot();
-        return Directory
-            .EnumerateFiles(root, "*.cs", SearchOption.AllDirectories)
+        var repoRoot = RepoRoot();
+        return new[] { SimRoot(), GodotScriptsRoot() }
+            .SelectMany(root => Directory.EnumerateFiles(root, "*.cs", SearchOption.AllDirectories))
             .Where(p => !p.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}")
                      && !p.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}")
                      // Contracts/ defines GearSet itself (GearScore, WithSlot/Slot) — already
@@ -276,20 +285,36 @@ public class GearWornCheckCensusTests
                      // than scanned so a future switch-expression shape there never needs a
                      // special-cased exception.
                      && !p.Contains($"{Path.DirectorySeparatorChar}Contracts{Path.DirectorySeparatorChar}"))
-            .Select(p => (Path.GetRelativePath(root, p).Replace('\\', '/'), p))
+            .Select(p => (Path.GetRelativePath(repoRoot, p).Replace('\\', '/'), p))
             .OrderBy(t => t.Item1, StringComparer.Ordinal)
             .ToList();
     }
 
-    private static string SimRoot()
+    private static string RepoRoot()
     {
         var dir = new DirectoryInfo(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!);
         while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "Game.sln")))
             dir = dir.Parent;
 
         Assert.True(dir is not null, "Could not find Game.sln walking up from the test assembly.");
-        var root = Path.Combine(dir!.FullName, "sim", "GameSim");
+        return dir!.FullName;
+    }
+
+    private static string SimRoot()
+    {
+        var root = Path.Combine(RepoRoot(), "sim", "GameSim");
         Assert.True(Directory.Exists(root), $"Expected the sim core at {root}.");
+        return root;
+    }
+
+    /// <summary>The other scanned root (2026-09-03 widening): <c>godot/scripts</c> is this repo's
+    /// adapter-only C# (CLAUDE.md layout) — <c>godot/tests</c> (gdUnit fixtures, not production
+    /// worn-checks) is deliberately excluded by scanning this narrower root rather than all of
+    /// <c>godot/</c>.</summary>
+    private static string GodotScriptsRoot()
+    {
+        var root = Path.Combine(RepoRoot(), "godot", "scripts");
+        Assert.True(Directory.Exists(root), $"Expected the godot adapter scripts at {root}.");
         return root;
     }
 }

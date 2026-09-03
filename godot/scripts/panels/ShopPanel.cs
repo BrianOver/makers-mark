@@ -611,7 +611,12 @@ public partial class ShopPanel : SimPanel
         var equipped = new HashSet<int>();
         foreach (var hero in state.Heroes.Values)
         {
-            foreach (var slot in new[] { hero.Gear.Weapon, hero.Gear.Shield, hero.Gear.Armor })
+            // T10 U48 (godot-side instance, found 2026-09-03 by the widened
+            // GearWornCheckCensusTests): this used to check Weapon/Shield/Armor only, so an
+            // equipped Trinket still showed here as a draggable "unshelved" item — the exact
+            // double-sale bug shape ShopHandlers.ApplyStock and ActionLegality.StockLegal were
+            // already fixed for on the sim side.
+            foreach (var slot in new[] { hero.Gear.Weapon, hero.Gear.Shield, hero.Gear.Armor, hero.Gear.Trinket })
             {
                 if (slot is { } id)
                 {
