@@ -158,8 +158,15 @@ jobs:
       # MID-RUN (68 of 504 once; 533 of ~800 once), and a 300 floor waves those through. 900 keeps
       # ~13% headroom for legitimate test deletion; a wave that removes more than that updates this
       # number in the same PR, with the new suite size named here.
-      ENGINE_MIN_PASSED: 900   # full suite runs 1030+; a silent skip reports ~54; mid-run truncation lands between
-      GUARD_MIN_PASSED: 20     # the MainUiTests subset runs ~30
+      # 1650 = 97% of the 1704 [TestCase] attributes measured 2026-09-02, and above the 1655
+      # a run two days earlier reported -- so ordinary churn cannot false-red it while a
+      # truncation losing 3% of the suite goes red. The old value was 900 against a live 1704:
+      # 53%, which a run losing 800 tests clears silently. That is the failure this floor exists
+      # to catch, and it has happened twice here (68-of-504, 533-of-~800).
+      # EngineTestFloorCensusTests (fast lane) now asserts this tracks the live attribute count,
+      # so the number reddens when the suite outgrows it instead of rotting in a comment.
+      ENGINE_MIN_PASSED: 1650
+      GUARD_MIN_PASSED: 35     # the MainUiTests subset measured 41 (run 33436660776); was 20 against a documented "~30"
     steps:
       # LFS on the engine lane ONLY (it renders the PNGs). Checkout skips auto-download so the
       # cache below can serve objects first, protecting the free-tier 1 GiB/month LFS bandwidth;

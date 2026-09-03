@@ -52,10 +52,11 @@ public class EngineTestFloorCensusTests
     private static readonly Regex EngineMinPassed = new(@"ENGINE_MIN_PASSED:\s*(\d+)");
     private static readonly Regex TestCaseAttribute = new(@"\[TestCase\b");
 
-    [Fact(Skip = "ENGINE_MIN_PASSED (900, .github/workflows/ci.yml) has rotted below the live " +
-        "[TestCase attribute count and .github/ is deny-listed for this session to fix — see " +
-        "this class's doc comment for the exact owner change (900 -> 1650, GUARD_MIN_PASSED " +
-        "20 -> 35) and why SKIP was chosen over leaving this red.")]
+    // Armed 2026-09-03: the owner authorised the ci.yml edit this test was waiting on, so
+    // ENGINE_MIN_PASSED is 1650 and GUARD_MIN_PASSED is 35. The Skip is gone deliberately — a
+    // skipped guard is a disarmed guard, and this one exists precisely because a fixed number in a
+    // YAML comment rots while the suite grows ~20 cases a day.
+    [Fact]
     public void EngineMinPassedFloor_TracksTheLiveTestCaseAttributeCount()
     {
         var ciYml = File.ReadAllText(Path.Combine(RepoRoot(), ".github", "workflows", "ci.yml"));
