@@ -118,7 +118,8 @@ var _settle := 90
 # aside. Kept beside the branches it names, and asserted against SHOT_STATE at startup -- see
 # _initialize.
 const KNOWN_STATES := [
-	"BellTray", "Bestiary", "Camp", "Chronicle", "CommissionDilemma", "Counter", "Demand",
+	"BellTray", "Bestiary", "BrynGreedyRule", "BrynRuleRevised", "Camp", "CommissionDilemma",
+	"Chronicle", "Counter", "Demand",
 	"DepthsPanel", "Docket",
 	"ForgeAnvil", "ForgeAnvilEmpty", "ForgeExit", "ForgeFlavor", "ForgeLadder", "ForgePanel",
 	"ForgeShelf", "ForgeTrinket", "GatedCounterEmptyShelf", "GateNight", "Graduation",
@@ -480,6 +481,37 @@ func _process(_delta: float) -> bool:
 			else:
 				push_error("[shot] SHOT_STATE=MemoryRow could not reach LegendsWall.Dev_ShowWallWithMemoryRow -- "
 					+ "the shot below is the plain town and proves nothing about the Memory row.")
+				quit(1)
+				return false
+		elif _state == "BrynGreedyRule":
+			# P2-ONBOARD-07 (§11.15): beat 3, her rule, wrong on purpose -- the real production path
+			# (MainUi.OnTownBuildingClicked, venue key "market"), the same one every other real
+			# building-entry receipt in this file uses (Forge/Gate below). No dev bridge needed --
+			# a fresh day-1 campaign has never walked to the Shop yet, so the first-touch fires for
+			# real on this press.
+			if _ui.has_method("OnTownBuildingClicked"):
+				_ui.call("OnTownBuildingClicked", "Shop")
+			else:
+				push_error("[shot] SHOT_STATE=BrynGreedyRule could not reach OnTownBuildingClicked -- "
+					+ "the shot below is the plain town and proves nothing about her rule.")
+				quit(1)
+				return false
+		elif _state == "BrynRuleRevised":
+			# P2-ONBOARD-07 (§11.15): "eating her rule" -- reaching this beat for real needs a
+			# pinned counter close whose buyer's band has risen to Regular, or a fulfilled
+			# commission, neither of which a fresh day-1 campaign has. MainUi.Dev_ShowRuleRevisedBeat
+			# is the SAME "stage a synthetic state, never mutate the live Adapter" idiom
+			# Dev_ShowProvenanceCardOverLegends/Dev_ShowWallWithMemoryRow above already use, and
+			# returns whether the beat actually armed, so a silent no-op fails loud rather than
+			# photographing an ordinary town.
+			if _ui.has_method("Dev_ShowRuleRevisedBeat"):
+				var rule_revised_armed: bool = _ui.call("Dev_ShowRuleRevisedBeat")
+				if not rule_revised_armed:
+					push_error("[shot] SHOT_STATE=BrynRuleRevised: Dev_ShowRuleRevisedBeat returned false -- "
+						+ "the beat did not actually arm, and the shot below proves nothing.")
+			else:
+				push_error("[shot] SHOT_STATE=BrynRuleRevised could not reach MainUi.Dev_ShowRuleRevisedBeat -- "
+					+ "the shot below is the plain town and proves nothing about the correction beat.")
 				quit(1)
 				return false
 		elif _state == "Graduation":

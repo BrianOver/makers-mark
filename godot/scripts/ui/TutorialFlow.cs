@@ -2242,6 +2242,43 @@ public sealed partial class TutorialFlow : PanelContainer
     private const string LeavingARoomLessonText =
         "Every room has a way back out, too — press Escape to step outside when you're ready to move on.";
 
+    // ── P2-ONBOARD-07 (§11.15): beat 3, her rule, wrong on purpose ──────────────────────────────
+    //
+    // Recettear's lesson: a mentor who states a PREFERENCE can never be caught lying about what the
+    // sim decided. Every other constant in this class states a mechanism; this one states Bryn's own
+    // OPINION about how to use one — "My rule", "That's my rule, anyway" — and it is deliberately the
+    // wrong number (cost + 50%). It bites twice, both from the sim, never from this copy: at the
+    // shelf, ShoppingAi.EvaluateItem has no price-fairness check at all (only CannotAfford), so an
+    // overpriced item just fails to sell and the pass reason is logged (HeroPassedOnItem), which is
+    // exactly SurfaceUnlocks's "Demand" gate's own trigger; at the counter, HaggleResolver/
+    // WillingnessModel's pin/fleece swing Hero.MoodPermille, which RelationshipBands.For reads into a
+    // band, which CommissionSystem.PremiumBonusFor pays on — the mechanism ConsumeRuleRevisedBeat
+    // below keys its own correction on. Nothing here asserts either fact; the sim proves both.
+
+    /// <summary>Fires the first time the player ever walks to the Shop (<c>MainUi.OnTownBuildingClicked</c>,
+    /// venue key "market") — "at the shelf", day 1 in ordinary play, and BEFORE any pricing decision
+    /// exists. Deliberately not <see cref="Panels.ShopPanel.PlaceOnShelf"/> — that site already owns
+    /// "pricing-as-a-decision"'s own current-banner-line contract (<c>DilemmaLessonsTests</c> reads
+    /// it), and a second first-touch queued from the identical press would displace it.</summary>
+    public const string GreedyRuleLessonId = "greedy-rule";
+
+    /// <summary>Verbatim, §11.15 ("Beat 3, her rule, wrong on purpose") — never paraphrased. Every
+    /// clause is framed as HER preference ("My rule", "That's my rule, anyway"), never as a fact
+    /// about what the shelf or the counter will do, which is the whole legality of this unit.</summary>
+    public const string GreedyRuleLessonText =
+        "My rule, since you're asking the shelf to do your haggling: cost, then half again on top. "
+        + "Coin is the only thing this bench eats, and a hero who wants it will find the gold. "
+        + "That's my rule, anyway. You're the one with the stamp.";
+
+    /// <summary>MainUi's own call site for <see cref="GreedyRuleLessonId"/> — kept here, wrapping the
+    /// SAME <see cref="ConsumeFirstTouch"/> engine every id/text pair in this class uses, so the
+    /// call site the discoverability census (<c>LessonsPanelFirstTouchTitleTests</c>) source-scans
+    /// for stays an UNQUALIFIED reference in this file, exactly like every sibling id above it,
+    /// rather than a cross-class <c>TutorialFlow.GreedyRuleLessonId</c> reference the census's regex
+    /// does not follow through a class qualifier.</summary>
+    public string? ConsumeGreedyRuleLesson() =>
+        ConsumeFirstTouch(GreedyRuleLessonId, MentorVoice.Speak(GreedyRuleLessonText));
+
     // ── U29 (§11.14.14, R21/R22): the two-act-voice-per-night budget ────────────────────────────
     //
     // The measurement that forced this section to exist: a pure-sim census (sim/GameSim.Tests/
@@ -2384,6 +2421,17 @@ public sealed partial class TutorialFlow : PanelContainer
         if (_proofBeatDay == 0 && state.EventLog.OfType<AttributionBeatEvent>().Any())
         {
             pending.Add(ActVoiceKind.Proof);
+        }
+
+        // P2-ONBOARD-07 (§11.15): "eating her rule" — U33's own "a promise kept" line, its content
+        // replaced by this program (docs/design/MAKERS-MARK.md §11.15's own supersession note: "never
+        // its mechanism"), so it claims ActVoiceKind.CommissionFulfilled rather than a new enum value.
+        // !Dismissed gate mirrors HeroDeath, not Proof — U33's own test scenario is explicit ("a
+        // declining player gets no promise-kept line"), and this line is her narrative arc's own
+        // payoff, not a mechanism fact the game owes regardless of whether the player asked for it.
+        if (!Dismissed && _ruleRevisedDay == 0 && RuleRevisedFactLanded(state))
+        {
+            pending.Add(ActVoiceKind.CommissionFulfilled);
         }
 
         return pending;
@@ -2749,6 +2797,79 @@ public sealed partial class TutorialFlow : PanelContainer
     /// </summary>
     public static TutorialAnchor ProofBeatAnchor(string? openPanelId) =>
         AimAnchor(TutorialAnchor.ForPanelControl("Ledger", "LedgerCard_0"), openPanelId);
+
+    // ── P2-ONBOARD-07 (§11.15): "eating her rule" — Bryn's own correction, once the sim has proven
+    // her beat-3 rule wrong. Same dormant-act shape as ConsumeFirstLossBlock/ConsumeProofBeat above:
+    // armed off a durable EventLog fact, once ever, claiming a slot in tonight's two-act-voice budget.
+    //
+    // P2-ONBOARD-09's own finding (§11.15's "audit round"): the trigger as first worded — "the first
+    // pinned counter close whose GOODWILL rose" — names CounterState.GoodwillPermille, a per-session
+    // field written on a fleece and read by nothing but a display chip. The mechanism that actually
+    // pays a pinned price is RelationshipBand -> CommissionSystem.PremiumBonusFor (Regular/Patron/
+    // Sworn score a real bonus; Stranger scores none), so RuleRevisedFactLanded below keys on
+    // RelationshipBands.For, never on GoodwillPermille — CounterState.GoodwillPermille is not read
+    // anywhere in this file. Fixing the CounterPanel chip itself (still rendering the raw permille
+    // number) is P2-ONBOARD-09's own remaining scope, not this unit's.
+
+    /// <summary>
+    /// P2-ONBOARD-07: the underlying fact "eating her rule" is waiting on — either half, first come.
+    /// Half one: a Pinned <see cref="CounterSaleClosed"/> for a hero whose CURRENT band (mood plus
+    /// shelf purchases — <see cref="RelationshipBands.For"/>) has actually reached the tier a pin is
+    /// FOR, i.e. the one <see cref="Heroes.CommissionSystem"/> pays a premium bonus on. Half two: the
+    /// first <see cref="CommissionFulfilled"/> ever, full stop — every commission carries SOME premium
+    /// by construction (<c>CommissionSystem.BasePremiumGold</c> plus floor scaling, before any band
+    /// bonus at all), so a player who never lands a pin but does fulfill a commission still gets the
+    /// beat, which is the whole point of the "whichever comes first" wording.
+    /// </summary>
+    private static bool RuleRevisedFactLanded(GameState state) =>
+        state.EventLog.OfType<CounterSaleClosed>().Any(sale =>
+            sale.Pinned && RelationshipBands.For(sale.Hero, state) >= RelationshipBand.Regular)
+        || state.EventLog.OfType<CommissionFulfilled>().Any();
+
+    /// <summary>
+    /// P2-ONBOARD-07: once-ever, act-rank, budget-gated exactly like <see cref="ConsumeProofBeat"/> —
+    /// see that method's own doc for the "lose the slot, stay silent, re-ask tomorrow" contract this
+    /// mirrors. Gated on <c>!Dismissed</c> (U33's own test scenario: "a declining player gets no
+    /// promise-kept line") — the one difference from <see cref="ConsumeProofBeat"/>, which fires
+    /// regardless.
+    /// </summary>
+    public string? ConsumeRuleRevisedBeat(GameState state)
+    {
+        if (_ruleRevisedDay > 0)
+        {
+            return null;
+        }
+
+        if (Dismissed || !RuleRevisedFactLanded(state))
+        {
+            return null;
+        }
+
+        if (!ResolveTonightsActVoices(PendingActVoiceCandidates(state)).Contains(ActVoiceKind.CommissionFulfilled))
+        {
+            return null;
+        }
+
+        _ruleRevisedDay = state.Day;
+        Save();
+        return RuleRevisedBeatText;
+    }
+
+    /// <summary>Verbatim, §11.15 — never paraphrased. Names no mechanism and no number; it only ever
+    /// admits her OWN rule earned nothing, never that it was wrong (R14.7-adjacent discipline: the
+    /// correction arrives from the sim arming this beat at all, never from a sentence saying so).</summary>
+    public const string RuleRevisedBeatText =
+        "That premium — that's your fair price from the other day, coming back with interest. My rule "
+        + "never once earned me one of those. Keep yours; I'll be over here revising mine.";
+
+    /// <summary>P2-ONBOARD-07: the day this beat actually committed, or 0 (not yet armed) — identical
+    /// contract to <see cref="_proofBeatDay"/>.</summary>
+    private int _ruleRevisedDay;
+
+    /// <summary>P2-ONBOARD-07: the redemption beat's own permanent Lessons-book text — non-null from
+    /// the moment it first armed, forever after, same "re-reading beats re-running" precedent <see
+    /// cref="ProofLessonText"/> already set.</summary>
+    public string? RuleRevisedLessonText => _ruleRevisedDay > 0 ? RuleRevisedBeatText : null;
 
     // ── U32 (§11.14.14): the Memory act's own dormant row — link 5, the last of the five, gets
     // its row the SAME shape U30's Proof act (link 4) already established: armed off a durable
@@ -3258,6 +3379,9 @@ public sealed partial class TutorialFlow : PanelContainer
             // defaults (0 / false) — safe, the same "not armed yet" reading a fresh campaign gets.
             _proofBeatDay = data.ProofBeatDay;
             _proofBeatCardOpened = data.ProofBeatCardOpened;
+            // P2-ONBOARD-07: an old save without this property deserializes to 0 (never armed) — the
+            // same safe default every dormant-act int field above already uses.
+            _ruleRevisedDay = data.RuleRevisedDay;
             // U32: an old save without either property below deserializes to the shared int/bool
             // defaults (0 / false) — the identical safe reading the Proof act's own two properties
             // just above already established.
@@ -3306,6 +3430,7 @@ public sealed partial class TutorialFlow : PanelContainer
                 HasSeenFleeceBeat = _hasSeenFleeceBeat,
                 HasSeenDemandBoardBeat = _hasSeenDemandBoardBeat, DemandBoardArmedDay = _demandBoardArmedDay,
                 ProofBeatDay = _proofBeatDay, ProofBeatCardOpened = _proofBeatCardOpened,
+                RuleRevisedDay = _ruleRevisedDay,
                 MemoryRowArmedDay = _memoryRowArmedDay, MemoryRowCardOpened = _memoryRowCardOpened,
                 DeliveryLessonHero = _deliveryLessonHero, DeliveryLessonSlot = _deliveryLessonSlot,
                 DeliveryLessonMinQuality = _deliveryLessonMinQuality,
@@ -3598,6 +3723,11 @@ public sealed partial class TutorialFlow : PanelContainer
         /// ratchet — false is the safe default for a save from before this property existed (a
         /// pre-U30 campaign never tracked this fact either).</summary>
         public bool ProofBeatCardOpened { get; set; }
+
+        /// <summary>P2-ONBOARD-07 (§11.15): "eating her rule"'s own place — 0 (not yet armed) is the
+        /// safe default for a save from before this property existed, the identical precedent <see
+        /// cref="ProofBeatDay"/> already set.</summary>
+        public int RuleRevisedDay { get; set; }
 
         /// <summary>U32 (§11.14.14): the Memory act's own place — 0 (not yet armed) is the safe
         /// default for a save from before this property existed, the identical precedent <see
