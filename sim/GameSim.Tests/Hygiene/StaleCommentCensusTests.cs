@@ -26,6 +26,28 @@ namespace GameSim.Tests.Hygiene;
 /// "ALL (THREE|FOUR|FIVE) phases" cross-checked against the real <see cref="DayPhase"/> member
 /// count, and a "not yet wired/registered" claim cross-checked against
 /// <c>GameComposition.cs</c>.</para>
+///
+/// <para><b>A known, deliberately unclosed gap</b> (owner ruling, 2026-09-03): every check above
+/// is SAME-FILE only — <see cref="ConstIntsOf"/> is built per source file and every regex match is
+/// resolved against that same file's own <c>consts</c> dictionary, so a comment in file A that goes
+/// stale because a const in file B moved is invisible to all three checks, structurally, not as an
+/// oversight. The worked example is real: <c>CraftingHandlers.cs</c>'s <c>BatchEchoFloor</c> doc
+/// comment described its historical equality with <c>QualityRoller.AutoCraftGrade</c> in PROSE
+/// ("this equalled AutoCraftGrade, which was also 550 then... #583 raised AutoCraftGrade to 800
+/// without moving this floor") — cross-file (the const lives in a different file), and even
+/// same-file this shape does not match either extraction regex: <see cref="NullCoalesceNumber"/>
+/// needs an actual <c>identifier ?? NUMBER</c> token pair in the code, and <see cref="NamedNumber"/>
+/// needs a literal <c>Name = NUMBER</c> token; "AutoCraftGrade to 800" and "was also 550" are
+/// neither. No regex had anything to grab, on either count. This gap let the same stale-baseline
+/// defect this file exists to catch reproduce itself silently on a second constant (#583 fixed
+/// <c>AutoCraftGrade</c>; <c>BatchEchoFloor</c>, which existed to track it, was never moved to
+/// match and nothing caught that for 17 days). Closing it properly needs a project-wide semantic
+/// scan of constant relationships, not a per-incident regex — a one-off pattern for
+/// "BatchEchoFloor mentions AutoCraftGrade" would itself be a hand-listed fixture, the exact defect
+/// family (<c>hand-listed-fixtures-go-green</c>) this program exists to close. The owner ruled:
+/// leave the gap, book it honestly here rather than pretend a narrow patch closes it. No exception
+/// table entry accompanies this note — there is nothing to exempt; the gap is in what the checks
+/// can see at all, not a flagged false positive.</para>
 /// </summary>
 public class StaleCommentCensusTests
 {
