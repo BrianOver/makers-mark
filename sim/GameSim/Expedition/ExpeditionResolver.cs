@@ -220,6 +220,12 @@ public static class ExpeditionResolver
         var deaths = party.Where(h => dead.Contains(h.Id.Value)).Select(h => h.Id).ToImmutableList();
         var beats = AttributionEngine.ComputeBeats(floors, party, items, venue);
 
+        // P2-PROOF-02: snapshot each member AS THEY MARCHED — level/MaxHp/gear at departure,
+        // before the Evening reveal applies XP/rank/level (HeroAtDeparture's own doc comment).
+        var partyAtDeparture = party
+            .Select(h => new HeroAtDeparture(h.Id, h.Name, h.ClassId, h.Level, h.MaxHp, h.Gear.Weapon, h.Gear.Shield, h.Gear.Armor))
+            .ToImmutableList();
+
         return new ExpeditionResult(
             party.Select(h => h.Id).ToImmutableList(),
             targetFloor,
@@ -231,7 +237,10 @@ public static class ExpeditionResolver
             loot,
             gold.ToImmutableSortedDictionary(),
             venue.Id,
-            halt);
+            halt)
+        {
+            PartyAtDeparture = partyAtDeparture,
+        };
     }
 
     /// <summary>
