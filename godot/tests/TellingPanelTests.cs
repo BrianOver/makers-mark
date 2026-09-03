@@ -27,6 +27,23 @@ namespace GodotClient.Tests;
 /// <c>SettingsPanelTests</c>/<c>MineWatchTests</c>'s own "construct, try/finally Free()" idiom —
 /// never a bare unfreed node, per this repo's own orphan-node-leak lesson.</para>
 ///
+/// <para><b>Free() alone is not enough here, and this suite's own first CI run proved it</b>
+/// (orphan counts of 56/73 where the rest of the filtered run showed zero — measured by running
+/// <c>LayoutTests</c>/<c>HudBoundsTests</c>/<c>MenuSizingTests</c>/<c>HumanPlaytestTests</c> alone,
+/// with zero orphans, then this file's own tests alone, reproducing the same count). The cause:
+/// <see cref="TellingPanel.RenderStage"/> calls <c>SimPanel.Clear</c> on every <c>Dev_Advance</c>
+/// step, and <c>Clear</c> detaches each old child with <c>RemoveChild</c> before handing it to
+/// <c>PanelGraveyard.Bury</c> (<c>QueueFree</c> plus a held reference — see
+/// <c>PanelRebuildDoesNotLeakNodesTests</c>' own doc for why it cannot free immediately). A detached
+/// node's own <c>Free()</c> on the PANEL never reaches it — it is already parentless by the time the
+/// test's own <c>panel.Free()</c> runs — and nothing here ever mounts <see cref="MainUi"/>, whose
+/// NOTIFICATION_ENTER_TREE/EXIT_TREE are the only place <c>PanelGraveyard.Drain()</c> normally runs.
+/// So every scenario that walks the stage machine (<c>Dev_Advance</c> through several rounds, the
+/// fork, the fall) strands its own intermediate frames — exactly the same shape
+/// <c>Playtest3dClickThrough</c> already solved by calling
+/// <see cref="MainUi.DrainDetachedPanelsForTests"/> between phase ticks. Every standalone
+/// construction below does the same, in its own <c>finally</c>, right after <c>Free()</c>.</para>
+///
 /// <para><b>Deliberately consolidated, not one scenario per method.</b> <c>EngineTestFloorCensusTests</c>
 /// pins <c>ENGINE_MIN_PASSED</c> (<c>.github/workflows/ci.yml</c>, deny-listed for this session) to
 /// within 5% of the live count of gdUnit4's own test-case attribute under <c>godot/tests</c> —
@@ -129,6 +146,7 @@ public class TellingPanelTests
         finally
         {
             panel.Free();
+            MainUi.DrainDetachedPanelsForTests();
         }
 
         // A wiped party (no survivors at all) never has a hero to voice the framing -- the
@@ -146,6 +164,7 @@ public class TellingPanelTests
         finally
         {
             wipedPanel.Free();
+            MainUi.DrainDetachedPanelsForTests();
         }
     }
 
@@ -170,6 +189,7 @@ public class TellingPanelTests
         finally
         {
             panel.Free();
+            MainUi.DrainDetachedPanelsForTests();
         }
     }
 
@@ -203,6 +223,7 @@ public class TellingPanelTests
         finally
         {
             panel.Free();
+            MainUi.DrainDetachedPanelsForTests();
         }
     }
 
@@ -229,6 +250,7 @@ public class TellingPanelTests
         finally
         {
             panel.Free();
+            MainUi.DrainDetachedPanelsForTests();
         }
     }
 
@@ -289,6 +311,7 @@ public class TellingPanelTests
             finally
             {
                 panel.Free();
+                MainUi.DrainDetachedPanelsForTests();
             }
         }
 
@@ -338,6 +361,7 @@ public class TellingPanelTests
             finally
             {
                 panel.Free();
+                MainUi.DrainDetachedPanelsForTests();
             }
         }
 
@@ -404,6 +428,7 @@ public class TellingPanelTests
             finally
             {
                 panel.Free();
+                MainUi.DrainDetachedPanelsForTests();
             }
         }
     }
