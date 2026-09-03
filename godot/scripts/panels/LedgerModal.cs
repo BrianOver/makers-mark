@@ -44,6 +44,11 @@ public partial class LedgerModal : SimPanel
     private Label? _countLine;
     private VBoxContainer? _cards;
 
+    /// <summary>P2-PROOF-07: the Telling's own modal, hosted here (this panel's only host) and
+    /// added LAST in <see cref="EnsureBuilt"/> so it sees Escape before this modal does — the same
+    /// "added last" contract every <see cref="ProvenanceCard"/> host already follows.</summary>
+    private TellingPanel? _tellingPanel;
+
     /// <summary>
     /// Dev/receipt tool only (never written in real play) — a hand-built <see cref="GameState"/>
     /// substituted for <c>Adapter.CurrentState</c> inside <see cref="RenderCards"/>, so
@@ -607,6 +612,20 @@ public partial class LedgerModal : SimPanel
                 channelLabel.Name = "BeatChannelLine";
                 channelLabel.AddThemeColorOverride("font_color", GameTheme.TextDim);
             }
+
+            // P2-PROOF-07: "Ask how it happened." — the ONE creation site for this button in the
+            // whole codebase (LedgerModalTests/a source census both pin that count). Renders only
+            // when TellingPanel.FindResult can actually stage this exact beat (the retained night
+            // still holds it, and the beat type has staging) — no button at all otherwise, never a
+            // disabled one begging to be missed (the plan's own "the game never initiates" rule:
+            // this is the only creation site, and it renders nothing on its own).
+            if (TellingPanel.FindResult(state, beat) is { } tellingResult)
+            {
+                var askRow = AddRow(telling.Body);
+                var capturedBeat = beat;
+                AddButton(askRow, $"AskHowItHappened_{beat.Id.Value}", "Ask how it happened.", Verdict.Ok, () =>
+                    _tellingPanel!.ShowFor(state, tellingResult, capturedBeat));
+            }
         }
 
         // §11.13 amendment (U5): the apprenticeship warrant's own card — leads with the true roll
@@ -1013,5 +1032,90 @@ public partial class LedgerModal : SimPanel
         // own doc): this is the ONLY way to dismiss a true modal overlay, so its position must
         // never depend on how much content is stacked above it.
         AddButton(card.ActionRow, "CloseLedger", "Close", Verdict.Ok, CloseModal);
+
+        // P2-PROOF-07: added LAST, so it sees Escape before this modal's own ModalEscape handler
+        // does — see TellingPanel's own class doc and ProvenanceCard's identical "added last"
+        // reasoning.
+        _tellingPanel = new TellingPanel();
+        AddChild(_tellingPanel);
+    }
+
+    /// <summary>
+    /// Dev/receipt tool only (never called from real play), reachable via <c>shot_harness.gd</c>'s
+    /// <c>call()</c> bridge — P2-PROOF's own four-frame receipt (a factual round mid-play, the
+    /// desaturated fork, the held fall, the stamped verdict). Builds a hand-built LethalSave night —
+    /// the flagship shape: the epigraph's own "Emberbite turned the killing blow" sentence is staged
+    /// as a LethalSave under the hood (TellingQuery's finding 3) — with THREE recorded rounds, so
+    /// round 1 reads as genuine mid-play (two more rounds still to come) rather than the beat's own
+    /// moment. Mirrors <see cref="Dev_ShowLedgerWithProvenanceBeat"/>'s "hand-built
+    /// <see cref="GameState"/>, zero sim mutation" idiom; <paramref name="stage"/> selects how many
+    /// real "Continue" presses (<see cref="TellingPanel.Dev_Advance"/>) to replay before capture.
+    /// </summary>
+    public void Dev_ShowTellingReceipt(string stage)
+    {
+        if (Adapter is null)
+        {
+            return;
+        }
+
+        const int day = 5;
+        const int floor = 3;
+        var hero = new HeroId(90501);
+        var itemId = new ItemId(90502);
+        var item = new Item(
+            itemId, "recipe-receipt-armor", "Emberbite", ItemSlot.Armor, QualityGrade.Fine,
+            new ItemStats(0, 6, 5), new MakersMark("You", CraftedOnDay: 1), ImmutableList<ItemHistoryEntry>.Empty);
+        var departure = new HeroAtDeparture(hero, "Torvald", "vanguard", Level: 3, MaxHp: 24, Weapon: null, Shield: null, Armor: itemId);
+
+        // Round 1: a normal exchange -- nothing lethal here, so this reads as genuine mid-play
+        // (two more rounds still to come). Torvald: 24 MaxHp -> 21 after taking 3.
+        var round1 = new CombatEvent(
+            floor, hero, "Deep Ghoul", ImmutableList.Create(4, 2), DamageDealt: 4, DamageTaken: 3, MonsterKilled: false, KillingItem: null);
+        // Round 2: the lethal-save round. The Mine's real floor-3 numbers (VenueRegistry.BuildMine):
+        // MonsterAttack 23, Torvald's own Defense (Level 3, no shield) 3 without Emberbite, 9 with
+        // its +6. Recorded roll 1: without the armor the blow reads 23+1-3=21 -- exactly Torvald's
+        // 21 hp entering this round, so he falls (<=0). WITH it, only 9 gets through (an item stat
+        // fact this fixture states directly, same as any other recorded round): 21-9=12, he stands.
+        var round2 = new CombatEvent(
+            floor, hero, "Deep Ghoul", ImmutableList.Create(3, 1), DamageDealt: 3, DamageTaken: 9, MonsterKilled: false, KillingItem: null);
+        // Round 3: Torvald finishes the fight -- one recorded roll (a kill round is never padded).
+        // No weapon in this fixture (Emberbite is armor), so no killing item is named.
+        var round3 = new CombatEvent(
+            floor, hero, "Deep Ghoul", ImmutableList.Create(5), DamageDealt: 35, DamageTaken: 0, MonsterKilled: true, KillingItem: null);
+
+        var floorOutcome = new FloorOutcome(floor, Cleared: true, ImmutableList.Create(round1, round2, round3));
+        var beat = new AttributionBeat(BeatType.LethalSave, itemId, hero, floor, "Emberbite turned the killing blow");
+        var result = new ExpeditionResult(
+            ImmutableList.Create(hero), TargetFloor: floor, DeepestFloorCleared: floor,
+            ImmutableList.Create(floorOutcome), Survivors: ImmutableList.Create(hero), Deaths: ImmutableList<HeroId>.Empty,
+            Beats: ImmutableList.Create(beat), Loot: ImmutableList<OreLoot>.Empty,
+            GoldEarnedByHero: ImmutableSortedDictionary<int, int>.Empty)
+        {
+            PartyAtDeparture = ImmutableList.Create(departure),
+        };
+
+        var beatEvent = new AttributionBeatEvent(beat.Beat, beat.Item, beat.Hero, beat.Floor, beat.Detail)
+            with { Id = new EventId(900201), Day = day };
+        var returned = new PartyReturned(ImmutableList.Create(hero)) with { Id = new EventId(900202), Day = day };
+        var departed = new PartyDeparted(ImmutableList.Create(hero), TargetFloor: floor) with { Id = new EventId(900203), Day = day };
+
+        var baseState = Adapter.CurrentState;
+        _devStagedState = baseState with
+        {
+            Items = baseState.Items.SetItem(itemId.Value, item),
+            EventLog = baseState.EventLog.AddRange([beatEvent, returned, departed]),
+            LastNightExpeditions = ImmutableList.Create(result),
+        };
+        ShowFor(day);
+
+        _tellingPanel!.ShowFor(_devStagedState, result, beatEvent);
+        var presses = stage switch
+        {
+            "Fork" => 4,     // Framing -> round1 -> round2 -> round3(last) -> Fork
+            "Fall" => 5,
+            "Verdict" => 6,
+            _ => 1,          // "Factual": round 1 of 3 -- genuine mid-play
+        };
+        _tellingPanel.Dev_Advance(presses);
     }
 }

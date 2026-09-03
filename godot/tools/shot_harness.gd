@@ -126,8 +126,9 @@ const KNOWN_STATES := [
 	"HeroErrand", "HeroTrinket", "Ledger", "LedgerProvenance", "Lessons", "MemoryRow",
 	"MineGateFocus", "Mirror",
 	"OccupancyCorner", "Primer", "Provenance", "ReturnAtNight", "ReturnEmerge", "ReturnQuestEmpty",
-	"SendOff", "ShopPanel", "ShopTrinket", "SplitLessons", "SystemMenu", "TavernPanel", "TownOverview",
-	"TutorialLookIn", "TutorialOffCamera", "Watch", "WarrantFirstMorning",
+	"SendOff", "ShopPanel", "ShopTrinket", "SplitLessons", "SystemMenu", "TavernPanel", "Telling",
+	"TellingFall", "TellingFork", "TellingVerdict", "TownOverview", "TutorialLookIn",
+	"TutorialOffCamera", "Watch", "WarrantFirstMorning",
 ]
 
 # P2-SCREEN-09: the recipe id/talent node id sequence ForgeAnvilEmpty unlocks to drain the whole
@@ -669,6 +670,29 @@ func _process(_delta: float) -> bool:
 				push_error("[shot] SHOT_STATE=LedgerProvenance could not reach "
 					+ "LedgerModal.Dev_ShowLedgerWithProvenanceBeat -- the shot below is empty and "
 					+ "proves nothing about the channel line.")
+				quit(1)
+				return false
+		elif _state == "Telling" or _state == "TellingFork" or _state == "TellingFall" or _state == "TellingVerdict":
+			# P2-PROOF: the Telling's own four-frame receipt (a factual round mid-play, the
+			# desaturated fork, the held fall, the stamped verdict). Real combat RNG landing a
+			# LethalSave beat with a multi-round fight is not guaranteed on a fresh seed, so this
+			# reaches LedgerModal's own dev bridge (the same "find by stable node name, call its own
+			# hand-built-state receipt method" idiom LedgerProvenance/Provenance already use) and
+			# tells it which stage to land the panel on.
+			var ledger_modal_t = _ui.find_child("LedgerModal", true, false)
+			var telling_stage = "Factual"
+			if _state == "TellingFork":
+				telling_stage = "Fork"
+			elif _state == "TellingFall":
+				telling_stage = "Fall"
+			elif _state == "TellingVerdict":
+				telling_stage = "Verdict"
+			if ledger_modal_t and ledger_modal_t.has_method("Dev_ShowTellingReceipt"):
+				ledger_modal_t.call("Dev_ShowTellingReceipt", telling_stage)
+			else:
+				push_error("[shot] SHOT_STATE=%s could not reach LedgerModal.Dev_ShowTellingReceipt -- "
+					% _state
+					+ "the shot below is empty and proves nothing about the Telling.")
 				quit(1)
 				return false
 		elif _state == "Mirror":

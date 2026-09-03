@@ -432,6 +432,39 @@ public class TeachingCoverageCensusTests
             "F's own 'show me that lesson again' unit -- already shipped in Wave A, LessonsPanel.cs' " +
             "own FirstTouch.Fired loop). It re-displays past teaching; it does not teach a new " +
             "mechanic on open.",
+        // P2-PROOF (§11.15) decision, made deliberately rather than defaulted: no first-touch
+        // banner, no numbered step. The design brief is explicit that this surface is "pure
+        // surplus" and that the whole program's zero-prompt-surfaces law (the 1,287x memorial nag
+        // this repo already measured and killed) applies to it at HIGHER production values than
+        // anything shipped before -- a first-touch banner stacked on top of a panel this expensive
+        // to build would read as exactly the wound the law exists to prevent, even fired reactively
+        // rather than as a true unprompted nag. Two facts make a lesson unnecessary rather than
+        // merely undesirable: (1) the ONE creation site (LedgerModal, pinned by
+        // LedgerModalTests/this file's own source scan) is a button whose own label says what it
+        // does in plain English -- "Ask how it happened." -- sitting directly on the beat row it
+        // explains, inside a Ledger the player already opens deliberately every night (LedgerModal
+        // itself is taught via TutorialStep.EveningClose above); (2) once opened, the panel narrates
+        // its OWN mechanism stage by stage through its advance button's own text -- "Watch it
+        // happen." -> "Ask what it would have been." -> "Play it forward." -> "See what it means."
+        // -- which walks the player through factual replay, the fork, the counterfactual fall and
+        // the verdict in the player's own words before any of those stages render, a stronger
+        // self-teaching signal than a static banner would add. Building a real first-touch lesson
+        // here would mean giving LedgerModal/TellingPanel their own Tutorial/MentorBanner wiring
+        // (neither has it today; every existing first-touch panel gets it from MainUi at
+        // construction) -- that is scoped work for whoever owns TutorialFlow.cs/MentorVoice.cs, not
+        // a CI-fix-shaped change, so it is named here as owed-if-ever, not silently declined: if a
+        // future measurement (the decisions CLI, a playtest) finds players genuinely not finding
+        // this button, the fix is that wiring, not a re-litigation of this reasoning.
+        [typeof(TellingPanel)] =
+            "Taught by design, not by omission: the design brief (§11.15, P2-PROOF) calls this " +
+            "surface 'pure surplus' under the zero-prompt-surfaces law, so no first-touch banner " +
+            "fires on open. The single creation site is a self-describing button ('Ask how it " +
+            "happened.') on the Ledger beat row it explains, and the panel's own advance-button " +
+            "copy narrates each stage (factual replay, fork, fall, verdict) in plain language as " +
+            "it plays -- the surface teaches itself through its own text at every step. A real " +
+            "first-touch lesson would require new Tutorial/MentorBanner wiring on LedgerModal and " +
+            "TellingPanel, neither of which has it today; that is out of this unit's scope and " +
+            "belongs to whoever owns TutorialFlow.cs/MentorVoice.cs, not defaulted here.",
     };
 
     [TestCase]
