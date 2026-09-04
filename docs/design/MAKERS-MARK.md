@@ -490,8 +490,9 @@ written, with one sharpening: the five links are not equally weak. All five are 
 true as *mechanisms* (§2's trace). The game's entire current deficit sits in two places:
 the **witnessing** — the staging of links 3–5, where the march is anonymous and the proof
 arrives as a Night flood (§2's own caveat) — and the **campaign's far end** — a
-question-shortage now measured at median day 25.0 (`P2-LONG-01`, was assumed day 11), an
-unprotected finale, an unreachable endgame economy. The
+question-shortage measured two ways: the menu's own novelty plateaus at median day 25.0
+(`P2-LONG-01`, was assumed day 11), but the day's felt routine stops changing far sooner, median
+day 12.0 (`P2-LONG-26`) — an unprotected finale, an unreachable endgame economy. The
 plan orders by exactly that: first make the existing proof *land*, then verify it lands on
 a *human*, then fix the far end.
 
@@ -500,8 +501,9 @@ a *human*, then fix the far end.
 The cause side (Morning) works, by machine measurement. The proof side (the attribution
 engine) works, by test. The witnessing is half-staged — the send-off doesn't name your work,
 and the Night reveal buries its own headline — and **no human being has ever reported
-feeling any of it** (§3.2). Past median day 25.0 the game runs out of questions
-(`P2-LONG-01` re-dates this from the assumed, unmeasured day 11), past day 30 gold
+feeling any of it** (§3.2). Past median day 25.0 the game runs out of genuinely new options
+(`P2-LONG-01` re-dates this from the assumed, unmeasured day 11) — but the felt routine stops
+changing far sooner, median day 12.0 (`P2-LONG-26`). Past day 30 gold
 runs out of meaning on screen, and nothing in CI proves a campaign can end.
 
 ### 11.3 Phase 0 — the rulings (owner, one sitting, no code)
@@ -607,7 +609,7 @@ tally-ending.
 | P1 | **Night leads with the mark** (loop U5 / H3): the reveal opens with the attribution beat; sale-and-deed grouped by item | session, godot-only | nothing | Hero: tonight's bearer of your marked item. Ledger line: *is* the item — the beat becomes the opening card | Landed 2026-08-07 (wave U1) |
 | P2 | **The send-off names your work** (H4 / Q-1): the departure slate captions which marchers carry your items | session, godot-only | nothing (reads better after P1) | Hero: the named marchers. Ledger line: the antecedent Night points back to | Landed 2026-08-07 (wave U2) — and see the §8 correction: the naive version was already shipped; what was owed was the 2-line cap, the staging, and an honest empty state |
 | P3 | **Protect the finale**: two-sided balance assertions (floor 5 *reached* by day ≤N on the main seed; ending *fires* within 100 days) + one scripted full-length client run confirming Act III on the real HUD | session, tests-only | nothing | Invariant: the campaign has an end. (Chain-test clause 3 — protect the substrate) | Landed 2026-08-10 (forward-ladder L0-L7, closes draft #413). Venues are a forward ladder now; routing keys on `Hero.LadderRank`, not the power latch that stranded parties. Two-sided and green on the main seed (rung-0 clear day 18, Act III day 18, Climax day 26, Ending day 31) and on the 10-seed sweep (Ending ≤ day 36). See §11.8. The scripted full-length client-HUD run remains open |
-| P4 | **The human feel-test** (§9.8): `play.ps1`, one real evening, the five written questions — with the fifth (the boredom day) checked against the wall `P2-LONG-01` re-dated to median day 25.0 (20-seed sweep, was assumed day-11, unmeasured) | an evening (owner) | P1+P2 merged — *with a deadline, not a dependency* (see ties) | Not a build item — the gate that rules 9.3, 9.5, 9.7, confirms R4/R6, and confirms the re-dated wall from the human side | OPEN — **put it on the calendar now** (§12, review C: the bottleneck is the owner, not the agents) |
+| P4 | **The human feel-test** (§9.8): `play.ps1`, one real evening, the five written questions — with the fifth (the boredom day) checked against the wall, now two measured numbers: `P2-LONG-01`'s menu-novelty wall (median day 25.0, 20-seed sweep, was assumed day-11, unmeasured) and `P2-LONG-26`'s felt-routine wall (median day 12.0, same sweep machinery — the sharper predictor of boredom specifically) | an evening (owner) | P1+P2 merged — *with a deadline, not a dependency* (see ties) | Not a build item — the gate that rules 9.3, 9.5, 9.7, confirms R4/R6, and confirms both re-dated walls from the human side | OPEN — **put it on the calendar now** (§12, review C: the bottleneck is the owner, not the agents) |
 | P5 | **The vigil branch**: (a) surface the irony, or (b) retune wave, or (c) damp compensation — V-3's hero-chips ride whichever branch wins | (a) session / (b) wave + **re-baseline** / (c) session-wave + **re-baseline** | **R1** | Hero: the camped party. Ledger line: the delivery's `Provisioned`/`PotionLifesave` beat — or the death delta, depending on the branch | BLOCKED (R1) |
 | P6 | **Endgame surfaces**: buttons + bell-tray wiring for UpgradeForge, BuyForgeSupply, MasterworkAttempt, CommissionLegendaryWork | ~2 sessions, godot-only | R2 — **RULED: build** | Hero: whoever carries the guaranteed Masterwork. Ledger line: the attempt's cost and the resulting item's beats | Landed 2026-08-07 (wave U3/U4). Dominance measured before shipping the buttons: 17.0% of crafted value flows through purchased attempts at Tier II with a 5000g reserve — hand-work keeps the field. `BaselinePlayer` untouched, no re-baseline |
 | P7 | **The day-11 program**: demand-hazard engine + demand-gated profession debuts (five-pillars Wave 2) | **wave + Contracts micro-PRs + re-baseline** — the expensive one; needs its own plan doc written against this section | P4 (re-confirm the question shortage before the biggest spend) | Hero: the one who needs what only a Tanner or Engineer makes this week. Ledger line: the typed demand fulfilled; `BeatType.ToolAssist` finally gets its emitter | BLOCKED (P4) |
@@ -3204,8 +3206,9 @@ proof — the moat — prints as one ledger line under a marquee that scrolls it
 mid-word. The campaign's closing ceremony is the one modal in the game with no ownership at all
 (`ChronicleScroll` is absent from `MainUi.OverlaySurfaces()`, so the clock runs and the interact
 prompt draws over the ending). The course teaches links 1–3 and stops the day before the game
-starts proving itself. And the wall — `P2-LONG-01` re-dates it to median day 25.0 (range
-13–43 across a 20-seed sweep), not the day-11 figure this section was written against —
+starts proving itself. And the wall — `P2-LONG-01` re-dates the menu's own novelty to median day
+25.0 (range 13–43 across a 20-seed sweep), not the day-11 figure this section was written
+against, while `P2-LONG-26` re-dates the day's FELT routine tighter still, median day 12.0 —
 ends playthroughs before any of it matters.
 
 The evidence base, and what kind of evidence each piece is:
@@ -3252,7 +3255,7 @@ is received, not made).
 | `P2-PROOF` | The Telling — the counterfactual staged, twice through | link 4 | Strengthens — the proof is the moat and it is currently one line | 7 units, one Contracts micro-PR + golden | The staged verdict provably never contradicts `ComputeBeats` |
 | `P2-MEMORY` | One book, the channel named, the ticker's job reassigned | link 5 | Strengthens — link 5's only vessel for a dozen event types is a 28px marquee that forgets after 3 days | 17 units, two Contracts micro-PRs | Full retention, queryable by actor and day; the beat says how the item reached the hand |
 | `P2-PEOPLE` | The Regulars, Kin of the Fallen, the Wake | the *Torvald* in the sentence | Strengthens links 2 and 5 through the person they are about | 14 units, mostly authored content; two Contracts micro-PRs, one owner-gated re-baseline | The owner can name three heroes by personality after one evening (review C's test) |
-| `P2-LONG` | The middle (hazard seasons), the Final Commission, failure, The Mark Endures | links 3–5's *availability* | Strengthens by existing at all — the wall (re-dated: median day 25.0, 19/20 seeds past day 14) ends playthroughs and a player who leaves never meets any link twice | 23 units, the expensive domain: 5 golden re-records, 5 balance re-baselines across four waves | The question stops changing by median day 25.0, not day 11 (`P2-LONG-01`, 20-seed sweep); the climax boss (Emberfall floor 5) cleared 20/20 seeds — the ending is reachable and is made of the game's own decisions |
+| `P2-LONG` | The middle (hazard seasons), the Final Commission, failure, The Mark Endures | links 3–5's *availability* | Strengthens by existing at all — the wall (re-dated: median day 25.0, 19/20 seeds past day 14; the FELT wall re-dates tighter still, median day 12.0, `P2-LONG-26`) ends playthroughs and a player who leaves never meets any link twice | 23 units, the expensive domain: 5 golden re-records, 5 balance re-baselines across four waves | The menu stops offering anything new by median day 25.0, not day 11 (`P2-LONG-01`, 20-seed sweep); the day's felt routine stops changing by median day 12.0 (`P2-LONG-26`, same sweep machinery); the climax boss (Emberfall floor 5) cleared 20/20 seeds — the ending is reachable and is made of the game's own decisions |
 | `P2-HONEST` | Twenty-three untruths fixed and the four families that produce them tripwired | all five | Strengthens — a proof chain the copy lies about is a chain the player cannot trust | 14 units, almost all fast-lane, plus one owner fork that carries a balance ceremony on either arm | The censuses run in the fast lane and deny by default |
 
 ### P2-SCREEN — who owns the pixels
@@ -3726,7 +3729,14 @@ player's question ever change again" signal is the LAST first-occurrence of anyt
 25.0, max day 43; 19 of 20 seeds land past day 14. **The wall moved past day 14 — loudly: more than
 double the assumed day-11 figure at the median.** Per this unit's own gate, scope for `P2-LONG-02`
 onward is owed a re-argument before it spends a golden re-baseline on a wall dated day 11; this
-document does not re-argue it (a scope call is the owner's, not a measurement unit's). Separately,
+document does not re-argue it (a scope call is the owner's, not a measurement unit's).
+`P2-LONG-26` (owner ruling 2026-09-04) refines this further, on the owner's own instruction to
+measure the FELT wall rather than the novelty wall: day 25.0 is the day the menu ever offers
+something genuinely new again; the day the day's routine stops changing at the pace it did at
+first — the sharper signal the genre precedent (customer repetition at hour 3–4, four other
+shop/craft games) actually predicts — measures at median day 12.0, close to the pre-`P2-LONG-01`
+assumption but arrived at by measuring a different thing, not by reviving the assumption. Both
+numbers are real; this document does not re-argue scope from either. Separately,
 the same sweep clears the wave's other landmine: Emberfall floor 5 (the climax boss, still at the
 pre-retune HP 62 / Attack 35 while the Mine and Sunken Crypt were dialed to HP 50 / Attack 26) was
 reached and cleared in 20 of 20 seeds (climax day range 20–25) — the campaign's ending is reachable
@@ -4003,7 +4013,7 @@ the brush is named here rather than discovered later.
 | §11.3 R4 | Retire the Legend Engine, keep the promise — the fix is a composer pass over existing data | The book and the Chronicle Night **are** that composer pass; this program is R4 being paid |
 | §11.3 R6 | The Final Commission is owed | `P2-LONG-08..14` design it; R6 rules the *act* owed, the book is the *artifact* that records it — they compose, and the book sequences first so the payoff lands in a finished frame |
 | §11.4 P4 amendment (§12, review C) | The human feel-test goes on the calendar and **no document-writing lap may displace it** | This section is a document-writing lap; it is written, and P4 is still the next owner evening. `P2-PEOPLE-01` and the three cheap fixes are what that evening should be played on |
-| §11.4 P7 | The day-11 program is blocked on P4 ("re-confirm the question shortage before the biggest spend") | `P2-LONG-01` *is* that re-confirmation, and it has spoken: the wall re-dates to median day 25.0 (19/20 seeds past day 14), past this unit's own re-argue-scope threshold; `P2-LONG-02` onward still spends nothing until P4's evening has also spoken |
+| §11.4 P7 | The day-11 program is blocked on P4 ("re-confirm the question shortage before the biggest spend") | `P2-LONG-01` *is* that re-confirmation, and it has spoken: the wall re-dates to median day 25.0 (19/20 seeds past day 14), past this unit's own re-argue-scope threshold; `P2-LONG-26` (owner ruling 2026-09-04) measured the FELT wall separately and re-dates it to median day 12.0 — a different, sharper signal, not a contradiction; `P2-LONG-02` onward still spends nothing until P4's evening has also spoken |
 | §11.5 | Deeper hero attachment is the named post-v1 queue leader that **does not displace P7**; reopens on P4's evening | **Brush, resolved:** `P2-PEOPLE-01..04` run now as 11.7.3/11.7.4 staging — zero sim, extends the shipped tavern pattern — and double as the probe producing the evidence the ruling needs. Everything sim-touching in the domain (kin derivation, the no-march day) waits behind the reopening or its named fork |
 | §11.7.3 | No important information without a face | The delegation, the assessor, the rival, the wake, the teller — every new surface here delivers through a face; the Telling's teller is carried inside the modal rather than demanding new town wiring |
 | §11.7.5 | More windows, never live delivery; camp speaks first | The Telling is a window onto a *finished* record — nothing here reaches into a live raid |
@@ -4271,7 +4281,8 @@ In prose, because the diagram cannot carry the argument:
   worthless to a player who left at the wall.** `P2-LONG` waited at two gates this plan does not
   own: `P2-LONG-01`'s re-measurement has now spoken (median day 25.0, 19/20 seeds past day 14 —
   the assumed day-11 figure was unmeasured and wrong by more than double at the median; scope for
-  the wave below is owed a re-argument, not made here) and P4's evening still owes its own
+  the wave below is owed a re-argument, not made here), `P2-LONG-26` measured the FELT wall
+  separately (median day 12.0 — a different, sharper signal, not a contradiction), and P4's evening still owes its own
   confirmation (§11.4: re-confirm the question shortage before the biggest spend). Wave A → B → C
   → D within the domain; the book lands before wave B so the Final Commission's payoff prints into
   a finished frame.
@@ -4361,6 +4372,7 @@ name (§11.6 rule 4).
 | P2-LONG-21 | The Mark Endures — the carryover contract and the no-stats tripwire | `sim/GameSim/Contracts/`, `sim/GameSim/Kernel/GameFactory.cs` | P2-LONG-13 | [S][C][GOLD] |
 | P2-LONG-22 | The seventh decision — the choice, the door, the commission echo | `godot/scripts/`, `sim/GameSim/Economy/` | P2-LONG-21 | [G] |
 | ⚑ P2-LONG-25 | Aim the send verb at where camped heroes actually are — one knob, re-baselined | `sim/GameSim/Expedition/ExpeditionResolver.cs`, `sim/GameSim/Expedition/ExpeditionSystem.cs`, the two tests above | — | [S][BAL] |
+| ⚑ P2-LONG-26 | Measure the FELT wall, not the novelty wall | `sim/GameSim.Cli/`, one instrumented sweep | P2-LONG-01 | [S] |
 | P2-HONEST-02 | Four dead-mechanism sentences die; `Gate.Reason` splits closed/opened | `godot/scripts/ui/SurfaceUnlocks.cs`, copy | — | [G] |
 | P2-HONEST-03 | The sentence "your commission died with them" gets a home (the sim half landed in #667) | `godot/scripts/panels/LedgerModal.cs`, `godot/scripts/panels/LegendsWall.cs` | P2-PEOPLE-07 | [G] |
 | P2-HONEST-04 | The queued suffix dies; eight panels stop teaching a console command | `godot/scripts/panels/SimPanel.cs`, `godot/scripts/panels/` | — | [G] |
@@ -4589,6 +4601,91 @@ beside `P2-MEMORY-03`, whose grammar it extends.
 - Verification: fast lane green; the Balance gate re-run with both arms' raw numbers quoted in the
   PR body beside the 07-18 and 09-02 rows; if the chosen knob is (2) or (3), its re-baseline is
   its own serialized ceremony per P2-KTD5 and does not share a PR with the knob change.
+
+#### P2-LONG-26. Measure the FELT wall, not the novelty wall
+
+- Goal: owner ruling 2026-09-04 — `P2-LONG-01` re-dated whether the MENU ever widens (median day
+  25.0). The indirect-agency research's genre precedent is customer repetition at hour 3–4, and
+  that complaint tracks whether the DAY repeats, not whether some unseen verb or slot still exists
+  in the build. Measure the second thing before the middle wave scopes against either number.
+- Requirements: `P2-LONG-01` (the `long-wall` machinery this extends, not rebuilds); the
+  indirect-agency research (`docs/design/2026-09-03-indirect-agency-research.md`, #701)
+- Files: `sim/GameSim.Cli/` (one instrumented sweep, new `felt-wall` CLI command), no shipped code
+- Approach: five candidate signals named in the brief; two were built and rejected in code before
+  the measurement was trusted, because both are cheap to see wrong and expensive to leave unstated:
+  1. A single composite "day shape" — {verb picked, recipe crafted, (slot,quality) ask open} —
+     almost NEVER repeats exactly (median last-novel-day 86 of 100): the demand board cycles enough
+     slot×quality combinations that the exact set of open asks is a fingerprint, not a pattern.
+  2. Single-component novelty ("was this recipe/ask ever seen before") saturates almost instantly
+     (day 2, day 4, unanimous across 20 seeds) because the recipe list and slot×quality space are
+     both small and finite — a fact about content size, not about a day feeling repeated.
+  3. `VerbOnly` — the sorted SET of verbs actually CHOSEN that day (not offered — `P2-LONG-01`'s own
+     signal; a player who never touches a verb never experiences it), recipe/ask detail stripped —
+     was expected to be the sharp middle ground and measured worse than expected on its own
+     LAST-novel-day (median 80.5): `BaselinePlayer` keeps varying which handful of ~25 verbs it
+     touches on any given day for almost the entire window, and a few very late, rare one-off days
+     (a mastery threshold, a late commission) drag a single latest-occurrence statistic into a long
+     tail that has nothing to do with a player's felt sense of freshness.
+  4. The **novelty half-life** — per seed, the day its cumulative count of distinct VerbOnly day-
+     shapes first reaches HALF of its own eventual (day-100) total — is built to see the BULK of the
+     curve instead of the rare tail, and is this unit's headline. The pooled curve shows why: the
+     cumulative-distinct count is essentially FLAT from day ~15 to day ~40 (8.80 → 9.45 of an
+     eventual 16.20 — 25 days move the total four percent) before creeping for the rest of the run.
+     A single latest-occurrence statistic cannot see that shape; the half-life does.
+  5. Copy repetition (`docs/reference/text-census.md`'s ~2,100 strings) could not be measured
+     honestly from here: most of that inventory lives in Godot-only surfaces (the tutorial course,
+     dormant acts, first-touch lessons) this sim/CLI-side sweep cannot render, and doing so would
+     mean either running the Godot engine suite (off-limits this session — another agent held it,
+     and two concurrent gdUnit runs silently lose each other's tests) or hand-classifying ~2,100
+     strings' day-gates, a separate unit-sized effort. What the sweep DOES measure honestly is a
+     partial CLI-only proxy — `EventNarration.Line`, the function the interactive CLI already prints
+     from every resolved event, rendered here for every tick and tracked for distinct-lines-ever.
+     Its novelty half-life (median day 31, min 25, max 43) lands close to `P2-LONG-01`'s own day-25
+     figure — richer content tracks the menu; the coarse verb routine does not.
+- Findings (20-seed, 100-day sweep, `BaselinePlayer` — the same default `batch`/`decisions`/
+  `long-wall` use):
+  - **VerbOnly novelty half-life — the felt-wall headline: min day 8, median day 12.0, max day 47.**
+    By this day each seed has already shown half of every distinct verb-set "day shape" it will EVER
+    show across the full 100-day window — the day the PACE of change collapses, not merely the day
+    the last new thing ever happens. This reproduces the pre-`P2-LONG-01` assumed "day 11" almost
+    exactly, by actual measurement of a different, specific signal, not by reviving the assumption.
+  - VerbOnly last-novel-day (companion stat, explicitly NOT the headline — long-tail-dominated, see
+    above): median 80.5.
+  - VerbRecipe / Full / narration-line half-lives cluster at day 24, day 33, day 31 respectively —
+    all close to `P2-LONG-01`'s own median day 25.0. The richer the signal, the closer it tracks
+    "does the menu ever offer something new"; the coarser the signal (which broad verbs a day
+    touches), the earlier its pace of change collapses.
+  - `P2-LONG-01`'s median day 25.0 and this unit's median day 12.0 are BOTH real and not in
+    conflict — they measure different things. Day 25 answers "does the game ever offer something
+    genuinely new again" (yes, for a long time). Day 12 answers "by when has the day's routine
+    stopped changing at the pace it did at first" (much sooner). The research
+    (`docs/design/2026-09-03-indirect-agency-research.md`) predicts the second is what a bored
+    player notices — this unit does not re-argue scope from that; the owner does.
+- Wall-clock conversion (informational, not a measurement): `HumanPlayer`/`ForgePlayer`
+  (`godot/tests/HumanPlayer.cs`, `ForgePlayer.cs`) are DELIBERATELY clock-free — both class docs say
+  so in as many words ("no wall-clock reads and no RNG"; "time is driven, not waited on") — so
+  neither can supply a minutes-per-day figure, and using their frame counts as a proxy would be
+  dishonest by their own documented caveat (CI runs slower wall-clock but faster per-frame than a
+  dev machine, so a frame count is not a duration). The one place the codebase pins a REAL second
+  count to a phase is `godot/scripts/PhaseClock.cs`'s opt-in "Innkeeper's Clock" auto-advance:
+  `MorningSeconds`/`ExpeditionSeconds`/`EveningSeconds` = 45/30/45, Camp and ExpeditionDeep borrow
+  Morning's 45 (no dedicated tuning yet) — 210 seconds/day (3.5 min) at 1x speed with every phase
+  auto-advancing untouched. That is a floor, not a real session: auto-advance is OFF by default
+  (player-decided bell presses since U2 "Ring the Bell"), and the `Engaged` latch pauses the clock
+  entirely while any drawer/modal is open, so real per-day time is this baseline PLUS however long
+  an engaged player spends inside opened panels (the 5 action slots, up to 3 counter haggle rounds,
+  the forge minigame). Bounded estimate: **roughly 3.5–8 minutes/day, ~5 as a central guess** —
+  reasoned from the one pinned real-second constant this codebase has, not a measurement. At that
+  rate this unit's headline (day 12) falls at roughly 40–95 minutes of real play — under an hour at
+  the low end, under the genre's cited hour 3–4 either way. Flagged, not resolved: the existing
+  research citation (`docs/design/2026-09-03-indirect-agency-research.md`, "the day-8–18 wall...at
+  the same wall-clock hour" as the genre's hour-3–4 complaint) implies roughly 13–20 minutes/day,
+  2–4x this estimate. Neither figure is a measurement of a real session; reconciling them needs an
+  actual timed human playthrough (§11.4 P4's evening), not another sweep.
+- Test scenarios: none shipped — this unit produces a measurement, and its artifact is the PR
+  body's table plus `runs/felt-wall/` (gitignored, not committed).
+- Verification: the sweep's numbers quoted in the PR body; the plan amended in the same PR (§11.6
+  rule 5) — this document does not re-argue scope from either wall; that is the owner's call.
 
 ## The verification contract
 
