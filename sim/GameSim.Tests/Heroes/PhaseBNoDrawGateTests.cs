@@ -142,6 +142,16 @@ public class PhaseBNoDrawGateTests
         // no RNG before or after either way — a scoring-rule change cannot add, remove, or reorder
         // a draw. Confirmed directly: this test is one of the 1859/1859 green fast-lane tests with
         // the change in, same pinned value.
-        Assert.Equal(new RngState(4182585629336870939UL, 13279888329118852579UL), state.Rng);
+        // RE-BASELINED (2026-09-04, P2-LONG-25: the too-hurt bar splits off from the drink line).
+        // POSITION MOVES, IDENTITY DOES NOT — which is the whole point of this gate, so read the two
+        // numbers separately. `Inc` is STILL byte-identical (13279888329118852579): same stream, no
+        // new or duplicated Pcg32. Only `State` moved (4182585629336870939 -> 4432103899912625622),
+        // because CombatMath's new TooHurtThresholdPct (30) changes which parties stop on which
+        // floor, and every downstream combat therefore consumes a different number of draws. The
+        // comparison itself is a plain integer test that draws nothing — `git diff` adds no `rng.`
+        // site — so this is the same class as the 2026-08-01 venue-router bands above: draw-free by
+        // construction, but routing parties differently. Per this file's own instruction, both
+        // checks were run in order (Inc first, then a grep for new draw sites) before re-pinning.
+        Assert.Equal(new RngState(4432103899912625622UL, 13279888329118852579UL), state.Rng);
     }
 }

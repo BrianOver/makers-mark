@@ -357,8 +357,28 @@ public class AtomicEquivalenceTests
     // fixture a downward grade shift would have flipped first. The measured 20-seed/100-day
     // hand-forge sweeps that DO move (both talent-pacing policies) are reported in the PR body;
     // they are the point of the change and are deliberately not pinned here.
+    // RE-BASELINED (2026-09-04, P2-LONG-25: the too-hurt bar splits off from the drink line).
+    // VALUES MOVE, THE STREAM DOES NOT. CombatMath gains TooHurtThresholdPct = 30 and the post-floor
+    // "too hurt to press deeper" check reads it instead of ShouldDrink (50). The change is a single
+    // integer comparison — draw-free by construction, exactly like the 2026-08-01 venue-router bands
+    // recorded above — but it changes WHICH parties stop on WHICH floor, so every downstream combat
+    // on this trace resolves against a different world and the serialized state differs.
+    //
+    // The legitimacy tell, checked and not assumed: PhaseBNoDrawGateTests' `Inc` is byte-identical
+    // (13279888329118852579), so this is the same single stream advanced to a new position, never a
+    // new or duplicated Pcg32; and `git diff` adds no `rng.` call site anywhere. Both are the checks
+    // that file's own doc instructs the next reader to run first, in that order.
+    //
+    // Why the change was made rather than tuned around: the vigil's send-the-runner verb is one of
+    // the six decisions THE-GAME.md §3.5 says the game is made of, and its target band was
+    // structurally empty — #703 proved the park floor IS the drink line, so a camped hero sat at or
+    // above 50% by construction and no supply run could ever matter. Measured consequence over the
+    // 20-seed/100-day camp A/B, both halves of the dilemma at once: 20 deliveries where there were
+    // zero, 5 of them proved by counterfactual replay to have saved a hero who would otherwise have
+    // died, bought with 4 net deaths. The owner ruled this arm over the two cheaper ones on
+    // 2026-09-04; the rejected alternatives and their reasons are in the P2-LONG-25 unit body.
     private const string ExpectedPreCounterSha256 =
-        "F5488949CB39A39B47F99A4F1EDD27457D7523DBFA9A7ED171FF8DE50F8D8B6D";
+        "F997CA17CA59593684727CD1EB5B5D192588FBA5803BD2E6A296631B6CFE890F";
 
     [Fact]
     public void ThirtyDayRun_NoCounterActions_IsByteIdenticalToPrePa3Kernel()
