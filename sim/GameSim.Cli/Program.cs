@@ -132,6 +132,26 @@ if (args.Length > 0 && args[0] == "long-wall")
     return GameSim.Cli.LongWallSweep.Run(lwSeeds, 2026UL, lwDays, lwOut, Console.Out, Console.Error);
 }
 
+// Felt-wall mode (owner ruling 2026-09-04, one-off measurement, not a gate): `-- felt-wall
+// [--seeds N] [--days N] [--out DIR]` extends long-wall's machinery to measure REPETITION —
+// where the day's own content (verbs actually chosen, recipes crafted, demand asks, console
+// narration lines) stops changing, distinct from long-wall's novelty-of-the-legal-menu question.
+if (args.Length > 0 && args[0] == "felt-wall")
+{
+    var fwSeeds = 20;
+    var fwDays = 100;
+    var fwOut = Path.Combine("runs", "felt-wall");
+    for (var i = 1; i < args.Length; i++)
+    {
+        if (args[i] == "--seeds" && i + 1 < args.Length && int.TryParse(args[i + 1], out var s)) { fwSeeds = s; i++; }
+        else if (args[i] == "--days" && i + 1 < args.Length && int.TryParse(args[i + 1], out var d)) { fwDays = d; i++; }
+        else if (args[i] == "--out" && i + 1 < args.Length) { fwOut = args[i + 1]; i++; }
+        else { Console.Error.WriteLine($"felt-wall: unknown/invalid arg near '{args[i]}' — usage: felt-wall [--seeds N] [--days N] [--out DIR]"); return 1; }
+    }
+
+    return GameSim.Cli.FeltWallSweep.Run(fwSeeds, 2026UL, fwDays, fwOut, Console.Out, Console.Error);
+}
+
 // Interactive mode accepts ONLY `--seed N`. Anything else is a hard error — a typo'd batch
 // invocation ('Batch', misordered flags) must never fall through to the interactive REPL,
 // where redirected stdin would EOF and exit 0 having written zero chronicles (silent green).
