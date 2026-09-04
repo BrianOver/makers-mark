@@ -821,7 +821,7 @@ Everything below reached this document through a search-engine summary rather th
 page, or could not be confirmed at all. **None of it is load-bearing for M1–M5.** It is listed so a
 later session does not launder any of it into fact.
 
-| Claim | Status |
+| Claim | Confidence |
 |---|---|
 | RPS's *"uneasy dissonance between your goal... and the only real action you can take"* (Loop Hero) | **Second-hand.** Quoted via a PCGamesN summary; the RPS original was not fetched. |
 | TechRadar's *"the resource grind becomes the game"* and the hour-3–4 timing | **Unverified.** The article 404s on direct fetch; headline and thesis corroborated by a secondary blog. |
