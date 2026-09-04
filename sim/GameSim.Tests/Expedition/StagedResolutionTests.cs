@@ -239,6 +239,77 @@ public class StagedResolutionTests
         Assert.Contains(events, e => e is PartyDeparted);
     }
 
+    /// <summary>
+    /// P2-LONG-24, the reproducing pin for the dead send verb. The camp send verb targets a hero
+    /// whose <c>hp*100 &lt; 40*MaxHp</c>, and it has delivered nothing since 2026-08-01. The cause is
+    /// HERE, not in the threshold and not in the harness: <see cref="ExpeditionResolver.ResolveStage1"/>
+    /// parks only on a raw <see cref="ExpeditionHalt.TargetReached"/>, and the post-floor too-hurt
+    /// check finalises (rather than parks) any party holding a hero under the DRINK line — so a
+    /// camped hero is at or above that line by construction, and the send verb's band sits entirely
+    /// underneath the park floor. Nothing mutates a parked hero's HP between the park and the Camp
+    /// window (the camp handlers touch Packs / SupplySent / Recalled only), so this floor is what
+    /// the player is shown.
+    ///
+    /// <para>The bar was <see cref="CombatMath.ShouldFlee"/> (25%) until #328 (2026-08-01) made it
+    /// <see cref="CombatMath.ShouldDrink"/> (50%) as a consequence of the flee-first ordering fix.
+    /// That single change moved the park floor from 25% to 50% straight through the send verb's
+    /// &lt;40% band — which is why the 2026-07-18 sweep measured 62 deliveries out of [25%,40%) and
+    /// the 2026-09-02 re-run measured zero. This test pins the floor and the now-empty band together
+    /// so a future retune has to walk past a red test rather than a stale comment.</para>
+    /// </summary>
+    [Fact]
+    public void ParkFloor_IsTheDrinkLine_SoTheSendVerbsSubFortyBandIsStructurallyEmpty()
+    {
+        const int sendThresholdPct = 40; // CampProvisioningBalanceTests.SendThresholdPct (D5)
+
+        // Frail-to-middling parties with real gear, so plenty of runs clear the checkpoint WOUNDED
+        // rather than untouched — a census over healthy heroes would pass vacuously.
+        var items = new[] { Weapon(90, 14), Armor(91, 3) }.ToImmutableSortedDictionary(i => i.Id.Value, i => i);
+        var gear = new GearSet(new ItemId(90), null, new ItemId(91));
+        (Hero[] Party, int Target)[] scenarios =
+        {
+            (new[] { Naked(1, hp: 30, deepest: 1, gear: gear) }, 3),
+            (new[] { Naked(1, hp: 22, deepest: 1, gear: gear), Naked(2, hp: 26, deepest: 1, gear: gear) }, 2),
+            (new[] { Naked(1, hp: 45, deepest: 2, gear: gear), Naked(2, hp: 18, deepest: 2, gear: gear) }, 4),
+            (new[] { Naked(1, hp: 16, deepest: 1, gear: gear) }, 2),
+        };
+
+        var parkedPercents = new List<int>();
+        foreach (var (heroes, target) in scenarios)
+        {
+            var party = heroes.ToImmutableList();
+            for (ulong seed = 0; seed < 400; seed++)
+            {
+                var (_, inFlight) = ExpeditionResolver.ResolveStage1(
+                    party, items, VenueRegistry.Mine, target, checkpointFloor: 1, new Pcg32(RngState.FromSeed(seed)));
+                if (inFlight is null)
+                {
+                    continue;
+                }
+
+                parkedPercents.AddRange(party.Select(h => inFlight.Hp[h.Id.Value] * 100 / h.MaxHp));
+            }
+        }
+
+        Assert.NotEmpty(parkedPercents);
+
+        // 1. The floor: no camped hero is under the drink line. This is the invariant, and it is what
+        //    makes the send verb unreachable — 40 < 50, so the targeted set is empty for free.
+        Assert.Equal(0, parkedPercents.Count(p => p < CombatMath.DrinkThresholdPct));
+        Assert.Equal(0, parkedPercents.Count(p => p < sendThresholdPct));
+
+        // 2. The floor is BINDING, not incidental: parks land ON the drink line, not merely above it.
+        //    Without this a future change that keeps every hero at 100% would leave assertion 1 true
+        //    and this test silently vacuous.
+        Assert.True(
+            parkedPercents.Min() < CombatMath.DrinkThresholdPct + 10,
+            $"expected parks to reach the drink line ({CombatMath.DrinkThresholdPct}%); lowest parked hero was {parkedPercents.Min()}%");
+
+        // 3. The band #328 closed: [flee, drink) is exactly the range the 2026-07-18 build parked
+        //    heroes into and the send verb harvested. It is empty now, and that is the whole finding.
+        Assert.Equal(0, parkedPercents.Count(p => p >= CombatMath.FleeThresholdPct && p < CombatMath.DrinkThresholdPct));
+    }
+
     [Fact]
     public void CampReport_HealsLeft_CountsRemainingHealConsumables()
     {

@@ -3,6 +3,7 @@ using System.Collections.Immutable;
 using System.Threading.Tasks;
 using GameSim;
 using GameSim.Contracts;
+using GameSim.Expedition;
 using GameSim.Harness;
 using Xunit.Abstractions;
 
@@ -58,10 +59,35 @@ namespace GameSim.Tests.Balance;
 /// delivered-salve PotionLifesave end-to-end with zero attribution edits whenever the verb IS used —
 /// but the AGGREGATE risk-compensation mechanism this file was written to document cannot currently
 /// be observed at all on the seed range measured, so it cannot currently justify tuning
-/// CampCheckpointDepth / the send threshold / the fee in either direction. Before R1 rules, the open
-/// question is whether ANY seed range still parks a hero in the targeted band post-checkpoint, or
-/// whether the checkpoint's own HP distribution has moved enough that the send verb's condition
-/// needs to move with it.
+/// CampCheckpointDepth / the send threshold / the fee in either direction.
+///
+/// DIAGNOSIS (2026-09-03, P2-LONG-24) — the open question above is now answered, and the answer is
+/// not a distribution that drifted. <see cref="CampedHeroHpDistribution_AtParkTime_AcrossTheSweep"/>
+/// censuses the FULL camped-hero HP distribution over the same 20-seed × 100-day sweep:
+///
+///   camped-hero observations = 10818
+///   min=50%  p25=100%  median=100%  p75=100%  max=100%  mean=98.5%
+///   [50,60) 40   [60,70) 85   [70,80) 125   [80,90) 232   [90,100) 865   [100] 9471
+///   below 50% = 0    below 40% (the send band) = 0    below 25% = 0
+///
+/// Two corrections to the 09-02 note above. First, the sweep-wide minimum is 50%, not 60% — 60% was
+/// a seed-2026-only artifact of a 200-observation sample. Second, 50% is not where the distribution
+/// happens to bottom out; it is a STRUCTURAL FLOOR. ExpeditionResolver.ResolveStage1 parks only on a
+/// raw TargetReached, and the post-floor too-hurt check finalises any party still holding a hero
+/// under CombatMath.ShouldDrink (50%) — so a camped hero is at or above the drink line BY
+/// CONSTRUCTION, and nothing mutates parked HP between the park and the Camp window. The send verb's
+/// &lt;40% band therefore sits entirely below the park floor: it is an empty set, not a rare one.
+///
+/// The dated cause is #328 (2026-08-01, the flee-first ordering fix), which moved that post-floor bar
+/// from CombatMath.ShouldFlee (25%) to CombatMath.ShouldDrink (50%) for reasons unrelated to this
+/// verb. That single change lifted the park floor from 25% to 50% straight through the [25%,40%) band
+/// the 07-18 sweep harvested 62 deliveries out of. It is not a harness ceiling: no action stream,
+/// scripted or human, can produce a camped hero the send verb can target, because the player has no
+/// verb between the fight and the park. The reproducing pin is
+/// StagedResolutionTests.ParkFloor_IsTheDrinkLine_SoTheSendVerbsSubFortyBandIsStructurallyEmpty.
+///
+/// The retune this implies (send threshold, checkpoint depth, or the too-hurt bar) is NOT taken here
+/// — it needs a balance re-baseline and a design ruling on which knob moves. Booked as P2-LONG-25.
 /// </summary>
 public class CampProvisioningBalanceTests
 {
@@ -102,6 +128,83 @@ public class CampProvisioningBalanceTests
         // MEASUREMENT, not a band: assert only that the harness ran and both arms completed.
         Assert.True(never.Expeditions > 0, "never-send arm ran no expeditions");
         Assert.True(send.Expeditions > 0, "send arm ran no expeditions");
+    }
+
+    /// <summary>
+    /// P2-LONG-24 diagnostic: the FULL camped-hero HP distribution at park time across the same
+    /// 20-seed × 100-day sweep the A/B runs, not just the minimum. P2-LONG-23 recorded a minimum of
+    /// 60% on seed 2026 alone and stopped there; a minimum cannot tell an aimed-wrong threshold from
+    /// a structurally empty band. This census answers that, and its numbers are quoted in the class
+    /// comment above. MEASUREMENT, not a band: the assertions only pin that the census observed
+    /// something and that the structural floor below holds on live sweep data.
+    /// </summary>
+    [Fact]
+    [Trait("Category", "Balance")]
+    public void CampedHeroHpDistribution_AtParkTime_AcrossTheSweep()
+    {
+        var perSeed = new ConcurrentBag<ImmutableList<int>>();
+        Parallel.ForEach(Seeds, seed => perSeed.Add(CampedHpPercents(seed)));
+
+        var pcts = perSeed.SelectMany(p => p).OrderBy(p => p).ToList();
+        Assert.NotEmpty(pcts);
+
+        _output.WriteLine($"camped-hero observations = {pcts.Count} over {Seeds.Length} seeds × {Days} days");
+        _output.WriteLine($"min={pcts[0]}%  p25={pcts[pcts.Count / 4]}%  median={pcts[pcts.Count / 2]}%  " +
+                          $"p75={pcts[pcts.Count * 3 / 4]}%  max={pcts[^1]}%  mean={pcts.Average():F1}%");
+        _output.WriteLine($"below send threshold ({SendThresholdPct}%) = {pcts.Count(p => p < SendThresholdPct)}   " +
+                          $"below drink line ({CombatMath.DrinkThresholdPct}%) = {pcts.Count(p => p < CombatMath.DrinkThresholdPct)}   " +
+                          $"below flee line ({CombatMath.FleeThresholdPct}%) = {pcts.Count(p => p < CombatMath.FleeThresholdPct)}");
+
+        _output.WriteLine("histogram (10-point buckets):");
+        for (var low = 0; low < 100; low += 10)
+        {
+            var n = pcts.Count(p => p >= low && p < low + 10);
+            _output.WriteLine($"  [{low,3}%,{low + 10,3}%) {n,6}  {new string('#', Math.Min(60, n * 60 / Math.Max(1, pcts.Count)))}");
+        }
+
+        _output.WriteLine($"  [100%]      {pcts.Count(p => p >= 100),6}");
+
+        // The finding, asserted so it cannot rot silently: nothing camps below the drink line, and
+        // therefore nothing camps in the send verb's band. If either line ever fires again this test
+        // goes red and the class comment above is stale.
+        Assert.Equal(0, pcts.Count(p => p < CombatMath.DrinkThresholdPct));
+        Assert.Equal(0, pcts.Count(p => p < SendThresholdPct));
+    }
+
+    /// <summary>Every camped hero's hp% at the Camp window (the Expedition tick has just parked and
+    /// nothing has been sent yet), over one seed's 100-day NEVER-SEND run.</summary>
+    private static ImmutableList<int> CampedHpPercents(ulong seed)
+    {
+        var kernel = GameComposition.BuildKernel();
+        var state = GameComposition.NewCampaign(seed);
+        var pcts = ImmutableList.CreateBuilder<int>();
+
+        for (var tick = 0; tick < Days * 5; tick++)
+        {
+            state = kernel.Tick(state, ArmActions(state, send: false)).NewState;
+
+            // Phase order is Morning → Expedition → Camp → ExpeditionDeep → Evening, and the kernel
+            // advances the phase after the tick: Phase == Camp means stage 1 has just parked.
+            if (state.Phase != DayPhase.Camp)
+            {
+                continue;
+            }
+
+            foreach (var inFlight in state.InFlight)
+            {
+                foreach (var id in inFlight.Party)
+                {
+                    if (state.Heroes.TryGetValue(id.Value, out var hero)
+                        && inFlight.Hp.TryGetValue(id.Value, out var hp)
+                        && hero.MaxHp > 0)
+                    {
+                        pcts.Add(hp * 100 / hero.MaxHp);
+                    }
+                }
+            }
+        }
+
+        return pcts.ToImmutable();
     }
 
     private static ArmStats RunArm(ulong seed, bool send)
