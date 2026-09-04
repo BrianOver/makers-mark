@@ -3542,9 +3542,14 @@ the leavings; he is the poorest starter and carries a +1 quality bar he can rare
 emits his refusals every morning; no surface has ever composed them into a sentence.
 
 The six get want / fear / belief / durable fact, each legible in shipped mechanics — Torvald's
-brother Halvar died on floor 3 before the game began (the muster board's "Torvald — floor 3" row
-gains the caption "Halvar's floor" after his scene fires: **the same sentence on the same board
-becomes a different sentence**); Kael sends coin home to a sister every week, and Wren is already
+brother Halvar died on floor 3 before the game began (the game's floor-3 rows gain the caption
+"Halvar's floor" after his scene fires: **the same sentence on the same board becomes a different
+sentence**. *Corrected on landing:* the "Torvald — floor 3" row this paragraph and `P2-PEOPLE-01`
+both named does not exist on the muster board, which renders `Party {n}: {names}` and
+`Target: floor {n}` as two separate lines; the row that actually reads "floor 3 — Torvald" and
+never goes away is the depth-record standing, `DramaState.DepthsBoard` rendered by
+`DepthsPanel`/`LegendsWall`. `ArcScenes.FloorCaption` is therefore read by all three); Kael sends
+coin home to a sister every week, and Wren is already
 in the shipped recruit name pool (`HeroRoster.cs`) — the Kin pre-plant; Sable counts her exits and
 *is* the shipped competence-retreat rule with a philosophy; Elowen is saving to leave, and her
 death reads as the town costing her the exit; Moss believes the mark doesn't matter, and his death
@@ -4724,8 +4729,14 @@ depends on, so leaving it at index level means a later unit inherits an unwritte
   prerequisite **facts**, never index, so out-of-order firing is impossible by construction; at
   most one scene offer per day town-wide (P2-KTD7); an unclaimed scene waits indefinitely; a hero
   dead at scene three leaves revealed facts persisted for the wake and kin, and unrevealed scenes
-  die unshown — nothing ever summarises them. After "Floor three" fires, the muster board's
-  "Torvald — floor 3" row gains the caption "Halvar's floor" (`P2-PEOPLE-04` generalizes this).
+  die unshown — nothing ever summarises them. After "Floor three" fires, the game's floor-3 rows
+  gain the caption "Halvar's floor" (`P2-PEOPLE-04` generalizes this). **Corrected on landing:**
+  the "Torvald — floor 3" muster-board row named above does not exist — see the §P2-PEOPLE
+  paragraph's own correction; the caption ships as `ArcScenes.FloorCaption`, read by
+  `RaidForecastBoard`'s Target line and by the depth-record standings in `DepthsPanel` and
+  `LegendsWall`, which are the rows that actually carry it every day afterwards. Also corrected:
+  this entry cites "KTD-G adopted verbatim", and there is no KTD-G anywhere in this document — the
+  rule it means is `P2-KTD9`, "Scenes and kin write no sim state".
   This is the probe: if these three scenes do not land with the owner on one evening's play, the
   remaining ~140 pieces are not written, and the program stops having cost one session.
 - Test scenarios: a scene whose prerequisite fact is absent never offers; two eligible scenes on

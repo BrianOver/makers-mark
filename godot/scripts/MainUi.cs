@@ -520,7 +520,53 @@ public partial class MainUi : Control
             state = StageWatchFightReceipt(state);
         }
 
+        // P2-PEOPLE-01 receipt seam ONLY, same contract as the two above: Torvald's first scene
+        // needs one fact -- a piece of the player's work in his hands -- and reaching that honestly
+        // costs a craft, a stock, a price and a shopping tick that a screenshot has no business
+        // driving. This plants the hand-off and nothing else; the scene engine then decides for
+        // itself whether to offer, exactly as it would in play. Never reads in real play.
+        if (System.Environment.GetEnvironmentVariable("SHOT_ARC_SCENE") == "1")
+        {
+            state = StageArcSceneReceipt(state);
+        }
+
         return new SimAdapter(state);
+    }
+
+    /// <summary>
+    /// Dev/receipt tool only (never called from real play): puts one player-marked piece in
+    /// Torvald's hands through the shelf channel — the item, and the <see cref="ItemSold"/> that
+    /// records him taking it. That is the whole of <c>ArcScenes.TorvaldCarriesYourMark</c>, so the
+    /// tavern offers "The weigh" on the very next refresh without this method knowing anything
+    /// about scenes: it plants a FACT and lets the engine judge it, rather than staging the scene
+    /// itself, which is what keeps the receipt honest about what a player would actually see.
+    /// </summary>
+    private static GameState StageArcSceneReceipt(GameState state)
+    {
+        if (!state.Heroes.TryGetValue(Ui.ArcScenes.TorvaldHeroId, out var torvald))
+        {
+            return state; // defensive -- a fresh campaign always seeds the starting six
+        }
+
+        var shieldId = new ItemId(state.NextItemId);
+        var shield = new Item(
+            shieldId, "buckler", "Buckler", ItemSlot.Shield, QualityGrade.Common,
+            new ItemStats(0, 4, 3), new MakersMark("Player", state.Day), ImmutableList<ItemHistoryEntry>.Empty);
+
+        return state with
+        {
+            NextItemId = state.NextItemId + 1,
+            Items = state.Items.Add(shieldId.Value, shield),
+            Heroes = state.Heroes.SetItem(
+                torvald.Id.Value, torvald with { Gear = torvald.Gear.WithSlot(ItemSlot.Shield, shieldId) }),
+            NextEventId = state.NextEventId + 1,
+            EventLog = state.EventLog.Add(
+                new ItemSold(shieldId, torvald.Id, Price: 14, FromPlayerShop: true)
+                {
+                    Id = new EventId(state.NextEventId),
+                    Day = state.Day,
+                }),
+        };
     }
 
     /// <summary>

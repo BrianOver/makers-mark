@@ -198,7 +198,12 @@ public partial class DepthsPanel : SimPanel
                     .ThenBy(entry => entry.Key);
                 foreach (var (heroValue, floor) in standings)
                 {
-                    AddLabel(infoCol, $"  floor {floor} — {HeroName(new HeroId(heroValue))}");
+                    // P2-PEOPLE-01: the permanent home of the durable-fact read-back. This row is
+                    // the game's own "Torvald — floor 3", it never goes away, and after he has told
+                    // you about his brother it stops saying only a number. One shared rule with the
+                    // muster board and the legends wall — see ArcScenes.FloorCaption.
+                    var name = HeroName(new HeroId(heroValue));
+                    AddLabel(infoCol, $"  floor {floor} — {name}{GodotClient.Ui.ArcScenes.FloorCaption(name, floor)}");
                 }
             }
         }

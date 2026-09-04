@@ -145,7 +145,7 @@ public partial class RaidForecastBoard : Control
     private void RenderParty(ForecastParty party, int ordinal)
     {
         AddHeader(_body!, $"Party {ordinal}: {string.Join(", ", party.HeroNames)}");
-        AddLabel(_body!, $"Target: floor {party.TargetFloor}");
+        AddLabel(_body!, $"Target: floor {party.TargetFloor}{HalvarsFloorCaption(party)}");
 
         // Threats floor-ascending, exactly as RaidForecast built them (floor 1..TargetFloor).
         if (!party.Threats.IsEmpty)
@@ -173,6 +173,31 @@ public partial class RaidForecastBoard : Control
             ShowMusterGearGapLesson();
         }
     }
+
+    /// <summary>
+    /// P2-PEOPLE-01, the durable-fact read-back on the muster board: once Torvald has told you whose
+    /// floor the third one is, "Target: floor 3" becomes "Target: floor 3 — Halvar's floor" for a
+    /// party he is marching with. The rule itself lives in <see cref="ArcScenes.FloorCaption"/>,
+    /// shared with the two depth-record boards, so three surfaces can never disagree about it.
+    ///
+    /// <para><b>Plan correction (§11.6 rule 5).</b> The unit spec describes this as the muster
+    /// board's <c>"Torvald — floor 3"</c> row gaining a caption. No row of that shape exists here:
+    /// this board renders <c>"Party {n}: {names}"</c> and <c>"Target: floor {n}"</c> as two separate
+    /// lines. The caption therefore lands on the Target line of a party Torvald is actually in —
+    /// the same sentence, about the same floor, for the same man. It is also, honestly, the rarest
+    /// of the three sites: <c>ExpeditionSystem.TargetFloorFor</c> is
+    /// <c>max(DeepestFloorReached) + 1</c>, so a Torvald who has just walked floor three is
+    /// forecast for FOUR the next morning, and this caption only reappears when a floor-3 bounty or
+    /// a shallower partymate puts three back on the slate. The row that carries the fact every day
+    /// afterwards is the depth-record standing (<c>DepthsPanel</c>/<c>LegendsWall</c>), which is
+    /// literally <c>"floor 3 — Torvald"</c> and permanent — which is why the caption ships on all
+    /// three rather than only on the one the spec names.</para>
+    /// </summary>
+    private static string HalvarsFloorCaption(ForecastParty party) =>
+        party.HeroNames
+            .Select(name => ArcScenes.FloorCaption(name, party.TargetFloor))
+            .FirstOrDefault(caption => caption.Length > 0)
+        ?? string.Empty;
 
     /// <summary>
     /// U-T2 Wave D (§11.14.4, Act III, "the forecast board taught"): names the forecast board
