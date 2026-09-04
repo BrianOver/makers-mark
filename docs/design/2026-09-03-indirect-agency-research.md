@@ -289,15 +289,18 @@ sentence, not a counter.**
 expensive and unreliable process"* whose reasoning is invisible. We already emit `BountyJudged` per
 eligible hero with its reasoning. The recommendation is defensive: **treat those events as a
 first-class surface, not debug output**, because they are the only place the game shows that link
-3's sovereignty is arithmetic rather than caprice. Cost: small, godot-only. Would be M-tier if the
-surfacing is thinner than the sim's emission — worth a five-minute check before anyone plans it.
+3's sovereignty is arithmetic rather than caprice. Cost: small, godot-only. It would rank in the top
+five if the surfacing turns out thinner than the sim's emission — worth a five-minute check before
+anyone plans it, which this pass did not do.
 
 **M8. Recall states its price.** Loop Hero's retreat is tense because it is priced in public: 100%
 of resources on a full loop, 60% on retreat, 30% on death. Our `RecallPartyAction` has a real price
 — the forgone deep floors, the depth record, the bounty — and the button says *"Recall"*. Naming
 the price in the button's own copy costs nothing and turns a safety valve into a decision. Cost:
-trivial, copy-only. Not in the top five only because the vigil's arm reportedly never fires at all
-right now (`P2-LONG-24`), so this would be polish on a surface with no traffic.
+trivial, copy-only. Not in the top five only because the camp is currently a low-traffic surface: the
+re-measured A/B in §11.3's R1 retirement found camped-hero HP never drops below 60%, so the *send*
+verb's arm never fires and both arms of the sweep submit identical action streams (`P2-LONG-24`).
+Fix the traffic before polishing the copy.
 
 **M9. The counter's optimum should not be solvable.** Recettear's negotiation *"degenerates into a
 thoughtless, mechanical exercise"* and its community's optimal play is to **skip haggling entirely**
@@ -315,7 +318,7 @@ anyone else ships.
 
 ## 3. Do not build
 
-Twelve mechanisms that look right for this game and are not. Six of them this project already
+Fourteen mechanisms that look right for this game and are not. Six of them this project already
 refused; they are restated with the *external* evidence, so the next session that re-pitches one
 has to argue with a shipped game as well as with `§11.5`.
 
@@ -455,7 +458,7 @@ confirmed by shipped games, and the confirmations are worth recording so nobody 
 
 | Ours | Confirmed by | The evidence |
 |---|---|---|
-| **The counterfactual proof (link 4, The Telling, #687)** | The genre's hole | Ten shop games, zero proofs of causal impact. Weapon Shop de Omasse shipped our exact premise *without* it, scored 63, and every reviewer who examined its loop mechanically called it hollow. This is the moat, and it is the only thing in the design that no competitor has attempted. |
+| **The counterfactual proof (link 4, The Telling, #687)** | The genre's hole | Ten shop games, zero proofs of causal impact. Weapon Shop de Omasse shipped our exact premise *without* it, scored 63, and every reviewer who examined its loop mechanically called it hollow. This is the moat, and it is the one mechanism in the design that no game in this sample has attempted — Strange Horticulture comes closest and gets there only as retrospective epilogue text for four characters. |
 | **The muster forecast, byte-exact** | Mechabellum's fog-of-war reveal; TFT/Underlords scouting | Pre-fight reveal ranks in the top three readability mechanisms found. It moves the "did my prep matter" moment *earlier*, converting the watch from information delivery into confirmation-or-surprise. We have the strongest version of this in the sample and deliver it as a board (M3). |
 | **Hurry, and skipping stays legal (law 7)** | FM's Instant Result; Mechabellum's 2× toggle | Both are first-class, both are used without shame, and Mechabellum's toggle is an explicit admission that a determined outcome has dead time. Never gate *Hurry*. |
 | **The commendation (P2-PEOPLE), thanks with three reasons** | The whole async-contribution cluster | Naming the specific deed is what separates a thank-you from a counter — see §5.7. Three beats quoted from the log is the right dosage; a tally would be T3. |
@@ -477,8 +480,8 @@ buried:
   this sample derives its watch-phase tension from consequence: Loop Hero prices retreat at 60% and
   death at 30%; Backpack Battles' complaint is that a *correct* decision can still be punished.
   **A watch phase with no downside is the definition of a screensaver.** This is already booked
-  (`P2-LONG-23`/`-24`) and this research says it outranks every new mechanism below it. If the mine
-  does not kill, none of M1–M5 will land.
+  (`P2-LONG-23`/`-24`) and this research says it outranks everything in §1. If the mine does not kill,
+  none of M1–M5 will land.
 
 ---
 
