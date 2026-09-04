@@ -18,7 +18,12 @@ namespace GameSim.Harness;
 /// legendary-craft day 3, every seed — and P2-OQ9 measured that this greedy order makes Masterwork
 /// the MODAL hand-forge grade (51.7% of 1,522 items) for the rest of every 100-day campaign, with
 /// the ceiling locking in before the very first hand-forge fires. That finding rests entirely on
-/// ONE scripted order. This type is the other end of the range the owner ruling asked to be bounded:
+/// ONE scripted order. (Both that figure and the deferred-order figure this policy produced are
+/// pre-2026-09-03 readings: they measured the SUBTRACTIVE forgiveness rule, and the answer they
+/// jointly established — that the collapse is structural rather than an artifact of the greedy
+/// order — is precisely what caused §11.7.11 to abolish that rule. This policy's value is
+/// undiminished by that; it is the control that made the diagnosis trustworthy, and it remains the
+/// second axis every re-measurement of the curve is run against.) This type is the other end of the range the owner ruling asked to be bounded:
 /// an order that spends every other point it can before either mastery talent, so the sweep can
 /// finally say whether the ceiling is a genuine progression (locks late, or never, under a
 /// differently-paced but still-plausible player) or a structural property of the tree (locks early

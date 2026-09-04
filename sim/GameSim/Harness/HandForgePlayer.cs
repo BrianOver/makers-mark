@@ -54,31 +54,32 @@ namespace GameSim.Harness;
 ///
 /// <para><b>Measured, not just argued (the 20-seed/100-day sweep this unit's PR reports): the
 /// 800-per-mille figure above is the honest zero-talent grade (pinned exactly by this type's own
-/// unit tests) but is NOT what a real 100-day campaign actually produces.</b> Blacksmith's own
-/// <c>MinigameAssist</c> table (<see cref="Professions.ProfessionRegistry.Blacksmith"/>) grants
-/// Master's Touch a 70 per-mille <c>DriftRateReduction</c> (applies to every sample, all three
-/// zones) and Legendary Craft an 80 per-mille <c>OffBeatForgiveness</c> (applies to every strike)
-/// — EACH individually exceeds this policy's 50 per-mille <see cref="AverageDeviationPermille"/>
-/// on its own axis, so once BOTH are unlocked, EVERY sample and EVERY strike's effective
-/// deviation clamps to zero and the grade saturates at the hard ceiling, 1000 — not 800. Composed
-/// on top of <see cref="BaselinePlayer"/>'s own Morning talent-unlock loop (one prereq-order node
-/// per morning, unconditionally, starting day one), the measured sweep shows EVERY one of 743
-/// hand-forges across all 20 seeds landed at SeedGrade exactly 1000 (min = max = mean = 1000,
-/// zero exceptions) — by the time this policy's craft loop first finds a buyer and a legal
-/// hand-forge, both assist talents are already unlocked in every seed. So in practice this
-/// instrument measures the CEILING, not a genuinely middling hand — see this unit's PR
-/// description for the full accounting; a second, WORSE competence profile
-/// (<see cref="SmithSkill"/>'s Novice/Veteran pair is the precedent for that shape on the OTHER,
-/// raw-<c>PerformanceGrade</c>-stamping style of policy) is the honest way to actually measure a
-/// struggling hand under this same talent schedule, and is a motivated follow-up this PR
-/// deliberately leaves for a future unit rather than silently re-tuning the constant to chase a
-/// moving talent-unlock target.</para>
+/// unit tests), and — since the 2026-09-03 forgiveness ruling — it is also the FLOOR this policy's
+/// grade rises from as talents land, rather than a figure the campaign immediately leaves
+/// behind.</b> The history matters, because this policy is the instrument that found the defect.
+/// Blacksmith's own <c>MinigameAssist</c> table (<see cref="Professions.ProfessionRegistry.Blacksmith"/>)
+/// grants Master's Touch a 70 per-mille <c>DriftRateReduction</c> (every sample, all three zones)
+/// and Legendary Craft an 80 per-mille <c>OffBeatForgiveness</c> (every strike) — EACH individually
+/// exceeds this policy's 50 per-mille <see cref="AverageDeviationPermille"/> on its own axis. Under
+/// the SUBTRACTIVE forgiveness rule <see cref="Crafting.ForgeScorer"/> used until 2026-09-03, that
+/// meant every sample and every strike's effective deviation clamped to zero once both nodes were
+/// unlocked and the grade saturated at the hard ceiling, 1000 — and the sweep showed exactly that:
+/// every one of 743 hand-forges across all 20 seeds landed at SeedGrade 1000, min = max = mean,
+/// zero exceptions, because both assist talents are already unlocked before this policy's craft
+/// loop first finds a buyer and a legal hand-forge. That saturation is what the owner was shown,
+/// and it is what the §11.7.11 ruling abolished: forgiveness now SCALES the penalty instead of
+/// erasing it, so this same constant-deviation hand no longer pins the ceiling — it scores
+/// strictly between its 800 zero-talent floor and 1000, rising as talents land and never reaching
+/// the top without actual accuracy. The instrument therefore now measures what it always claimed
+/// to: a middling hand under a filling talent tree. The 743/1000 figures above are retained
+/// deliberately as the BEFORE reading, not as current behaviour.</para>
 ///
-/// <para>Batch-echo floor consequence of the above (measured, not assumed): with every SeedGrade
-/// at 1000, <c>CraftingHandlers</c>' decay formula (floor 800, 80‰/use) never floors the FIRST or
-/// SECOND echo of a day (1000−80=920, 1000−160=840, both above the floor) — it first floors the
-/// THIRD echo (1000−240=760, clamped to 800) and every one after. The corpus's own PR description
-/// reports the measured floor-hit rate against this.</para>
+/// <para>Batch-echo consequence: <c>CraftingHandlers</c>' decay formula (floor 800, 80‰/use) is
+/// applied to whatever SeedGrade the hand-forge actually earned, so how many same-day echo copies
+/// clear the floor is now a function of the swing rather than a constant. Under the superseded
+/// saturating rule every SeedGrade was 1000, which floored the third echo and every one after
+/// (1000−80=920 and 1000−160=840 both cleared it; 1000−240=760 clamped to 800). The floor-hit rate
+/// is a measured output of the sweep now, not an arithmetic certainty — see this unit's PR body.</para>
 ///
 /// <para><b>2026-09 re-check (P2-OQ9 second-order measurement):</b> the 743 figure two paragraphs up
 /// was flagged as possibly stale by a LATER doc entry (<c>docs/design/MAKERS-MARK.md</c>'s

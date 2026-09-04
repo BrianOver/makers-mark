@@ -132,6 +132,16 @@ public class PhaseBNoDrawGateTests
         // constant is never read on this trace at all — not "reads it and it's a no-op," never
         // reached. Confirmed directly: this test itself is one of the 1785/1785 green fast-lane
         // tests both before and after the change, same pinned value both times.
+        // 2026-09-03 (ForgeScorer forgiveness: subtractive -> proportional, owner ruling §11.7.11):
+        // **NO-OP — neither `Inc` nor `State` moves.** See AtomicEquivalenceTests.cs's matching
+        // ledger entry for the full account. Two reasons, either sufficient: this idle trace's
+        // driver, BaselinePlayer, never submits a hand-forge (ForgeTraceInput), so ForgeScorer is
+        // never reached on this trace; and the new proportional rule is an exact arithmetic
+        // identity with the old subtractive one at zero unlocked assist talents, so even a trace
+        // that did hand-forge would be unmoved until a talent lands. ForgeScorer is pure and draws
+        // no RNG before or after either way — a scoring-rule change cannot add, remove, or reorder
+        // a draw. Confirmed directly: this test is one of the 1859/1859 green fast-lane tests with
+        // the change in, same pinned value.
         Assert.Equal(new RngState(4182585629336870939UL, 13279888329118852579UL), state.Rng);
     }
 }
