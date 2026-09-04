@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using GameSim.Contracts;
+using GameSim.Crafting;
 using GameSim.Professions;
 
 namespace GameSim.Tests.Professions.Alchemy;
@@ -48,14 +49,22 @@ public class AlchemyPuzzleScorerTests
     }
 
     [Fact]
-    public void RightReagentsWrongOrder_ScoreHalfCredit()
+    public void RightReagentsWrongOrder_IsTheIndifferentHand_AndAnchorsToMidCommon()
     {
         // minor-elixir ideal: Sunpetal, Dewroot, Glimmercap. Rotate it — every pour is a
-        // called-for reagent in the wrong position: 3 * 1 pt of a 6-pt maximum = 500.
+        // called-for reagent in the wrong position: 3 * 1 pt of a 6-pt maximum.
+        //
+        // P2-OQ11 re-baseline (was 500, the bare points/max fraction): this exact hand IS Alchemy's
+        // INDIFFERENT hand — it knows every reagent and none of the order — so the shared
+        // CraftCurve anchors it to CraftCurve.IndifferentAnchorPermille by definition. That is what
+        // makes it Common rather than the Fine-to-Superior it used to grade, and it is the whole of
+        // this unit's fix for "Alchemy's best work cannot be made": the scale now spends its range
+        // on the order, which is the skill this craft tests.
         var rotated = ImmutableList.Create(AlchemyReagents.Glimmercap, AlchemyReagents.Sunpetal, AlchemyReagents.Dewroot);
         var score = Score("alchemy-minor-elixir", rotated);
 
-        Assert.Equal(500, score.GradePermille);
+        Assert.Equal(CraftCurve.IndifferentAnchorPermille, score.GradePermille);
+        Assert.Equal(450, score.GradePermille); // spelled out too — a renamed constant must not hide a moved curve
         Assert.Equal(0, score.ExactPermille);
         Assert.Equal(1000, score.PlacedPermille);
     }
@@ -64,12 +73,15 @@ public class AlchemyPuzzleScorerTests
     public void SpammingOneReagent_CannotFarmPartialCredit_MultisetAware()
     {
         // Ideal calls for exactly one Sunpetal (position 0). Pouring Sunpetal three times earns
-        // the ONE exact match and nothing for the copies — 2 pts of 6 = 333.
+        // the ONE exact match and nothing for the copies — 2 pts of 6.
+        // P2-OQ11 re-baseline (was 333): 2 pts is BELOW the 3-pt indifferent hand, so it lands on
+        // CraftCurve's compressed lower segment — 2 * 450 / 3 = 300. Spamming is now worse than an
+        // honest wrong-order pour, which it always should have been.
         var spam = ImmutableList.Create(AlchemyReagents.Sunpetal, AlchemyReagents.Sunpetal, AlchemyReagents.Sunpetal);
         var score = Score("alchemy-minor-elixir", spam);
 
-        Assert.Equal(333, score.GradePermille);
-        Assert.Equal(333, score.ExactPermille);
+        Assert.Equal(300, score.GradePermille);
+        Assert.Equal(333, score.ExactPermille);   // sub-axes are raw readings, untouched by the curve
         Assert.Equal(333, score.PlacedPermille);
     }
 
@@ -94,25 +106,32 @@ public class AlchemyPuzzleScorerTests
     {
         // greater-elixir ideal: Sunpetal, Dewroot, Glimmercap, Sunpetal (Sunpetal twice).
         // Pour Sunpetal at 0 (exact) and at 1 (misplaced — consumes the second Sunpetal slot):
-        // 2 + 1 = 3 pts of 8 = 375.
+        // 2 + 1 = 3 pts of 8.
+        // P2-OQ11 re-baseline (was 375): a 4-pour recipe's indifferent hand is 4 pts, so 3 pts sits
+        // on CraftCurve's lower segment — 3 * 450 / 4 = 337. Two pours out of four is less than an
+        // indifferent attempt at all four, and now grades that way.
         var pour = ImmutableList.Create(AlchemyReagents.Sunpetal, AlchemyReagents.Sunpetal);
-        Assert.Equal(375, Score("alchemy-greater-elixir", pour).GradePermille);
+        Assert.Equal(337, Score("alchemy-greater-elixir", pour).GradePermille);
     }
 
     [Fact]
     public void TalentAssists_AddFlatForgiveness_CappedAt1000()
     {
         var ideal = AlchemyPuzzleScorer.IdealSequenceFor(Alc.Recipes["alchemy-minor-elixir"]);
-        var oneWrong = ideal.SetItem(2, AlchemyReagents.Voidsalt); // 4 pts of 6 = 666 base
+        // 4 pts of 6. P2-OQ11 re-baseline (was 666): one pt above the 3-pt indifferent hand on
+        // CraftCurve's upper segment — 450 + 1 * 550 / 3 = 633.
+        var oneWrong = ideal.SetItem(2, AlchemyReagents.Voidsalt);
 
-        Assert.Equal(666, Score("alchemy-minor-elixir", oneWrong).GradePermille);
+        Assert.Equal(633, Score("alchemy-minor-elixir", oneWrong).GradePermille);
 
-        // Measured Pour alone: +50. Full chain + Potent Brews on a Consumable: +250.
-        Assert.Equal(716, Score("alchemy-minor-elixir", oneWrong, ImmutableSortedSet.Create(AlchemyProfession.MeasuredPour)).GradePermille);
+        // Measured Pour alone: +50. Full chain + Potent Brews on a Consumable: +250. The assist is
+        // added AFTER the curve, so these are still plain addition — mastery raises the floor and
+        // never flattens the slope (§11.7.11's shape, now shared by all four crafts).
+        Assert.Equal(683, Score("alchemy-minor-elixir", oneWrong, ImmutableSortedSet.Create(AlchemyProfession.MeasuredPour)).GradePermille);
         var all = ImmutableSortedSet.Create(
             AlchemyProfession.MeasuredPour, AlchemyProfession.CarefulDistillation,
             AlchemyProfession.MasterAlchemist, AlchemyProfession.PotentBrews);
-        Assert.Equal(916, Score("alchemy-minor-elixir", oneWrong, all).GradePermille);
+        Assert.Equal(883, Score("alchemy-minor-elixir", oneWrong, all).GradePermille);
 
         // A perfect pour stays clamped at 1000 — assists never push past the top.
         Assert.Equal(1000, Score("alchemy-minor-elixir", ideal, all).GradePermille);
@@ -123,13 +142,15 @@ public class AlchemyPuzzleScorerTests
     {
         // The robe is Armor: Potent Brews contributes nothing there, Measured Pour still does.
         var ideal = AlchemyPuzzleScorer.IdealSequenceFor(Alc.Recipes["alchemy-alchemical-robe"]);
-        var oneWrong = ideal.SetItem(2, AlchemyReagents.Voidsalt); // robe ideal has no Voidsalt → 666 base
+        // robe ideal has no Voidsalt → 4 pts of 6 → 633 after the shared curve (P2-OQ11 re-baseline,
+        // was 666); the point of this test is the scoping, and the base is the same either way.
+        var oneWrong = ideal.SetItem(2, AlchemyReagents.Voidsalt);
 
         var potentOnly = ImmutableSortedSet.Create(AlchemyProfession.PotentBrews);
-        Assert.Equal(666, Score("alchemy-alchemical-robe", oneWrong, potentOnly).GradePermille);
+        Assert.Equal(633, Score("alchemy-alchemical-robe", oneWrong, potentOnly).GradePermille);
 
         var potentPlusPour = potentOnly.Add(AlchemyProfession.MeasuredPour);
-        Assert.Equal(716, Score("alchemy-alchemical-robe", oneWrong, potentPlusPour).GradePermille);
+        Assert.Equal(683, Score("alchemy-alchemical-robe", oneWrong, potentPlusPour).GradePermille);
     }
 
     [Fact]

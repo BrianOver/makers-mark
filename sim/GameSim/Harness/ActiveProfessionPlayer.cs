@@ -58,13 +58,14 @@ namespace GameSim.Harness;
 /// <see cref="PuzzleCraftPlayer.ActionsFor"/> is the shared engine; the three wrappers supply only what
 /// genuinely differs — the <see cref="ProfessionDefinition"/> and its puzzle builder.</para>
 ///
-/// <para><b>The "average hand" per puzzle — <see cref="HandForgePlayer"/>'s own doctrine, ported.</b>
-/// Each builder submits a constant, deterministic, DELIBERATELY IMPERFECT input: not a flawless solve
-/// (already covered by each scorer's own unit tests) and not garbage (an average player still tries),
-/// so the sweep can ask the same question <see cref="HandForgePlayer"/>/<see cref="LateMasteryPlayer"/>
-/// asked of the forge — does a constant skill level keep mattering as talent-assist forgiveness stacks,
-/// or does the grade saturate at the ceiling regardless of accuracy? See each wrapper's own doc for its
-/// puzzle's specific, named "mistake."</para>
+/// <para><b>Three calibrated hands per puzzle (P2-OQ11), not one.</b> Each builder submits a
+/// constant, deterministic input at the <see cref="CraftHand"/> level asked for, so the sweep can
+/// ask the same question <see cref="HandForgePlayer"/>/<see cref="LateMasteryPlayer"/> asked of the
+/// forge — does a constant skill level keep mattering as talent-assist forgiveness stacks, or does
+/// the grade saturate regardless of accuracy? — AND the question #715 could not answer: is the top
+/// grade unreachable, or was it merely never reached for? See <see cref="CraftHand"/> for the one
+/// rule all three levels follow and for the mis-calibration in #715's original single hand that
+/// motivated it; see each wrapper's own doc for how its puzzle expresses each level.</para>
 ///
 /// <para>Pure: no RNG of its own, no IO, no wall clock — every puzzle builder is a total function of
 /// the recipe alone (mirroring <see cref="HandForgePlayer.BuildTrace"/>'s own contract), and the
@@ -316,32 +317,75 @@ internal static class PuzzleCraftPlayer
 /// Exercises <see cref="AlchemyPuzzleScorer"/> (see <see cref="PuzzleCraftPlayer"/>'s class doc for
 /// the shared engine and why this can't compose over <see cref="BaselinePlayer"/>).
 ///
-/// <para><b>The average hand: a one-step-early pour.</b> <see cref="AlchemyPuzzleScorer"/> credits 2
-/// points for the right reagent in the right position and 1 for a called-for reagent in the wrong one
-/// (multiset-aware). Pouring <see cref="AlchemyPuzzleScorer.IdealSequenceFor"/> rotated by one slot
-/// (<c>poured[i] = ideal[(i+1) % length]</c>) reads as "knows every reagent the recipe calls for, pours
-/// one step ahead of the rhythm" — every entry is a real ingredient, none lands in its own slot unless
-/// a recipe repeats a reagent (a handful do; the repeat then coincidentally scores exact, which is
-/// correct, not a bug — a recipe that reuses Sunpetal at both ends genuinely tolerates this mistake
-/// better). For a recipe with no repeats this is exactly 500/1000 base before any talent assist
-/// (verified against the scorer's own arithmetic before writing this file) — deliberately mid-band,
-/// not pinned to auto-craft's baseline the way <see cref="HandForgePlayer"/>'s forge trace is (there is
-/// no equivalent "AutoCraftGrade" constant this puzzle shape needs to match): a genuinely average pour,
-/// not a contrived one.</para>
+/// <para><b>The three hands, in pours.</b> <see cref="AlchemyPuzzleScorer"/> credits 2 points for the
+/// right reagent in the right position and 1 for a called-for reagent in the wrong one
+/// (multiset-aware), so every hand here uses ONLY reagents the recipe actually calls for and differs
+/// purely in how much of the ORDER it remembers — which is the whole of this craft's skill.</para>
+/// <list type="bullet">
+///   <item><description><see cref="CraftHand.Indifferent"/> — a one-step-early pour:
+///   <see cref="AlchemyPuzzleScorer.IdealSequenceFor"/> rotated by one slot. "Knows every reagent
+///   the recipe calls for, remembers none of the order." This is #715's original single hand,
+///   retained verbatim so the before-reading in this unit's PR is reproducible — it was labelled
+///   "average" there, and measuring it against the other two professions' far better hands is a
+///   large part of why the four curves looked unrelated (<see cref="CraftHand"/>). A recipe that
+///   repeats a reagent scores one coincidental exact match, which is correct rather than a bug: a
+///   brew that calls for Sunpetal at both ends genuinely tolerates this mistake better.</description></item>
+///   <item><description><see cref="CraftHand.Average"/> — the opening is right and the rest is
+///   guessed: the first <c>length/2</c> pours exact, the remainder rotated among themselves.</description></item>
+///   <item><description><see cref="CraftHand.Skilled"/> — the last two pours transposed. The
+///   smallest mistake this puzzle admits: a permutation cannot have exactly one slot wrong.</description></item>
+/// </list>
 /// </summary>
 public static class AlchemyPuzzlePlayer
 {
     public static ImmutableList<PlayerAction> ActionsFor(GameState state) =>
-        PuzzleCraftPlayer.ActionsFor(state, AlchemyProfession.Definition, BuildPuzzle);
+        ActionsFor(state, CraftHand.Average);
 
-    private static CraftPuzzleInput BuildPuzzle(Recipe recipe)
+    public static ImmutableList<PlayerAction> ActionsFor(GameState state, CraftHand hand) =>
+        PuzzleCraftPlayer.ActionsFor(state, AlchemyProfession.Definition, recipe => BuildPuzzle(recipe, hand));
+
+    public static CraftPuzzleInput BuildPuzzle(Recipe recipe, CraftHand hand)
     {
         var ideal = AlchemyPuzzleScorer.IdealSequenceFor(recipe);
         var length = ideal.Count;
         var poured = ImmutableList.CreateBuilder<int>();
-        for (var i = 0; i < length; i++)
+
+        switch (hand)
         {
-            poured.Add(ideal[(i + 1) % length]);
+            case CraftHand.Indifferent:
+                for (var i = 0; i < length; i++)
+                {
+                    poured.Add(ideal[(i + 1) % length]);
+                }
+
+                break;
+
+            case CraftHand.Average:
+            {
+                // The opening is remembered, the tail is rotated among itself. `length` is always
+                // at least 3 (IdealSequenceFor's own floor), so the tail is never empty and the
+                // modulus below is never by zero.
+                var remembered = length / 2;
+                var tail = length - remembered;
+                for (var i = 0; i < length; i++)
+                {
+                    poured.Add(i < remembered
+                        ? ideal[i]
+                        : ideal[remembered + ((i - remembered + 1) % tail)]);
+                }
+
+                break;
+            }
+
+            default:
+                for (var i = 0; i < length; i++)
+                {
+                    poured.Add(ideal[i]);
+                }
+
+                // The last two transposed — the smallest mistake a pour order admits.
+                (poured[length - 2], poured[length - 1]) = (poured[length - 1], poured[length - 2]);
+                break;
         }
 
         return new AlchemyReagentPuzzle(poured.ToImmutable());
@@ -352,16 +396,29 @@ public static class AlchemyPuzzlePlayer
 /// Exercises <see cref="TanningScrapeScorer"/> (see <see cref="PuzzleCraftPlayer"/>'s class doc for
 /// the shared engine and why this can't compose over <see cref="BaselinePlayer"/>).
 ///
-/// <para><b>The average hand: two passes everywhere.</b> A cell wants 1-2 passes if Plain, 3-4 if a
-/// stubborn Flaw patch, exactly 1 if a delicate Thin patch — <see cref="TanningScrapeScorer.IdealPassesFor"/>.
-/// Two passes on EVERY cell reads as "gives the whole hide a thorough, even scrape" — it lands inside
-/// the ideal band for Plain cells (31 of 40), earns partial credit on Flaw cells (5 of 40 — worked the
-/// stubborn patch, just not enough), and scrapes clean through every Thin cell (4 of 40 — the exact
-/// mistake an even, unvarying hand makes on hide it never learned to treat differently). Deterministic
-/// and total: <c>PatchSeed</c> is fixed at 1, the same single-seed choice
+/// <para><b>The three hands, in patches noticed.</b> A cell wants 1-2 passes if Plain, 3-4 if a
+/// stubborn Flaw patch, exactly 1 if a delicate Thin patch
+/// (<see cref="TanningScrapeScorer.IdealPassesFor"/>). One pass over the WHOLE hide already
+/// satisfies every Plain and every Thin cell, so the only thing left to get right is the five
+/// stubborn patches — which makes "how much of the hide did this tanner actually survey" the single
+/// honest axis for this craft, and the three hands differ along it and nothing else. Each gives one
+/// pass everywhere and three passes to the first <c>NoticedFlaws</c> Flaw patches in cell order:
+/// 0 for <see cref="CraftHand.Indifferent"/> (an even, unvarying scrape), 2 for
+/// <see cref="CraftHand.Average"/>, 4 of the 5 for <see cref="CraftHand.Skilled"/>.</para>
+///
+/// <para><b>What #715 used instead, and why it is gone.</b> That hand gave TWO passes everywhere.
+/// Two is inside the Plain band but scrapes clean through all four delicate Thin cells, so it was
+/// strictly worse than one pass everywhere while being described as "average" — and under the old
+/// scorer, where a ruined cell docked 12 per-mille of 1000, it still graded 789 and took Masterwork
+/// 87.3% of the time from day 6. It is retained nowhere: it measured neither an indifferent hand nor
+/// an average one. See <see cref="CraftHand"/>.</para>
+///
+/// <para>Deterministic and total: <c>PatchSeed</c> is fixed at 1, the same single-seed choice
 /// <see cref="HandForgePlayer.PathSeed"/> makes for the identical reason (this instrument only needs
 /// ONE patch layout to prove the code path is exercised, not the campaign-spanning variety a real
-/// player would see).</para>
+/// player would see) — and because the layout is fixed, the same public
+/// <see cref="TanningScrapeScorer.PatchesFor"/> the overlay renders from is what these hands read,
+/// so a "noticed" patch is one the player would genuinely have been able to see.</para>
 /// </summary>
 public static class TanningPuzzlePlayer
 {
@@ -369,19 +426,44 @@ public static class TanningPuzzlePlayer
     /// <see cref="HandForgePlayer.PathSeed"/> is fixed (this type's class doc).</summary>
     private const int PatchSeed = 1;
 
-    /// <summary>The "average hand": a constant, unvarying pass count on every cell (this type's
-    /// class doc for why 2 is the natural, deliberately imperfect choice).</summary>
-    private const int AveragePasses = 2;
+    /// <summary>Passes given to a plain or delicate cell: the value that is correct for both
+    /// (<see cref="TanningScrapeScorer.IdealPassesFor"/> — Plain wants 1-2, Thin exactly 1).</summary>
+    private const int BasePasses = 1;
+
+    /// <summary>Passes given to a stubborn patch this hand noticed — inside Flaw's 3-4 band.</summary>
+    private const int FlawPasses = 3;
 
     public static ImmutableList<PlayerAction> ActionsFor(GameState state) =>
-        PuzzleCraftPlayer.ActionsFor(state, TanningProfession.Definition, BuildPuzzle);
+        ActionsFor(state, CraftHand.Average);
 
-    private static CraftPuzzleInput BuildPuzzle(Recipe recipe)
+    public static ImmutableList<PlayerAction> ActionsFor(GameState state, CraftHand hand) =>
+        PuzzleCraftPlayer.ActionsFor(state, TanningProfession.Definition, recipe => BuildPuzzle(recipe, hand));
+
+    /// <summary>How many of the five stubborn patches this hand surveys carefully enough to find.</summary>
+    private static int NoticedFlaws(CraftHand hand) => hand switch
     {
+        CraftHand.Indifferent => 0,
+        CraftHand.Average => 2,
+        _ => 4,
+    };
+
+    public static CraftPuzzleInput BuildPuzzle(Recipe recipe, CraftHand hand)
+    {
+        var kinds = TanningScrapeScorer.PatchesFor(PatchSeed);
+        var budget = NoticedFlaws(hand);
+
         var passes = ImmutableList.CreateBuilder<int>();
         for (var i = 0; i < TanningScrapeScorer.CellCount; i++)
         {
-            passes.Add(AveragePasses);
+            if (kinds[i] == TanningScrapeScorer.CellKind.Flaw && budget > 0)
+            {
+                passes.Add(FlawPasses);
+                budget--;
+            }
+            else
+            {
+                passes.Add(BasePasses);
+            }
         }
 
         return new TanningScrapeInput(passes.ToImmutable(), PatchSeed);
@@ -392,32 +474,57 @@ public static class TanningPuzzlePlayer
 /// Exercises <see cref="EngineeringAssemblyScorer"/> (see <see cref="PuzzleCraftPlayer"/>'s class doc
 /// for the shared engine and why this can't compose over <see cref="BaselinePlayer"/>).
 ///
-/// <para><b>The average hand: every part identified, the last socket never seated.</b> The schematic
+/// <para><b>The three hands, in parts identified.</b> The schematic
 /// (<see cref="EngineeringAssemblyScorer.SchematicFor"/>) wants every socket filled with its correct
-/// part, ascending, and pays an order bonus for however many sockets were first-filled in strict
-/// ascending sequence before the first break. Seating the CORRECT part into every socket but the LAST,
-/// in ascending order, reads as "identified every part correctly, ran out of assembly before the
-/// finish" — perfect part identification (no misplaced-part credit needed), an order run that only
-/// ever breaks at the very end (so the order bonus is nearly its own maximum, never quite), and one
-/// socket that scores nothing because it was never touched. Sockets range 3-5 depending on recipe tier
-/// (<see cref="EngineeringAssemblyScorer.SocketCountFor"/>), so the exact base grade this "almost
-/// finished" hand earns varies by recipe — deliberately: a genuinely average build, not a number pinned
-/// to match another scorer's baseline.</para>
+/// part, ascending, and pays a small order bonus for however many sockets were first-filled in
+/// strict ascending sequence before the first break. Every hand here builds in ascending socket
+/// order — the order channel is not where this craft's difficulty lives — and differs in how many
+/// of the near-duplicate parts it identifies correctly. Sockets range 3-5 by recipe tier
+/// (<see cref="EngineeringAssemblyScorer.SocketCountFor"/>).</para>
+/// <list type="bullet">
+///   <item><description><see cref="CraftHand.Indifferent"/> — every socket filled, every part
+///   shifted one socket along: "recognised which parts the build calls for, could not tell which
+///   one goes where." The exact analogue of the alchemist's indifferent pour, which is why both
+///   professions calibrate to the same point count in
+///   <see cref="Crafting.CraftCurve"/>.</description></item>
+///   <item><description><see cref="CraftHand.Average"/> — the first <c>(sockets+1)/2</c> sockets
+///   seated correctly, the rest never filled.</description></item>
+///   <item><description><see cref="CraftHand.Skilled"/> — the correct part in every socket but the
+///   last. This is #715's original single hand, retained here at the level it actually represents:
+///   it identifies every part correctly and breaks the build order only at the very end, so calling
+///   it "average" is what made Engineering's 59.9% Masterwork look like a curve defect rather than
+///   a near-flawless hand being measured (see <see cref="CraftHand"/>).</description></item>
+/// </list>
 /// </summary>
 public static class EngineeringPuzzlePlayer
 {
     public static ImmutableList<PlayerAction> ActionsFor(GameState state) =>
-        PuzzleCraftPlayer.ActionsFor(state, EngineeringProfession.Definition, BuildPuzzle);
+        ActionsFor(state, CraftHand.Average);
 
-    private static CraftPuzzleInput BuildPuzzle(Recipe recipe)
+    public static ImmutableList<PlayerAction> ActionsFor(GameState state, CraftHand hand) =>
+        PuzzleCraftPlayer.ActionsFor(state, EngineeringProfession.Definition, recipe => BuildPuzzle(recipe, hand));
+
+    public static CraftPuzzleInput BuildPuzzle(Recipe recipe, CraftHand hand)
     {
         var schematic = EngineeringAssemblyScorer.SchematicFor(recipe);
         var sockets = schematic.Count;
         var placements = ImmutableList.CreateBuilder<int>();
-        for (var socket = 0; socket < sockets - 1; socket++)
+
+        // How many sockets this hand fills, and whether it fills them with the RIGHT part.
+        // `sockets` is always at least 3 (SocketCountFor's own floor).
+        var filled = hand switch
+        {
+            CraftHand.Indifferent => sockets,
+            CraftHand.Average => (sockets + 1) / 2,
+            _ => sockets - 1,
+        };
+
+        for (var socket = 0; socket < filled; socket++)
         {
             placements.Add(socket);
-            placements.Add(schematic[socket]);
+            placements.Add(hand == CraftHand.Indifferent
+                ? schematic[(socket + 1) % sockets]   // right parts, every one a socket out
+                : schematic[socket]);
         }
 
         return new EngineeringAssemblyInput(placements.ToImmutable());

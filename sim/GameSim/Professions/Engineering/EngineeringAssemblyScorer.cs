@@ -25,6 +25,15 @@ public sealed record EngineeringAssemblyScore(int GradePermille, int ExactPermil
 /// part the schematic actually wants. Only the FIRST placement into a socket counts — pulling a part
 /// back out and reseating it is free before submit, so the record's later duplicate is ignored rather
 /// than punished. Order is scored separately and can only ever add.</para>
+///
+/// <para><b>Those points then report through the shared <see cref="Crafting.CraftCurve"/></b>
+/// (P2-OQ11, owner ruling 2026-09-04), the same curve the brew and the hide answer to, so that the
+/// same relative accuracy earns the same band in all four crafts. The order bonus is added AFTER
+/// the curve and is capped at <see cref="OrderBonusMaxPermille"/> — deliberately smaller than one
+/// point-step of the curve at every socket count (the widest step is 110 per-mille at 5 sockets),
+/// so a better assembly always outranks a better build ORDER and strict ordering survives both
+/// channels. What the craft tests — identifying near-duplicate parts and planning a build sequence
+/// — is untouched; only where a given accuracy lands changed.</para>
 /// </summary>
 public static class EngineeringAssemblyScorer
 {
@@ -154,7 +163,15 @@ public static class EngineeringAssemblyScorer
         }
 
         var points = exact * ExactPoints + misplaced * MisplacedPoints;
-        var basePermille = points * 1000 / (ExactPoints * sockets);
+
+        // P2-OQ11: the shared curve (see CraftCurve's class doc). The INDIFFERENT build — every
+        // part the schematic calls for, not one of them in its own socket — is worth
+        // MisplacedPoints per socket and anchors to the middle of Common; a flawless build is
+        // ExactPoints per socket and earns Masterwork. Exactly the calibration
+        // AlchemyPuzzleScorer uses, because "right components, wrong places" is the same
+        // indifferent hand in both crafts.
+        var basePermille = CraftCurve.GradeFor(
+            points, MisplacedPoints * sockets, ExactPoints * sockets);
 
         // Order: how many consecutive first-fills went in ascending socket order (the schematic's
         // build sequence). Can only ever add — a bad order never scores below a bad assembly.

@@ -152,6 +152,14 @@ public class PhaseBNoDrawGateTests
         // site — so this is the same class as the 2026-08-01 venue-router bands above: draw-free by
         // construction, but routing parties differently. Per this file's own instruction, both
         // checks were run in order (Inc first, then a grep for new draw sites) before re-pinning.
+        // 2026-09-04 (P2-OQ11, the one quality curve — owner ruling §11.7.12): **NO-OP — neither
+        // `Inc` nor `State` moves.** Alchemy/Tanning/Engineering's scorers now report through the
+        // shared CraftCurve instead of a bare points/max fraction. This file's two stated checks were
+        // run in order anyway, because a balance change is exactly when they matter: `Inc` is
+        // byte-identical (13279888329118852579), and `git diff` adds no `rng.` call site anywhere —
+        // CraftCurve is pure integer arithmetic with no RNG parameter to draw from, and a scoring
+        // rule cannot add, remove, or reorder a draw. See AtomicEquivalenceTests.cs's matching entry
+        // for the reachability half (this trace's driver never crafts a non-blacksmith recipe at all).
         Assert.Equal(new RngState(4432103899912625622UL, 13279888329118852579UL), state.Rng);
     }
 }

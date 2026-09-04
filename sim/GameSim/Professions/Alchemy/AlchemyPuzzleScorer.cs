@@ -22,16 +22,30 @@ public sealed record AlchemyBrewScore(int GradePermille, int ExactPermille, int 
 /// (<see cref="IdealSequenceFor"/>). Each submitted pour earns 2 points for the right reagent in
 /// the right position, 1 point for a right reagent in the wrong position (multiset-aware — an
 /// ideal slot is consumed once, so spamming one reagent can't farm partial credit), 0 otherwise.
-/// <c>base = points * 1000 / (2 * idealLength)</c>: a perfect pour is 1000, garbage is 0.</para>
+/// Those points then report through the shared <see cref="Crafting.CraftCurve"/> (P2-OQ11, owner
+/// ruling 2026-09-04): the INDIFFERENT pour — every reagent the recipe calls for, not one of them
+/// in its place — anchors to the middle of Common, and only a flawless pour reaches Masterwork.
+/// The skill this craft tests (remembering the order) is untouched; what changed is only where a
+/// given accuracy lands on the shared band table, so that Alchemy answers to the same
+/// skill-to-outcome response as the other three crafts. See <see cref="Crafting.CraftCurve"/>'s own
+/// doc for the measured defect that motivated it.</para>
+///
+/// <para><b>Granularity is honest and coarse at tier 1.</b> A 3-pour recipe has only a handful of
+/// reachable point totals (any single-slot mistake costs 2 of the 6 points, and 5 is unreachable
+/// with distinct reagents), so an untalented tier-1 brew steps Common -> Fine -> Masterwork without
+/// passing through Superior. That is a property of a 3-slot memory puzzle, not of the curve —
+/// tier-2 and tier-3 brews (4 and 5 pours) walk every band, and any unlocked assist fills the gap
+/// at tier 1 too.</para>
 ///
 /// <para><b>Talent assists:</b> the retired quality-shift nodes live on as
 /// <see cref="ProfessionDefinition.MinigameAssists"/> data (PA2/PKD3 pattern). For a puzzle-scored
 /// profession the SIM is the "adapter" that consumes them: each unlocked node's three per-mille
-/// fields sum into a flat forgiveness bonus added to the base grade (clamped at 1000). Potent
-/// Brews is Consumable-scoped — the same slot-scoping the blacksmith's Weapon Specialist gets from
-/// the forge overlay (see <c>ForgeMinigame.AggregateAssist</c>). Mastery softens mistakes; a
-/// zero-effort pour plus full talents still grades far below the 550 auto-craft baseline, so
-/// assists never beat simply auto-crafting.</para>
+/// fields sum into a flat forgiveness bonus added AFTER the curve (clamped at 1000) — so mastery
+/// raises the floor without ever flattening the slope, the same shape §11.7.11 settled on for the
+/// forge. Potent Brews is Consumable-scoped — the same slot-scoping the blacksmith's Weapon
+/// Specialist gets from the forge overlay (see <c>ForgeMinigame.AggregateAssist</c>). A fully
+/// talented alchemist still needs a genuinely good pour to reach Masterwork: an indifferent one
+/// grades Fine.</para>
 /// </summary>
 public static class AlchemyPuzzleScorer
 {
@@ -145,7 +159,15 @@ public static class AlchemyPuzzleScorer
         }
 
         var points = exact * ExactPoints + misplaced * MisplacedPoints;
-        var basePermille = points * 1000 / (ExactPoints * length);
+
+        // P2-OQ11: the shared curve, not a bare points/max fraction (see CraftCurve's class doc for
+        // the measured defect this replaced). The indifferent pour — every reagent the recipe calls
+        // for, not one of them in its place — is worth MisplacedPoints per pour, and that is what
+        // anchors to the middle of Common; a flawless pour is ExactPoints per pour and earns
+        // Masterwork. Assist is added to the RESULT, so mastery raises the floor without ever
+        // flattening the slope.
+        var basePermille = CraftCurve.GradeFor(
+            points, MisplacedPoints * length, ExactPoints * length);
         var grade = basePermille + AssistBonusPermille(profession, unlockedTalents, recipe.Slot);
         if (grade > 1000)
         {

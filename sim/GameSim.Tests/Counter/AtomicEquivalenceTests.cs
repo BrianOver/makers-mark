@@ -377,6 +377,32 @@ public class AtomicEquivalenceTests
     // zero, 5 of them proved by counterfactual replay to have saved a hero who would otherwise have
     // died, bought with 4 net deaths. The owner ruled this arm over the two cheaper ones on
     // 2026-09-04; the rejected alternatives and their reasons are in the P2-LONG-25 unit body.
+    // 2026-09-04 (P2-OQ11, "the one quality curve", owner ruling §11.7.12): **NO-OP — hash
+    // UNCHANGED, value not re-pinned.** Alchemy's, Tanning's and Engineering's craft scorers stop
+    // grading on a bare points/max fraction and report through the shared Crafting/CraftCurve
+    // instead, which anchors each profession's INDIFFERENT hand to mid-Common and a flawless one to
+    // Masterwork. That is squarely a balance change — grades move, so items move, so the economy
+    // could move — so it was run as a full re-baseline ceremony, and the ceremony's honest verdict
+    // is again that nothing on this trace moved. The reason is REACHABILITY, and it is stronger here
+    // than in either NO-OP entry above: the three changed scorers are reached only from
+    // CraftingHandlers' puzzle switch, on a CraftAction carrying an AlchemyReagentPuzzle,
+    // TanningScrapeInput or EngineeringAssemblyInput. This trace's driver, BaselinePlayer, crafts
+    // exclusively off RecipeTable.All — the BLACKSMITH's own recipe table — so it never submits an
+    // Alchemy/Tanning/Engineering CraftAction of any kind, puzzle-scored or auto-crafted (that is
+    // the blind spot ActiveProfessionPlayer.cs was written to close, and its own class doc records
+    // the grep). The changed code is never executed on this trace. Confirmed directly rather than
+    // argued: the fast lane is 1892/1892 green with the change in (this exact test among them, same
+    // hash), and the 100-day Balance gate is 68/68 green with no threshold moved — including
+    // PhaseDSinksBalanceTests' `item.Quality >= Superior` assertion, the fixture a downward grade
+    // shift would flip first, which survives because every Balance driver is BaselinePlayer (11 of
+    // 12 fixtures) or MasterworkSeekingPlayer (the twelfth) and neither crafts outside the
+    // blacksmith either. PhaseBNoDrawGateTests is likewise unmoved in BOTH numbers; see its matching
+    // entry for the two draw-site checks, which were run in order regardless.
+    //
+    // What DOES move is the measured 20-seed/100-day per-profession sweep, at three calibrated hands
+    // per craft — that is the entire point of the change and is reported in the PR body rather than
+    // pinned here. The band-level contract the ruling actually asked for IS pinned, in
+    // Crafting/CraftCurveTests.cs, over all four professions at once.
     private const string ExpectedPreCounterSha256 =
         "F997CA17CA59593684727CD1EB5B5D192588FBA5803BD2E6A296631B6CFE890F";
 
