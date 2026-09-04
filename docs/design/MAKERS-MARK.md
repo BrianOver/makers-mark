@@ -5500,3 +5500,81 @@ it does not tune the counter (§9.5, behind P4). And `CLAUDE.md`'s six-decision 
 file is deny-listed and owner-only, so it is recorded here, again, as the standing owner action
 (T10 OQ4). Until it is changed by hand, the repo's most-read file contradicts `THE-GAME.md` §3.5,
 and rule 8 says a doc git contradicts is an instruction the next session obeys.
+
+### The indirect-agency research round (2026-09-03)
+
+`docs/design/2026-09-03-indirect-agency-research.md` (#701) read ~25 shipped games against this
+game's structural risk: the player prepares, then watches. Its finding reframes the risk and is the
+reason these five units exist rather than a sixth round of verbs.
+
+**The finding.** *Nobody solves prepare-then-watch with a verb during the watch.* The games that
+succeed solve it before it (the player enters knowing what should happen, so the watch is
+confirmation-or-surprise rather than information delivery), inside it (the player controls the
+**pacing**, never the events), after it (per-actor attribution — *which of my decisions did the
+work* — not win/lose), and around it (a named other party the player pre-committed to). The games
+that fail, fail in one identifiable way, and it is **not** too few verbs: *the player cannot tell
+why the outcome happened*. Loop Hero's sharpest complaint is "far too many times it felt like I
+lost because there was nothing I could do"; Majesty's is that "both victory and failure can feel
+meaningless". Both are legibility failures wearing an agency costume. That is the half this program
+already spends on, and it costs no law.
+
+**Two evidence rows that outrank the five units.** Ten shop/craft games contain *zero* proofs that a
+specific player-made item caused a specific NPC's outcome — Weapon Shop de Omasse shipped this exact
+premise without link 4, scored 63, and a reviewer built their review on "the protagonist gets no
+role in defeating this evil. He just sits there and watches." The counterfactual replay is what
+those reviewers went looking for and did not find. Second: the genre's most-cited complaint is
+customer repetition at hour 3–4 — the same wall-clock hour as this game's day-8–18 wall, in four
+other games.
+
+#### P2-PEOPLE-20. The Patron (research M1)
+
+- Goal: the player pre-commits to one named hero, so the watch has a party they already care about.
+- Approach: name one living hero as patron; free, but **sticky — changeable once every seven days**,
+  so the choice is made before the week's muster is known and cannot be re-picked after seeing who
+  marches. The Night reveal leads with the patron's night, beat or none, survival or death. The
+  muster forecast sorts their party first. The chronicle records who you backed and for which days;
+  a patron who dies while patron is a line in the book. **No hero state is written, ever** — the
+  patron must not change a hero's behaviour, or it becomes an order and law 1 is gone.
+
+#### P2-PROOF-10. Storied gear gets a voice (research M2b)
+
+- Goal: attribution gains a **floor beneath the beat** — an ordinary night still reads as evidence.
+- Approach: `ShoppingAi.SentimentalDeedThreshold = 3` already makes a hero refuse to trade away
+  worn work carrying three deeds, `TraitEffects.SentimentalDeedThresholdFor` already shifts that
+  threshold per hero along the Sentiment axis, and the pass already emits
+  `PassReasonKind.Sentimental` — and `grep -rni "sentimental\|storied" godot/scripts/` returns
+  nothing. The sim has been promoting the player's old work to heirloom status for months, changing
+  behaviour differently per hero, and telling nobody. Render it: the item's card reads *storied*,
+  the legends wall lists objects as well as people, and the counter voices the refusal in the
+  hero's own words. The per-hero trait shift is visible in **behaviour**, never stated in a tooltip.
+- The condition that is the whole design: **recorded facts, not credit.** A total, a ratio, a medal,
+  a percentage of party contribution, a ranking against other items, or a score makes it
+  participation credit, which law 4 forbids. Never in the Night reveal's headline; that is beats'.
+
+#### P2-MEMORY-20. The forecast gets a face (research M3)
+
+- Goal: the strongest pre-watch reveal in the whole sample is ours, and we deliver it on a board.
+- Approach: the muster forecast becomes the moment the player learns what *should* happen, so the
+  night reads as confirmation-or-surprise. Rides §11.7.3.
+
+#### P2-PROOF-11. Legible defeat (research M4)
+
+- Goal: a death names its **margin**, not just its killer.
+- Approach: `"slain by a {MonsterKind}"` is the anonymous-aggregate failure in our own voice. The
+  margin is already recorded. This is P2-PROOF's own chosen substitute for the rival's mirror.
+
+#### P2-SCREEN-20. The day's thread survives being read late (research M5)
+
+- Goal: Omasse's Grindcast was missed because it played while the player forged. Ours does too.
+- Approach: Godot-only; the thread is readable after the fact without becoming a summary of
+  scenes that died unshown.
+
+#### What this round says NOT to build
+
+Recorded so a later session cannot re-propose them as fresh ideas: a verb inside the delve; outcome
+wagers; a participation counter; the rival's mirror; a scrubbable fight replay (our fight has no
+structure to scrub); medals or MVPs; a patron that changes hero behaviour; more verbs in the dead
+middle; a meta-grind for days 8–18; deeper hero simulation as the attachment fix; fan letters; a
+legend generator composing prose from templates instead of events (CK3's *Legends of the Dead*, 31%
+positive of 1,642); history that runs backwards (Caves of Qud generates the effect before the cause
+— do not cite it as precedent); and making the skip feel bad, which law 7 forbids outright.
