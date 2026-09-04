@@ -153,9 +153,9 @@ public class TabThroughLaneTests
             // ── The retirement census ──────────────────────────────────────────────────────
             var state = ui.Adapter.CurrentState;
             var rows = ui.Tutorial.Checklist(state);
+            var rowsByDisplayIndex = rows.ToDictionary(r => r.DisplayIndex);
             var doneCount = rows.Count(r => r.Done);
             var skippedCount = rows.Count(r => r.Skipped);
-            var neither = rows.Where(r => !r.Done && !r.Skipped).ToList();
 
             var loss = ui.Tutorial.LossActRow(state);
             var proof = ui.Tutorial.ProofBeatRow(state);
@@ -169,45 +169,62 @@ public class TabThroughLaneTests
                 $"{skippedCount} Skipped. Dormant acts — Loss: {DescribeDormant(loss)}, " +
                 $"Proof: {DescribeDormant(proof)}, Memory: {DescribeDormant(memory)}.";
 
-            // The whole honesty of the third state: nothing SHOULD be left in limbo once the course
-            // has finished — a registry row that is neither Done nor Skipped is one the anti-
-            // stranding sweeps failed to carry the chain's own pointer past.
+            // U-T9-13 (this PR): deny-by-default over the ENUM, not a hand-picked list of
+            // symptoms. This repo has shipped the hand-listed-fixture bug more than once — a guard
+            // iterating a literal array silently stops covering the family it was meant to guard
+            // the moment a new member joins — and this exact suite used to have one: a hard-coded
+            // "known gap" list of the four rows TutorialStep.OpenCounter's own missing
+            // anti-stranding sweep left stranded (Vigil/EveningClose/MeetHeroes/Commission),
+            // written by hand after the fact rather than derived from the property it was
+            // standing in for. OpenCounter's sweep is now fixed (TutorialFlow.Registry's
+            // EveningClose row) — this walks every TutorialStep by reflection instead of
+            // reinstating a list, so a FUTURE step with no sweep fails by name automatically,
+            // the same way this one did.
             //
-            // FINDING (this lane's own, not fixed here — TutorialFlow.cs's registry is another
-            // session's lane, and this unit's brief is explicit: report and book, never patch the
-            // registry from a test PR): TutorialStep.OpenCounter is the ONE numbered step with no
-            // anti-stranding sweep. Every OTHER swept step is named in some LATER row's own
-            // AdvanceFrom — e.g. Vigil is carried forward by EveningClose's AdvanceFrom, which
-            // ChecklistRow's own class doc calls out by name ("today only the Vigil row") — but
-            // OpenCounter's row is the sole entry in its own AdvanceFrom (Registry: `AdvanceFrom:
-            // [TutorialStep.OpenCounter]`), so a player who never opens the counter stays parked
-            // there for the rest of the campaign. TutorialFlow.ChainBackstopDay still closes the
-            // COURSE on day 8 (Completed flips true — proven above), but Step itself never moves
-            // again, so Checklist() never marks Vigil/EveningClose/MeetHeroes/Commission Done OR
-            // Skipped: they read "○ still upcoming" in the Lessons book forever, even after the
-            // campaign has ended. That is a real gap in "every unreached row retires Skipped, never
-            // falsely Done" — this run just never falls INTO it for the four verb rows it never
-            // performs (asserted below); it falls OUT of the honest-third-state guarantee instead,
-            // for whichever rows sit downstream of the one step nothing ever carries the player
-            // past. The fix, when someone picks it up, is the same shape Vigil already has: add
-            // OpenCounter to a later row's AdvanceFrom (AnsweredForReal already lists
-            // TutorialStep.OpenCounter, so extending its sweep retires it honestly Skipped, not
-            // falsely Done — no registry change this PR makes).
-            var knownGapSteps = new[]
+            // Fixing OpenCounter's own sweep does NOT clear the whole old "known gap" list — it
+            // clears three of the four (Vigil/EveningClose settle via EveningClose's own row;
+            // MeetHeroes settles too, but only because it shares LookIn's own accepted "UI-only
+            // step reads Done once frozen-and-past" exception — AnsweredForReal's default branch,
+            // pinned by TheStepsWhoseCompletionIsAUiHook_AreNeverStampedSkipped). Commission —
+            // ONE slot past MeetHeroes — does not: it is a NEW finding, only reachable now that
+            // OpenCounter's own fix lets the chain get this far, and it is a real, structurally
+            // identical gap, not fixed here. MeetHeroes' own IsDone is UI-only (`_ => false`,
+            // advanced only by NotifyPanelOpened) and, unlike Vigil/OpenCounter, has no LATER row
+            // with an already-unconditional (day-based) IsDone to ride — Commission is the
+            // terminal row, and its own IsDone is deliberately a real player verb (Accept/Decline
+            // — TutorialRegistryConformanceTests.EveryStepsCompletionFact_IsReachableByPlayerActionAlone
+            // pins that on purpose). Riding ChainBackstopDay itself, or widening Checklist()'s own
+            // inactive-isPast rule to cover every row unconditionally, would fix it — but the
+            // latter regresses Checklist()'s own documented early-Dismiss case ("every slot the
+            // chain never reached stays a plain upcoming row... honest, since the course really
+            // did end before getting there"), and the former has no shipped precedent to mirror.
+            // Named here, not patched blind — a follow-up unit's fix, same shape as this one's.
+            var pinnedExceptions = new Dictionary<TutorialStep, string>
             {
-                TutorialStep.Vigil, TutorialStep.EveningClose, TutorialStep.MeetHeroes, TutorialStep.Commission,
+                [TutorialStep.Commission] =
+                    "One slot past TutorialStep.MeetHeroes, whose own IsDone is UI-only and has no " +
+                    "later row's unconditional fact to ride (Commission is terminal, and its own " +
+                    "IsDone is deliberately a real Accept/Decline verb) — a player who never opens " +
+                    "Hero Cards/Tavern leaves Step frozen at MeetHeroes, one slot short of Commission " +
+                    "ever becoming \"past\". A real, structurally identical gap to the one this PR " +
+                    "fixes for OpenCounter, only reachable now that the fix lets the chain get this " +
+                    "far — booked as a follow-up, not patched here.",
             };
-            var knownGapSlots = knownGapSteps
-                .Select(step => TutorialFlow.Registry.First(def => def.Step == step).DisplayIndex)
-                .ToHashSet();
-            var unexpectedlyStuck = neither.Where(r => !knownGapSlots.Contains(r.DisplayIndex)).ToList();
 
-            AssertThat(unexpectedlyStuck)
+            var unsettled = UnsettledSteps(rowsByDisplayIndex, pinnedExceptions)
+                .Select(step =>
+                {
+                    var def = TutorialFlow.Registry.First(d => d.Step == step);
+                    return $"{step} (slot {def.DisplayIndex}, \"{rowsByDisplayIndex[def.DisplayIndex].Label}\")";
+                })
+                .ToList();
+
+            AssertThat(unsettled)
                 .OverrideFailureMessage(
-                    $"{report}\n\nThese rows never settled Done or Skipped even after the course " +
-                    "finished, and they are NOT the documented OpenCounter-anti-stranding gap above " +
-                    "— a NEW row the chain's pointer can never reach: " +
-                    string.Join(", ", unexpectedlyStuck.Select(r => $"[{r.DisplayIndex}] {r.Label}")))
+                    $"{report}\n\nThese steps never settled Done or Skipped even after the course " +
+                    "finished, and are not named as a pinned exception (with a reason) above — the " +
+                    "chain's pointer never reached, or was never swept past, them: " +
+                    string.Join(", ", unsettled))
                 .IsEmpty();
 
             // Zero falsely Done, made concrete: this lane provably never bought material, never
@@ -234,5 +251,71 @@ public class TabThroughLaneTests
 
     private static string DescribeDormant(ChecklistRow? row) =>
         row is null ? "never armed" : row.Value.Done ? "Done" : row.Value.Skipped ? "Skipped" : "current/unsettled";
+
+    /// <summary>U-T9-13: the deny-by-default core both <see cref="TabThrough_ReadsNothing_StillFinishes"/>
+    /// and <see cref="APlantedUnsweptStep_FailsByName_NotSilently"/> share — walks every
+    /// <see cref="TutorialStep"/> by reflection (<see cref="Enum.GetValues{TEnum}()"/>), never a
+    /// hand-typed subset, and names whichever ones neither <see cref="ChecklistRow.Done"/> nor
+    /// <see cref="ChecklistRow.Skipped"/> read true for, skipping only steps named in
+    /// <paramref name="pinnedExceptions"/>. Shared, rather than re-typed per test, so the SAME
+    /// algorithm both proves the real course settles and proves the algorithm itself would catch a
+    /// step that does not.</summary>
+    private static List<TutorialStep> UnsettledSteps(
+        IReadOnlyDictionary<int, ChecklistRow> rowsByDisplayIndex,
+        IReadOnlyDictionary<TutorialStep, string> pinnedExceptions) =>
+        Enum.GetValues<TutorialStep>()
+            .Where(step => !pinnedExceptions.ContainsKey(step))
+            .Where(step => rowsByDisplayIndex[TutorialFlow.Registry.First(d => d.Step == step).DisplayIndex]
+                is { Done: false, Skipped: false })
+            .ToList();
+
+    /// <summary>
+    /// U-T9-13: proves <see cref="UnsettledSteps"/> is reflective rather than a hand-list — the
+    /// exact shape of bug this PR replaces (a guard iterating a literal array of the four rows
+    /// TutorialStep.OpenCounter's own missing sweep happened to strand, which would have kept
+    /// reading green forever if a FIFTH row started going unswept, since nothing would have ever
+    /// added it to the array by hand).
+    ///
+    /// <para>A real new <see cref="TutorialStep"/> enum member cannot be "planted" from a test —
+    /// the enum is compiled, fixed, production code. What CAN be proven from a test is the thing
+    /// that actually matters: that the algorithm names ANY step whose row fails to settle, driven
+    /// purely by walking <see cref="Enum.GetValues{TEnum}()"/> against real checklist data, with no
+    /// per-step name baked into the loop itself. This fakes one step's own row as neither Done nor
+    /// Skipped (standing in for "a future step whose own sweep was forgotten") and shows it is
+    /// caught, by name, exactly once — then shows naming it in the exception list is the only thing
+    /// that silences it.</para>
+    /// </summary>
+    [TestCase]
+    public void APlantedUnsweptStep_FailsByName_NotSilently()
+    {
+        // Every real DisplayIndex reads settled (Done) except one, planted deliberately —
+        // TutorialStep.Shelve's own slot, chosen only because it is not shared with any other step
+        // (unlike slot 1, BuyMaterial/Craft) and is not TutorialStep.Commission (this PR's own
+        // pinned exception, which must stay excluded for an unrelated, already-documented reason).
+        var plantedSlot = TutorialFlow.Registry.First(d => d.Step == TutorialStep.Shelve).DisplayIndex;
+        var rowsByDisplayIndex = Enumerable.Range(1, TutorialFlow.TotalSteps)
+            .ToDictionary(
+                slot => slot,
+                slot => new ChecklistRow(
+                    DisplayIndex: slot, Label: $"slot {slot}", Done: slot != plantedSlot,
+                    Current: false, VisitedAnchor: false, GatingNote: null, Skipped: false));
+
+        var caught = UnsettledSteps(rowsByDisplayIndex, new Dictionary<TutorialStep, string>());
+
+        AssertThat(caught)
+            .OverrideFailureMessage(
+                $"Planted exactly one unswept slot ({plantedSlot}, TutorialStep.Shelve) but the " +
+                $"reflective guard named: {string.Join(", ", caught)}. It must name the planted " +
+                "step, and only the planted step, by walking the enum — never a hand-typed subset " +
+                "that happens to include or exclude it.")
+            .ContainsExactly(TutorialStep.Shelve);
+
+        var silenced = UnsettledSteps(
+            rowsByDisplayIndex, new Dictionary<TutorialStep, string> { [TutorialStep.Shelve] = "test-planted" });
+
+        AssertThat(silenced)
+            .OverrideFailureMessage("Naming the planted step as a pinned exception should silence it.")
+            .IsEmpty();
+    }
 }
 #endif

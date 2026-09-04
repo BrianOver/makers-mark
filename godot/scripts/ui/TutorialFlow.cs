@@ -253,9 +253,10 @@ public readonly record struct TutorialAnchor(TutorialAnchorKind Kind, string? Ke
 /// existed in the data and was missing from the screen.</para>
 ///
 /// <para><see cref="Skipped"/> (U1, §11.13): true for a row the chain carried the player PAST
-/// without it ever being genuinely answered — today only the Vigil row, when no party ever camps
-/// and the anti-stranding sweep (<see cref="TutorialFlow.Registry"/>'s <c>EveningClose</c> row)
-/// advances the chain around it. Deliberately a THIRD state, not a reuse of <see cref="Done"/> or
+/// without it ever being genuinely answered — the Vigil row, when no party ever camps, and (U-T9-12)
+/// the OpenCounter row, when the counter is never opened, both swept around by the same
+/// anti-stranding row (<see cref="TutorialFlow.Registry"/>'s <c>EveningClose</c> row, whose own
+/// <c>AdvanceFrom</c> names both). Deliberately a THIRD state, not a reuse of <see cref="Done"/> or
 /// the plain upcoming-circle glyph: a checkmark would claim the player answered something they
 /// never saw, and a hollow circle would read as still-upcoming when the chain has already moved
 /// on past it — both are dishonest in a different direction.</para></summary>
@@ -775,7 +776,16 @@ public sealed partial class TutorialFlow : PanelContainer
             // ChainBackstopDay's blanket close (a several-day silent jump straight to Completed);
             // once Day >= 3 an
             // unanswered Vigil now carries straight through to MeetHeroes instead.
-            AdvanceFrom: [TutorialStep.Vigil, TutorialStep.EveningClose], AdvancesTo: TutorialStep.MeetHeroes),
+            //
+            // U-T9-12 (tab-through-lane finding, PR #696): OpenCounter joins the same sweep for the
+            // identical reason — its own row (AdvanceFrom: [OpenCounter] only) has no later row
+            // naming it, so a player who never opens the counter was stranded there forever, never
+            // carried past it the way Vigil already was. OpenCounter's IsDone (CounterAnsweredAtLeastOnce)
+            // is exactly as conditional as Vigil's own (SupplyDelivered/PartyRecalled) — neither is
+            // guaranteed by anything the player does elsewhere — so it rides the same unconditional
+            // Day>=3 fact this row already uses for Vigil, rather than inventing a second mechanism.
+            AdvanceFrom: [TutorialStep.OpenCounter, TutorialStep.Vigil, TutorialStep.EveningClose],
+            AdvancesTo: TutorialStep.MeetHeroes),
         new(
             Step: TutorialStep.MeetHeroes, DisplayIndex: 9, Act: TutorialAct.Memory,
             Anchor: TutorialAnchor.ForHud("OpenHeroCards"), MinDay: 3,
