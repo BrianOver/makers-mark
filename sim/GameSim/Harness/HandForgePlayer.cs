@@ -80,6 +80,25 @@ namespace GameSim.Harness;
 /// THIRD echo (1000−240=760, clamped to 800) and every one after. The corpus's own PR description
 /// reports the measured floor-hit rate against this.</para>
 ///
+/// <para><b>2026-09 re-check (P2-OQ9 second-order measurement):</b> the 743 figure two paragraphs up
+/// was flagged as possibly stale by a LATER doc entry (<c>docs/design/MAKERS-MARK.md</c>'s
+/// <c>P2-OQ9</c>, which claimed a re-run counted 424 instead). Re-verified here, twice, independently
+/// of that claim: a sweep composing <c>GameComposition.BuildKernel</c>/<c>NewCampaign</c> directly,
+/// and a second pass through the real <c>batch --policy handforge</c> CLI reloading its written
+/// chronicles, both land on 743, exactly matching this comment. The 424 claim was the drift, not
+/// this comment — corrected at the source (the <c>P2-OQ9</c> doc entry), not here; this figure
+/// stands unchanged. The measurement question the 424 claim was investigating — "is 51.7%
+/// Masterwork a talent property or an artifact of <see cref="BaselinePlayer"/>'s one greedy talent
+/// order?" — is what <see cref="LateMasteryPlayer"/> exists to answer: it reorders which talent this
+/// same craft loop unlocks each morning (deferring both mastery talents behind every other node the
+/// tree allows) without touching the craft loop itself, so <see cref="ActionsFor"/>'s hand-forge/echo
+/// logic below is now factored out into <see cref="HandForgeOver"/> — a pure function of "whatever
+/// baseline action list a talent-pacing policy produced" — so <see cref="LateMasteryPlayer"/> can
+/// compose over its own reordered-talent baseline instead of forking this type's craft logic (KTD1,
+/// the same composition precedent this type's own class doc argues for above).
+/// <see cref="ActionsFor"/> itself is UNCHANGED — still exactly <see cref="BaselinePlayer"/> plus a
+/// hand-forge — this is a pure extraction.</para>
+///
 /// <para><b>Batch-echo coverage.</b> <c>CraftingHandlers</c>' batch-echo memory only ever seeds off
 /// a hand-forge and only ever pays out on a LATER, IDENTICAL, SAME-DAY auto-craft — the "set the
 /// rhythm by hand once, the copies follow" pattern that type's own U23e comment describes. No
@@ -125,17 +144,28 @@ public static class HandForgePlayer
         500, AverageDeviationPermille,
         600, AverageDeviationPermille);
 
-    public static ImmutableList<PlayerAction> ActionsFor(GameState state)
+    public static ImmutableList<PlayerAction> ActionsFor(GameState state) =>
+        HandForgeOver(state, BaselinePlayer.ActionsFor(state));
+
+    /// <summary>
+    /// The hand-forge craft-injection step alone, decoupled from which policy produced
+    /// <paramref name="baseline"/> — see this type's class doc ("2026-09 correction") for why. Same
+    /// contract as <see cref="ActionsFor"/> always had: <paramref name="baseline"/>'s Expedition
+    /// branch is expected to carry at most one <see cref="CraftAction"/> (anything else — empty, or
+    /// a shape that ever changed — rides through unmodified), and only a blacksmith active-craft
+    /// recipe (the only profession <see cref="ForgeTraceInput"/> is valid for — CraftingHandlers.
+    /// ApplyCraft guard 6) is ever replaced with a hand-forge trace plus echo copies.
+    /// </summary>
+    public static ImmutableList<PlayerAction> HandForgeOver(GameState state, ImmutableList<PlayerAction> baseline)
     {
-        var baseline = BaselinePlayer.ActionsFor(state);
         if (state.Phase != DayPhase.Expedition)
         {
-            return baseline; // BaselinePlayer never crafts outside Expedition (D5) — nothing to hand-forge.
+            return baseline; // no policy on this axis crafts outside Expedition (D5) — nothing to hand-forge.
         }
 
-        // BaselinePlayer's Expedition branch emits at most one CraftAction. Anything else (empty,
-        // or — defensively — a shape that ever changed) rides through unmodified: this policy only
-        // ever touches a CraftAction for the blacksmith's own active-craft recipes (the only
+        // The underlying policy's Expedition branch emits at most one CraftAction. Anything else
+        // (empty, or — defensively — a shape that ever changed) rides through unmodified: this step
+        // only ever touches a CraftAction for the blacksmith's own active-craft recipes (the only
         // profession ForgeTraceInput is valid for — CraftingHandlers.ApplyCraft guard 6).
         if (baseline.Count != 1
             || baseline[0] is not CraftAction craft

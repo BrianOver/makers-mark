@@ -142,6 +142,24 @@ public class BatchRunnerTests : IDisposable
     }
 
     [Fact]
+    public void Policy_LateMastery_IsSelectableAndTagsItsOwnFilename()
+    {
+        // P2-OQ9's second talent-pacing measurement: LateMasteryPlayer was previously unreachable
+        // from the batch farm (only baseline/counter/apprentice/handforge existed). Selecting it
+        // must (a) actually run LateMasteryPlayer's reordered-talent hand-forge loop and (b) tag
+        // its own filename distinctly so it never collides with the other policies' corpora.
+        var args = BatchRunner.Parse(["--seeds", "1", "--days", "3", "--out", _dir, "--policy", "latemastery"], TextWriter.Null);
+        Assert.NotNull(args);
+        Assert.Equal(BatchRunner.Policy.LateMastery, args!.PlayerPolicy);
+
+        Assert.Equal(0, BatchRunner.Run(args, TextWriter.Null, TextWriter.Null));
+
+        var file = Assert.Single(Directory.GetFiles(_dir, "batch-seed*-days3-latemastery.json"));
+        var chronicle = ChronicleCodec.Deserialize(File.ReadAllText(file));
+        Assert.Equal(4, chronicle.Day); // ran through the END of day 3, same as the baseline path
+    }
+
+    [Fact]
     public void SweepCleansStaleBatchFiles_ButSingleSeedRepro_DoesNot()
     {
         // A sweep owns the dir's batch-*.json namespace (stale params would skew corpus baselines);
