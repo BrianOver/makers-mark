@@ -211,4 +211,219 @@ public class ReconcilerTests
         Assert.Equal("T10", domain.Domain);
         Assert.Equal(2, domain.Rows.Count);
     }
+
+    // --- File-existence fallback (P2-PROOF-03's own motivating case: a title/commit subject that
+    // drops the unit's trailing number, e.g. "(P2-PROOF)" instead of "(P2-PROOF-03)") ---
+
+    [Fact]
+    public void AUnitWithNoCommitTagIsStillLandedWhenItsOwnNewFileExistsOnOriginMain()
+    {
+        var units = new[]
+        {
+            Row(UnitTable.P2, "P2-PROOF-03", files: new[] { new FileRef("godot/scripts/panels/TellingPanel.cs", IsNew: true) }),
+        };
+        var fileOrigins = new Dictionary<string, FileOrigin>
+        {
+            ["godot/scripts/panels/TellingPanel.cs"] = new("godot/scripts/panels/TellingPanel.cs", "0277dfc0b", 687),
+        };
+
+        var result = Reconciler.Reconcile(Plan(units), new Dictionary<string, LandedUnit>(), new Dictionary<string, OpenUnit>(),
+            new HashSet<string> { "godot/scripts/panels/TellingPanel.cs" }, fileOrigins: fileOrigins);
+
+        var row = Assert.Single(result.Domains).Rows.Single();
+        Assert.Equal(UnitStatus.Landed, row.Status);
+        Assert.Equal(LandedEvidence.FileExistence, row.Evidence);
+        Assert.Equal("0277dfc0b", row.Sha);
+        Assert.Equal(687, row.PrNumber);
+    }
+
+    [Fact]
+    public void FileEvidenceDoesNotLandAUnitWhenOnlySomeOfItsNewFilesExist()
+    {
+        var units = new[]
+        {
+            Row(UnitTable.P2, "P2-PROOF-04", files: new[]
+            {
+                new FileRef("godot/scripts/panels/TellingPanel.cs", IsNew: true),
+                new FileRef("godot/scripts/panels/StillMissing.cs", IsNew: true),
+            }),
+        };
+
+        var result = Reconciler.Reconcile(Plan(units), new Dictionary<string, LandedUnit>(), new Dictionary<string, OpenUnit>(),
+            new HashSet<string> { "godot/scripts/panels/TellingPanel.cs" });
+
+        var row = Assert.Single(result.Domains).Rows.Single();
+        Assert.Equal(UnitStatus.Unbuilt, row.Status);
+    }
+
+    [Fact]
+    public void FileEvidenceNeverAppliesToAUnitWithNoNewFiles()
+    {
+        // Only modifies an existing file — its existence is a given, not evidence this unit landed.
+        var units = new[]
+        {
+            Row(UnitTable.P2, "P2-PROOF-04", files: new[] { new FileRef("godot/scripts/panels/TellingPanel.cs", IsNew: false) }),
+        };
+
+        var result = Reconciler.Reconcile(Plan(units), new Dictionary<string, LandedUnit>(), new Dictionary<string, OpenUnit>(),
+            new HashSet<string> { "godot/scripts/panels/TellingPanel.cs" });
+
+        Assert.Equal(UnitStatus.Unbuilt, Assert.Single(result.Domains).Rows.Single().Status);
+    }
+
+    [Fact]
+    public void ACommitTagMatchIsPreferredOverFileEvidence()
+    {
+        var units = new[]
+        {
+            Row(UnitTable.P2, "P2-PROOF-03", files: new[] { new FileRef("godot/scripts/panels/TellingPanel.cs", IsNew: true) }),
+        };
+        var landed = new Dictionary<string, LandedUnit> { ["P2-PROOF-03"] = new("P2-PROOF-03", "realtag", 999) };
+        var fileOrigins = new Dictionary<string, FileOrigin>
+        {
+            ["godot/scripts/panels/TellingPanel.cs"] = new("godot/scripts/panels/TellingPanel.cs", "wrongsha", 1),
+        };
+
+        var result = Reconciler.Reconcile(Plan(units), landed, new Dictionary<string, OpenUnit>(),
+            new HashSet<string> { "godot/scripts/panels/TellingPanel.cs" }, fileOrigins: fileOrigins);
+
+        var row = Assert.Single(result.Domains).Rows.Single();
+        Assert.Equal(LandedEvidence.CommitTag, row.Evidence);
+        Assert.Equal("realtag", row.Sha);
+        Assert.Equal(999, row.PrNumber);
+    }
+
+    // --- Receipt census (rule 12 / §11.6 rule 3) ---
+
+    private static MergedPrReceipt Receipt(int number, ServesKind kind, string? unitId = null, string? raw = null, string title = "title") =>
+        new(number, title, DateTimeOffset.Parse("2026-08-15T00:00:00Z"), new ServesReceipt(kind, raw ?? unitId, unitId));
+
+    [Fact]
+    public void FlagsRedundantDispatchTrapWhenReceiptClaimsAUnitStillUnbuilt()
+    {
+        var units = new[] { Row(UnitTable.P2, "P2-HONEST-01") };
+        var receipts = new[] { Receipt(700, ServesKind.Unit, "P2-HONEST-01", title: "fix: the book opens") };
+
+        var result = Reconciler.Reconcile(Plan(units), new Dictionary<string, LandedUnit>(), new Dictionary<string, OpenUnit>(),
+            new HashSet<string>(), mergedReceipts: receipts);
+
+        var trap = Assert.Single(result.ReceiptDispatchTraps);
+        Assert.Equal("P2-HONEST-01", trap.UnitId);
+        Assert.Equal(700, trap.PrNumber);
+    }
+
+    [Fact]
+    public void NoDispatchTrapWhenTheClaimedUnitIsAlreadyLanded()
+    {
+        var units = new[] { Row(UnitTable.P2, "P2-HONEST-01") };
+        var landed = new Dictionary<string, LandedUnit> { ["P2-HONEST-01"] = new("P2-HONEST-01", "sha", 699) };
+        var receipts = new[] { Receipt(699, ServesKind.Unit, "P2-HONEST-01") };
+
+        var result = Reconciler.Reconcile(Plan(units), landed, new Dictionary<string, OpenUnit>(),
+            new HashSet<string>(), mergedReceipts: receipts);
+
+        Assert.Empty(result.ReceiptDispatchTraps);
+    }
+
+    [Fact]
+    public void NoDispatchTrapWhenTheReceiptNamesAUnitThisToolDoesNotTrack()
+    {
+        var receipts = new[] { Receipt(700, ServesKind.Unit, "P2-GHOST-01") };
+
+        var result = Reconciler.Reconcile(Plan(Array.Empty<UnitRow>()), new Dictionary<string, LandedUnit>(),
+            new Dictionary<string, OpenUnit>(), new HashSet<string>(), mergedReceipts: receipts);
+
+        Assert.Empty(result.ReceiptDispatchTraps);
+    }
+
+    [Fact]
+    public void FlagsMissingReceiptOnAMergedPrWithNoServesLineAtAll()
+    {
+        var receipts = new[] { Receipt(701, ServesKind.Missing, title: "some PR") };
+
+        var result = Reconciler.Reconcile(Plan(Array.Empty<UnitRow>()), new Dictionary<string, LandedUnit>(),
+            new Dictionary<string, OpenUnit>(), new HashSet<string>(), mergedReceipts: receipts);
+
+        var finding = Assert.Single(result.MissingOrMalformedReceipts);
+        Assert.Equal(701, finding.PrNumber);
+        Assert.Equal(ServesKind.Missing, finding.Kind);
+    }
+
+    [Fact]
+    public void FlagsMalformedReceiptValue()
+    {
+        var receipts = new[] { Receipt(702, ServesKind.Malformed, raw: "P2-ONBOARD") };
+
+        var result = Reconciler.Reconcile(Plan(Array.Empty<UnitRow>()), new Dictionary<string, LandedUnit>(),
+            new Dictionary<string, OpenUnit>(), new HashSet<string>(), mergedReceipts: receipts);
+
+        var finding = Assert.Single(result.MissingOrMalformedReceipts);
+        Assert.Equal("P2-ONBOARD", finding.RawValue);
+    }
+
+    [Theory]
+    [InlineData(ServesKind.Link)]
+    [InlineData(ServesKind.Substrate)]
+    [InlineData(ServesKind.Overhead)]
+    [InlineData(ServesKind.PlanItem)]
+    [InlineData(ServesKind.Unit)]
+    public void ALegitimatelyUnitLessOrValidReceiptIsNeverReportedAsMissingOrMalformed(ServesKind kind)
+    {
+        var units = new[] { Row(UnitTable.P2, "P2-HONEST-01") };
+        var landed = new Dictionary<string, LandedUnit> { ["P2-HONEST-01"] = new("P2-HONEST-01", "sha", 1) };
+        var receipts = new[] { Receipt(703, kind, kind == ServesKind.Unit ? "P2-HONEST-01" : null, raw: "value") };
+
+        var result = Reconciler.Reconcile(Plan(units), landed, new Dictionary<string, OpenUnit>(),
+            new HashSet<string>(), mergedReceipts: receipts);
+
+        Assert.Empty(result.MissingOrMalformedReceipts);
+    }
+
+    [Fact]
+    public void ReceiptRuleEffectiveDateExcludesPrsMergedBeforeIt()
+    {
+        var receipts = new[]
+        {
+            new MergedPrReceipt(600, "old PR", DateTimeOffset.Parse("2026-07-01T00:00:00Z"), new ServesReceipt(ServesKind.Missing, null, null)),
+        };
+
+        var result = Reconciler.Reconcile(Plan(Array.Empty<UnitRow>()), new Dictionary<string, LandedUnit>(),
+            new Dictionary<string, OpenUnit>(), new HashSet<string>(), mergedReceipts: receipts,
+            receiptRuleEffectiveSince: DateTimeOffset.Parse("2026-08-08T00:00:00Z"));
+
+        Assert.Empty(result.MissingOrMalformedReceipts);
+    }
+
+    [Fact]
+    public void FlagsFalseReceiptWhenClaimedUnitsPathIsNotOnOriginMain()
+    {
+        var units = new[]
+        {
+            Row(UnitTable.P2, "P2-PROOF-03", files: new[] { new FileRef("godot/scripts/panels/TellingPanel.cs", IsNew: true) }),
+        };
+        var receipts = new[] { Receipt(687, ServesKind.Unit, "P2-PROOF-03") };
+
+        var result = Reconciler.Reconcile(Plan(units), new Dictionary<string, LandedUnit>(), new Dictionary<string, OpenUnit>(),
+            new HashSet<string>(), mergedReceipts: receipts); // path NOT in trackedFiles
+
+        var finding = Assert.Single(result.FalseReceipts);
+        Assert.Equal("P2-PROOF-03", finding.UnitId);
+        Assert.Equal(687, finding.PrNumber);
+        Assert.Equal("godot/scripts/panels/TellingPanel.cs", finding.Path);
+    }
+
+    [Fact]
+    public void NoFalseReceiptWhenTheClaimedUnitsFilesAllExist()
+    {
+        var units = new[]
+        {
+            Row(UnitTable.P2, "P2-PROOF-03", files: new[] { new FileRef("godot/scripts/panels/TellingPanel.cs", IsNew: true) }),
+        };
+        var receipts = new[] { Receipt(687, ServesKind.Unit, "P2-PROOF-03") };
+
+        var result = Reconciler.Reconcile(Plan(units), new Dictionary<string, LandedUnit>(), new Dictionary<string, OpenUnit>(),
+            new HashSet<string> { "godot/scripts/panels/TellingPanel.cs" }, mergedReceipts: receipts);
+
+        Assert.Empty(result.FalseReceipts);
+    }
 }

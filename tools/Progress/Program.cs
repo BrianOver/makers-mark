@@ -20,36 +20,58 @@ var plan = PlanParser.Parse(planText);
 
 var trackedFiles = GitShell.ListTrackedFiles(repoRoot, "origin/main");
 var log = GitShell.GetLog(repoRoot, "origin/main");
+var fileCreationCommits = GitShell.GetFileCreationCommits(repoRoot, "origin/main");
+var receiptRuleSince = GitShell.GetReceiptRuleEffectiveDate(repoRoot, "origin/main");
 
 var ownerRepo = GitShell.GetOwnerRepo(repoRoot);
 var mergedPrs = GitShell.ListPrs(repoRoot, ownerRepo, "merged");
 var openPrs = GitShell.ListPrs(repoRoot, ownerRepo, "open");
 
-var landed = BuildLandedIndex(log, mergedPrs);
+var titleToPr = BuildTitleToPrMap(mergedPrs);
+var landed = BuildLandedIndex(log, titleToPr);
 var open = BuildOpenIndex(openPrs, landed);
+var fileOrigins = BuildFileOrigins(plan.Units, fileCreationCommits, titleToPr);
+var mergedReceipts = mergedPrs
+    .Where(pr => pr.MergedAt is not null)
+    .Select(pr => new MergedPrReceipt(pr.Number, pr.Title, pr.MergedAt!.Value, ServesReceipts.Parse(pr.Body)))
+    .ToList();
 
-var result = Reconciler.Reconcile(plan, landed, open, trackedFiles);
+var result = Reconciler.Reconcile(plan, landed, open, trackedFiles, mergedReceipts, fileOrigins, receiptRuleSince);
 
 var headSha = log.Count > 0 ? log[^1].Sha[..9] : "unknown";
 Console.WriteLine(Report.Build(result, $"{planPath} vs origin/main@{headSha}"));
 
-var failing = result.MissingFiles.Count > 0 || result.OrderingViolations.Count > 0 || result.Collisions.Count > 0;
+// Missing/malformed Serves: lines (section 7) are reported but deliberately excluded here: it is
+// a backlog against every PR merged since the receipt rule took effect, not a defect in the
+// PLAN's current state the way a bad path or an id collision is — gating on it would make this
+// exit code permanently red over history nobody is going back to rewrite, which is exactly the
+// alarm-fatigue failure mode CLAUDE.md rule 10 warns a wrapper verdict can become. The dispatch
+// trap and false-receipt findings stay gating: both describe an ACTIVE, actionable
+// disagreement between a receipt and the tree right now.
+var failing = result.MissingFiles.Count > 0 || result.OrderingViolations.Count > 0 || result.Collisions.Count > 0
+    || result.ReceiptDispatchTraps.Count > 0 || result.FalseReceipts.Count > 0;
 return failing ? 1 : 0;
 
-static Dictionary<string, LandedUnit> BuildLandedIndex(
-    IReadOnlyList<GitLogEntry> log,
-    IReadOnlyList<GitShell.PrRecord> mergedPrs)
+static Dictionary<string, int> BuildTitleToPrMap(IReadOnlyList<GitShell.PrRecord> mergedPrs)
 {
     // gh's merged-PR list is the trap-avoider named in the tool's requirements (squash-merge
     // makes `git branch --merged` useless here) — used to fill in a PR number for the rare landed
     // commit whose subject lost its trailing "(#NNN)" (a manual squash, a rebase edit), by
-    // matching the commit's tag-stripped subject text against a merged PR's title.
+    // matching the commit's tag-stripped subject text against a merged PR's title. Shared by the
+    // commit-tag landed index and the file-existence fallback below — one map, two consumers.
     var titleToPr = new Dictionary<string, int>(StringComparer.Ordinal);
     foreach (var pr in mergedPrs)
     {
         titleToPr.TryAdd(pr.Title.Trim(), pr.Number);
     }
 
+    return titleToPr;
+}
+
+static Dictionary<string, LandedUnit> BuildLandedIndex(
+    IReadOnlyList<GitLogEntry> log,
+    IReadOnlyDictionary<string, int> titleToPr)
+{
     var landed = new Dictionary<string, LandedUnit>(StringComparer.Ordinal);
     foreach (var entry in log) // GetLog returns oldest-first: first landing wins below
     {
@@ -101,4 +123,38 @@ static Dictionary<string, OpenUnit> BuildOpenIndex(
     }
 
     return open;
+}
+
+static Dictionary<string, FileOrigin> BuildFileOrigins(
+    IReadOnlyList<UnitRow> units,
+    IReadOnlyDictionary<string, GitLogEntry> fileCreationCommits,
+    IReadOnlyDictionary<string, int> titleToPr)
+{
+    // Only the "new "-marked paths matter here — those are the ones a single unit is uniquely on
+    // the hook for creating, so the commit that added one is real evidence for THAT unit's status.
+    var newPaths = units.SelectMany(u => u.Files).Where(f => f.IsNew).Select(f => f.Path).Distinct(StringComparer.Ordinal);
+
+    var origins = new Dictionary<string, FileOrigin>(StringComparer.Ordinal);
+    foreach (var path in newPaths)
+    {
+        if (!fileCreationCommits.TryGetValue(path, out var entry))
+        {
+            continue;
+        }
+
+        var pr = CommitTags.ExtractPrNumber(entry.Subject);
+        if (pr is null)
+        {
+            var strippedSubject = System.Text.RegularExpressions.Regex
+                .Replace(entry.Subject, @"\(#\d+\)\s*$", string.Empty).Trim();
+            if (titleToPr.TryGetValue(strippedSubject, out var fallbackPr))
+            {
+                pr = fallbackPr;
+            }
+        }
+
+        origins[path] = new FileOrigin(path, entry.Sha, pr);
+    }
+
+    return origins;
 }

@@ -109,12 +109,16 @@ public static class GitShell
         return $"{m.Groups["owner"].Value}/{m.Groups["repo"].Value}";
     }
 
-    public sealed record PrRecord(int Number, string Title);
+    /// <summary><see cref="Body"/> and <see cref="MergedAt"/> are what the receipt census reads
+    /// (rule 12's `Serves:` line lives in the body, not the title) — fetched in the same call as
+    /// title so there is no second round trip per PR. <see cref="MergedAt"/> is null for open
+    /// PRs.</summary>
+    public sealed record PrRecord(int Number, string Title, string Body, DateTimeOffset? MergedAt);
 
     public static IReadOnlyList<PrRecord> ListPrs(string repoRoot, string ownerRepo, string state)
     {
         var (code, stdout, stderr) = Run(repoRoot, "gh", "pr", "list",
-            "--repo", ownerRepo, "--state", state, "--json", "number,title", "--limit", "2000");
+            "--repo", ownerRepo, "--state", state, "--json", "number,title,body,mergedAt", "--limit", "2000");
         if (code != 0)
         {
             Console.Error.WriteLine($"warning: gh pr list --state {state} failed, treating as empty ({stderr.Trim()})");
@@ -125,10 +129,77 @@ public static class GitShell
         var list = new List<PrRecord>();
         foreach (var el in doc.RootElement.EnumerateArray())
         {
-            list.Add(new PrRecord(el.GetProperty("number").GetInt32(), el.GetProperty("title").GetString() ?? ""));
+            DateTimeOffset? mergedAt = el.TryGetProperty("mergedAt", out var m) && m.ValueKind == JsonValueKind.String
+                ? DateTimeOffset.Parse(m.GetString()!)
+                : null;
+            list.Add(new PrRecord(
+                el.GetProperty("number").GetInt32(),
+                el.GetProperty("title").GetString() ?? "",
+                el.TryGetProperty("body", out var b) ? b.GetString() ?? "" : "",
+                mergedAt));
         }
 
         return list;
+    }
+
+    /// <summary>For every path `git log --diff-filter=A` ever added on <paramref name="gitRef"/>,
+    /// the commit (sha + subject) that added it — newest add wins when a path was added more than
+    /// once (deleted and recreated), since that is the commit that put the file's current
+    /// incarnation on the branch. One call over full history, not one per path: cheap (a few
+    /// thousand lines) and avoids spawning a git process per unit's "new" file.</summary>
+    public static IReadOnlyDictionary<string, GitLogEntry> GetFileCreationCommits(string repoRoot, string gitRef)
+    {
+        var (code, stdout, stderr) = Run(repoRoot, "git", "log", gitRef,
+            "--diff-filter=A", "--name-only", "--pretty=format:COMMIT\x1f%H\x1f%s");
+        if (code != 0)
+        {
+            throw new InvalidOperationException($"git log --diff-filter=A {gitRef} failed: {stderr}");
+        }
+
+        var result = new Dictionary<string, GitLogEntry>(StringComparer.Ordinal);
+        GitLogEntry? current = null;
+        foreach (var rawLine in stdout.Replace("\r\n", "\n").Split('\n'))
+        {
+            if (rawLine.Length >= 7 && rawLine.StartsWith("COMMIT", StringComparison.Ordinal) && rawLine[6] == FieldSeparator)
+            {
+                var rest = rawLine[7..];
+                var sep = rest.IndexOf(FieldSeparator);
+                current = sep < 0 ? null : new GitLogEntry(rest[..sep], rest[(sep + 1)..]);
+                continue;
+            }
+
+            var path = rawLine.Trim();
+            if (path.Length == 0 || current is null)
+            {
+                continue;
+            }
+
+            if (!result.ContainsKey(path))
+            {
+                result[path] = current;
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>The date CLAUDE.md rule 12's receipt line first required a specific literal form
+    /// (`git log -S`, so it is derived from history rather than hand-pinned as a constant that
+    /// would itself drift). Merged PRs from before this date predate the rule and are not
+    /// candidates for a "missing receipt" finding. Returns null if the marker text is not found
+    /// (e.g. CLAUDE.md was rewritten past recognition) — callers should then skip the date-gated
+    /// finding rather than guess.</summary>
+    public static DateTimeOffset? GetReceiptRuleEffectiveDate(string repoRoot, string gitRef)
+    {
+        var (code, stdout, _) = Run(repoRoot, "git", "log", gitRef, "--reverse",
+            "--format=%cI", "-S", "Serves: P<n>", "--", "CLAUDE.md");
+        if (code != 0)
+        {
+            return null;
+        }
+
+        var first = stdout.Replace("\r\n", "\n").Split('\n', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+        return first is null ? null : DateTimeOffset.Parse(first);
     }
 
     public static string ReadFile(string repoRoot, string relativePath)

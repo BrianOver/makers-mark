@@ -13,17 +13,129 @@ public static class Reconciler
         PlanParseResult plan,
         IReadOnlyDictionary<string, LandedUnit> landed,
         IReadOnlyDictionary<string, OpenUnit> open,
-        IReadOnlySet<string> trackedFiles)
+        IReadOnlySet<string> trackedFiles,
+        IReadOnlyList<MergedPrReceipt>? mergedReceipts = null,
+        IReadOnlyDictionary<string, FileOrigin>? fileOrigins = null,
+        DateTimeOffset? receiptRuleEffectiveSince = null)
     {
+        mergedReceipts ??= Array.Empty<MergedPrReceipt>();
+        fileOrigins ??= new Dictionary<string, FileOrigin>();
+
         var units = plan.Units;
 
         var collisions = FindCollisions(units);
         var missingFiles = FindMissingFiles(units, trackedFiles);
         var ordering = FindOrderingViolations(units, landed);
         var dangling = FindDanglingDocs(plan.DocRefs, trackedFiles);
-        var domains = BuildDomains(units, landed, open);
+        var domains = BuildDomains(units, landed, open, trackedFiles, fileOrigins);
 
-        return new ReconciliationResult(domains, missingFiles, ordering, dangling, collisions, plan.Unparseable);
+        var statusById = BuildStatusIndex(domains);
+        var applicableReceipts = receiptRuleEffectiveSince is { } since
+            ? mergedReceipts.Where(r => r.MergedAt >= since).ToList()
+            : mergedReceipts;
+
+        var dispatchTraps = FindReceiptDispatchTraps(units, applicableReceipts, statusById);
+        var missingReceipts = FindMissingOrMalformedReceipts(applicableReceipts);
+        var falseReceipts = FindFalseReceipts(units, applicableReceipts, trackedFiles);
+
+        return new ReconciliationResult(
+            domains, missingFiles, ordering, dangling, collisions, plan.Unparseable,
+            dispatchTraps, missingReceipts, falseReceipts);
+    }
+
+    private static Dictionary<string, UnitStatus> BuildStatusIndex(IReadOnlyList<DomainStatus> domains)
+    {
+        var statusById = new Dictionary<string, UnitStatus>(StringComparer.Ordinal);
+        foreach (var row in domains.SelectMany(d => d.Rows))
+        {
+            // Last write wins on a duplicate id — the collision itself is reported separately
+            // (FindCollisions); this index only needs *a* status to cross-check receipts against.
+            statusById[row.Unit.Id] = row.Status;
+        }
+
+        return statusById;
+    }
+
+    private static List<ReceiptDispatchTrap> FindReceiptDispatchTraps(
+        IReadOnlyList<UnitRow> units,
+        IReadOnlyList<MergedPrReceipt> mergedReceipts,
+        IReadOnlyDictionary<string, UnitStatus> statusById)
+    {
+        var knownIds = new HashSet<string>(units.Select(u => u.Id), StringComparer.Ordinal);
+        var traps = new List<ReceiptDispatchTrap>();
+
+        foreach (var pr in mergedReceipts)
+        {
+            if (pr.Receipt.Kind != ServesKind.Unit)
+            {
+                continue;
+            }
+
+            var unitId = pr.Receipt.UnitId!;
+            if (!knownIds.Contains(unitId))
+            {
+                continue; // receipt cites something this tool doesn't track as a unit-index row
+            }
+
+            if (statusById.TryGetValue(unitId, out var status) && status == UnitStatus.Landed)
+            {
+                continue; // already reported correctly — no trap
+            }
+
+            traps.Add(new ReceiptDispatchTrap(unitId, pr.Number, pr.Title));
+        }
+
+        return traps
+            .OrderBy(t => t.UnitId, StringComparer.Ordinal)
+            .ThenBy(t => t.PrNumber)
+            .ToList();
+    }
+
+    private static List<MissingOrMalformedReceipt> FindMissingOrMalformedReceipts(
+        IReadOnlyList<MergedPrReceipt> mergedReceipts)
+    {
+        return mergedReceipts
+            .Where(pr => pr.Receipt.Kind is ServesKind.Missing or ServesKind.Malformed)
+            .OrderBy(pr => pr.Number)
+            .Select(pr => new MissingOrMalformedReceipt(pr.Number, pr.Title, pr.Receipt.Kind, pr.Receipt.RawValue))
+            .ToList();
+    }
+
+    private static List<FalseReceipt> FindFalseReceipts(
+        IReadOnlyList<UnitRow> units,
+        IReadOnlyList<MergedPrReceipt> mergedReceipts,
+        IReadOnlySet<string> trackedFiles)
+    {
+        var byId = units.ToLookup(u => u.Id, StringComparer.Ordinal);
+        var findings = new List<FalseReceipt>();
+
+        foreach (var pr in mergedReceipts)
+        {
+            if (pr.Receipt.Kind != ServesKind.Unit)
+            {
+                continue;
+            }
+
+            var unitId = pr.Receipt.UnitId!;
+            foreach (var unit in byId[unitId])
+            {
+                foreach (var file in unit.Files)
+                {
+                    // Unlike FindMissingFiles, a "new"-marked path gets NO exemption here: this
+                    // receipt asserts the unit is done, so every one of its cited paths — new or
+                    // not — should exist by now. That is precisely the check section 2 doesn't do.
+                    if (!PathExists(file.Path, trackedFiles))
+                    {
+                        findings.Add(new FalseReceipt(unitId, pr.Number, file.Path));
+                    }
+                }
+            }
+        }
+
+        return findings
+            .OrderBy(f => f.UnitId, StringComparer.Ordinal)
+            .ThenBy(f => f.PrNumber)
+            .ToList();
     }
 
     private static List<IdCollision> FindCollisions(IReadOnlyList<UnitRow> units)
@@ -132,7 +244,9 @@ public static class Reconciler
     private static List<DomainStatus> BuildDomains(
         IReadOnlyList<UnitRow> units,
         IReadOnlyDictionary<string, LandedUnit> landed,
-        IReadOnlyDictionary<string, OpenUnit> open)
+        IReadOnlyDictionary<string, OpenUnit> open,
+        IReadOnlySet<string> trackedFiles,
+        IReadOnlyDictionary<string, FileOrigin> fileOrigins)
     {
         var byDomain = units.GroupBy(u => DomainOf(u));
 
@@ -144,12 +258,25 @@ public static class Reconciler
                 {
                     if (landed.TryGetValue(u.Id, out var l))
                     {
-                        return new UnitReconciliation(u, UnitStatus.Landed, l.Sha, l.PrNumber);
+                        return new UnitReconciliation(u, UnitStatus.Landed, l.Sha, l.PrNumber, LandedEvidence.CommitTag);
                     }
 
                     if (open.TryGetValue(u.Id, out var o))
                     {
                         return new UnitReconciliation(u, UnitStatus.Open, null, o.PrNumber);
+                    }
+
+                    // No commit subject or PR title carried this id's exact tag. Fall back to the
+                    // census: this row's own "new "-marked file(s) — the ones ONLY this unit is on
+                    // the hook for creating — existing on origin/main is direct tree evidence the
+                    // unit landed, independent of what any title or receipt says.
+                    var newFiles = u.Files.Where(f => f.IsNew).ToList();
+                    if (newFiles.Count > 0 && newFiles.All(f => PathExists(f.Path, trackedFiles)))
+                    {
+                        var origin = newFiles
+                            .Select(f => fileOrigins.TryGetValue(f.Path, out var fo) ? fo : null)
+                            .FirstOrDefault(fo => fo is not null);
+                        return new UnitReconciliation(u, UnitStatus.Landed, origin?.Sha, origin?.PrNumber, LandedEvidence.FileExistence);
                     }
 
                     return new UnitReconciliation(u, UnitStatus.Unbuilt, null, null);
