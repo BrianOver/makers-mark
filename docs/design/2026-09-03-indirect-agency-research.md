@@ -79,10 +79,11 @@ stake"* (§11.7.4's own wording), not as a verb that must move an outcome.
 player sees and nothing about what the hero does.* The moment a patron buys more readily, marches
 differently, or survives better, it is an order with extra steps — see T7.
 
-**Cost and blast radius.** One nullable `HeroId` + a `PatronSinceDay` on `PlayerState` (a Contracts
-micro-PR and a golden re-record on the trailing-init-member precedent already used four times), one
-action, client sort + card ordering in the ledger and the muster board, one chronicle projection.
-No balance re-baseline: nothing the sim decides moves.
+**Cost and blast radius.** One nullable `HeroId` plus a `PatronSinceDay` on `PlayerState` — a
+Contracts micro-PR and a golden re-record, on the trailing-init-member save-compat precedent the
+expedition contracts already use repeatedly — one action, client sort and card ordering in the
+ledger and the muster board, one chronicle projection. No balance re-baseline: nothing the sim
+decides moves.
 
 ---
 
