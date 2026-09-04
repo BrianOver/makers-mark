@@ -586,7 +586,11 @@ public partial class LedgerModal : SimPanel
             // the actual item's icon so the beat reads as THAT item's moment, not just prose.
             var beatRow = AddRow(telling.Body);
             AddIcon(beatRow, ResolveItemIcon(state, beat.Item));
-            var beatLabel = AddLabel(beatRow, $"{beat.Beat}: {beat.Detail} (floor {beat.Floor})");
+            // P2-MEMORY-01: the raw BeatType prefix ("KillingBlow:") was not just jargon, it was
+            // REDUNDANT — Detail already carries the full sentence. Drop the prefix rather than
+            // translating it in place; BeatVocab.Label exists for surfaces that need the SHORT
+            // caption instead (Chronicle Night, the commendation — later units).
+            var beatLabel = AddLabel(beatRow, $"{beat.Detail} (floor {beat.Floor})");
             beatLabel.AddThemeColorOverride("font_color", new Color(1f, 0.85f, 0.2f));
 
             // P2-MEMORY-03: the beat names its channel — a second line saying how the item
