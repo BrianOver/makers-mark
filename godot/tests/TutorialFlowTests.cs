@@ -1534,16 +1534,25 @@ public class TutorialFlowTests
             // The milestone (class doc: first BountyPaid) is a persistent state fact — injected
             // directly rather than simulating a full accept-and-return cycle, mirroring
             // DayAdvanceHudTests.GuaranteedSaleState's own fixture-injection convention.
+            // P2-HONEST-01: the gate reads the EventLog for a BountyPaid event now (Bounty.Paid
+            // itself is never set true by the real sim — BountyPayoutSystem removes the bounty
+            // instead of flipping it), so the fixture emits that event, not just the flag.
             var paidBounty = new Bounty(new BountyId(1), TargetFloor: 1, RewardGold: 5,
                 PostedOnDay: 1, AcceptedBy: null, Paid: true);
+            var paidEvent = new BountyPaid(paidBounty.Id, new HeroId(1), paidBounty.RewardGold);
             ui.Tutorial.RefreshAffordances(ui.Adapter.CurrentState with
             {
                 Bounties = ImmutableList.Create(paidBounty),
+                EventLog = ui.Adapter.CurrentState.EventLog.Add(paidEvent),
             });
 
             AssertThat(ui.Tutorial.SecondProfessionButton.Visible).IsTrue();
             AssertThat(TutorialFlow.SecondProfessionMilestoneReached(
-                ui.Adapter.CurrentState with { Bounties = ImmutableList.Create(paidBounty) })).IsTrue();
+                ui.Adapter.CurrentState with
+                {
+                    Bounties = ImmutableList.Create(paidBounty),
+                    EventLog = ui.Adapter.CurrentState.EventLog.Add(paidEvent),
+                })).IsTrue();
 
             var before = ui.Adapter.CurrentState.Player.SelectedProfessions;
             AssertThat(before.Count).IsEqual(1);

@@ -3156,9 +3156,18 @@ public sealed partial class TutorialFlow : PanelContainer
         Save();
     }
 
-    /// <summary>Earn-2nd-profession milestone (class doc): the first bounty payout, read straight
-    /// off persistent state — never a re-derived event-log scan.</summary>
-    public static bool SecondProfessionMilestoneReached(GameState state) => state.Bounties.Any(b => b.Paid);
+    /// <summary>Earn-2nd-profession milestone (class doc): the first bounty payout.
+    ///
+    /// <para><b>P2-HONEST-01 fix.</b> This used to read <c>state.Bounties.Any(b => b.Paid)</c> —
+    /// permanently false, since <see cref="Bounty.Paid"/> is <c>false</c> at its only construction
+    /// site (<c>BountyHandlers.Apply</c>) and <c>BountyPayoutSystem</c> REMOVES a paid bounty from
+    /// the board instead of ever flipping the flag (no <c>with { Paid = … }</c> exists anywhere in
+    /// <c>sim/</c> or <c>godot/</c>). A predicate that can never be true is not a gate, it is a
+    /// wall — this is now a re-derived <see cref="GameState.EventLog"/> scan instead, exactly the
+    /// idiom every other <see cref="Ui.SurfaceUnlocks.Gate"/> already uses: the log is append-only,
+    /// so this stays monotonic (once a bounty's ever paid, it stays paid forever).</para>
+    /// </summary>
+    public static bool SecondProfessionMilestoneReached(GameState state) => state.EventLog.OfType<BountyPaid>().Any();
 
     /// <summary>
     /// Rebuild/re-gate the two adapter-gated affordances from live state — called every HUD tick
