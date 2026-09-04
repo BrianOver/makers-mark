@@ -322,7 +322,17 @@ public partial class CounterPanel : SimPanel
         }
         else if (newEvents.OfType<CustomerWalked>().LastOrDefault() is { } walked)
         {
-            consequence = $"{HeroName(walked.Hero)} passed ({walked.Reason}) — {DescribeNextCustomer()}";
+            // M2b: the same WalkReply seam the speech bubble uses (see BuildWalkedToday), read
+            // against the settled post-action state — a walk moves the queue but never touches the
+            // hero's gear, memories or gold, so the replay still reproduces the recorded refusal.
+            var spoken = CustomerVoice.WalkReply(
+                Adapter!.CurrentState, walked.Hero, walked.Item, walked.Reason);
+
+            // A voiced refusal is punctuated as speech; the sim's own log prose stays parenthetical,
+            // exactly as it read before M2b.
+            consequence = spoken == walked.Reason
+                ? $"{HeroName(walked.Hero)} passed ({spoken}) — {DescribeNextCustomer()}"
+                : $"{HeroName(walked.Hero)} passed. \"{spoken}\" — {DescribeNextCustomer()}";
         }
         else
         {
@@ -551,10 +561,12 @@ public partial class CounterPanel : SimPanel
         var walkedToday = state.EventLog.OfType<CustomerWalked>().Where(e => e.Day == state.Day).ToList();
         foreach (var walked in walkedToday)
         {
-            // Routed through the SAME reply table Present's Buy branch uses (CustomerVoice.PresentReply)
-            // so every ShoppingVerdictKind renders through one exhaustive seam — the Pass branch
-            // returns walked.Reason verbatim, so this is a no-op change to what's actually shown.
-            var reply = CustomerVoice.PresentReply(ShoppingVerdictKind.Pass, itemName: string.Empty, walked.Reason);
+            // M2b: routed through the exhaustive PassReasonKind seam (CustomerVoice.WalkReply), which
+            // re-derives the sim's own typed reason read-only and hands back walked.Reason verbatim
+            // unless it can reproduce that exact refusal. The one reason it re-voices is the
+            // storied-gear gate: a hero refusing to part with a piece of the player's old work says
+            // so in their own words, because that refusal IS the item's promotion being felt.
+            var reply = CustomerVoice.WalkReply(state, walked.Hero, walked.Item, walked.Reason);
             _body!.AddChild(BuildSpeechBubble($"{HeroName(walked.Hero)}: \"{reply}\""));
         }
     }

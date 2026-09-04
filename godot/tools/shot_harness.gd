@@ -127,7 +127,8 @@ const KNOWN_STATES := [
 	"HeroErrand", "HeroTrinket", "Ledger", "LedgerProvenance", "Lessons", "MemoryRow",
 	"MineGateFocus", "Mirror",
 	"OccupancyCorner", "Primer", "Provenance", "ReturnAtNight", "ReturnEmerge", "ReturnQuestEmpty",
-	"SendOff", "ShopPanel", "ShopTrinket", "SplitLessons", "SystemMenu", "TavernPanel",
+	"SendOff", "ShopPanel", "ShopTrinket", "SplitLessons", "Storied", "StoriedCard",
+	"StoriedRefusal", "SystemMenu", "TavernPanel",
 	"TavernScene", "TavernSceneAtBar", "Telling",
 	"TellingFall", "TellingFork", "TellingVerdict", "TownOverview", "TutorialLookIn",
 	"TutorialOffCamera", "Watch", "WarrantFirstMorning",
@@ -267,6 +268,19 @@ func _initialize() -> void:
 		# driven off the same real per-frame delta), so this also catches MainUi's narrator toast
 		# (RejectionToastSeconds = 4s) still on screen, same as ReturnEmerge's own calibration.
 		_settle = 950
+	elif _state == "Storied":
+		# M2b: the wall is opened synchronously at frame 0 (Dev_ShowLegendsWallLive) -- no camera
+		# dolly, no scene change -- so the plain-town default settle is already generous.
+		_settle = 90
+	elif _state == "StoriedCard":
+		# M2b: the storied row is pressed at frame 90 (see the dispatch below), once the wall has
+		# settled; the card it opens is synchronous, so 150 leaves 60 frames of margin past it.
+		_settle = 150
+	elif _state == "StoriedRefusal":
+		# M2b: the Shop drawer opens at frame 0, Open Counter is pressed at 90 (past its 0.22s
+		# slide) and Present at 150 (past the counter session's own rebuild). 220 leaves 70 frames
+		# past the refusal for the walk-away speech bubble to be laid out and drawn.
+		_settle = 220
 	elif _state == "Primer":
 		# P2-ONBOARD-05: two synchronous button presses in one frame (see the _frames==60 dispatch
 		# below) -- no camera dolly, no scene change -- so the plain-town default settle is already
@@ -468,6 +482,32 @@ func _process(_delta: float) -> bool:
 					+ "a capture of the plain town under this name would read as a look nobody took.")
 				quit(1)
 				return false
+		elif _state == "Storied" or _state == "StoriedCard":
+			# M2b: the storied-gear promotion, live. SHOT_STORIED=1 (see shoot.ps1) has already
+			# planted the FACTS into the campaign -- a marked blade with four recorded deeds in
+			# every hero's hands -- so nothing here is staged: the wall renders the real campaign
+			# state, and whether any row appears at all is ShoppingAi's own threshold deciding.
+			# Dev_ShowLegendsWallLive rather than the OpenLegends HUD button because the wall is a
+			# gated surface a day-1 campaign has not unlocked; the wall itself is the production
+			# ShowWall call either way. StoriedCard presses the storied row a beat later (the
+			# _frames == 90 block below), once the wall has settled -- the same production
+			# Button -> OnShowProvenance path a player clicking that row takes.
+			if _ui.has_method("Dev_ShowLegendsWallLive"):
+				_ui.call("Dev_ShowLegendsWallLive")
+			else:
+				push_error("[shot] SHOT_STATE=%s could not reach MainUi.Dev_ShowLegendsWallLive -- "
+					% _state + "the shot below is the plain town and proves nothing about storied gear.")
+				quit(1)
+				return false
+		elif _state == "StoriedRefusal":
+			# M2b: the counter voicing the refusal. Opens the Shop drawer here; the real
+			# "Open Counter" button and then the real "Present" button on the shelved Plain Blade
+			# are pressed on later beats (the _frames == 90 / 150 blocks below), once each slide
+			# has settled -- the same ordering (and the same reason) the Counter state uses.
+			# Nothing about the outcome is staged: the customer the morning queue promotes is
+			# wearing storied work, so ShoppingAi's own gate is what walks them away.
+			if _ui.has_method("OpenPanel"):
+				_ui.call("OpenPanel", "Shop")
 		elif _state == "MemoryRow":
 			# U32 (§11.14.14): the Memory act’s own row, live — a fresh day-1 campaign has no
 			# legend item yet to render the wall’s "LEGENDARY GEAR" section against, so this
@@ -967,6 +1007,34 @@ func _process(_delta: float) -> bool:
 		var bell = _ui.find_child("AdvancePhase", true, false)
 		if bell:
 			bell.emit_signal("pressed")
+	# M2b, StoriedCard's second beat: the wall opened at frame 0 has settled, so press a real
+	# storied row -- the same Button -> OnShowProvenance path a player clicking it takes. Loud on a
+	# miss: a shot that quietly photographed a wall with no storied row would read as "the card is
+	# fine" while proving nothing about the line this unit exists to add.
+	if _state == "StoriedCard" and _frames == 90:
+		var storied_row = _ui.find_child("Storied_*", true, false)
+		if storied_row:
+			storied_row.emit_signal("pressed")
+		else:
+			push_error("[shot] SHOT_STATE=StoriedCard could not find a Storied_* row button -- "
+				+ "the shot below is a closed card and proves nothing about the storied line.")
+	# M2b, StoriedRefusal's second and third beats: open the real counter, then present the real
+	# shelved Plain Blade to whoever the morning queue promoted. Both are the production buttons
+	# (Button -> OpenCounterAction / PresentItemAction -> Adapter.Queue), never a state injection.
+	if _state == "StoriedRefusal" and _frames == 90:
+		var open_counter_storied = _ui.find_child("OpenCounter", true, false)
+		if open_counter_storied:
+			open_counter_storied.emit_signal("pressed")
+		else:
+			push_error("[shot] SHOT_STATE=StoriedRefusal could not find the OpenCounter button -- "
+				+ "the shot below is a CLOSED counter and no refusal can have been spoken.")
+	if _state == "StoriedRefusal" and _frames == 150:
+		var present_btn = _ui.find_child("Present_*", true, false)
+		if present_btn:
+			present_btn.emit_signal("pressed")
+		else:
+			push_error("[shot] SHOT_STATE=StoriedRefusal could not find a Present_* button -- "
+				+ "nothing was ever offered, so the shot below proves nothing about the refusal.")
 	# P2-PEOPLE-01, TavernSceneAtBar's second beat: the Tavern drawer opened at frame 0 has settled,
 	# so press the arc-scene row's own Pursue -- the production path a player takes, the same one
 	# the commission and ore rows beside it take. Loud on a miss: a shot that quietly photographed a
