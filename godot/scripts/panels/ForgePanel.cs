@@ -572,6 +572,11 @@ public partial class ForgePanel : SimPanel
         }
     }
 
+    /// <summary>Dev/receipt override, mirroring <c>ShopPanel</c>'s own <c>_devStagedState</c>
+    /// (see <see cref="Dev_ShowLiveBatchEcho"/>) — a hand-built <see cref="GameState"/> laid over
+    /// the live <see cref="Adapter"/> read for exactly one render, never written back to it.</summary>
+    private GameState? _devStagedState;
+
     public override void Refresh()
     {
         EnsureBuilt();
@@ -580,7 +585,7 @@ public partial class ForgePanel : SimPanel
             return;
         }
 
-        var state = Adapter.CurrentState;
+        var state = _devStagedState ?? Adapter.CurrentState;
         // UI-5: the running materials list is now redundant with each vendor ListRow's own
         // "owned" column below — this line stays only as the empty-inventory hint (no full
         // "copper x4, iron x2" prose dump once there IS stock to read off the rows instead).
@@ -1048,6 +1053,27 @@ public partial class ForgePanel : SimPanel
                 AddButton(controlsRow, $"Commission_{recipe.RecipeId}",
                     $"Commission Legendary ({commissionsRemaining} of {LegendaryCommissionHandlers.MaxPerCampaign} left)",
                     new Verdict(legendaryLegal, legendaryWhyNot), () => OnCommissionLegendaryPressed(recipe.RecipeId, material), onRefused: SetFeedback);
+
+                // Wave 5 rendering follow-up (#714 finding — batch echo was computed but never
+                // shown): tell the player their last hand-forge of THIS recipe today is still
+                // seeding auto-crafts. Reads CraftingHandlers.PendingEchoGrade — the sim's own
+                // decay formula, never a second copy of it (that exact drift bit HeroPanel, fixed
+                // in #712) — so this can only ever show what the next auto-craft would actually
+                // apply. Null (a different recipe, yesterday's echo, or its four uses already
+                // spent) renders nothing: no chip is itself the honest "no live echo" state. Added
+                // LAST in controlsRow (HFlowContainer): if the row overflows onto a second line,
+                // this trailing chip is what wraps — every earlier button (Craft/Work the
+                // forge/Masterwork/Commission) keeps the exact on-screen position it already had,
+                // so this can never be the thing that pushes an EARLIER control's click target
+                // out from under a test (or a player) that measured it before this chip existed.
+                var pendingEchoGrade = CraftingHandlers.PendingEchoGrade(state.Player.BatchEcho, recipe.RecipeId, state.Day);
+                if (pendingEchoGrade is int echoGradePermille)
+                {
+                    var echoUsesLeft = CraftingHandlers.BatchEchoCount - state.Player.BatchEcho!.Uses;
+                    var echoBand = ForgeMinigame.PreviewGrade(echoGradePermille);
+                    controlsRow.AddChild(StatChip(
+                        "Echo", $"{echoUsesLeft} left today, trending {echoBand}", UiKit.ChipTone.Accent));
+                }
             }
 
             foreach (var node in profession.TalentNodes.Values)
@@ -1113,6 +1139,31 @@ public partial class ForgePanel : SimPanel
                 needsGate.Legal,
                 needsGate.WhyNot));
         }
+    }
+
+    /// <summary>
+    /// Dev/receipt tool only (never called from real play), reachable via <c>shot_harness.gd</c>'s
+    /// <c>call()</c> bridge — the #714 rendering-follow-up receipt: seeds a fresh, live
+    /// <see cref="BatchEchoState"/> for the buckler recipe (the first Tier-1 card a fresh
+    /// campaign renders without scrolling — the same recipe <c>ForgeMenuLegibilityTests</c>'
+    /// own layout notes name) on the CURRENT day, off the live
+    /// <see cref="Adapter"/>.<see cref="SimAdapter.CurrentState"/> (same "hand-built GameState,
+    /// zero sim mutation" idiom as <see cref="ShopPanel.Dev_ShowSampleUnshelvedTrinket"/>),
+    /// so <c>SHOT_STATE=ForgeEcho</c> can photograph the recipe card's "Echo" chip without
+    /// depending on a real hand-forge (a full Anvil-Map trace) landing one this run.
+    /// </summary>
+    public void Dev_ShowLiveBatchEcho()
+    {
+        if (Adapter is null)
+        {
+            return;
+        }
+
+        EnsureBuilt();
+        var baseState = Adapter.CurrentState;
+        var echo = new BatchEchoState("buckler", baseState.Day, SeedGrade: 950, Uses: 0);
+        _devStagedState = baseState with { Player = baseState.Player with { BatchEcho = echo } };
+        Refresh();
     }
 
     /// <summary>The action path the craft buttons share — tests drive this via the button signal.</summary>

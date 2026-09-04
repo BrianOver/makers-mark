@@ -23,11 +23,14 @@ namespace GameSim.Crafting;
 /// </summary>
 public sealed class CraftingHandlers : IActionHandler
 {
-    /// <summary>Wave 5 (U23e, batch echo): how many echoed auto-crafts one hand-forge seeds.</summary>
-    private const int BatchEchoCount = 4;
+    /// <summary>Wave 5 (U23e, batch echo): how many echoed auto-crafts one hand-forge seeds.
+    /// Public (rendering follow-up, #714 finding): the Forge panel reads this to tell a player
+    /// how many echoed copies remain, instead of re-typing the number.</summary>
+    public const int BatchEchoCount = 4;
 
-    /// <summary>Per-mille the echoed grade decays per successive copy.</summary>
-    private const int BatchEchoDecayPermille = 80;
+    /// <summary>Per-mille the echoed grade decays per successive copy. Public for the same
+    /// rendering reason as <see cref="BatchEchoCount"/>.</summary>
+    public const int BatchEchoDecayPermille = 80;
 
     /// <summary>Floor the echoed grade can never fall below (PKD4). At introduction (2026-07-24)
     /// this equalled <see cref="QualityRoller.AutoCraftGrade"/>, which was also 550 then, so an
@@ -37,8 +40,24 @@ public sealed class CraftingHandlers : IActionHandler
     /// plain auto-craft landed in before #583 and no longer did — reproducing the pre-#583 defect
     /// on the echo path alone. Investigated 2026-09-03 (Task 2, real/reachable, not inert); owner
     /// ruled 2026-09-03 to restore the invariant. Raised to 800 here to match, so an echo can once
-    /// again never land worse than a plain auto-craft.</summary>
-    private const int BatchEchoFloor = 800;
+    /// again never land worse than a plain auto-craft. Public for the same rendering reason as
+    /// <see cref="BatchEchoCount"/>.</summary>
+    public const int BatchEchoFloor = 800;
+
+    /// <summary>Wave 5 rendering follow-up (#714 finding — batch echo was invisible in
+    /// <c>godot/</c>): the grade a NEXT auto-craft of <paramref name="recipeId"/> on
+    /// <paramref name="day"/> would inherit from <paramref name="echo"/>, or null when no echo is
+    /// live for that exact recipe+day (a different recipe, a new day, or its
+    /// <see cref="BatchEchoCount"/> uses already spent all go stale — same match check
+    /// <see cref="ApplyCraft"/> itself applies). Pure, RNG-free, and the SINGLE place this decay
+    /// formula lives: <see cref="ApplyCraft"/> calls it for the real craft and the Forge panel
+    /// calls it to preview the same number before the player commits, so the two can never drift
+    /// into two different answers — the exact defect class #712 fixed for <c>HeroPanel</c>'s
+    /// hand-typed threshold copy.</summary>
+    public static int? PendingEchoGrade(BatchEchoState? echo, string recipeId, int day) =>
+        echo is not null && echo.RecipeId == recipeId && echo.Day == day && echo.Uses < BatchEchoCount
+            ? System.Math.Max(BatchEchoFloor, echo.SeedGrade - (BatchEchoDecayPermille * (echo.Uses + 1)))
+            : null;
 
     public bool CanHandle(PlayerAction action, DayPhase phase) =>
         action is CraftAction or UnlockTalentAction; // all phases legal
@@ -167,10 +186,7 @@ public sealed class CraftingHandlers : IActionHandler
         // (BaselinePlayer never hand-forges), so it moves only the serialized SHAPE, not behavior.
         var echo = state.Player.BatchEcho;
         var isAutoCraft = action.Puzzle is null && action.PerformanceGrade is null;
-        int? echoGrade = isAutoCraft && echo is not null
-                && echo.RecipeId == recipe.RecipeId && echo.Day == state.Day && echo.Uses < BatchEchoCount
-            ? System.Math.Max(BatchEchoFloor, echo.SeedGrade - (BatchEchoDecayPermille * (echo.Uses + 1)))
-            : null;
+        int? echoGrade = isAutoCraft ? PendingEchoGrade(echo, recipe.RecipeId, state.Day) : null;
 
         // U7/U8 part 2: the tanner's scrape and the engineer's assembly join the brew on the
         // scored-here path — all three are pure integer scorers with zero RNG, so adding them leaves
