@@ -20,6 +20,48 @@ public static class CombatMath
     public const int DrinkThresholdPct = 50;
 
     /// <summary>
+    /// The post-floor "too hurt to press deeper" line: 30% MaxHp, strictly between the flee line
+    /// (<see cref="FleeThresholdPct"/>, 25) and the drink line (<see cref="DrinkThresholdPct"/>, 50).
+    /// See <see cref="IsTooHurtToContinue"/> for why it is its own constant rather than either
+    /// neighbour.
+    /// </summary>
+    public const int TooHurtThresholdPct = 30;
+
+    /// <summary>
+    /// Whether a hero who has just CLEARED a floor is hurt enough that the party stops there
+    /// instead of descending. Its own line, deliberately: the three bars mean three different
+    /// things, and fusing any two of them deletes a decision.
+    ///
+    /// <para>History, because both neighbours have held this job and both were wrong.
+    /// Until #328 (2026-08-01) this was <see cref="ShouldFlee"/> (25%), which the flee-first
+    /// ordering made UNREACHABLE — with flee checked at the top of every round and never
+    /// cancelled, a hero still standing on a cleared floor took no damage in the killing round,
+    /// so they finished at or above the flee line by construction. #328 fixed that by moving the
+    /// bar to <see cref="ShouldDrink"/> (50%), which restored reachability but fused "too hurt to
+    /// go on" to "wounded enough to drink" — and that lifted the camp's park floor from 25% to
+    /// 50%, straight through the <c>[25%,40%)</c> band the vigil's send-the-runner verb aims at.
+    /// The verb stopped delivering anything at all (measured: 62 deliveries on 2026-07-18, zero on
+    /// 2026-09-02 over the identical sweep), because a camped hero was never under 50%.</para>
+    ///
+    /// <para>A third constant is what both facts want at once (owner ruling 2026-09-03,
+    /// P2-LONG-25). Strictly above the flee line, so the halt stays reachable and #328's bug does
+    /// not come back; strictly below the send verb's 40% band, so a party CAN camp genuinely hurt
+    /// and the player's sixth decision has two live arms again. The post-floor quaff keeps the
+    /// DRINK line — a hero with a salve still tops up after a hard floor — so the heroes who now
+    /// camp in the send band are precisely the ones whose packs are empty. That is the audience
+    /// the runner exists for.</para>
+    ///
+    /// <para>Shares <paramref name="thresholdDeltaPct"/> with <see cref="ShouldFlee"/> and
+    /// <see cref="ShouldDrink"/> so a Coward's/Braveheart oil shifts all three lines together and
+    /// their ordering never inverts. Integer-only, no RNG.</para>
+    /// </summary>
+    public static bool IsTooHurtToContinue(int hp, int maxHp, int thresholdDeltaPct)
+    {
+        var threshold = Math.Clamp(TooHurtThresholdPct + thresholdDeltaPct, 0, 100);
+        return hp * 100 < threshold * maxHp;
+    }
+
+    /// <summary>
     /// Whether the monster's WORST-CASE next blow (max roll) would drop this hero to 0 — the
     /// hero is one hit from death right now. Pure integer arithmetic over the same
     /// <see cref="MonsterDamage"/> formula the fight uses, so it can never disagree with the

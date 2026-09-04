@@ -334,23 +334,36 @@ public static class ExpeditionResolver
             // (first Heal item in pack order), THEN the check is evaluated. Draws no
             // RNG, so evaluating here instead of after the loot rolls leaves the
             // stream untouched (the loot is granted either way on a cleared floor).
-            // The post-floor bar is the DRINK line (CombatMath.ShouldDrink, 50%), not the flee
-            // line. Two reasons, both consequences of the 2026-08-01 flee-first ordering:
+            // TWO different lines, deliberately split (P2-LONG-25, owner ruling 2026-09-03):
+            // the QUAFF fires at the drink line (CombatMath.ShouldDrink, 50%) and the HALT fires
+            // at the too-hurt line (CombatMath.IsTooHurtToContinue, 30%). Both stay strictly
+            // above the flee line (25%), which is what keeps this whole branch reachable — with
+            // flee checked FIRST and never cancelled, a hero still standing on a CLEARED floor
+            // took no damage in the killing round, so a flee-line bar here would never fire and
+            // ExpeditionHalt.TooHurt would be a feature deleted by accident (that is exactly what
+            // #328 was fixing on 2026-08-01, and PostFloorTooHurtCheck_QuaffsBySameRule plus
+            // StagedResolutionTests.HaltPrecedence_TooHurtCheckFiresAtTargetFloor caught it).
             //
-            // 1. Correctness. With flee checked FIRST and never cancelled, a hero can no longer
-            //    finish a CLEARED floor below the flee line — the killing round deals the hero no
-            //    damage, so any hero still standing entered that round above the line. Keeping
-            //    the old ShouldFlee bar here would have made ExpeditionHalt.TooHurt (and the
-            //    post-floor quaff) silently UNREACHABLE — a feature deleted by accident. Two
-            //    tests caught it: PostFloorTooHurtCheck_QuaffsBySameRule and
-            //    StagedResolutionTests.HaltPrecedence_TooHurtCheckFiresAtTargetFloor.
-            // 2. Fiction. "Too hurt to press deeper" should be a MORE cautious bar than "break
-            //    off this fight", not the same one: a hero at 40% finishing a floor now banks the
-            //    clear and goes home instead of descending into a harder floor at 40%.
+            // #328 fixed reachability by FUSING the two lines at 50%, and that fusion is what
+            // this split undoes. The halt is also the camp's park floor — ResolveStage1 parks
+            // only on a raw TargetReached — so a 50% halt meant a camped hero was at or above
+            // 50% by construction, and the vigil's send-the-runner verb, which targets a hero
+            // under 40%, had a structurally empty audience: 62 deliveries measured 2026-07-18,
+            // zero measured 2026-09-02 over the identical 20-seed sweep (P2-LONG-23/24).
+            //
+            // Why the split restores a decision rather than just a number: the quaff still fires
+            // at 50%, so a hero carrying a salve tops up after a hard floor exactly as before,
+            // and the party that now camps in the send band is the party whose packs came up
+            // EMPTY. Both halves of the tension are real and both are measured in
+            // CampProvisioningBalanceTests — a delivery provably saves that hero (the
+            // counterfactual replay emits PotionLifesave beats on delivered items), and it also
+            // sends a party that would have limped home down into floors that kill.
             //
             // Same insurance shape as in-fight: drink first (a Prepared hero tops up and presses
-            // on), then re-evaluate — a hero still under the line after drinking goes home with
-            // the floor's loot banked. A Reckless hero with an empty pack simply goes home.
+            // on), then re-evaluate — a hero still under the HALT line after drinking goes home
+            // with the floor's loot banked. A Reckless hero with an empty pack at 28% goes home;
+            // at 35% they press on, hurt, and it is the player's runner that decides how that
+            // ends.
             var tooHurtToContinue = false;
             if (floorCleared)
             {
@@ -362,7 +375,7 @@ public static class ExpeditionResolver
                         QuaffAfterFight(hero, items, hp, packs, combats);
                     }
 
-                    tooHurtToContinue |= CombatMath.ShouldDrink(hp[hero.Id.Value], hero.MaxHp, fleeDelta);
+                    tooHurtToContinue |= CombatMath.IsTooHurtToContinue(hp[hero.Id.Value], hero.MaxHp, fleeDelta);
                 }
             }
 

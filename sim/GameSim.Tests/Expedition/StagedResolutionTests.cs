@@ -254,11 +254,25 @@ public class StagedResolutionTests
     /// <see cref="CombatMath.ShouldDrink"/> (50%) as a consequence of the flee-first ordering fix.
     /// That single change moved the park floor from 25% to 50% straight through the send verb's
     /// &lt;40% band — which is why the 2026-07-18 sweep measured 62 deliveries out of [25%,40%) and
-    /// the 2026-09-02 re-run measured zero. This test pins the floor and the now-empty band together
-    /// so a future retune has to walk past a red test rather than a stale comment.</para>
+    /// the 2026-09-02 re-run measured zero.</para>
+    ///
+    /// <para><b>RE-AIMED 2026-09-04 (P2-LONG-25, owner ruling).</b> Both neighbours have held this
+    /// job and both were wrong: at the flee line the check was unreachable, and at the drink line it
+    /// fused "too hurt to press on" to "wounded enough to drink" and emptied the send band. The bar
+    /// is now its own constant, <see cref="CombatMath.TooHurtThresholdPct"/> (30%), strictly between
+    /// them — so a party can be found camped in real trouble, which is the state the vigil's
+    /// send-the-runner verb was always aimed at.</para>
+    ///
+    /// <para><b>What this test now pins is the inverse of what it pinned before.</b> The floor is the
+    /// too-hurt line, it is still BINDING (parks reach it, so the census cannot pass vacuously over
+    /// healthy heroes), and the [too-hurt, send) band is REACHABLE rather than empty. The measured
+    /// consequence, both halves of the dilemma at once: 20 deliveries where there were zero, 5 of
+    /// them proved by counterfactual replay to have saved a hero who would otherwise have died —
+    /// bought with 4 net deaths across the same sweep. Sending saves named people and costs lives,
+    /// and the game still does not resolve that for the player.</para>
     /// </summary>
     [Fact]
-    public void ParkFloor_IsTheDrinkLine_SoTheSendVerbsSubFortyBandIsStructurallyEmpty()
+    public void ParkFloor_IsTheTooHurtLine_SoTheSendVerbsBandIsReachableAgain()
     {
         const int sendThresholdPct = 40; // CampProvisioningBalanceTests.SendThresholdPct (D5)
 
@@ -293,21 +307,24 @@ public class StagedResolutionTests
 
         Assert.NotEmpty(parkedPercents);
 
-        // 1. The floor: no camped hero is under the drink line. This is the invariant, and it is what
-        //    makes the send verb unreachable — 40 < 50, so the targeted set is empty for free.
-        Assert.Equal(0, parkedPercents.Count(p => p < CombatMath.DrinkThresholdPct));
-        Assert.Equal(0, parkedPercents.Count(p => p < sendThresholdPct));
+        // 1. The floor: no camped hero is under the too-hurt line. Still an invariant, just a lower
+        //    one — a party holding anyone below it is finalised rather than parked, so the player is
+        //    never shown a camp the resolver would not have allowed to stop.
+        Assert.Equal(0, parkedPercents.Count(p => p < CombatMath.TooHurtThresholdPct));
 
         // 2. The floor is BINDING, not incidental: parks land ON the drink line, not merely above it.
         //    Without this a future change that keeps every hero at 100% would leave assertion 1 true
         //    and this test silently vacuous.
         Assert.True(
-            parkedPercents.Min() < CombatMath.DrinkThresholdPct + 10,
-            $"expected parks to reach the drink line ({CombatMath.DrinkThresholdPct}%); lowest parked hero was {parkedPercents.Min()}%");
+            parkedPercents.Min() < CombatMath.TooHurtThresholdPct + 10,
+            $"expected parks to reach the too-hurt line ({CombatMath.TooHurtThresholdPct}%); lowest parked hero was {parkedPercents.Min()}%");
 
-        // 3. The band #328 closed: [flee, drink) is exactly the range the 2026-07-18 build parked
-        //    heroes into and the send verb harvested. It is empty now, and that is the whole finding.
-        Assert.Equal(0, parkedPercents.Count(p => p >= CombatMath.FleeThresholdPct && p < CombatMath.DrinkThresholdPct));
+        // 3. The band the verb aims at is REACHABLE — the inverse of what this line asserted while
+        //    #328's fused floor stood. A hurt camped hero is a sight the player can actually be
+        //    shown, so "send the runner or trust their judgment" is a call rather than a formality.
+        //    Asserted non-empty rather than as a count: the exact number is a balance value and
+        //    belongs to CampProvisioningBalanceTests' census, not to a structural pin.
+        Assert.NotEmpty(parkedPercents.Where(p => p >= CombatMath.TooHurtThresholdPct && p < sendThresholdPct));
     }
 
     [Fact]

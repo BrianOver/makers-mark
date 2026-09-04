@@ -76,7 +76,17 @@ namespace GameSim.Tests.Balance;
 /// raw TargetReached, and the post-floor too-hurt check finalises any party still holding a hero
 /// under CombatMath.ShouldDrink (50%) — so a camped hero is at or above the drink line BY
 /// CONSTRUCTION, and nothing mutates parked HP between the park and the Camp window. The send verb's
-/// &lt;40% band therefore sits entirely below the park floor: it is an empty set, not a rare one.
+/// &lt;40% band therefore sat entirely below the park floor: an empty set, not a rare one.
+///
+/// <para><b>REPAIRED 2026-09-04 (P2-LONG-25, owner ruling).</b> The census above is the BEFORE
+/// reading. CombatMath now carries its own TooHurtThresholdPct (30%), strictly between the flee and
+/// drink lines, so the post-floor check no longer fuses "too hurt to press deeper" to "wounded
+/// enough to drink". The [30%,40%) band the send verb aims at is reachable again — 44 observations
+/// over the same sweep where there were none. Both halves of the dilemma measured together: 20
+/// deliveries against zero before, 5 of them proved by counterfactual replay to have saved a hero
+/// who would otherwise have died, bought with 4 net deaths. The two cheaper knobs (raising the send
+/// threshold to ~90%, deepening the checkpoint) were rejected — the first makes the verb fire
+/// without making it a decision, the second changes expedition pacing wholesale.</para>
 ///
 /// The dated cause is #328 (2026-08-01, the flee-first ordering fix), which moved that post-floor bar
 /// from CombatMath.ShouldFlee (25%) to CombatMath.ShouldDrink (50%) for reasons unrelated to this
@@ -84,10 +94,10 @@ namespace GameSim.Tests.Balance;
 /// the 07-18 sweep harvested 62 deliveries out of. It is not a harness ceiling: no action stream,
 /// scripted or human, can produce a camped hero the send verb can target, because the player has no
 /// verb between the fight and the park. The reproducing pin is
-/// StagedResolutionTests.ParkFloor_IsTheDrinkLine_SoTheSendVerbsSubFortyBandIsStructurallyEmpty.
+/// StagedResolutionTests.ParkFloor_IsTheTooHurtLine_SoTheSendVerbsBandIsReachableAgain.
 ///
-/// The retune this implies (send threshold, checkpoint depth, or the too-hurt bar) is NOT taken here
-/// — it needs a balance re-baseline and a design ruling on which knob moves. Booked as P2-LONG-25.
+/// The retune was taken as P2-LONG-25 (2026-09-04) — the too-hurt bar, on the owner's ruling, with
+/// the golden re-record recorded in AtomicEquivalenceTests and PhaseBNoDrawGateTests.
 /// </summary>
 public class CampProvisioningBalanceTests
 {
@@ -99,11 +109,13 @@ public class CampProvisioningBalanceTests
 
     public CampProvisioningBalanceTests(ITestOutputHelper output) => _output = output;
 
-    private readonly record struct ArmStats(int Deaths, int Expeditions, int TargetReached, int Deliveries, int SalveUses)
+    private readonly record struct ArmStats(
+        int Deaths, int Expeditions, int TargetReached, int FloorsCleared, int Deliveries, int SalveUses, int DeliveredLifesaves)
     {
         public static ArmStats operator +(ArmStats a, ArmStats b) => new(
             a.Deaths + b.Deaths, a.Expeditions + b.Expeditions, a.TargetReached + b.TargetReached,
-            a.Deliveries + b.Deliveries, a.SalveUses + b.SalveUses);
+            a.FloorsCleared + b.FloorsCleared, a.Deliveries + b.Deliveries, a.SalveUses + b.SalveUses,
+            a.DeliveredLifesaves + b.DeliveredLifesaves);
     }
 
     [Fact]
@@ -164,11 +176,17 @@ public class CampProvisioningBalanceTests
 
         _output.WriteLine($"  [100%]      {pcts.Count(p => p >= 100),6}");
 
-        // The finding, asserted so it cannot rot silently: nothing camps below the drink line, and
-        // therefore nothing camps in the send verb's band. If either line ever fires again this test
-        // goes red and the class comment above is stale.
-        Assert.Equal(0, pcts.Count(p => p < CombatMath.DrinkThresholdPct));
-        Assert.Equal(0, pcts.Count(p => p < SendThresholdPct));
+        // RE-AIMED 2026-09-04 (P2-LONG-25). These two lines are the inverse of what they asserted
+        // while #328's fused floor stood, and the pair still cannot rot silently in either direction.
+        //
+        // The floor moved DOWN to the too-hurt line, so that is what is now structurally empty. The
+        // send verb's band sits ABOVE that floor rather than beneath it, which is the whole repair:
+        // a hurt party can be found camped, so provisioning it is a decision instead of a formality.
+        // Asserted as non-empty rather than as a count — the exact number is a balance value that
+        // moves with any venue or threshold retune, and pinning it here would make every such retune
+        // a false failure in a file whose job is to report the distribution, not to freeze it.
+        Assert.Equal(0, pcts.Count(p => p < CombatMath.TooHurtThresholdPct));
+        Assert.NotEmpty(pcts.Where(p => p >= CombatMath.TooHurtThresholdPct && p < SendThresholdPct));
     }
 
     /// <summary>Every camped hero's hp% at the Camp window (the Expedition tick has just parked and
@@ -212,7 +230,14 @@ public class CampProvisioningBalanceTests
         var kernel = GameComposition.BuildKernel();
         var state = GameComposition.NewCampaign(seed);
 
-        int deaths = 0, expeditions = 0, targetReached = 0, deliveries = 0, salveUses = 0;
+        int deaths = 0, expeditions = 0, targetReached = 0, floorsCleared = 0, deliveries = 0, salveUses = 0, deliveredLifesaves = 0;
+
+        // Every item the runner actually dropped this run. The attribution engine (KTD6) replays
+        // each recorded fight with the item removed, so a PotionLifesave beat on one of THESE ids
+        // is the save half of the tension stated in fact, not in aggregate: that hero would have
+        // died, and the delivery is why they did not.
+        var delivered = new HashSet<int>();
+
         for (var tick = 0; tick < Days * 5; tick++) // 5-phase day
         {
             var result = kernel.Tick(state, ArmActions(state, send));
@@ -225,8 +250,12 @@ public class CampProvisioningBalanceTests
                     case HeroDied:
                         deaths++;
                         break;
-                    case SupplyDelivered:
+                    case SupplyDelivered supply:
                         deliveries++;
+                        delivered.Add(supply.Item.Value);
+                        break;
+                    case AttributionBeatEvent { Beat: BeatType.PotionLifesave } beat when delivered.Contains(beat.Item.Value):
+                        deliveredLifesaves++;
                         break;
                 }
             }
@@ -238,6 +267,7 @@ public class CampProvisioningBalanceTests
                 foreach (var expedition in state.PendingExpeditions)
                 {
                     expeditions++;
+                    floorsCleared += expedition.DeepestFloorCleared;
                     if (expedition.Halt == ExpeditionHalt.TargetReached)
                     {
                         targetReached++;
@@ -248,7 +278,7 @@ public class CampProvisioningBalanceTests
             }
         }
 
-        return new ArmStats(deaths, expeditions, targetReached, deliveries, salveUses);
+        return new ArmStats(deaths, expeditions, targetReached, floorsCleared, deliveries, salveUses, deliveredLifesaves);
     }
 
     /// <summary>
