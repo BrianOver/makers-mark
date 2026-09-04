@@ -547,6 +547,21 @@ surface, retune, or split — R1's fork describes a mechanism the current build 
 produce. What replaced it is a different, live defect — the send verb's arm never fires at
 all — booked as its own unit, `P2-LONG-24`, below.
 
+**What `P2-LONG-24` found (2026-09-03), amending the paragraph above.** The full census over the
+same 20-seed sweep — 10818 camped-hero observations, not seed 2026's 200 — puts the minimum at
+**50%**, not 60%; the 60% figure was a small-sample artifact. And 50% is not where the distribution
+happens to stop: it is a **structural floor**. `ResolveStage1` parks only on a raw `TargetReached`,
+and the post-floor too-hurt check finalises any party still holding a hero under the drink line
+(`CombatMath.ShouldDrink`, 50%), so a camped hero is at or above 50% *by construction*, and nothing
+mutates parked HP between the park and the Camp window. The send verb's `<40%` band is an empty
+set, not a rare one, and no action stream — scripted or human — can reach it, because the player
+has no verb between the fight and the park. The dated cause is **#328** (2026-08-01, the flee-first
+ordering fix), which moved that bar from `ShouldFlee` (25%) to `ShouldDrink` (50%) for reasons
+unrelated to this verb, lifting the park floor straight through the `[25%,40%)` band the 07-18
+sweep harvested its 62 deliveries out of. This makes R1's retirement **stronger**, not weaker: the
+tragedy is not merely unmeasurable now, its precondition is unconstructible. Re-aiming the verb so
+link 2's sixth decision has two live arms again is `P2-LONG-25`.
+
 **The freeze is lifted, explicitly.** "Until R1 lands, no further vigil work ships" (the
 plan's one amendment to §9.6's blessed order, recorded 2026-08-06) is **void as of
 2026-09-03**. There is no R1 left to land, and the freeze had already been stepped over
@@ -4356,6 +4371,8 @@ name (§11.6 rule 4).
 | P2-LONG-21 | The Mark Endures — the carryover contract and the no-stats tripwire | `sim/GameSim/Contracts/`, `sim/GameSim/Kernel/GameFactory.cs` | P2-LONG-13 | [S][C][GOLD] |
 | P2-LONG-22 | The seventh decision — the choice, the door, the commission echo | `godot/scripts/`, `sim/GameSim/Economy/` | P2-LONG-21 | [G] |
 | ⚑ P2-LONG-23 | Re-run the camp A/B on the current build — the measurement R1 rests on | `sim/GameSim.Tests/Balance/CampProvisioningBalanceTests.cs` (its recorded baseline), `runs/` | — | [S] |
+| ⚑ P2-LONG-24 | Why the vigil's send verb never fires — the camped-HP census and the cause | `sim/GameSim.Tests/Balance/CampProvisioningBalanceTests.cs`, `sim/GameSim.Tests/Expedition/StagedResolutionTests.cs` | P2-LONG-23 | [S] |
+| ⚑ P2-LONG-25 | Aim the send verb at where camped heroes actually are — one knob, re-baselined | `sim/GameSim/Expedition/ExpeditionResolver.cs`, `sim/GameSim/Expedition/ExpeditionSystem.cs`, the two tests above | P2-LONG-24 | [S][BAL] |
 | ⚑ P2-HONEST-01 | The Progress book can be opened, and the harness uses the door | `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/tools/FullPlaytest.cs` | — | [G] |
 | P2-HONEST-02 | Four dead-mechanism sentences die; `Gate.Reason` splits closed/opened | `godot/scripts/ui/SurfaceUnlocks.cs`, copy | — | [G] |
 | P2-HONEST-03 | The sentence "your commission died with them" gets a home (the sim half landed in #667) | `godot/scripts/panels/LedgerModal.cs`, `godot/scripts/panels/LegendsWall.cs` | P2-PEOPLE-07 | [G] |
@@ -5067,11 +5084,57 @@ beside `P2-MEMORY-03`, whose grammar it extends.
   Distinguish these before proposing a fix; only one of the three is free, and none of them is
   assumed here.
 - Test scenarios: a diagnostic report of the camped-hero HP distribution at park time across
-  the 20-seed sweep (not just the minimum, which is already known to be 60%); whichever cause
-  is confirmed gets its own reproducing test before any fix is proposed.
+  the 20-seed sweep (not just the minimum — quoted here as 60% from seed 2026 alone, and measured
+  sweep-wide at 50% once the census ran); whichever cause is confirmed gets its own reproducing
+  test before any fix is proposed.
 - Verification: fast lane green; this unit's own PR is a MEASUREMENT + finding, the same
   discipline as `P2-LONG-23` — if it also proposes a fix, the fix is a separate follow-on unit,
   never folded in silently.
+
+#### P2-LONG-25. Aim the send verb at where camped heroes actually are
+
+- Goal: `P2-LONG-24`'s census settled the cause — the camp send verb's `<40%` band is
+  structurally empty, because the post-floor too-hurt bar (`CombatMath.ShouldDrink`, 50%) IS the
+  park floor and a camped hero is never under it. Move exactly one knob so link 2's sixth
+  decision (send the runner or trust their judgment) has two live arms again. This is the fix
+  `P2-LONG-24` deliberately did not fold in: it needs a knob chosen, and every candidate costs a
+  balance re-baseline.
+- Requirements: `P2-LONG-24` (the census, the dated cause, and the pinned park floor); §11.3 R1
+  (retired — do not resurrect the risk-compensation framing, its evidence base no longer
+  reproduces); P2-KTD5 (re-baselines land one at a time, orchestrator-authored)
+- Files: `sim/GameSim/Expedition/ExpeditionResolver.cs` (the post-floor bar, `:341-384`),
+  `sim/GameSim/Expedition/ExpeditionSystem.cs:26` (`CampCheckpointDepth`),
+  `sim/GameSim.Tests/Balance/CampProvisioningBalanceTests.cs` (`SendThresholdPct` + the census),
+  `sim/GameSim.Tests/Expedition/StagedResolutionTests.cs` (the pinned floor moves with the bar)
+- Approach: three knobs, different blast radii, and the census is the evidence for the first —
+  do not pick by feel.
+  1. **Raise the send threshold into the band heroes actually occupy.** The census puts 482 of
+     10818 camped-hero observations (4.5%) in `[50%,90%)` and 1347 (12.5%) under full HP, so a
+     threshold anywhere in that range fires — rarely and really at 60%, routinely at 90%. Cheapest
+     by a wide margin: a test constant plus the camp surface's copy, no resolver change, no golden
+     re-record. Still a **balance re-baseline**, because the two arms diverge again the moment it
+     delivers anything.
+  2. **Lower the park floor by splitting the too-hurt bar from the drink line.** #328 fused them
+     for a real correctness reason — with flee checked first and never cancelled, a hero can no
+     longer finish a cleared floor below the flee line, so a flee-line bar here would be
+     unreachable — but a THIRD constant strictly between 25 and 50 restores a park band without
+     reintroducing that bug. Resolver change → **balance re-baseline plus a likely golden
+     re-record**.
+  3. **Deepen `CampCheckpointDepth`** so parties camp after a harder floor and arrive at the
+     winch-house genuinely hurt. Largest blast radius: it changes the staged/unstaged split for
+     every target floor and every test that assumes checkpoint 1.
+  Option 1 is the only one that cannot disturb the flee/drink ordering, and it is the only one
+  whose landing spot the existing census already measures. Options 2 and 3 need a design ruling
+  first — they change what a camp *means*, not just who the runner is offered to.
+- Test scenarios: `StagedResolutionTests.ParkFloor_IsTheDrinkLine_SoTheSendVerbsSubFortyBandIsStructurallyEmpty`
+  moves with the chosen knob — it must go RED and be re-pinned to the new floor, never softened or
+  deleted; `CampProvisioningBalanceTests` records a THIRD measurement (the second and third stay
+  side by side, per its own comment) showing both arms diverge again with a non-zero delivery
+  count; the per-instance `PotionLifesave` marquee test stays green untouched, since the
+  per-instance claim was never the thing that broke.
+- Verification: fast lane green; the Balance gate re-run with both arms' raw numbers quoted in the
+  PR body beside the 07-18 and 09-02 rows; if the chosen knob is (2) or (3), its re-baseline is
+  its own serialized ceremony per P2-KTD5 and does not share a PR with the knob change.
 
 ## The verification contract
 
