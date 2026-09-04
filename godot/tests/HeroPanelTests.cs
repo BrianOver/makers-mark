@@ -4,6 +4,7 @@ using System.Linq;
 using GameSim;
 using GameSim.Contracts;
 using GameSim.Kernel;
+using GameSim.Venues;
 using GdUnit4;
 using Godot;
 using static GdUnit4.Assertions;
@@ -221,6 +222,191 @@ public class HeroPanelTests
         finally
         {
             Unmount(ui);
+        }
+    }
+
+    // ── Ladder standing / Veterancy (owner finding, 2026-09-04) ─────────────────────────────
+    // Hero.LadderRank decides who a hero cohorts with (PartyFormation) and which live venue they
+    // raid (VenueRouter) -- and used to render nowhere. The XP-derived tier used to squat on the
+    // word "Rank" instead, AND hand-duplicate the sim's own HeroRank ladder with disagreeing
+    // thresholds. These pin the fix: a hero's rendered "Venue" chip always matches their real
+    // LadderRank's frontier venue(s), independent of XP; two different LadderRanks always render
+    // different venues even at near-identical XP; and the "Veterancy" chip always matches
+    // GameSim.Heroes.HeroRank -- the sim's single ladder -- read reflectively, never re-typed.
+
+    [TestCase]
+    public void EveryRegisteredLadderRank_RendersItsOwnVenueFrontierByName()
+    {
+        // Derived from the registry, not hand-listed: whatever ranks the live rotation actually
+        // carries today (0, 1, 2 -- but this must keep working if a rung is ever added or removed).
+        var live = VenueRegistry.LiveRotation.Select(VenueRegistry.Require).ToList();
+        var registeredRanks = live.Select(v => v.LadderRank).Distinct().OrderBy(r => r).ToList();
+
+        foreach (var rank in registeredRanks)
+        {
+            // A rank WITH a registered venue needs no fallback reasoning: it's simply the venue(s)
+            // at that exact rank (independent of HeroPanel's own <= / Max frontier formula, which
+            // this test deliberately does not call, so a bug in that formula can't hide itself).
+            var expected = string.Join(
+                " or ",
+                live.Where(v => v.LadderRank == rank).Select(v => v.DisplayName).OrderBy(n => n, StringComparer.Ordinal));
+
+            var hero = MakeHero(1, "Rung") with { LadderRank = rank };
+            var ui = MountMainUi(new SimAdapter(WorldAtDay(1, ImmutableList<GameEvent>.Empty, hero)));
+            try
+            {
+                var cardText = RenderedText(Find<PanelContainer>(ui.HeroCards, "HeroCard_1"));
+                AssertThat(cardText)
+                    .OverrideFailureMessage($"LadderRank {rank}: expected \"{expected}\" on the card, got:\n{cardText}")
+                    .Contains(expected);
+            }
+            finally
+            {
+                Unmount(ui);
+            }
+        }
+    }
+
+    [TestCase]
+    public void PastTheTopRegisteredRank_RendersTheTerminalVenue_TheLadderBeatenCase()
+    {
+        // A survivor promoted past every registered rank (the terminal venue's own bottom floor
+        // fell) has nowhere higher to go -- VenueRouter keeps routing it to the terminal venue,
+        // since it is still the highest-ranked ELIGIBLE one. Independently derived: the terminal
+        // rank's own venue(s), not HeroPanel's fallback formula.
+        var live = VenueRegistry.LiveRotation.Select(VenueRegistry.Require).ToList();
+        var terminalRank = live.Max(v => v.LadderRank);
+        var expected = string.Join(
+            " or ",
+            live.Where(v => v.LadderRank == terminalRank).Select(v => v.DisplayName).OrderBy(n => n, StringComparer.Ordinal));
+
+        var hero = MakeHero(1, "PastTop") with { LadderRank = terminalRank + 1 };
+        var ui = MountMainUi(new SimAdapter(WorldAtDay(1, ImmutableList<GameEvent>.Empty, hero)));
+        try
+        {
+            var cardText = RenderedText(Find<PanelContainer>(ui.HeroCards, "HeroCard_1"));
+            AssertThat(cardText)
+                .OverrideFailureMessage($"LadderRank {terminalRank + 1}: expected \"{expected}\" on the card, got:\n{cardText}")
+                .Contains(expected);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void SameLadderRank_WidelyDifferentXp_RenderTheSameVenueStanding()
+    {
+        var live = VenueRegistry.LiveRotation.Select(VenueRegistry.Require).ToList();
+        var expected = string.Join(
+            " or ",
+            live.Where(v => v.LadderRank == 1).Select(v => v.DisplayName).OrderBy(n => n, StringComparer.Ordinal));
+
+        var freshlyGraduated = MakeHero(1, "Low") with { LadderRank = 1, Xp = 5 };
+        var farTraveled = MakeHero(2, "High") with { LadderRank = 1, Xp = 900 };
+        var ui = MountMainUi(new SimAdapter(
+            WorldAtDay(1, ImmutableList<GameEvent>.Empty, freshlyGraduated, farTraveled)));
+        try
+        {
+            var lowText = RenderedText(Find<PanelContainer>(ui.HeroCards, "HeroCard_1"));
+            var highText = RenderedText(Find<PanelContainer>(ui.HeroCards, "HeroCard_2"));
+            AssertThat(lowText).Contains(expected);
+            AssertThat(highText).Contains(expected);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void SimilarXp_DifferentLadderRank_RenderDifferentVenueStanding()
+    {
+        var live = VenueRegistry.LiveRotation.Select(VenueRegistry.Require).ToList();
+        var expectedShallow = string.Join(
+            " or ",
+            live.Where(v => v.LadderRank == 0).Select(v => v.DisplayName).OrderBy(n => n, StringComparer.Ordinal));
+        var expectedDeep = string.Join(
+            " or ",
+            live.Where(v => v.LadderRank == 1).Select(v => v.DisplayName).OrderBy(n => n, StringComparer.Ordinal));
+
+        // Sanity: the fixture only proves something if the two ranks actually name different
+        // venues -- if the registry ever collapsed ranks 0 and 1 onto the same venue set this
+        // assertion (not the card text) would fail first, naming the real problem.
+        AssertThat(expectedShallow).IsNotEqual(expectedDeep);
+
+        var shallow = MakeHero(1, "Shallow") with { LadderRank = 0, Xp = 40 };
+        var deep = MakeHero(2, "Deep") with { LadderRank = 1, Xp = 45 };
+        var ui = MountMainUi(new SimAdapter(WorldAtDay(1, ImmutableList<GameEvent>.Empty, shallow, deep)));
+        try
+        {
+            var shallowText = RenderedText(Find<PanelContainer>(ui.HeroCards, "HeroCard_1"));
+            var deepText = RenderedText(Find<PanelContainer>(ui.HeroCards, "HeroCard_2"));
+            AssertThat(shallowText).Contains(expectedShallow);
+            AssertThat(deepText).Contains(expectedDeep);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void RenderingTheVenueAndVeterancyChips_WritesNoSimState()
+    {
+        var hero = MakeHero(1, "Aria") with { LadderRank = 2, Xp = 900 };
+        var ui = MountMainUi(new SimAdapter(WorldAtDay(1, ImmutableList<GameEvent>.Empty, hero)));
+        try
+        {
+            var before = ui.Adapter.CurrentState;
+
+            var cardText = RenderedText(Find<PanelContainer>(ui.HeroCards, "HeroCard_1"));
+            AssertThat(cardText).Contains("Venue");
+            AssertThat(cardText).Contains("Veterancy");
+
+            // GameState is an immutable record -- ANY field write anywhere in the render path
+            // would have to go through `with`, producing a new instance. Reference equality is
+            // therefore a complete proof nothing was written, with no field list to fall behind.
+            AssertThat(ReferenceEquals(before, ui.Adapter.CurrentState))
+                .OverrideFailureMessage("Rendering the Venue/Veterancy chips must never write sim state, but CurrentState's reference changed.")
+                .IsTrue();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void VeterancyChip_MatchesTheSimsSingleLadder_ReflectivelyOverEveryRung()
+    {
+        // Coordinator finding, 2026-09-04: HeroPanel used to hand-duplicate GameSim.Heroes.HeroRank's
+        // ladder as four local thresholds (Delver 50, Veteran 150, Legend 400) that DISAGREED with
+        // it -- at 150 XP the sim says Journeyman, the old card said Veteran; at 400 XP the sim says
+        // Veteran, the old card said Legend, two rungs early; Journeyman and Champion never appeared
+        // on the card at all. That ladder also now sets the REAL Hero.Level (U-C6), so the wrong
+        // name was reporting the wrong mechanical tier, not just a wrong word.
+        //
+        // This iterates GameSim.Heroes.HeroRank.Ladder ITSELF -- not a hand-typed list of rung names
+        // -- so a future rung added to the sim's ladder is covered automatically, and a hand-mirrored
+        // client-side copy (the actual historical bug) cannot silently diverge and still pass.
+        foreach (var (threshold, _) in GameSim.Heroes.HeroRank.Ladder)
+        {
+            var expected = GameSim.Heroes.HeroRank.For(threshold);
+            var hero = MakeHero(1, "Rung") with { Xp = threshold };
+            var ui = MountMainUi(new SimAdapter(WorldAtDay(1, ImmutableList<GameEvent>.Empty, hero)));
+            try
+            {
+                var cardText = RenderedText(Find<PanelContainer>(ui.HeroCards, "HeroCard_1"));
+                AssertThat(cardText)
+                    .OverrideFailureMessage($"Xp {threshold}: expected the Veterancy chip to read \"{expected}\" (HeroRank.For), got:\n{cardText}")
+                    .Contains(expected);
+            }
+            finally
+            {
+                Unmount(ui);
+            }
         }
     }
 

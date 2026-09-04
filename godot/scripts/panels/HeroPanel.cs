@@ -5,6 +5,7 @@ using GameSim.Classes;
 using GameSim.Contracts;
 using GameSim.Drama;
 using GameSim.Heroes;
+using GameSim.Venues;
 using Godot;
 using GodotClient.Ui;
 
@@ -13,22 +14,33 @@ namespace GodotClient.Panels;
 /// <summary>
 /// Phase B, B1d (Godot half, plan 2026-07-25-002): the read-only "who's who" digest — every alive
 /// hero as one card naming their class, standing (<see cref="RelationshipBands"/>), deeds tallied
-/// from <see cref="Hero.Memories"/>, deepest floor, and XP + a cosmetic rank label. This is the
-/// legibility surface Gate B's identity-integrity requirement (R-B4) points at.
+/// from <see cref="Hero.Memories"/>, deepest floor, veterancy and their real ladder venue. This is
+/// the legibility surface Gate B's identity-integrity requirement (R-B4) points at.
 ///
 /// <para>Distinct from the existing <see cref="HeroesPanel"/> (the portrait-grid roster + gear/
 /// provenance detail pane, reached by clicking a hero in town) — that panel already renders
 /// Level/Gold/Deepest chips plus a mood/band line. This panel is the simpler Demand/Bounty-style
 /// scrollable card list (mirrors <see cref="DemandPanel"/>/<see cref="BountyPanel"/>'s
-/// SimPanel/Section/Card idiom exactly) that adds the two facts neither surface showed yet: summed
-/// deeds (kills+saves across all memories, not per-item) and XP/rank. Read-only, no sim change, no
-/// action queued (heroes are autonomous, A2).</para>
+/// SimPanel/Section/Card idiom exactly) that adds facts neither surface showed yet: summed
+/// deeds (kills+saves across all memories, not per-item), veterancy, and ladder standing.
+/// Read-only, no sim change, no action queued (heroes are autonomous, A2).</para>
 ///
-/// <para>Rank is a PURE display label off <see cref="Hero.Xp"/> thresholds — mirrors the plan's
-/// default ladder (Novice&lt;50, Delver&lt;150, Veteran&lt;400, else Legend; no CLI ladder existed
-/// yet to copy at build time — B1c had not landed in this worktree). It NEVER reads or writes
-/// <see cref="Hero.Level"/> (KTD-B1c tripwire: <c>CombatMath</c> reads <c>Level</c> into Attack —
-/// touching it would silently become a Class-2/Balance-breaking change).</para>
+/// <para><b>The Rank/LadderRank divergence (owner finding, 2026-09-04).</b> This card used to
+/// label an XP-derived cosmetic tier "Rank" while <see cref="Hero.LadderRank"/> — the quantity
+/// <c>PartyFormation</c> actually cohorts by, <c>VenueRouter</c> actually routes by, and
+/// <c>RecipeTable</c>/<c>ExpeditionRevealSystem</c> gate graduation on — rendered nowhere in the
+/// client at all. Two heroes at the same <see cref="Hero.LadderRank"/> always march together
+/// regardless of XP; two with similar XP but different <see cref="Hero.LadderRank"/> never do, so
+/// the old chip predicted nothing about who a hero actually marches with. Split into two honest
+/// chips: <b>Veterancy</b> (still cosmetic — the XP-tier name, now read straight off the sim's own
+/// <see cref="GameSim.Heroes.HeroRank"/> ladder instead of a stale, hand-duplicated local copy;
+/// also the ladder <see cref="GameSim.Heroes.HeroRank.LevelFor"/> derives the REAL
+/// <see cref="Hero.Level"/> from since Phase C's U-C6 level-flip, so this name is no longer even
+/// independent of a mechanical effect the way the old doc comment here claimed) and <b>Venue</b>
+/// (the mechanical one — <see cref="Hero.LadderRank"/>'s own rung, named after the live venue(s)
+/// at that rung rather than a made-up vocabulary, mirroring <c>VenueRouter</c>'s own eligibility
+/// rule so it never claims a venue the router itself would refuse). Neither chip ranks heroes
+/// against each other or invents a score — both name a fact the sim already decided (law 4).</para>
 ///
 /// <para>Room is deliberately left (a per-hero trait-chip row, commented below) for B2's ~10
 /// derived traits — no traits are invented here.</para>
@@ -62,12 +74,6 @@ namespace GodotClient.Panels;
 /// </summary>
 public partial class HeroPanel : SimPanel
 {
-    /// <summary>Rank ladder thresholds (Hero.Xp, exclusive upper bounds) — pure cosmetic label,
-    /// see type remarks. Bump only if a later unit lands a CLI ladder these must mirror.</summary>
-    private const int DelverXpThreshold = 50;
-    private const int VeteranXpThreshold = 150;
-    private const int LegendXpThreshold = 400;
-
     private VBoxContainer? _content;
 
     /// <summary>P2-ONBOARD-02: the "read-only-surfaces" once-ever caption — built once, outside
@@ -168,7 +174,17 @@ public partial class HeroPanel : SimPanel
         chipRow.AddChild(StatChip("Standing", RelationshipBands.Label(band), MoodTone(hero.MoodPermille)));
         chipRow.AddChild(StatChip("Deepest", DepthCopy.Deepest(hero.DeepestFloorReached)));
         chipRow.AddChild(StatChip("XP", $"{hero.Xp}"));
-        chipRow.AddChild(StatChip("Rank", RankFor(hero.Xp), UiKit.ChipTone.Accent));
+
+        // Own row, not crammed onto chipRow above: the drawer is a fixed 600px
+        // (DrawerHost.DrawerWidth) — measured via a real rendered capture, not assumed, that
+        // "Standing"/"Deepest"/"XP" plus a "Veterancy" chip already sits at that edge, and a venue
+        // name can run long on top of it ("The Mine or The Sunken Crypt"). Veterancy and Venue get
+        // their own row together instead, the same "own row" idiom the Trait/Relationship rows
+        // below already use — and grouping them together doubles as a visual cue that these two are
+        // related-but-different facts, never the same "Rank" the old single chip conflated.
+        var ladderRow = AddRow(body);
+        ladderRow.AddChild(StatChip("Veterancy", GameSim.Heroes.HeroRank.For(hero.Xp), UiKit.ChipTone.Accent));
+        ladderRow.AddChild(StatChip("Venue", LadderStandingFor(hero.LadderRank), UiKit.ChipTone.Accent));
 
         // B4 (needs-lite/boycott, highest-value gap this unit closes): only present once the
         // hero's unmet-demand streak has crossed the telegraph threshold, is boycotting, or just
@@ -309,15 +325,29 @@ public partial class HeroPanel : SimPanel
         return (kills, saves);
     }
 
-    /// <summary>Cosmetic rank label off <see cref="Hero.Xp"/> ONLY — see type remarks for the
-    /// tripwire this must never cross (Hero.Level is untouched).</summary>
-    private static string RankFor(int xp) => xp switch
+    /// <summary>The real standing behind party formation and venue routing — <see
+    /// cref="VenueRouter"/>'s own eligibility rule (highest-ranked LIVE venue whose
+    /// <see cref="VenueDefinition.LadderRank"/> the hero's own rank meets or beats) applied to one
+    /// hero, named after that venue's <see cref="VenueDefinition.DisplayName"/> rather than an
+    /// invented vocabulary (owner constraint). Reads <see cref="VenueRegistry.LiveRotation"/> only,
+    /// so this can never claim a venue the router itself would refuse. Peer venues sharing a rung
+    /// (the Mine and the Sunken Crypt, both rank 0) name both, ordinal-sorted for determinism. A
+    /// rank past every registered rung — the ladder beaten — falls back to the terminal rung's own
+    /// venue(s), exactly like the router: there is nothing higher to route to yet.</summary>
+    private static string LadderStandingFor(int ladderRank)
     {
-        < DelverXpThreshold => "Novice",
-        < VeteranXpThreshold => "Delver",
-        < LegendXpThreshold => "Veteran",
-        _ => "Legend",
-    };
+        var live = VenueRegistry.LiveRotation.Select(VenueRegistry.Require).ToList();
+
+        var eligible = live.Where(v => v.LadderRank <= ladderRank).ToList();
+        var frontierRank = eligible.Count > 0 ? eligible.Max(v => v.LadderRank) : live.Min(v => v.LadderRank);
+
+        var names = live
+            .Where(v => v.LadderRank == frontierRank)
+            .Select(v => v.DisplayName)
+            .OrderBy(n => n, StringComparer.Ordinal);
+
+        return string.Join(" or ", names);
+    }
 
     /// <summary>Chip tone for the Standing chip, echoing <see cref="HeroesPanel"/>'s mood-word
     /// bands (warm/friendly/sour/neutral) at the tone level instead of a separate label.</summary>

@@ -219,7 +219,7 @@ All actions are runtime-registered; the InputMap is the union of three registrar
 | Depths | `DepthsPanel.cs` | The parked `MineWatch` strip (resting host, `:33-41`) above a single venue tile holding the deepest-floor-per-hero board (`DramaState.DepthsBoard`) | none — read-only |
 | Bounties | `BountyPanel.cs` (665) | "OPEN BOUNTIES" cards w/ `BountyJudged` sticky notes (`:94`), resolved judgments (`:131`), "POST BOUNTY" form (`:242`): `MineCrossSection` floor picker (`BountyFloor`), `CoinStack` reward (`BountyReward`), draggable `PosterComposer` | `PostBounty` (`:289`) or drag the poster onto the board |
 | Demand | `DemandPanel.cs` | "WHAT HEROES ARE PASSING ON" (`:49`), "OPEN COMMISSIONS" (`:68`), "DEPTH STALL — CALL TO ACTION" (`:96`), "BOUNTY BOARD" with per-floor minimums (`:123`) | none — read-only |
-| HeroCards | `HeroPanel.cs` | "HEROES" card list (`:86`): class, standing band, summed deeds, deepest floor, XP + display rank, needs/relationship chips | none — read-only |
+| HeroCards | `HeroPanel.cs` | "HEROES" card list (`:86`): class, standing band, summed deeds, deepest floor, XP + Veterancy (cosmetic), Venue (real `LadderRank` standing), needs/relationship chips | none — read-only |
 | Progress | `ProgressionPanel.cs` | Profession-switch header (checkboxes + `ConfirmProfessions` `:180`, bell-rider) above five ladder cards (Forge/Depth/Roster/Wealth/Chronicle) from `ProgressionSpineSystem.Compute` | `ConfirmProfessions` |
 | Lessons | `LessonsPanel.cs` | Every registry row's ShortLabel + TeachNote, chapter-numbered by act, plus every fired first-touch lesson (id→title table `:28-35`) — permanent, survives dismiss/complete | none — read-only |
 
