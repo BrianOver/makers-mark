@@ -545,9 +545,9 @@ the sub-40% band the send verb targets, and both arms submit the identical actio
 Sweep-wide deaths fell ~65% over the same six weeks. There is no provisioning irony left to
 surface, retune, or split — R1's fork describes a mechanism the current build can no longer
 produce. What replaced it is a different, live defect — the send verb's arm never fires at
-all — booked as its own unit, `P2-LONG-24`, below.
+all — measured as its own unit, `P2-LONG-24` (#703).
 
-**What `P2-LONG-24` found (2026-09-03), amending the paragraph above.** The full census over the
+**What `P2-LONG-24` (#703) found (2026-09-03), amending the paragraph above.** The full census over the
 same 20-seed sweep — 10818 camped-hero observations, not seed 2026's 200 — puts the minimum at
 **50%**, not 60%; the 60% figure was a small-sample artifact. And 50% is not where the distribution
 happens to stop: it is a **structural floor**. `ResolveStage1` parks only on a raw `TargetReached`,
@@ -4283,61 +4283,35 @@ name (§11.6 rule 4).
 
 | Unit | Title | Key files | Depends on | Flags |
 |---|---|---|---|---|
-| ⚑ P2-SCREEN-01 | The three dead theme keys, five sites | `godot/scripts/ui/GameTheme.cs`, `godot/scripts/MainUi.cs` | — | [G] |
-| ⚑ P2-SCREEN-02 | Sync and shoot — the rendered baseline | `tools/shoot.ps1`, `tools/receipt.ps1` | — | [G] |
-| ⚑ P2-SCREEN-03 | `SurfaceClaim` + `SurfaceArbiter`, observing only (regions and precedence are derived from `MainUi`'s measured `AddChild` order and documented in `SurfaceArbiter.cs`'s class doc — this section never carried the table its body promised) | new `godot/scripts/ui/SurfaceArbiter.cs`, `godot/scripts/MainUi.cs` | P2-SCREEN-02 | [G] |
-| ⚑ P2-SCREEN-04 | Modal ownership moves to the arbiter; `OverlaySurfaces()` becomes a projection | `godot/scripts/MainUi.cs`, `godot/scripts/ui/TutorialSurfaceRegistry.cs` | P2-SCREEN-03 | [G] |
-| ⚑ P2-SCREEN-05 | The interact prompt stops lying | `godot/scripts/town2d/WorldInput2D.cs`, `godot/scripts/MainUi.cs` | — | [G] |
-| ⚑ P2-SCREEN-06 | The card diet — one instruction, one prose slot | `godot/scripts/ui/ObjectiveTracker.cs`, `godot/scripts/panels/LessonsPanel.cs` | P2-SCREEN-03 | [G] |
-| ⚑ P2-SCREEN-07 | The TeachNote becomes Bryn's three lessons | `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/ui/MentorVoice.cs` | P2-SCREEN-06 | [G] |
-| ⚑ P2-SCREEN-08 | Gating copy folds into the instruction | `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/ui/ObjectiveTracker.cs` | P2-SCREEN-06 | [G] |
-| ⚑ P2-SCREEN-09 | Honest control state — the verdict in the label | `godot/scripts/panels/SimPanel.cs` (`AddButton`), `godot/scripts/panels/ForgePanel.cs`, `sim/GameSim/Advisor/ActionLegality.cs` (read-only) | P2-SCREEN-01 | [G] |
-| ⚑ P2-SCREEN-10 | The pointer's free-space query; `KeepClearOf` deleted | `godot/scripts/ui/TutorialOverlay.cs`, `godot/tests/` | P2-SCREEN-03 | [G] |
-| P2-SCREEN-11 | The strip decodes — delete, relabel, reclaim the height | `godot/scripts/MainUi.cs` | P2-SCREEN-03 | [G] |
+| P2-SCREEN-11 | The strip decodes — delete, relabel, reclaim the height | `godot/scripts/MainUi.cs` | — | [G] |
 | P2-SCREEN-12 | The Books tray becomes a shelf with gate reasons as text | `godot/scripts/MainUi.cs`, `godot/scripts/ui/SurfaceUnlocks.cs` | P2-SCREEN-11 | [G] |
 | P2-SCREEN-13 | Hygiene — the stamp gated, the orphans deleted, `HANDOFF.md` dies | `godot/scripts/MainUi.cs`, `godot/assets/art/`, repo root | — | [G] |
 | P2-SCREEN-14 | The Bestiary gets its door, or the panel dies (OQ6) | `godot/scripts/town2d/InteriorLayout2D.cs`, `godot/scripts/panels/BestiaryPanel.cs` | — | [G] |
-| P2-SCREEN-15 | The three split lessons speak on screen, not only in the book | `godot/scripts/MainUi.cs`, `godot/scripts/ui/MentorVoice.cs`, `godot/scripts/ui/TutorialFlow.cs` | P2-SCREEN-07 | [G] |
-| ⚑ P2-SCREEN-16 | The audio column gets an owner — every ceremony names its cues (P2-KTD11) | `godot/scripts/MainUi.cs` (`SoundTheTick`), `godot/scripts/audio/SfxLibrary.cs` (read-only), `godot/tests/` | P2-SCREEN-04 | [G] |
+| P2-SCREEN-15 | The three split lessons speak on screen, not only in the book | `godot/scripts/MainUi.cs`, `godot/scripts/ui/MentorVoice.cs`, `godot/scripts/ui/TutorialFlow.cs` | — | [G] |
+| ⚑ P2-SCREEN-16 | The audio column gets an owner — every ceremony names its cues (P2-KTD11) | `godot/scripts/MainUi.cs` (`SoundTheTick`), `godot/scripts/audio/SfxLibrary.cs` (read-only), `godot/tests/` | — | [G] |
 | P2-SCREEN-17 | The save-replace press names the day it destroys | `godot/scripts/NewGameSelect.cs` | — | [G] |
-| ⚑ P2-ONBOARD-01 | The teaching lease — one owner per tick | `godot/scripts/ui/TutorialAnchorArbiter.cs`, `godot/scripts/ui/MentorBanner.cs` | P2-SCREEN-03, P2-SCREEN-04 | [G] |
-| P2-ONBOARD-02 | The voice docks bottom-left, and fire-on-open dies as a category | `godot/scripts/ui/MentorBanner.cs`, `godot/scripts/MainUi.cs` | P2-ONBOARD-01 | [G] |
-| P2-ONBOARD-03 | `ApprenticePlayer` — the course as a pure policy | `sim/GameSim/Harness/ApprenticePlayer.cs`, `sim/GameSim.Cli/BatchRunner.cs` | — | [S] |
-| P2-ONBOARD-04 | The seed search, the pin, the perturbed scripts | `sim/GameSim.Tests/` (`OpeningCampaignPinTests`), `sim/GameSim.Cli/` | P2-ONBOARD-03; P2-PEOPLE-11 (or the search runs twice) | [S] |
-| P2-ONBOARD-05 | The Warrant ships — the curated first campaign | `godot/scripts/NewGameSelect.cs`, `godot/scripts/ui/TutorialFlow.cs` | P2-ONBOARD-04, P2-SCREEN-02..10 | [G] |
-| P2-ONBOARD-06 | The beat-sheet registry and the nine deletions | `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/ui/MentorVoice.cs` | P2-ONBOARD-05, P2-PROOF-07; T10 U27/U31/U32 merged | [G] |
-| P2-ONBOARD-07 | Bryn wrong on purpose (P2-OQ2) | `godot/scripts/ui/MentorVoice.cs`, `godot/scripts/ui/TutorialFlow.cs` | P2-ONBOARD-06, P2-ONBOARD-09 | [G] |
-| P2-ONBOARD-08 | The tab-through lane — skipping proven mechanically | `godot/tests/` | P2-ONBOARD-06 | [G] |
-| P2-ONBOARD-09 | Bryn's redemption beat keys on the band that pays, not the chip that doesn't | `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/panels/CounterPanel.cs` | P2-ONBOARD-05 | [G] |
-| P2-ONBOARD-10 | The seed becomes enterable at New Game | `godot/scripts/NewGameSelect.cs` | P2-ONBOARD-03 | [G] |
-| ⚑ P2-PROOF-01 | Retain the night — `PartyAtDeparture` + `LastNightExpeditions` | `sim/GameSim/Contracts/Expedition.cs`, `sim/GameSim/Contracts/GameState` records, `sim/GameSim/Drama/ExpeditionRevealSystem.cs` | — | [S][C][GOLD] |
-| P2-PROOF-02 | `TellingQuery` — pure, no RNG parameter to draw from | `sim/GameSim/Expedition/TellingQuery.cs`, `sim/GameSim.Tests/` | P2-PROOF-01 | [S] |
-| P2-PROOF-03 | The stage, pass one — one duel, recorded rolls | new `godot/scripts/panels/TellingPanel.cs` (+`.uid`) | P2-PROOF-01 | [G] |
-| P2-PROOF-04 | The fork — rewind, desaturation, the fall that stays down, the stamp | `godot/scripts/panels/TellingPanel.cs` | P2-PROOF-02, P2-PROOF-03 | [G] |
+| P2-ONBOARD-09 | Bryn's redemption beat keys on the band that pays, not the chip that doesn't | `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/panels/CounterPanel.cs` | — | [G] |
+| P2-ONBOARD-10 | The seed becomes enterable at New Game | `godot/scripts/NewGameSelect.cs` | — | [G] |
+| P2-PROOF-03 | The stage, pass one — one duel, recorded rolls | new `godot/scripts/panels/TellingPanel.cs` (+`.uid`) | — | [G] |
+| P2-PROOF-04 | The fork — rewind, desaturation, the fall that stays down, the stamp | `godot/scripts/panels/TellingPanel.cs` | P2-PROOF-03 | [G] |
 | P2-PROOF-05 | The other shapes — every `TellingScript.Shape` staged or downgraded, reflectively enumerated | `godot/scripts/panels/TellingPanel.cs`, `godot/tests/` | P2-PROOF-04 | [G] |
 | P2-PROOF-06 | The copy pack — deterministic pick, tone guards | `godot/scripts/panels/TellingPanel.cs` corpus | P2-PROOF-04 | [G] |
 | P2-PROOF-07 | The wiring and the deletion — "Ask how it happened", Full-tale dies | `godot/scripts/panels/LedgerModal.cs`, `docs/debugging.md` | P2-PROOF-05, P2-PROOF-06 | [G] |
-| ⚑ P2-MEMORY-01 | Beat rows lose the enum; one short-label vocabulary | `godot/scripts/panels/LedgerModal.cs` | — | [G] |
-| P2-MEMORY-02 | The death card reads the pack and the last blow | `godot/scripts/panels/LedgerModal.cs` | P2-PROOF-01 | [G] |
-| ⚑ P2-MEMORY-03 | The beat names its channel | `godot/scripts/panels/LedgerModal.cs` | — | [G] |
-| ⚑ P2-MEMORY-04 | The memorial advisor suggests exactly once | `sim/GameSim/Advisor/ObjectiveAdvisor.cs`, `sim/GameSim.Tests/` | — | [S] |
+| P2-MEMORY-02 | The death card reads the pack and the last blow | `godot/scripts/panels/LedgerModal.cs` | — | [G] |
 | P2-MEMORY-05 | The Signed Work speaks; the idle line varies | `godot/scripts/panels/ForgePanel.cs`, advisor idle copy | — | [G] |
 | P2-MEMORY-06 | Provenance derives sales instead of omitting them | `godot/scripts/panels/ProvenanceCard.cs` | — | [G] |
-| P2-MEMORY-07 | The commendation — three reasons at the bar | scene-engine client registration | P2-PEOPLE-01 | [G] |
+| P2-MEMORY-07 | The commendation — three reasons at the bar | scene-engine client registration | — | [G] |
 | P2-MEMORY-08 | The death-pool rewrite in place + the `{cause}` grammar contract | `sim/GameSim/Flavor/Packs/TavernPack.cs`, pack tests | — | [S] |
-| P2-MEMORY-09 | The cooled-pool truth pass — 72 variants stop advertising a surcharge | `sim/GameSim/Flavor/Packs/FactionPack.cs` | P2-MEMORY-08 (same serialized batch) | [S] |
-| P2-MEMORY-10 | The book shell — `LegendsWall` refit, verbs and anchors migrated | `godot/scripts/panels/LegendsWall.cs` | P2-SCREEN-04 | [G] |
-| P2-MEMORY-11 | The fallen's pages and the item pages | `godot/scripts/panels/LegendsWall.cs`, `godot/scripts/panels/ProvenanceCard.cs` | P2-MEMORY-10, P2-PROOF-01 | [G] |
+| P2-MEMORY-10 | The book shell — `LegendsWall` refit, verbs and anchors migrated | `godot/scripts/panels/LegendsWall.cs` | — | [G] |
+| P2-MEMORY-11 | The fallen's pages and the item pages | `godot/scripts/panels/LegendsWall.cs`, `godot/scripts/panels/ProvenanceCard.cs` | P2-MEMORY-10 | [G] |
 | P2-MEMORY-12 | Day pages absorb the ticker's composer; the marquee dies (P2-OQ3) | `godot/scripts/ui/AdventureTicker.cs` (`FormatLine` survives), `godot/scripts/MainUi.cs` | P2-MEMORY-10 | [G] |
 | P2-MEMORY-13 | `ChronicleComposer` and the fifteen predicates | `sim/GameSim/Chronicle/ChronicleComposer.cs`, `sim/GameSim.Tests/` | — | [S] |
 | P2-MEMORY-14 | The bind and the export; `ChronicleScroll.cs` deleted (P2-OQ4) | `godot/scripts/panels/LegendsWall.cs`, `godot/scripts/panels/ChronicleScroll.cs` | P2-MEMORY-11, P2-MEMORY-13 | [G] |
 | P2-MEMORY-15 | `BountyRefunded` — the silent refund gets an event | `sim/GameSim/Contracts/Events.cs`, `sim/GameSim/Bounties/BountySystems.cs` | — | [S][C][GOLD] |
 | P2-MEMORY-16 | `Fleeced` on the close event; fleece and pinned gossip | `sim/GameSim/Contracts/Events.cs`, `sim/GameSim/Counter/HaggleResolver.cs`, `sim/GameSim/Drama/GossipGenerator.cs` | P2-MEMORY-15 (serialize) | [S][C][GOLD] |
-| ⚑ P2-MEMORY-17 | The presence clause — the beat says why the party was on that floor | `sim/GameSim/Drama/ProvenanceQuery.cs`, `godot/scripts/panels/LedgerModal.cs` | P2-MEMORY-03 (#664) | [S][G] |
-| ⚑ P2-PEOPLE-01 | The scene engine and Torvald's first three | `godot/scripts/panels/TavernPanel.cs`, new scene registry | — | [G] |
-| P2-PEOPLE-02 | The register gate — a lint that fails on a planted violation of each rule | `godot/tests/`, scene corpus | P2-PEOPLE-01 | [G] |
-| P2-PEOPLE-03 | The remaining arcs — Torvald 4–8, Brunhilde, Kael, Sable, Elowen, Moss | scene corpus | P2-PEOPLE-01/02 + the probe's verdict | [G] |
-| P2-PEOPLE-04 | Durable-fact read-back — "Halvar's floor" on the muster board | `godot/scripts/panels/RaidForecastBoard.cs`, vigil slate | P2-PEOPLE-01 | [G] |
+| P2-PEOPLE-02 | The register gate — a lint that fails on a planted violation of each rule | `godot/tests/`, scene corpus | — | [G] |
+| P2-PEOPLE-03 | The remaining arcs — Torvald 4–8, Brunhilde, Kael, Sable, Elowen, Moss | scene corpus | P2-PEOPLE-02 + the probe's verdict | [G] |
+| P2-PEOPLE-04 | Durable-fact read-back — "Halvar's floor" on the muster board | `godot/scripts/panels/RaidForecastBoard.cs`, vigil slate | — | [G] |
 | P2-PEOPLE-05 | Wake contracts — `Memorial.MarkerItem`, remembrance action | `sim/GameSim/Contracts/` | — | [S][C] |
 | P2-PEOPLE-06 | The fallen's page and the three verbs, on the death night | `sim/GameSim/Drama/`, `sim/GameSim/Heroes/` | P2-PEOPLE-05 | [S] |
 | P2-PEOPLE-07 | Death-night staging | `godot/scripts/panels/LegendsWall.cs`, `godot/scripts/panels/LedgerModal.cs` | P2-PEOPLE-06 | [G] |
@@ -4370,21 +4344,16 @@ name (§11.6 rule 4).
 | P2-LONG-20 | The rival breathes, capped — irrelevance is the victory | `sim/GameSim/Economy/` | P2-LONG-19 | [S][BAL] |
 | P2-LONG-21 | The Mark Endures — the carryover contract and the no-stats tripwire | `sim/GameSim/Contracts/`, `sim/GameSim/Kernel/GameFactory.cs` | P2-LONG-13 | [S][C][GOLD] |
 | P2-LONG-22 | The seventh decision — the choice, the door, the commission echo | `godot/scripts/`, `sim/GameSim/Economy/` | P2-LONG-21 | [G] |
-| ⚑ P2-LONG-23 | Re-run the camp A/B on the current build — the measurement R1 rests on | `sim/GameSim.Tests/Balance/CampProvisioningBalanceTests.cs` (its recorded baseline), `runs/` | — | [S] |
-| ⚑ P2-LONG-24 | Why the vigil's send verb never fires — the camped-HP census and the cause | `sim/GameSim.Tests/Balance/CampProvisioningBalanceTests.cs`, `sim/GameSim.Tests/Expedition/StagedResolutionTests.cs` | P2-LONG-23 | [S] |
-| ⚑ P2-LONG-25 | Aim the send verb at where camped heroes actually are — one knob, re-baselined | `sim/GameSim/Expedition/ExpeditionResolver.cs`, `sim/GameSim/Expedition/ExpeditionSystem.cs`, the two tests above | P2-LONG-24 | [S][BAL] |
-| ⚑ P2-HONEST-01 | The Progress book can be opened, and the harness uses the door | `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/tools/FullPlaytest.cs` | — | [G] |
+| ⚑ P2-LONG-25 | Aim the send verb at where camped heroes actually are — one knob, re-baselined | `sim/GameSim/Expedition/ExpeditionResolver.cs`, `sim/GameSim/Expedition/ExpeditionSystem.cs`, the two tests above | — | [S][BAL] |
 | P2-HONEST-02 | Four dead-mechanism sentences die; `Gate.Reason` splits closed/opened | `godot/scripts/ui/SurfaceUnlocks.cs`, copy | — | [G] |
 | P2-HONEST-03 | The sentence "your commission died with them" gets a home (the sim half landed in #667) | `godot/scripts/panels/LedgerModal.cs`, `godot/scripts/panels/LegendsWall.cs` | P2-PEOPLE-07 | [G] |
 | P2-HONEST-04 | The queued suffix dies; eight panels stop teaching a console command | `godot/scripts/panels/SimPanel.cs`, `godot/scripts/panels/` | — | [G] |
 | P2-HONEST-05 | Classes and materials get display names | `sim/GameSim/Materials/MaterialDefinition.cs`, `sim/GameSim/Classes/` | — | [S] |
 | P2-HONEST-06 | The vocabulary census — seven generators, first run triaged | `sim/GameSim.Tests/` (`PlayerVocabularyCensusTests`) | P2-HONEST-04, P2-HONEST-05 | [S] |
-| P2-HONEST-07 | The satisfiable-gate census | `sim/GameSim.Tests/` | P2-HONEST-01 | [S] |
+| P2-HONEST-07 | The satisfiable-gate census | `sim/GameSim.Tests/` | — | [S] |
 | P2-HONEST-08 | The comment sweep and the comment census | `sim/GameSim/` (adds `Venues/Emberfall/EmberfallFoundryVenue.cs:109`, `Contracts/World.cs:33-35`), `godot/scripts/`, `sim/GameSim.Tests/` | — | [S] |
 | P2-HONEST-09 | `SkilledSmithPlayer` and `SmithSkill` die — 123 lines held alive by their own tests | `sim/GameSim/Harness/` | — | [S] |
 | P2-HONEST-10 | Guards rephrase against the property — `RejectionUxTests` literals die | `godot/tests/`, `sim/GameSim.Tests/` | — | [S] |
-| ⚑ P2-HONEST-11 | The trinket arm — teeth or honesty, never false coverage (P2-OQ7) | `sim/GameSim/Expedition/CombatMath.cs` or `sim/GameSim/Contracts/Heroes.cs` + `sim/GameSim/Heroes/CommissionSystem.cs`, per the fork | P2-OQ7 | [S][BAL] |
-| ⚑ P2-HONEST-12 | The balance corpus states its own coverage | `sim/GameSim.Tests/Hygiene/`, `sim/GameSim/Harness/` (read-only) | — | [S] |
 | P2-HONEST-13 | `TickResult.Traces` is ingested or deleted | `sim/GameSim/Kernel/GameKernel.cs`, `tools/Analytics/` or `sim/GameSim/Contracts/` | — | [S] |
 | P2-HONEST-14 | The CLI's own printed prose enters the vocabulary census's scope | `sim/GameSim.Cli/Program.cs`, `sim/GameSim.Tests/` (`PlayerVocabularyCensusTests`) | P2-HONEST-06 | [S] |
 
@@ -4463,334 +4432,7 @@ plans outrun shipping, and rule 6 exists because that has happened here four tim
 six earn bodies on a narrower test than "next up": each one is a *premise* another unit already
 depends on, so leaving it at index level means a later unit inherits an unwritten decision.
 
-### The screen's critical path
-
-#### P2-SCREEN-01. The three dead theme keys, five sites
-
-- Goal: the three intended control-state colours actually apply, so a disabled control dims the
-  way the theme chose rather than the way the default theme happens to.
-- Requirements: P2-R2
-- Files: `godot/scripts/ui/GameTheme.cs`, `godot/scripts/MainUi.cs`, `godot/tests/`
-- Approach: `GameTheme.cs:414-416` sets `font_color_hover` / `font_color_pressed` /
-  `font_color_disabled` — Godot 3 spellings; Godot 4 wants `font_hover_color` /
-  `font_pressed_color` / `font_disabled_color`. `MainUi.cs:4035-4036` repeats two of the wrong
-  names per-node. Zero Godot-4-style keys exist anywhere in the tree (verified by grep), and
-  nothing in `godot/tests/` references either spelling. **Replace, never keep both** — keeping
-  both is a doc asserting what the engine contradicts. Severity is corrected on the record: the
-  fallback is the default theme's ~50%-alpha grey, so labels do dim — to a colour chosen for no
-  panel of ours. The first act of this unit is a rendered before-frame, not a code change,
-  because the one thing the finding could not verify in-repo was the engine-side fallback.
-- Test scenarios: a census over `GameTheme.Build()` and every `AddThemeColorOverride` call site
-  asserts no key matches the Godot-3 `font_color_*` family; a disabled and an enabled button
-  rendered side by side differ in label colour by a pinned minimum delta.
-- Verification: before/after frames of the Forge panel with an unaffordable recipe, attached to
-  the PR; the engine suite compared on its pass count.
-
-#### P2-SCREEN-02. Sync and shoot — the rendered baseline
-
-- Goal: a current-main set of reference frames, correctly attributed, so every later screen unit
-  has a before-picture nobody argues with.
-- Requirements: P2-R1 (evidence base)
-- Files: `tools/shoot.ps1`, `tools/receipt.ps1`
-- Approach: re-run the six-frame pass against `main`'s HEAD. One trap is already documented:
-  `build_info.txt` is stamped by `receipt.ps1`, not by `shoot.ps1`, so a stale watermark reflects
-  whenever receipt last ran in that worktree, **not the compiled code** — run receipt first, then
-  shoot, and quote the SHA in the artifact names. The eight defect classes the first pass found
-  are the checklist; each later unit strikes its own line by attaching its after-frame.
-- Test scenarios: none — this unit produces evidence, not behaviour.
-- Verification: the frames exist, watermarked with the current SHA, linked from the PR body.
-
-#### P2-SCREEN-03. `SurfaceClaim` and `SurfaceArbiter`, observing only
-
-- Goal: every drawing surface declares what region it claims; the arbiter records and exposes the
-  claims and changes **nothing**.
-- Requirements: P2-R1
-- Files: new `godot/scripts/ui/SurfaceArbiter.cs` (+`.uid`), `godot/scripts/MainUi.cs`
-- Approach: claims are declared where surfaces are built, derived wherever a roster already
-  exists (`TutorialSurfaceRegistry` first). Observing-only is the point: the unit's pass
-  condition is **zero pixel delta** — a byte-compare of before/after PNGs from P2-SCREEN-02's
-  harness, the cheapest assertion in the plan. The arbiter earns enforcement rights wave by wave;
-  the `*Wrap` scar-tissue controls (each carries a comment naming the defect it closed) are not
-  deleted in this unit or the next — the arbiter proves it owns the width for a wave before any
-  belt comes off.
-- Test scenarios: every mounted full-rect surface has a claim; claims serialize into the playtest
-  log; the frame byte-compare is identical before and after.
-- Verification: the byte-compare, quoted in the PR body.
-
-#### P2-SCREEN-04. Modal ownership moves to the arbiter
-
-- Goal: "is a modal open" has one answer, derived, and the ending ceremony is finally owned.
-- Requirements: P2-R1
-- Files: `godot/scripts/MainUi.cs`, `godot/scripts/ui/TutorialSurfaceRegistry.cs`
-- Approach: `MainUi.OverlaySurfaces()` is a hand-written eight-row array; nine full-rect modals
-  exist, and `Chronicle` is the exact and only omission — so while the campaign's closing
-  ceremony is on screen, `AnOverlayOwnsTheScreen()` is false: the clock runs, world input stays
-  live, PiP is not suppressed, and the interact prompt draws on top. The derivation source
-  already landed (U9, #626): the registry carries a live content-root resolver per surface,
-  Chronicle included. `OverlaySurfaces()` becomes a projection over it; `ProvenanceCard` — which
-  *cannot* be hand-listed, being instantiated per hosting panel — claims by region property
-  (P2-KTD2), which is also what makes the book's later replacement of `ChronicleScroll` free.
-  Per-surface dim behaviour is declared in the claim (the `MentorBanner` un-dim fix proves
-  "always dim" is wrong for at least one surface — a teacher must not blank what she points at).
-- Test scenarios: opening the Chronicle holds the clock, blocks world input, and suppresses PiP;
-  a full-rect modal absent from the projection fails by name; a provenance card opened from any
-  of its five hosts registers a claim.
-- Verification: a rendered frame of the ending with no interact prompt on it — the exact frame
-  the census convicted.
-
-#### P2-SCREEN-05. The interact prompt stops lying
-
-- Goal: a disabled input node leaves no stale field that reads as live.
-- Requirements: P2-R6
-- Files: `godot/scripts/town2d/WorldInput2D.cs`, `godot/scripts/MainUi.cs`
-- Approach: two stacked bugs, input first. `WorldInput2D._PhysicsProcess` early-returns on
-  `!Enabled` **above** `SetTarget`, and `PromptText` is written only inside `SetTarget` — so the
-  instant a modal opens, the field freezes at whatever it last said, and both readers (the chip
-  and the playtest bridge) believe it. Clear the field on the disable edge; then the chip's
-  every-frame mirror is honest by construction. The prompt also stops being the highest layer-0
-  node in the game: under P2-SCREEN-04 it yields to any modal claim.
-- Test scenarios: a **field-level** assertion that toggling `Enabled` false empties `PromptText`
-  within one physics frame — asserted on the field, not the chip, because the field has two
-  readers; opening any modal hides the chip; closing restores it within a frame at the same
-  station.
-- Verification: the vigil-modal frame re-shot without "E · Forge" floating over it.
-
-#### P2-SCREEN-06. The card diet — one instruction, one prose slot
-
-- Goal: the Today card carries exactly one message at a time, and no sentence is ever severed by
-  chrome.
-- Requirements: P2-R11
-- Files: `godot/scripts/ui/ObjectiveTracker.cs`, `godot/scripts/panels/LessonsPanel.cs`
-- Approach: the card is four surfaces wearing one box — literal child order: header →
-  `ObjectiveReason` → the ▾ ✕ ↻ glyph row → dismiss-confirm → a 75px scroll → the ranked list —
-  and the two text blocks are populated by different accessors writing complete independent
-  strings, so the "severed sentence" is two messages a reader cannot tell apart, which is worse.
-  Four jobs, four homes: the instruction stays as the card's only prose; the controls move to a
-  worded title row (one of those glyphs ends a feature and forfeits gold, and it is a bare ✕
-  today); the checklist leaves entirely for `LessonsPanel`, which already renders every row
-  chapter-numbered and survives dismiss (~115 lines deleted with `_checklistScroll` and
-  `RefreshTutorialChecklist`); the TeachNote leaves in P2-SCREEN-07. The honest third state —
-  "— skipped / didn't come up this time" — survives the move. This absorbs unbuilt T10 U45.
-- Test scenarios: a tripwire asserting **no `Button` sits between two `Label`s in the card's
-  VBox** — the literal shape of the defect; the card's prose is at most one string from one
-  accessor; the Lessons book shows the checklist rows with their three states after a dismiss.
-- Verification: the 01-town frame re-shot; the severed sentence gone.
-
-#### P2-SCREEN-07. The TeachNote becomes Bryn's three lessons
-
-- Goal: the ~640-character paragraph bolted onto step 1 splits back into the three lessons it is,
-  each delivered where it applies.
-- Requirements: P2-R11; ruling 11.7.3
-- Files: `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/ui/MentorVoice.cs`
-- Approach: the length is a routing decision with its own confession in the comments — U20
-  appended the room-exit sentence and U28 the two action-budget sentences, both citing the same
-  reason: this is "the ONE row guaranteed to reach the screen on every path." Two units
-  independently concluded the only reliable teacher was step 1's note; that is an indictment of
-  the address, not the copy. The three lessons become Bryn lines plus Lessons-book entries. A
-  copy census caps TeachNote length — the tripwire that stops the next unit appending a fourth
-  sentence for the same reason.
-- Test scenarios: the census fails on any TeachNote above the cap; each of the three lessons
-  fires at its own surface; the Lessons book carries all three.
-- Verification: the fast lane and the corpus census green; the card's rendered height noted in
-  the PR.
-
-#### P2-SCREEN-08. Gating copy folds into the instruction
-
-- Goal: the card's gating note stops being a second text block and becomes part of the one
-  sentence.
-- Requirements: P2-R11
-- Files: `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/ui/ObjectiveTracker.cs`
-- Approach: `GatingNote` today renders in the checklist's second block — the same box the diet
-  just emptied. Fold the gate reason into the instruction line itself when the step is gated
-  ("… — opens at Morning"), keeping the phase-honest wait copy that already tells the truth
-  about *today*. Wait-variant strings relocate to the refusing control (P2-SCREEN-09's S3 rule);
-  their honesty is the point, their address was the defect.
-- Test scenarios: a gated step renders one line containing its reason; no `GatingNote` renders in
-  a second block anywhere; the honest wait-copy corpus survives verbatim (string-set equality
-  before/after, addresses excepted).
-- Verification: rendered frame of a gated step.
-
-#### P2-SCREEN-09. Honest control state — the verdict in the label
-
-- Goal: three states, one vocabulary, everywhere: Available / Refused (dimmed, blocker **in the
-  label**, still pressable, answers with the fix) / Absent (not a button at all).
-- Requirements: P2-R2, P2-R3, P2-R4
-- Files: `godot/scripts/panels/SimPanel.cs`, `godot/scripts/panels/ForgePanel.cs`, every
-  `SimPanel.AddButton` caller
-- Approach: `ForgePanel` gates every verb correctly and the gating is invisible (P2-SCREEN-01's
-  colours were dead) or dishonest (`Masterwork Attempt (guaranteed)` renders enabled-looking
-  while refused; the material chip prints the **raw** `recipe.MaterialQuantity` while the gate
-  uses the efficiency-adjusted quantity, so it says `2x (have 1)` on a legal craft). Fold the
-  verdict into `SimPanel.AddButton` so **a button with no verdict is a compile error** — the
-  instrument the constitution already uses. The boolean routes through `ActionLegality` (one
-  authority; the client recomputing it is a third copy of a rule that has two); the reason prose
-  stays client-side, because reason is presentation and moving it into the sim is the forbidden
-  move. A refused control answers a press with the fix — today `Disabled = true` swallows the
-  event, so the harness (which reads `.Disabled` and quotes the tooltip) gets a better
-  explanation than the human. Note what this is **not**: no legality rule changes; the sim's
-  verdicts are rendered, never edited.
-- Test scenarios: a compile-shape test that `AddButton` requires a verdict; a census over a
-  scripted day asserting enabled ⇔ legal for every rendered verb; pressing a refused control
-  produces its fix line; the material chip prints the effective quantity; `(guaranteed)` and
-  `(N of 4 left)` never render on a refused control without the blocker.
-- Verification: the ForgeAnvil frame re-shot with zero copper: every verb visibly refused with
-  its reason, none silent.
-
-#### P2-SCREEN-10. The pointer's free-space query
-
-- Goal: the pointer layer is the world region minus every claimed rect; an avoidance rule may not
-  name a node.
-- Requirements: P2-R5
-- Files: `godot/scripts/ui/TutorialOverlay.cs`, `godot/tests/`
-- Approach: U42 landed and left the design residual: `KeepClearOf` names **one** obstacle
-  (`Overlay.KeepClearOf = Objective`) in a column where `MainUi` docks a second card 16px below
-  it, and `SlideClearOfHud` slides *along* the edge into the gap between the two. The test asks
-  the same single node production asks, so it is tautologically green — the named-obstacle rule
-  is a hand-listed fixture with n=1 (P2-KTD3's second clause, in the wild). Replace with a query
-  against the arbiter's free region; delete `KeepClearOf` and `SlideClearOfHud`; rotation always
-  encodes true bearing while position encodes only "over there". If the whole boundary is
-  claimed, **do not draw** — the card says the direction in words, and the suppression logs at
-  the draw site, because this repo has a scar exactly where degradation went silent. Two known
-  gaps get their answers: a target inside a collapsed section aims at the disclosure control, and
-  an unreachable target (four surfaces declare no live way in) keeps the throw while the card
-  answers what makes the surface appear.
-- Test scenarios: the rewritten test asks the arbiter's free region **with both top-right cards
-  visible** — a case the old test cannot express; a fully-claimed boundary draws nothing and
-  logs; a collapsed-section target aims at the disclosure; `ScrollIntoView` still waits on the
-  condition, not a frame count.
-- Verification: the TutorialOffCamera frame re-shot with both cards visible and the marker in
-  free space.
-
-### The three cheap fixes (P2-SCREEN-01 above, plus these two)
-
-#### P2-MEMORY-03. The beat names its channel
-
-- Goal: the product sentence says how the item reached the hand that held it.
-- Requirements: P2-R16
-- Files: `godot/scripts/panels/LedgerModal.cs`
-- Approach: a pure read over the existing log. For the beat's `ItemId`, the most recent of
-  `CounterSaleClosed` / `ItemSold{FromPlayerShop:true}` / `CommissionFulfilled` /
-  `SupplyDelivered` naming it is the channel, and the day gap is free. The six clauses are quoted
-  in this section's memory domain and ship verbatim. The heirloom clause reads lineage. No new
-  event, no sim change — `CounterSaleClosed` already carries hero, item, price, and `Pinned`.
-- Test scenarios: one beat per channel on a hand-built log renders its clause; an item with no
-  qualifying event renders no channel line (never a generic one); the day arithmetic is exact
-  across a save/load.
-- Verification: fast lane green; a rendered ledger card with the two-line sentence, attached.
-
-#### P2-MEMORY-04. The memorial advisor suggests exactly once
-
-- Goal: the rite is suggested on the first Evening it is legal and never again; thereafter the
-  un-honored state is a fact on the book page, not a prompt.
-- Requirements: P2-R18
-- Files: `sim/GameSim/Advisor/ObjectiveAdvisor.cs`, `sim/GameSim.Tests/Advisor/`
-- Approach: the mechanism of the 1,287-fire defect is on screen at
-  `ObjectiveAdvisor.cs:57-69` — every Evening, `Memorials.FirstOrDefault(m => !m.Honored)`
-  re-suggests unconditionally. `Memorial` already carries `Day` (`Contracts/World.cs:11`), so the
-  once-only predicate is `state.Day == memorial.Day + 1` — stateless, deterministic, no new
-  state, no golden movement (suggestions are derived, not stored). The cost is named in the one
-  line it keeps: *"Honor {Hero}'s memorial — the rite keeps, and it will wait as long as you
-  do."* The gossip and event lines were always correct — they fire on the event, once. If the
-  Wake's `P2-PEOPLE-12` later retires the advisor line entirely, it deletes what this narrowed —
-  a clean supersession; the 1,287 never waits on that ruling.
-- Test scenarios: a 100-day scripted run asserts advisor memorial suggestions ≤ deaths; the
-  suggestion fires on day `Day+1` and not on `Day+2`; an honored memorial never fires it.
-- Verification: fast lane green, with the runner's own `Failed: N, Passed: N` line quoted.
-
 ### Each domain's first unit
-
-#### P2-ONBOARD-01. The teaching lease
-
-- Goal: the tuple (objective, voice line, pointer target) is granted to exactly one owner per
-  tick, so R10 ("a beat's line and its pointer arrive and leave together") becomes structural
-  instead of disciplinary.
-- Requirements: P2-R11; T10 R10
-- Files: `godot/scripts/ui/TutorialAnchorArbiter.cs`, `godot/scripts/ui/MentorBanner.cs`
-- Approach: one arbiter exists and arbitrates one resource — the pulse. Generalize it from "who
-  owns the pulse" to "who owns the teaching screen": same precedence order as today plus U46's
-  rule (an ordinary lesson never steals the chain's pointer — this unit lands that rule's
-  structural form). Lesson-rank voices get the voice surface only, never the objective or the
-  pointer. Sits directly on P2-SCREEN-03/04's claims.
-- Test scenarios: a lesson and a chain step contending for one tick resolve to one owner, both
-  halves together; no voice without its pointer and none without its line; U46's scenario passes
-  against the lease rather than a special case.
-- Verification: the engine suite compared on its pass count; one frame with a beat's line and
-  pointer visibly paired.
-
-#### P2-PROOF-01. Retain the night
-
-- Goal: the recorded fight and the party-as-they-marched survive the reveal, so the telling — and
-  the death card's persistent lines — read state instead of a client-side snapshot that dies on
-  relaunch.
-- Requirements: P2-R13, P2-R14 (their data), P2-KTD6
-- Files: `sim/GameSim/Contracts/Expedition.cs`, the `GameState` record,
-  `sim/GameSim/Drama/ExpeditionRevealSystem.cs`
-- Approach: `ExpeditionRevealSystem.cs:60` clears `PendingExpeditions` at the reveal; the roll
-  stream then exists nowhere in `GameState`, and the only survivor is
-  `SimAdapter.LastRevealedExpeditions` — client-side, day-guarded, lost on relaunch (the "silent
-  fallback hides finished work" wound, third time). `ExpeditionResult` gains trailing
-  `ImmutableList<HeroAtDeparture> PartyAtDeparture` (default empty — the save-compat precedent
-  `VenueId`/`Halt` already set on that record), populated in `BuildResult`, which already holds
-  the party: five lines, **no draws**. `GameState` gains trailing
-  `ImmutableList<ExpeditionResult> LastNightExpeditions`; the reveal **moves** results there
-  instead of dropping them, bounded to one night. No RNG anywhere — but the state shape changes,
-  so **the golden re-hashes and this unit carries a re-baseline, said out loud in its PR.**
-  Balance untouched. Old saves default empty and simply have no tellable night until their next
-  reveal. Contracts micro-PR, orchestrator-authored, merged before every dependent unit
-  (CLAUDE.md multi-agent rules).
-- Test scenarios: the reveal moves rather than drops; `PartyAtDeparture` captures level, MaxHp
-  and gear ids at result-build time — a hero levelled after the reveal leaves the snapshot
-  byte-identical; a fresh save round-trips the retained night; an old save loads with an empty
-  retained list and no throw.
-- Verification: fast lane green with the golden re-record named in the PR body; the balance gate
-  run and quoted unchanged.
-
-#### P2-MEMORY-01. Beat rows lose the enum
-
-- Goal: the ledger's beat rows speak the shared short-label vocabulary instead of `KillingBlow:`.
-- Requirements: P2-R29 (its worst instance), P2-R16's vocabulary
-- Files: `godot/scripts/panels/LedgerModal.cs`
-- Approach: the raw prefix is not just jargon, it is redundant — `Detail` already carries the
-  full sentence. Drop the prefix; define the one short-label vocabulary once (`the killing blow`,
-  `a life saved`, `the way opened`, `kept them standing`, `saved by the draught`, `the tool that
-  turned it`) and make it the only spelling any surface renders — the Chronicle Night and the
-  commendation read the same table later. `ToolAssist`'s label ships inert; its emitter is
-  `P2-LONG-03`'s and its voice ships there (D10's pin).
-- Test scenarios: no rendered beat row contains a `BeatType` member name; every member has a
-  label (reflectively enumerated, deny-by-default — a new beat type without a label is a red
-  build).
-- Verification: fast lane green; one rendered ledger frame.
-
-#### P2-PEOPLE-01. The scene engine and Torvald's first three
-
-- Goal: the cheapest unit that tests the whole People thesis — a pure-reader scene engine on the
-  shipped tavern thread, and Torvald's first three scenes ("The weigh", "Floor three",
-  "The trade").
-- Requirements: P2-R21, P2-R22; rulings 11.7.3/11.7.4; §11.5's boundary
-- Files: `godot/scripts/panels/TavernPanel.cs`, a new scene registry beside the tutorial's,
-  `godot/tests/`
-- Approach: delivery is the shipped "WORK THE ROOM" thread plus the counter opener — extend that
-  pattern, do not invent a second mechanism. Scenes write no sim state (KTD-G adopted verbatim:
-  the engine owns meaning, never fate). Triggers are recorded events only; ordering is by
-  prerequisite **facts**, never index, so out-of-order firing is impossible by construction; at
-  most one scene offer per day town-wide (P2-KTD7); an unclaimed scene waits indefinitely; a hero
-  dead at scene three leaves revealed facts persisted for the wake and kin, and unrevealed scenes
-  die unshown — nothing ever summarises them. After "Floor three" fires, the game's floor-3 rows
-  gain the caption "Halvar's floor" (`P2-PEOPLE-04` generalizes this). **Corrected on landing:**
-  the "Torvald — floor 3" muster-board row named above does not exist — see the §P2-PEOPLE
-  paragraph's own correction; the caption ships as `ArcScenes.FloorCaption`, read by
-  `RaidForecastBoard`'s Target line and by the depth-record standings in `DepthsPanel` and
-  `LegendsWall`, which are the rows that actually carry it every day afterwards. Also corrected:
-  this entry cites "KTD-G adopted verbatim", and there is no KTD-G anywhere in this document — the
-  rule it means is `P2-KTD9`, "Scenes and kin write no sim state".
-  This is the probe: if these three scenes do not land with the owner on one evening's play, the
-  remaining ~140 pieces are not written, and the program stops having cost one session.
-- Test scenarios: a scene whose prerequisite fact is absent never offers; two eligible scenes on
-  one day offer once; scene state survives save/load; a planted engine-word in a scene fails the
-  register gate's seed check (the full gate is `P2-PEOPLE-02`); no sim field changes across a
-  scene (state fingerprint equality, whole state — a hand-listed field set silently lies).
-- Verification: engine suite compared on its pass count; a rendered tavern frame with the thread
-  row; the owner's verdict, which gates `P2-PEOPLE-03`.
 
 #### P2-LONG-01. Re-date the wall on the current build
 
@@ -4819,27 +4461,6 @@ depends on, so leaving it at index level means a later unit inherits an unwritte
 - Verification: the sweep's numbers quoted in the PR body; the plan amended in the same PR if the
   finding contradicts it (§11.6 rule 5).
 
-#### P2-HONEST-01. The Progress book can be opened
-
-- Goal: the permanently-false unlock predicate becomes satisfiable, and the harness stops
-  covering the surface through a hole in the wall.
-- Requirements: P2-R30, P2-R31
-- Files: `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/tools/FullPlaytest.cs`
-- Approach: `TutorialFlow.cs:2963` reads `state.Bounties.Any(b => b.Paid)`, and `Bounty.Paid` is
-  false at its only construction site while `BountyPayoutSystem` removes the paid bounty instead
-  of flipping it — no `with { Paid = … }` exists anywhere in `sim/` or `godot/`. One line:
-  `state.EventLog.OfType<BountyPaid>().Any()` — the event is emitted at payout and the log is
-  append-only, preserving the gate's monotonicity. Per the applied default, this unlocks the
-  Progress board **and** the second profession at the same moment — the tooltip already promises
-  exactly that, and splitting the predicate would create a new hand-written second copy of a
-  fact. Delete `FullPlaytest`'s direct `OpenPanel("Progress")` bypass in the same PR: the harness
-  reaches the surface through the player's door or reports that it cannot.
-- Test scenarios: a scripted bounty payout opens the gate; the fresh-campaign gate is closed; the
-  harness's route to Progress goes through `OpenGatedSurface`; no other caller of
-  `OpenPanel("Progress")` exists (creation-site census).
-- Verification: fast lane green; `BaselinePlayer` never submits `SetProfessionsAction`, so no
-  balance number can move — assert the balance gate untouched by running it once and quoting it.
-
 ### The audit round's six
 
 Seven parallel dossiers wrote the section above; a single reader auditing the assembled whole
@@ -4847,90 +4468,6 @@ found what parallel briefs cannot, because the gaps live *between* the briefs. F
 below are that class of finding — a premise two domains share and neither owns, or a column no
 dossier was assigned. The sixth is the cheapest fix on the list and is here because it belongs
 beside `P2-MEMORY-03`, whose grammar it extends.
-
-#### P2-MEMORY-17. The presence clause — the beat says why the party was on that floor
-
-- Goal: when a beat lands on a floor the party reached only because the player's gold said so,
-  the sentence says that too.
-- Requirements: P2-R34, P2-R16's grammar; law 4 (untouched — see below)
-- Files: `sim/GameSim/Drama/ProvenanceQuery.cs`, `godot/scripts/panels/LedgerModal.cs`
-- Approach: **this closes a premise-level gap, not a polish gap.** `THE-GAME.md:22-23` states the
-  product as provable attribution; `:264-282` states the six dilemmas as what the game is made
-  of. Trace which of the six can reach the proof chain and they are not the same game. Decisions
-  1 and 3 reach link 4 through the object. Decision 6 has real beat types
-  (`AttributionEngine.AddConsumableBeats`, `sim/GameSim/Expedition/AttributionEngine.cs:148-160`).
-  Decisions 2, 4 and 5 terminate in economy numbers and can never appear in a proof sentence —
-  honestly so, because no counterfactual exists for them without inventing rolls the sim never
-  made. But the bounty is the exception that should not be one: it is the game's **only** lever
-  aimed at *where* heroes go (`THE-GAME.md:34-38`), and it resolves as gold and a ticker line and
-  never as proof — even though its contribution is a *recorded fact* rather than a hypothetical.
-  Both halves are in the append-only log (`BountyPosted`, `Contracts/Events.cs:107`;
-  `BountyJudged(Accepted: true)`, `:110`), and the override itself is one readable rule:
-  `ExpeditionSystem.TargetFloorFor` (`sim/GameSim/Expedition/ExpeditionSystem.cs:146-161`) takes
-  the party's own default — `Math.Clamp(party.Max(h => h.DeepestFloorReached) + 1, 1,
-  venue.FloorCount)` at `:152` — and replaces it with `bounty.TargetFloor` at `:158` when a member
-  accepted one. The depth the party actually departed at is logged too (`PartyDeparted`,
-  `Events.cs:74`, emitted at `ExpeditionSystem.cs:118`). So the clause is a difference between two
-  recorded numbers, and it reads:
-
-  > *"They were on floor 3 because your gold said floor 3."*
-
-  Shape it exactly like the shipped channel clause: a `Channel`-shaped resolver and a
-  `Clause`-shaped composer beside `ProvenanceQuery.Channel` (`:40`) and `Clause` (`:74`), rendered
-  at the one site the channel clause already renders (`godot/scripts/panels/LedgerModal.cs:587`).
-  **No counterfactual is claimed and law 4 is untouched** — the clause asserts where the party
-  went and which recorded event moved the number, never that the beat would not otherwise exist.
-  Empty state renders nothing, per the null contract `ProvenanceQuery` already documents at
-  `:32-39`. One godot-side unit plus the pure read; no ceremony, no new event.
-- Test scenarios: a hand-built log where the accepted bounty's floor exceeds the party's default
-  renders the clause; one where the bounty's floor equals or trails the default renders nothing
-  (the gold changed no depth, so there is nothing to claim); a beat with no bounty in the log
-  renders nothing; a declined bounty renders nothing; the channel clause and the presence clause
-  compose in a fixed order on one card.
-- Verification: fast lane green with the runner's own `Failed: N, Passed: N` line quoted; one
-  rendered ledger card carrying the three-line sentence, attached to the PR.
-
-#### P2-HONEST-11. The trinket arm — teeth or honesty, never false coverage
-
-- Goal: the attribution branch that iterates the trinket slot either does something or stops
-  pretending to.
-- Requirements: P2-R36, P2-R29
-- Files: per the fork — `sim/GameSim/Expedition/CombatMath.cs` (arm a) or
-  `sim/GameSim/Contracts/Heroes.cs` + `sim/GameSim/Heroes/CommissionSystem.cs` (arm b)
-- Approach: **the dead branch looks exactly like coverage, which is why it survived a census that
-  names it.** `CombatMath.HeroAttack` reads Weapon only (`CombatMath.cs:51-52`); `HeroDefense`
-  reads Shield + Armor (`:54-57`); `EffectivePower` is their sum (`:60-61`) and
-  `PartyAveragePower` averages it (`:63-67`). Trinket stats contribute zero underground. The
-  `BreakpointClear` loop *does* iterate `hero.Gear.Trinket` (`AttributionEngine.cs:123` — #667
-  added it, deliberately) but the check removes the item and recomputes `PartyAveragePower`, which
-  never reads that slot: **removing a stat-inert item cannot change the average, so the trinket arm
-  can never fire.** #667's own PR body says so in as many words ("AttributionEngine's fix is
-  currently inert… a separate, undocumented gap, not touched here"), and the rules census carries
-  it as its own finding (`docs/reference/rules-census.md:1304-1310`) — though that entry landed in
-  #650, one PR before #667, so its own clause "the breakpoint loop iterates Weapon/Shield/Armor"
-  is the stale half and the loop now iterates all four. The finding's conclusion is unchanged; the
-  census line is re-derived when this unit resolves the fork. Meanwhile `Hero.GearScore`
-  sums the trinket (`sim/GameSim/Contracts/Heroes.cs:99`, whose doc at `:95` also claims "floor
-  gates" and is wrong about them) and `CommissionSystem.cs:305` solicits trinkets **from
-  Regular-band heroes and above** — so the relationship the game rewards you for building
-  (`PremiumBonusFor`, `CommissionSystem.cs:230-236`) delivers a request that can never enter the
-  sentence. Both arms are real work and both are a balance ceremony:
-  **(a) teeth** — trinket stats enter a formula, the removal check goes live, golden and balance
-  ceremony, and the slot becomes `P2-LONG-03`'s `ToolAssist` emitter's natural beat vocabulary,
-  which is the one place the program already wants a fourth-slot verb.
-  **(b) honesty** — the trinket is declared the modifier-only slot in copy and in the shopping
-  math, `GearScore` stops paying for stats that do nothing, `:95`'s doc is corrected; cheaper,
-  still a balance ceremony because shopping changes.
-  Either way **the dead arm is deleted rather than kept**: false coverage is worse than a
-  documented absence, which is the distinction `ToolAssist`'s own pinned emptiness already draws.
-  The fork is P2-OQ7 and the unit does not start without it.
-- Test scenarios: arm a — a party at the gate with a player-crafted trinket loses the floor when
-  it is removed, and the beat fires; arm b — a trinket's stats never enter `GearScore`, and no
-  `BreakpointClear` arm iterates a slot no formula reads (reflective, deny-by-default over
-  `GearSet`'s properties, reusing #667's `GearWornCheckCensusTests` idiom rather than a second
-  copy).
-- Verification: fast lane green; the Balance gate re-run and its deltas quoted in the PR body,
-  named as a re-baseline out loud per P2-KTD5.
 
 #### P2-PEOPLE-14. Wake versus Quiet Morning — the precedence, written and pinned
 
@@ -4991,105 +4528,6 @@ beside `P2-MEMORY-03`, whose grammar it extends.
 - Verification: engine suite compared on its pass count, the runner's own `Failed: N, Passed: N`
   line quoted; a muted run and an unmuted run of the same scripted day produce identical visible
   state (audio decorates, so nothing may depend on it).
-
-#### P2-HONEST-12. The balance corpus states its own coverage
-
-- Goal: the next plan that assumes balance coverage it does not have goes red by name.
-- Requirements: P2-R37, P2-KTD3
-- Files: `sim/GameSim.Tests/Hygiene/`, `sim/GameSim/Harness/` (read-only)
-- Approach: **the balance corpus is a fifth copy of truth that no census covers**, and the rules
-  census says so in its own voice: `BaselinePlayer` "never submits: `PostBountyAction`, any counter
-  action, `BuyMaterialAction`, `SendSupplyAction`, `RecallPartyAction`, `SetProfessionsAction`,
-  `SetPriceAction`, `UnstockAction`, `DeclineCommissionAction`, `HonorMemorialAction`,
-  `ReforgeHeirloomAction`, `MasterworkAttemptAction`, `BuyForgeSupplyAction`,
-  `CommissionLegendaryWorkAction`, `ConcludeApprenticeshipAction`. **Any plan claiming baseline
-  coverage of bounties, the counter, the vigil, or the Morning vendor is wrong**"
-  (`docs/reference/rules-census.md:1236-1241`). One repair generation already happened — #551, the
-  hundred-day gate certifying a smith who never really sold anything — and the rest of that plan
-  doc was deleted with three other dead generations in #653, so the coverage claim is booked
-  nowhere and lives only in a census nothing executes. The census this unit writes reflects the
-  live `PlayerAction` hierarchy against what the sweep policies actually submit, denies by default,
-  and names the unclassified member — the program's own family-B shape (`DecisionReasonCensusTests`,
-  `ClientAuthorityCensusTests`, and #667's `GearWornCheckCensusTests`) applied to the measurement
-  corpus instead of to production. One precision that must survive into the implementation, or the
-  census will overstate what it proves: `VerbConsequenceFloorTests` (Balance) does **not** share
-  `BaselinePlayer`'s repertoire — it enumerates `ActionLegality.LegalActions` at each decision point
-  (`sim/GameSim.Tests/Balance/VerbConsequenceFloorTests.cs:93`) and so probes far more verbs than
-  any policy submits. But it advances the world with empty action lists (`:113`), so its
-  *trajectory* is a do-nothing campaign: states reachable only by using a verb — an open counter, an
-  accepted bounty, a runner already sent — are never on its path. Option coverage at a decision
-  point is not trajectory coverage, and the census reports the two separately or it becomes the
-  next false receipt.
-- Test scenarios: a planted policy that stops submitting a previously-submitted action type fails
-  by name; an action type reachable by no sweep policy is either listed with its reason or fails;
-  the ledger's exception count is pinned, so a new admission is a reviewed diff (rule 12's shape).
-- Verification: fast lane green with the runner's own `Failed: N, Passed: N` line quoted; the first
-  run triaged into fixes-or-ledger **inside this unit**, per P2-KTD4's budgeting rule — a coverage
-  census landed with its assertions relaxed to go green is a banned-word list again.
-
-#### P2-LONG-23. Re-run the camp A/B on the current build
-
-- Goal: the measurement §11.3 R1's pending ruling rests on is younger than the sim it describes.
-- Requirements: P2-KTD10
-- Files: `sim/GameSim.Tests/Balance/CampProvisioningBalanceTests.cs` (its recorded baseline
-  comment), chronicles in `runs/`
-- Approach: `CampProvisioningBalanceTests` carries its numbers as a dated comment —
-  "seeds 2026–2045 × 100 days, GameSim.Tests build **2026-07-18**"
-  (`sim/GameSim.Tests/Balance/CampProvisioningBalanceTests.cs:23-26`), reporting Δ deaths = +29 and
-  Δ targetReached = −12 for the send-below-40% arm. That is six weeks of sim changes ago, and it is
-  the provisioning irony's whole evidence base: R1's ruling (§11.3, default (c), damp
-  risk-compensation only) is still pending on it, and `P2-PEOPLE-11`'s wake windows are estimated
-  against a death rate from the same era. Re-run both arms on the current build and re-record the
-  comment with its new date. **This is not vigil work and does not touch R1's freeze** — the freeze
-  is on shipping vigil *tuning*; a measurement is what the freeze is waiting for. Two disciplines
-  ride it: the test's own doc is explicit that this is measurement and not a pass/fail band, so no
-  threshold is invented here; and if the deltas have changed sign or magnitude materially, the unit
-  **stops and reports** rather than re-pinning anything downstream (P2-KTD10's last clause). Pair
-  it with `P2-LONG-01`, which re-dates the wall on the same build in the same sitting: two
-  measurement units, no ceremony between them.
-- Test scenarios: none new — this unit produces a measurement, and its artifact is the re-recorded
-  baseline plus the PR body's table.
-- Verification: the Balance gate run and its own output quoted (both arms complete, per the test's
-  stated assertion); the fast lane green; the numbers and their date in the PR body, and the plan
-  amended in the same PR if they contradict it (§11.6 rule 5).
-
-#### P2-LONG-24. Why the vigil's send verb never fires
-
-- Goal: `§11.3` retires R1 as moot because its evidence base stopped reproducing — but the
-  mechanism underneath it didn't get safer, it got unreachable. `P2-LONG-23` (#678) shows
-  SEND-BELOW-40% delivering zero supplies across a 2000 party-day sweep because no camped hero
-  is ever observed below 60% HP. One of the six decisions (link 2, decision 6: send the runner
-  or trust their judgment) has an arm nothing in the current build ever triggers. Find out why
-  before deciding what, if anything, to change — this is a dead-verb defect, not yet a fix.
-- Requirements: §11.3 R1 (retired; the evidence base this unit inherits); `P2-LONG-23` (#678,
-  the re-measurement that found it); P2-KTD10 (measure before spending a re-baseline; a unit
-  that discovers its premise moved stops and reports)
-- Files: `sim/GameSim/Expedition/ExpeditionResolver.cs` (the checkpoint-park and too-hurt-quaff
-  logic, `:99-128,341-384`), `sim/GameSim.Tests/Balance/CampProvisioningBalanceTests.cs` (the
-  scripted A/B and its diagnostic), `sim/GameSim/Harness/BaselinePlayer.cs` (whether the
-  scripted policy ever produces the state a real player's party would reach)
-- Approach: investigate, do not presume the fix — three candidate causes, none pre-ruled, and
-  they imply different owners:
-  1. **The 40% threshold is wrong.** Measure where camped-hero HP actually clusters at
-     checkpoint-park time (the full distribution, not just the observed minimum) — the send
-     verb may simply be aimed at a band that was never where parked heroes sit.
-  2. **Hero survivability rose out from under it.** Sweep-wide deaths fell ~65% over the same
-     six weeks the effect vanished in; if the checkpoint depth or the too-hurt exit now keeps
-     heroes healthier than the send verb's target band, the fix is a checkpoint/threshold
-     retune, not a cosmetic one.
-  3. **The harness never provokes the state.** `BaselinePlayer`'s scripted policy may simply
-     never push a party into the risk a real human player would take, in which case the verb
-     could be reachable in real play and this is a harness ceiling, not a game one.
-
-  Distinguish these before proposing a fix; only one of the three is free, and none of them is
-  assumed here.
-- Test scenarios: a diagnostic report of the camped-hero HP distribution at park time across
-  the 20-seed sweep (not just the minimum — quoted here as 60% from seed 2026 alone, and measured
-  sweep-wide at 50% once the census ran); whichever cause is confirmed gets its own reproducing
-  test before any fix is proposed.
-- Verification: fast lane green; this unit's own PR is a MEASUREMENT + finding, the same
-  discipline as `P2-LONG-23` — if it also proposes a fix, the fix is a separate follow-on unit,
-  never folded in silently.
 
 #### P2-LONG-25. Aim the send verb at where camped heroes actually are
 
