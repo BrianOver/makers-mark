@@ -52,8 +52,11 @@ public class CraftCurveTests
     {
         Assert.Equal(QualityGrade.Common, Band(CraftCurve.IndifferentAnchorPermille));
 
-        // 100 per-mille clear of the Fine seam, so RollActive's +/-25 jitter can never lift an
-        // indifferent craft out of Common. "Automatic in none" is arithmetic, not luck.
+        // 100 per-mille clear of the Fine seam, so the CURVE's own output for an indifferent hand
+        // cannot be lifted out of Common by RollActive's +/-25 jitter alone. Post-curve bonuses
+        // (talent assists, Engineering's order bonus) deliberately can and do lift it — see
+        // IndifferentAnchorPermille's own doc, and NoCraftIsPunishing_* below, which asserts the
+        // talent case as a requirement rather than tolerating it.
         Assert.Equal(QualityGrade.Common, Band(CraftCurve.IndifferentAnchorPermille + 25));
         Assert.Equal(QualityGrade.Common, Band(CraftCurve.IndifferentAnchorPermille - 25));
 
@@ -125,18 +128,61 @@ public class CraftCurveTests
         }
     }
 
+    [Fact]
+    public void EveryPuzzle_AsksForDistinctThings_SoAWrongGuessCannotBeAccidentallyRight()
+    {
+        // The defect this pins, found by the 20-seed sweep and not by this file's first cut:
+        // EngineeringAssemblyScorer.SchematicFor stepped by `Tier + 2`, which at tier 1 is 3 and
+        // shares a factor with PartCount (6) — so every tier-1 schematic wanted the same part in two
+        // sockets. With a repeated part, NO derangement of the called-for multiset exists, so a hand
+        // that deliberately puts every part in the wrong socket still lands a free exact match. That
+        // is 183 per-mille of unearned credit, and it is what let an indifferent assembly take
+        // Masterwork 26.7% of the time while a strictly better hand took it 1.0% of the time.
+        foreach (var recipe in EngineeringProfession.Definition.Recipes.Values)
+        {
+            var schematic = EngineeringAssemblyScorer.SchematicFor(recipe);
+            Assert.Equal(schematic.Count, schematic.Distinct().Count());
+            Assert.All(schematic, part => Assert.InRange(part, 0, EngineeringAssemblyScorer.PartCount - 1));
+        }
+    }
+
     // ================================================================================
     // One coherent curve: the same described hand lands in the same band in all four crafts
     // ================================================================================
 
     [Fact]
-    public void IndifferentHand_GradesCommon_InAllFourCrafts()
+    public void IndifferentHand_NeverGradesAboveFine_AndUsuallyGradesCommon()
     {
+        // The curve puts an indifferent hand at mid-Common by construction, and most recipes land
+        // exactly there. Two things legitimately lift a few above it, and both are named rather than
+        // averaged away:
+        //
+        //  - A recipe whose puzzle calls for the SAME component twice cannot be fully deranged, so a
+        //    hand that puts every component in the wrong place still lands one accidental exact
+        //    match. Alchemy has two such brews on purpose (greater-elixir and philosophers-stone
+        //    reuse a reagent), and AlchemyPuzzleScorer's own doc already called that credit correct
+        //    rather than a bug: a brew that wants Sunpetal at both ends genuinely does tolerate a
+        //    rotation better. That is authored content, unlike Engineering's version of the same
+        //    obstruction, which was an accident of a derived formula and is fixed
+        //    (EveryPuzzle_AsksForDistinctThings_* above).
+        //  - Engineering's build-order bonus is added after the curve and an indifferent hand can
+        //    still build in order.
+        //
+        // What must hold everywhere is the ceiling: an indifferent hand never reads as skilled work.
         foreach (var (name, grade) in AllCraftsAt(CraftHand.Indifferent, NoTalents))
         {
-            Assert.Equal(QualityGrade.Common, Band(grade));
+            Assert.True(
+                Band(grade) <= QualityGrade.Fine,
+                $"{name}: an indifferent hand graded {grade} ({Band(grade)}) — that reads as skill it did not show");
             Assert.True(grade > 0, $"{name}: an indifferent hand still tried — it must not score 0");
         }
+
+        // ... and it must still be the COMMON case, or the anchor has stopped meaning anything.
+        var hands = AllCraftsAt(CraftHand.Indifferent, NoTalents).ToList();
+        var common = hands.Count(h => Band(h.Grade) == QualityGrade.Common);
+        Assert.True(
+            common * 2 > hands.Count,
+            $"only {common} of {hands.Count} indifferent crafts graded Common — the anchor is not holding");
     }
 
     [Fact]
@@ -152,21 +198,52 @@ public class CraftCurveTests
     [Fact]
     public void SkilledHand_ReachesSuperiorUntalented_AndMasterworkOnceMastered_InAllFourCrafts()
     {
-        // "Reachable, not routine": a skilled hand is one mistake short of flawless. Untalented it
-        // must clear Superior in every craft (so the top of the scale is genuinely in reach), and a
-        // master with the same hand must reach Masterwork (so the talent tree pays for itself).
+        // "Reachable, not routine": a skilled hand is one mistake short of flawless. Everywhere it
+        // must clear Fine untalented, and a master with the same hand must reach Masterwork (so the
+        // talent tree pays for itself).
+        //
+        // Why Fine and not Superior everywhere: on the SMALLEST puzzles the least mistake a player
+        // can physically make is a big fraction of the whole craft. A tier-1 brew is three pours, and
+        // a pour order cannot be wrong in exactly one place — the smallest possible error is a
+        // transposition, which costs 2 of the 6 points. So a tier-1 brew has essentially three
+        // outcomes (indifferent, one mistake, flawless) and no room for a fourth. That is a property
+        // of a 3-slot memory puzzle, not of the curve, and it is not punishing: getting three pours
+        // right is well within a skilled player's reach, and doing so pays Masterwork. Where a puzzle
+        // HAS the resolution to express the difference — the widest of each craft, checked
+        // immediately below — a skilled hand does clear Superior on its own merits.
         foreach (var (name, grade) in AllCraftsAt(CraftHand.Skilled, NoTalents))
         {
             Assert.True(
-                Band(grade) >= QualityGrade.Superior,
+                Band(grade) >= QualityGrade.Fine,
                 $"{name}: a skilled hand graded {grade} ({Band(grade)}) — the top of the scale is out of reach");
         }
 
+        foreach (var (name, grade) in WidestPuzzleOfEachCraft(CraftHand.Skilled, NoTalents))
+        {
+            Assert.True(
+                Band(grade) >= QualityGrade.Superior,
+                $"{name}: a skilled hand on this craft's widest puzzle graded {grade} ({Band(grade)}) "
+                + "— Superior must be reachable without talents where the puzzle can express it");
+        }
+
+        // Mastered, the same hand clears Superior everywhere...
         foreach (var (name, grade) in AllCraftsAt(CraftHand.Skilled, AllTalents()))
         {
             Assert.True(
-                Band(grade) == QualityGrade.Masterwork,
+                Band(grade) >= QualityGrade.Superior,
                 $"{name}: a mastered skilled hand graded {grade} ({Band(grade)}) — mastery did not pay");
+        }
+
+        // ...and takes the top grade on the widest puzzle of every craft, which is what makes
+        // Masterwork reachable-by-skill rather than reachable-only-by-perfection. On the narrow
+        // recipes it stops at Superior and the top stays behind a flawless craft — three pours is
+        // small enough that getting them all right IS the skilled outcome.
+        foreach (var (name, grade) in WidestPuzzleOfEachCraft(CraftHand.Skilled, AllTalents()))
+        {
+            Assert.True(
+                Band(grade) == QualityGrade.Masterwork,
+                $"{name}: a mastered skilled hand on this craft's widest puzzle graded {grade} "
+                + $"({Band(grade)}) — the top grade is not reachable by skill in this craft");
         }
     }
 
@@ -221,6 +298,20 @@ public class CraftCurveTests
         // Indifferent < Average < Skilled < flawless, untalented AND fully mastered. The mastered
         // pass is the one that matters — it is the property #705's dead zone destroyed for the forge
         // (§11.7.11), and the reason the assist is added after the curve rather than to the points.
+        //
+        // The ordering owed is over PERFORMANCES, not over the names of these three hands. On the
+        // smallest puzzles two adjacent rungs describe the identical submitted input — a 3-pour
+        // brew's "first half remembered, tail guessed" IS its "last two transposed" — and scoring an
+        // identical input identically is determinism, not a flattened curve. Those pairs are skipped
+        // by comparing the inputs, never by comparing the grades, so a genuinely flat curve can never
+        // slip through this as if it were a small puzzle.
+        var inputs = new[]
+        {
+            HandInputs(CraftHand.Indifferent).ToList(),
+            HandInputs(CraftHand.Average).ToList(),
+            HandInputs(CraftHand.Skilled).ToList(),
+        };
+
         foreach (var talents in new[] { NoTalents, AllTalents() })
         {
             var ladders = new[]
@@ -245,6 +336,16 @@ public class CraftCurveTests
                         continue;
                     }
 
+                    // Two named hands that submit the IDENTICAL input are the same performance, and
+                    // must score the same (see this test's own comment). Only the three scripted
+                    // rungs have inputs to compare; the flawless rung is always a distinct input.
+                    if (step < inputs.Length
+                        && inputs[step - 1][craft] == inputs[step][craft])
+                    {
+                        Assert.Equal(worse.Grade, better.Grade);
+                        continue;
+                    }
+
                     Assert.True(
                         better.Grade > worse.Grade,
                         $"{worse.Name}: rung {step} graded {better.Grade}, not strictly above {worse.Grade}");
@@ -257,22 +358,56 @@ public class CraftCurveTests
     // Fixtures: the four crafts, each scored through its OWN scorer and its OWN puzzle shape
     // ================================================================================
 
-    /// <summary>The four crafts at one <see cref="CraftHand"/>, each graded by its own scorer on a
-    /// tier-3 recipe (the widest puzzle each craft has: 5 pours, 5 sockets, the full hide).</summary>
+    /// <summary>
+    /// EVERY recipe of all four crafts at one <see cref="CraftHand"/>, each graded by its own
+    /// scorer on its own puzzle shape.
+    ///
+    /// <para><b>Every recipe, not one per craft — this is the whole reason these fixtures are
+    /// shaped this way.</b> The first cut of this file sampled a single tier-3 recipe per
+    /// profession, and every contract below passed. It was wrong: Engineering's tier-1 schematics
+    /// had period 2 (see <c>EngineeringAssemblyScorer.SchematicFor</c>'s own comment), which handed
+    /// an indifferent hand a free exact match and let it take Masterwork on 26.7% of a 20-seed
+    /// sweep. A tier-3-only fixture cannot see that, and the sweep found what the test should have.
+    /// Sampling one recipe per craft is how a per-tier defect hides under a green suite.</para>
+    /// </summary>
     private static IEnumerable<(string Name, int Grade)> AllCraftsAt(
         CraftHand hand, ImmutableSortedSet<string> talents)
     {
-        yield return ("Alchemy", ScoreAlchemy(AlchemyPuzzlePlayer.BuildPuzzle(AlchemyRecipe, hand), talents));
-        yield return ("Tanning", ScoreTanning(TanningPuzzlePlayer.BuildPuzzle(TanningRecipe, hand), talents));
-        yield return ("Engineering", ScoreEngineering(EngineeringPuzzlePlayer.BuildPuzzle(EngineeringRecipe, hand), talents));
-        yield return ("Blacksmith", ScoreForge(HandForgePlayer.BuildTrace(BlacksmithRecipe, hand), talents));
+        foreach (var recipe in AlchemyProfession.Definition.Recipes.Values)
+        {
+            yield return ($"Alchemy/{recipe.RecipeId}",
+                ScoreAlchemy(recipe, AlchemyPuzzlePlayer.BuildPuzzle(recipe, hand), talents));
+        }
+
+        foreach (var recipe in TanningProfession.Definition.Recipes.Values)
+        {
+            yield return ($"Tanning/{recipe.RecipeId}",
+                ScoreTanning(recipe, TanningPuzzlePlayer.BuildPuzzle(recipe, hand), talents));
+        }
+
+        foreach (var recipe in EngineeringProfession.Definition.Recipes.Values)
+        {
+            yield return ($"Engineering/{recipe.RecipeId}",
+                ScoreEngineering(recipe, EngineeringPuzzlePlayer.BuildPuzzle(recipe, hand), talents));
+        }
+
+        foreach (var recipe in ProfessionRegistry.Blacksmith.Recipes.Values)
+        {
+            yield return ($"Blacksmith/{recipe.RecipeId}",
+                ScoreForge(recipe, HandForgePlayer.BuildTrace(recipe, hand), talents));
+        }
     }
 
-    /// <summary>The four crafts done perfectly — each craft's own idea of perfect.</summary>
+    /// <summary>Every recipe of all four crafts done perfectly — each craft's own idea of perfect.
+    /// Enumerated in the SAME order as <see cref="AllCraftsAt"/>, which the ladder test relies on to
+    /// compare rungs recipe by recipe.</summary>
     private static IEnumerable<(string Name, int Grade)> AllCraftsFlawless(ImmutableSortedSet<string> talents)
     {
-        yield return ("Alchemy", ScoreAlchemy(
-            new AlchemyReagentPuzzle(AlchemyPuzzleScorer.IdealSequenceFor(AlchemyRecipe)), talents));
+        foreach (var recipe in AlchemyProfession.Definition.Recipes.Values)
+        {
+            yield return ($"Alchemy/{recipe.RecipeId}", ScoreAlchemy(
+                recipe, new AlchemyReagentPuzzle(AlchemyPuzzleScorer.IdealSequenceFor(recipe)), talents));
+        }
 
         var kinds = TanningScrapeScorer.PatchesFor(1);
         var passes = ImmutableList.CreateBuilder<int>();
@@ -281,51 +416,106 @@ public class CraftCurveTests
             passes.Add(TanningScrapeScorer.IdealPassesFor(kinds[i]).Min);
         }
 
-        yield return ("Tanning", ScoreTanning(new TanningScrapeInput(passes.ToImmutable(), 1), talents));
-
-        var schematic = EngineeringAssemblyScorer.SchematicFor(EngineeringRecipe);
-        var placements = ImmutableList.CreateBuilder<int>();
-        for (var socket = 0; socket < schematic.Count; socket++)
+        var perfectHide = new TanningScrapeInput(passes.ToImmutable(), 1);
+        foreach (var recipe in TanningProfession.Definition.Recipes.Values)
         {
-            placements.Add(socket);
-            placements.Add(schematic[socket]);
+            yield return ($"Tanning/{recipe.RecipeId}", ScoreTanning(recipe, perfectHide, talents));
         }
 
-        yield return ("Engineering", ScoreEngineering(new EngineeringAssemblyInput(placements.ToImmutable()), talents));
+        foreach (var recipe in EngineeringProfession.Definition.Recipes.Values)
+        {
+            var schematic = EngineeringAssemblyScorer.SchematicFor(recipe);
+            var placements = ImmutableList.CreateBuilder<int>();
+            for (var socket = 0; socket < schematic.Count; socket++)
+            {
+                placements.Add(socket);
+                placements.Add(schematic[socket]);
+            }
+
+            yield return ($"Engineering/{recipe.RecipeId}",
+                ScoreEngineering(recipe, new EngineeringAssemblyInput(placements.ToImmutable()), talents));
+        }
 
         // A flawless forge is the target line itself, tracked exactly, with on-beat strikes.
-        var path = ForgePath.Generate(
-            BlacksmithRecipe.Tier, BlacksmithRecipe.Slot, BlacksmithRecipe.BaseStats.Weight, 1);
-        yield return ("Blacksmith", ScoreForge(
-            new ForgeTraceInput(path, ImmutableList.Create(400, 0, 500, 0, 600, 0), 1), talents));
+        foreach (var recipe in ProfessionRegistry.Blacksmith.Recipes.Values)
+        {
+            var path = ForgePath.Generate(recipe.Tier, recipe.Slot, recipe.BaseStats.Weight, 1);
+            yield return ($"Blacksmith/{recipe.RecipeId}", ScoreForge(
+                recipe, new ForgeTraceInput(path, ImmutableList.Create(400, 0, 500, 0, 600, 0), 1), talents));
+        }
     }
 
-    private static readonly Recipe AlchemyRecipe =
-        AlchemyProfession.Definition.Recipes.Values.First(r => r.Tier == 3);
+    /// <summary>One tier-3 recipe per craft — the widest puzzle each has (5 pours, 5 sockets, the
+    /// full hide, the longest heat line), and so the only place a craft has the resolution to place a
+    /// near-flawless hand distinctly below a flawless one.</summary>
+    private static IEnumerable<(string Name, int Grade)> WidestPuzzleOfEachCraft(
+        CraftHand hand, ImmutableSortedSet<string> talents)
+    {
+        var alchemy = AlchemyProfession.Definition.Recipes.Values.First(r => r.Tier == 3);
+        yield return ("Alchemy", ScoreAlchemy(alchemy, AlchemyPuzzlePlayer.BuildPuzzle(alchemy, hand), talents));
 
-    private static readonly Recipe TanningRecipe =
-        TanningProfession.Definition.Recipes.Values.First(r => r.Tier == 3);
+        var tanning = TanningProfession.Definition.Recipes.Values.First(r => r.Tier == 3);
+        yield return ("Tanning", ScoreTanning(tanning, TanningPuzzlePlayer.BuildPuzzle(tanning, hand), talents));
 
-    private static readonly Recipe EngineeringRecipe =
-        EngineeringProfession.Definition.Recipes.Values.First(r => r.Tier == 3);
+        var engineering = EngineeringProfession.Definition.Recipes.Values.First(r => r.Tier == 3);
+        yield return ("Engineering",
+            ScoreEngineering(engineering, EngineeringPuzzlePlayer.BuildPuzzle(engineering, hand), talents));
 
-    private static readonly Recipe BlacksmithRecipe =
-        ProfessionRegistry.Blacksmith.Recipes.Values.First(r => r.Tier == 3);
+        var blacksmith = ProfessionRegistry.Blacksmith.Recipes.Values.First(r => r.Tier == 3);
+        yield return ("Blacksmith", ScoreForge(blacksmith, HandForgePlayer.BuildTrace(blacksmith, hand), talents));
+    }
 
-    private static int ScoreAlchemy(CraftPuzzleInput puzzle, ImmutableSortedSet<string> talents) =>
+    /// <summary>A STRUCTURAL key for the puzzle input each craft's policy submits at
+    /// <paramref name="hand"/>, in the SAME recipe order as <see cref="AllCraftsAt"/> — so the ladder
+    /// test can tell "these two rungs scored the same because the curve is flat" from "they scored
+    /// the same because the puzzle is too small for them to be different hands at all".
+    ///
+    /// <para>Rendered to a string rather than compared as records on purpose: every puzzle input
+    /// type holds an <see cref="ImmutableList{T}"/>, which has no structural equality, so the
+    /// compiler-generated record <c>Equals</c> compares those by REFERENCE and reports two
+    /// identical hands as different. Using it would have silently disabled the skip this key
+    /// exists to drive.</para></summary>
+    private static IEnumerable<string> HandInputs(CraftHand hand)
+    {
+        foreach (var recipe in AlchemyProfession.Definition.Recipes.Values)
+        {
+            var puzzle = (AlchemyReagentPuzzle)AlchemyPuzzlePlayer.BuildPuzzle(recipe, hand);
+            yield return string.Join(",", puzzle.Reagents);
+        }
+
+        foreach (var recipe in TanningProfession.Definition.Recipes.Values)
+        {
+            var puzzle = (TanningScrapeInput)TanningPuzzlePlayer.BuildPuzzle(recipe, hand);
+            yield return $"{puzzle.PatchSeed}:{string.Join(",", puzzle.CellPasses)}";
+        }
+
+        foreach (var recipe in EngineeringProfession.Definition.Recipes.Values)
+        {
+            var puzzle = (EngineeringAssemblyInput)EngineeringPuzzlePlayer.BuildPuzzle(recipe, hand);
+            yield return string.Join(",", puzzle.Placements);
+        }
+
+        foreach (var recipe in ProfessionRegistry.Blacksmith.Recipes.Values)
+        {
+            var trace = HandForgePlayer.BuildTrace(recipe, hand);
+            yield return $"{trace.PathSeed}:{string.Join(",", trace.Samples)}:{string.Join(",", trace.Strikes)}";
+        }
+    }
+
+    private static int ScoreAlchemy(Recipe recipe, CraftPuzzleInput puzzle, ImmutableSortedSet<string> talents) =>
         AlchemyPuzzleScorer.Score(
-            AlchemyRecipe, (AlchemyReagentPuzzle)puzzle, talents, AlchemyProfession.Definition).GradePermille;
+            recipe, (AlchemyReagentPuzzle)puzzle, talents, AlchemyProfession.Definition).GradePermille;
 
-    private static int ScoreTanning(CraftPuzzleInput puzzle, ImmutableSortedSet<string> talents) =>
+    private static int ScoreTanning(Recipe recipe, CraftPuzzleInput puzzle, ImmutableSortedSet<string> talents) =>
         TanningScrapeScorer.Score(
-            TanningRecipe, (TanningScrapeInput)puzzle, talents, TanningProfession.Definition).GradePermille;
+            recipe, (TanningScrapeInput)puzzle, talents, TanningProfession.Definition).GradePermille;
 
-    private static int ScoreEngineering(CraftPuzzleInput puzzle, ImmutableSortedSet<string> talents) =>
+    private static int ScoreEngineering(Recipe recipe, CraftPuzzleInput puzzle, ImmutableSortedSet<string> talents) =>
         EngineeringAssemblyScorer.Score(
-            EngineeringRecipe, (EngineeringAssemblyInput)puzzle, talents, EngineeringProfession.Definition).GradePermille;
+            recipe, (EngineeringAssemblyInput)puzzle, talents, EngineeringProfession.Definition).GradePermille;
 
-    private static int ScoreForge(ForgeTraceInput trace, ImmutableSortedSet<string> talents) =>
-        ForgeScorer.Score(BlacksmithRecipe, trace, talents, ProfessionRegistry.Blacksmith).GradePermille;
+    private static int ScoreForge(Recipe recipe, ForgeTraceInput trace, ImmutableSortedSet<string> talents) =>
+        ForgeScorer.Score(recipe, trace, talents, ProfessionRegistry.Blacksmith).GradePermille;
 
     /// <summary>Every assist node in every profession — read off the definitions rather than listed,
     /// so a new talent joins this contract automatically instead of quietly escaping it.</summary>

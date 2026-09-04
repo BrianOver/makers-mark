@@ -181,7 +181,7 @@ public static class BatchRunner
             // and actually measured an auto-crafting policy is exactly the mis-read P2-OQ11 exists
             // to stop (see CraftHand's class doc).
             error.WriteLine($"batch: --hand {handArg} needs a policy that plays a craft minigame "
-                + $"(handforge, alchemy, tanning, engineering) — '{policyArg}' auto-crafts");
+                + $"(handforge, latemastery, alchemy, tanning, engineering) — '{policyArg}' auto-crafts");
             return null;
         }
 
@@ -191,7 +191,8 @@ public static class BatchRunner
     /// <summary>Does this policy submit a real craft-minigame input, so that a
     /// <see cref="CraftHand"/> means anything to it?</summary>
     private static bool HandAware(Policy policy) => policy
-        is Policy.HandForge or Policy.AlchemyPuzzle or Policy.TanningPuzzle or Policy.EngineeringPuzzle;
+        is Policy.HandForge or Policy.LateMastery
+        or Policy.AlchemyPuzzle or Policy.TanningPuzzle or Policy.EngineeringPuzzle;
 
     /// <summary>Lowercase name embedded in the chronicle filename (corpus hygiene) — matches the
     /// <c>--policy</c> value, plus the <c>--hand</c> value when it is not the default, so a filename
@@ -223,7 +224,7 @@ public static class BatchRunner
         Policy.Counter => CounterPlayer.ActionsFor,
         Policy.Apprentice => ApprenticePlayer.ActionsFor,
         Policy.HandForge => state => HandForgePlayer.ActionsFor(state, hand),
-        Policy.LateMastery => LateMasteryPlayer.ActionsFor,
+        Policy.LateMastery => state => LateMasteryPlayer.ActionsFor(state, hand),
         Policy.AlchemyPuzzle => state => AlchemyPuzzlePlayer.ActionsFor(state, hand),
         Policy.TanningPuzzle => state => TanningPuzzlePlayer.ActionsFor(state, hand),
         Policy.EngineeringPuzzle => state => EngineeringPuzzlePlayer.ActionsFor(state, hand),

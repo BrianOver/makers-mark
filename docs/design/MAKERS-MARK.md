@@ -896,6 +896,39 @@ that pin is rewritten to the new property, never softened. It does not settle th
 question in `P2-OQ9` — the top-grade pay bonus is retuned as its own unit, calibrated against the
 distribution this change produces, never against the one this change invalidates.
 
+**11.7.12 One coherent quality curve for all four crafts — ruled 2026-09-04.** *(Authorizes a sim
+change and a re-baseline, like §11.7.11 and for the same reason it lives here.)* **What was
+measured:** `P2-OQ10` shipped the first policies that actually play Alchemy's, Tanning's and
+Engineering's craft minigames, and the first per-profession grade distributions in the project's
+history (20 seeds x 100 days each, `P2-OQ11`'s entry below carries the full table). They came back
+as four unrelated curves. Alchemy produced **no Masterwork at all** across 630 crafts — so every
+system keyed on the top grade could never fire for an alchemist. Tanning handed one over **87.3% of
+785 crafts, from day 6**. Engineering, 59.9%. The blacksmith sat at 94.6% Superior and 0%
+Masterwork, but that reading is an instrument artifact rather than a defect: its only measuring
+policy swings a constant 50-per-mille error and never tries to improve, so it says nothing about
+whether the top grade is reachable. **The ruling: the top grade must be earned by accuracy,
+reachable in every craft, and automatic in none.** Ranging from unreachable to automatic is the
+defect, and it is one defect rather than three, which is why the four are fixed as one unit.
+
+**The binding constraint on how**: `THE-GAME.md` §4.1 — *the professions are meant to feel
+different in the hands, not merely differently themed*. "One coherent curve" must not become four
+identical minigames. The shared thing is the SHAPE of the grade response — how skill maps to
+outcome — never the inputs, the pacing or the feel. A player must still be able to tell the four
+crafts apart by hand; a fix that tidies the numbers by flattening the crafts together is the wrong
+fix even when the numbers look right. Four further constraints bind any retune, inherited from
+§11.7.11 and extended: strict ordering at every talent level (a strictly better performance never
+scores worse or equal); talents stay clearly worth unlocking; no craft becomes punishing — the goal
+is that skill matters, not that the game gets harder, so a master's sloppy day is still decent; and
+reachable-not-routine, meaning the top grade is achievable by a skilled hand in every profession and
+by an indifferent one in none.
+
+**The instrument is part of the ruling.** §11.7.11 was nearly mis-read because its measuring policy
+never attempted accuracy, and `P2-OQ10`'s three hands — each described as "average" — turned out to
+be three different skill levels. Without a hand that genuinely tries, "unreachable" and "never
+reached for" are indistinguishable, and that confusion has now cost two investigations. Any future
+curve measurement therefore reports at more than one named skill level, and the levels are defined
+once for all crafts rather than per craft.
+
 ### 11.8 The finale is unreachable — measured 2026-08-08, root cause found
 
 P3's assertions were written and went red on their first run. This is not a test that needs
@@ -4926,13 +4959,20 @@ default applied.**
   **The bigger finding: none of it is reachable by anything that has ever run.** Every scripted
   policy in `sim/GameSim/Harness/` (`BaselinePlayer`, `CounterPlayer`, `ApprenticePlayer`,
   `MasterworkSeekingPlayer`, `HandForgePlayer`, `LateMasteryPlayer`) was grepped for the three
-  puzzle-input types and for talent unlocks on these three professions. Zero hits. `BaselinePlayer`
-  DOES craft alchemy/tanning/engineering recipes — its Expedition loop ranks recipes from every
-  profession by tier then stat sum and crafts whichever legal one has a buyer — but every
-  `CraftAction` it (and every other policy) emits for these professions uses the two-argument
-  constructor (`RecipeId`, `MaterialKey`), leaving `Puzzle` null, which is the AUTO-CRAFT branch in
-  `CraftingHandlers.ApplyCraft` — a completely different code path that never touches these three
-  scorers. `HandForgePlayer` only ever attaches a `Puzzle` to a *blacksmith* recipe (an explicit
+  puzzle-input types and for talent unlocks on these three professions. Zero hits. **Corrected
+  2026-09-04 (P2-OQ11) — this paragraph originally claimed `BaselinePlayer` "DOES craft
+  alchemy/tanning/engineering recipes", ranking recipes "from every profession". That is false, and
+  the source contradicts it: `BaselinePlayer`'s Expedition loop iterates `RecipeTable.All`, and all
+  22 recipes in that table are constructed with `RecipeTable.BlacksmithProfession` — there is not a
+  single non-blacksmith entry in it (`ProfessionRegistry.AllRecipes` is the table that spans the
+  four, and no policy read it before `ActiveProfessionPlayer`).** So the gap was stronger than
+  stated: the corpus held ZERO items from these three professions, not merely zero puzzle-scored
+  ones — which is exactly what `ActiveProfessionPlayer`'s own class doc recorded when it shipped,
+  and the reason it had to be a fresh policy family rather than a composition over `BaselinePlayer`.
+  The conclusion the paragraph drew is unaffected and stands: every `CraftAction` any pre-existing
+  policy emits uses the two-argument constructor (`RecipeId`, `MaterialKey`), leaving `Puzzle` null,
+  which is the AUTO-CRAFT branch in `CraftingHandlers.ApplyCraft` — a completely different code path
+  that never touches these three scorers. `HandForgePlayer` only ever attaches a `Puzzle` to a *blacksmith* recipe (an explicit
   `recipe.Profession != ProfessionRegistry.BlacksmithId` guard sends everything else through
   unmodified), and only `BaselinePlayer`'s Morning branch ever emits `UnlockTalentAction`, scoped
   entirely to `ProfessionRegistry.BlacksmithId`. So the balance gate, the 20-seed telemetry farm,
@@ -5005,6 +5045,97 @@ default applied.**
   for blacksmith) would close the same blind spot `#705`'s own investigation exists to warn about —
   until it ships, these three professions are exactly what blacksmith was before `HandForgePlayer`:
   a scoring path the balance gate has certified against nothing.
+
+- **P2-OQ11. One coherent quality curve — measured and changed 2026-09-04, owner ruling §11.7.12.**
+  The recommendation directly above ("no scoring-curve change; the higher-value unit is coverage")
+  was taken, coverage shipped as `P2-OQ10`, and the coverage promptly produced the reading that
+  overturned the recommendation. Both halves of that are worth keeping: the recommendation was
+  right about what to build next and wrong about the conclusion, because it was reasoning about a
+  scoring path nothing had ever measured.
+
+  **What the instrument was, and why the first reading could not be trusted.** `P2-OQ10` shipped one
+  hand per profession, each called "average". They were three different skill levels. Alchemy's
+  poured every reagent in the wrong place — an *indifferent* hand. Tanning's scraped two passes over
+  the whole hide, which is strictly worse than one pass everywhere (it wears through all four
+  delicate patches) — a hand below indifferent. Engineering's identified every part correctly and
+  built in perfect order, missing only the final seat — a *near-flawless* hand. So the "four
+  unrelated curves" table in §11.7.12 is partly four curves and partly four instruments, and it was
+  not possible to tell which until the hands were defined once for all crafts. `Harness/CraftHand`
+  now does that — Indifferent / Average / Skilled, one rule, expressed per puzzle — and every
+  measurement below is 20 seeds x 100 days per cell.
+
+  **Reading 1 — the OLD curve under the calibrated instrument.** This is the diagnostic table, and
+  it says something quite different from the one-hand reading:
+
+  | Craft | Indifferent | Average | Skilled |
+  |---|---|---|---|
+  | Alchemy | 0% Mw (83.3% Fine) | **42.2% Mw** | **52.0% Mw** |
+  | Tanning | 87.3% Mw | **87.3% Mw** | **87.3% Mw** |
+  | Engineering | **54.3% Mw** | 17.8% Mw | 59.9% Mw |
+  | Blacksmith | 0% Mw (53.6% Fine) | 0% Mw (94.6% Superior) | **45.5% Mw, day 5** |
+
+  Three findings, none of which the single-hand table could show.
+  1. **Alchemy's Masterwork was never unreachable.** It was never reached for. An average hand took
+     it 42.2% of the time on the unchanged curve. The ruling's premise — "Alchemy's best work cannot
+     be made at all" — is false, and it is false for exactly the reason §11.7.11 was nearly
+     misread: the measuring hand never tried.
+  2. **Tanning was not merely automatic, it was skill-blind.** All three hands scored *identically*
+     — same craft count, same distribution, to the digit. Accuracy had no effect whatsoever. That is
+     a worse defect than the 87.3% headline suggested, and it is the one real "unrelated curve".
+  3. **The blacksmith's 0% was entirely an instrument artifact**, as suspected. Its skilled hand
+     reaches Masterwork 45.5% of the time from day 5, and its three hands already walked Fine ->
+     Superior -> Masterwork in order. `ForgeScorer` is therefore **not changed by this unit** — it
+     already had the response the ruling asks for, over a continuous deviation rather than discrete
+     points, and it is the archetype the other three were calibrated to.
+
+  **The change.** `Crafting/CraftCurve` is the one response the three point-scored crafts report
+  through. Each scorer keeps its own points and supplies two reference counts — what its indifferent
+  hand earns (anchored to mid-Common, 450) and what a flawless craft earns (anchored to 1000). What
+  a point costs to earn is untouched, which is the §4.1 constraint: the pour order, the surveyed
+  hide, the identified part and the tracked heat are all exactly as they were.
+
+  Two further defects surfaced during the change, both found by the sweep rather than by the first
+  cut of the unit tests, and both real bugs rather than tuning:
+  - **`SchematicFor` stepped by `Tier + 2`**, which at tier 1 is 3 and shares a factor with
+    `PartCount` (6) — so every tier-1 schematic asked for the same part in two sockets. A multiset
+    with a repeat has no derangement, so a hand that deliberately misplaced every part still landed
+    a free exact match worth 183 per-mille. The step is now always a unit modulo `PartCount`.
+  - **The build-order bonus paid for tidiness regardless of correctness.** A hand that seated every
+    part in the wrong socket, left to right, collected the full 90. On a 4-socket recipe that scored
+    540 against 495 for a strictly better hand — a worse performance scoring higher, which is the
+    one thing §11.7.11's ordering constraint forbids. The order run now counts only sockets filled
+    in sequence *with the right part*.
+
+  **Reading 2 — after.** Every craft monotone, 0% Masterwork for an indifferent hand, and the top
+  grade reached by a skilled one:
+
+  | Craft | Indifferent | Average | Skilled |
+  |---|---|---|---|
+  | Alchemy | 0% Mw (84.0% Fine) | 20.1% Mw | 49.9% Mw |
+  | Tanning | 0% Mw (96.2% Fine) | 9.3% Mw | 87.3% Mw |
+  | Engineering | 0% Mw (96.4% Fine) | 1.0% Mw | 43.4% Mw |
+  | Blacksmith | 0% Mw (53.6% Fine) | 0% Mw (94.6% Superior) | 45.5% Mw |
+
+  The blacksmith column is unchanged and *proven* so, not argued: one seed re-run after the change
+  produced a byte-identical chronicle (sha256 `f5f9f3b2…`).
+
+  **What is deliberately still uneven, named rather than averaged away.** A skilled tanner takes
+  Masterwork 87.3% of the time against an engineer's 43.4%, because "one mistake short of flawless"
+  is 1 point of 80 on a hide and 2 points of 10 in a brew — the puzzles have very different
+  granularity, and forcing that even would mean making them the same puzzle. Likewise a tier-1 brew
+  has only three reachable outcomes (indifferent, one mistake, flawless), because a three-pour order
+  cannot be wrong in exactly one place; a skilled hand there stops at Fine and the top stays behind
+  a flawless pour, which on three pours is a fair bar. Both are pinned as contracts in
+  `Crafting/CraftCurveTests` over every recipe at every tier — the first cut sampled one tier-3
+  recipe per craft, passed everything, and missed both engineering bugs, which is exactly how a
+  per-tier defect hides under a green suite.
+
+  **Still owed, and named so it is not mistaken for done: the 100-day balance gate has never been
+  run with a minigame-playing policy as a fixture.** Every Balance driver is `BaselinePlayer` (11 of
+  12) or `MasterworkSeekingPlayer`, and both auto-craft, so the gate certifies this curve against
+  nothing — the same sentence `P2-OQ10` wrote about these three professions, now true one level up
+  about the curve itself. The gate passing 68/68 across this change is therefore evidence of no
+  collateral damage, not evidence the curve is balanced.
 
 ## What must survive, named so this program cannot quietly discard it
 

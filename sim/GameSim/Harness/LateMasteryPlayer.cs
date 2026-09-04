@@ -85,7 +85,16 @@ namespace GameSim.Harness;
 public static class LateMasteryPlayer
 {
     public static ImmutableList<PlayerAction> ActionsFor(GameState state) =>
-        HandForgePlayer.HandForgeOver(state, ReorderedTalentBaseline(state));
+        ActionsFor(state, CraftHand.Average);
+
+    /// <summary>
+    /// P2-OQ11: this policy hand-forges, so it takes a <see cref="CraftHand"/> like every other
+    /// policy that does. The two axes are orthogonal and deliberately so — this one varies WHEN the
+    /// mastery talents land, <paramref name="hand"/> varies how good the swing is — which is exactly
+    /// the pair §11.7.11 needed to separate a talent-pacing artifact from a curve property.
+    /// </summary>
+    public static ImmutableList<PlayerAction> ActionsFor(GameState state, CraftHand hand) =>
+        HandForgePlayer.HandForgeOver(state, ReorderedTalentBaseline(state), hand);
 
     /// <summary>
     /// <see cref="BaselinePlayer.ActionsFor"/>'s own action list, with its one Morning

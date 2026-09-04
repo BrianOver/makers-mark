@@ -55,10 +55,21 @@ public static class CraftCurve
     /// <summary>
     /// Where a profession's INDIFFERENT hand lands, in per-mille — the middle of
     /// <see cref="QualityRoller.RollActive"/>'s Common band (200..549). Deliberately 100 per-mille
-    /// clear of the Fine seam so that <c>RollActive</c>'s +/-25 jitter can never lift an
-    /// indifferent craft out of Common: "automatic in none" is then a property of the arithmetic
-    /// rather than of the dice. Equal to the grade <see cref="ForgeScorer"/> already awards a
-    /// tracking deviation of ~137 per-mille (see this type's class doc on the forge as archetype).
+    /// clear of the Fine seam, so that this curve's OWN output for an indifferent hand cannot be
+    /// lifted into Fine by <c>RollActive</c>'s +/-25 jitter alone.
+    ///
+    /// <para><b>What that does and does not promise.</b> It is a statement about the curve, not a
+    /// cap on the finished grade: a scorer may add its own post-curve bonuses, and two do. Talent
+    /// assists add up to 250, which is meant to carry an indifferent hand into Fine — that is
+    /// §11.7.11's "talents raise your floor", and <c>CraftCurveTests</c> asserts it as the
+    /// no-craft-is-punishing property rather than tolerating it. Engineering additionally adds its
+    /// build-order bonus (up to 90), which puts an untalented indifferent assembly at 540 — inside
+    /// Common, but close enough to the seam that a lucky jitter can read Fine. Both are fine against
+    /// the ruling, which forbids an indifferent hand reaching the TOP grade, not reaching Fine; that
+    /// stronger property is pinned separately and holds with a full talent tree in every craft.</para>
+    ///
+    /// <para>Equal to the grade <see cref="ForgeScorer"/> already awards a tracking deviation of
+    /// ~137 per-mille (see this type's class doc on the forge as archetype).</para>
     /// </summary>
     public const int IndifferentAnchorPermille = 450;
 
