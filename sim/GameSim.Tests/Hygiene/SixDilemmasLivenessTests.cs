@@ -189,10 +189,13 @@ public class SixDilemmasLivenessTests
     /// neutralisations that make "spent a slot and achieved nothing" read as no change at all).</summary>
     private static string WorldWitness(GameState state) => ConsequenceProbe.FingerprintForTests(state);
 
-    /// <summary>Every hero's persistent mood toward the shop. A pin adds
-    /// <c>WillingnessModel.PinMoodBonus</c>, a fleece subtracts <c>FleeceMoodPenalty</c>; nothing
-    /// else in a ten-tick window moves mood by RNG, so this witness cannot be faked by entropy
-    /// drift the way a whole-state fingerprint can.</summary>
+    /// <summary>Every hero's persistent mood toward the shop. Stronger than the whole-state
+    /// fingerprint here, and honestly so: the two arms are the pin branch and the fleece branch of
+    /// the SAME <c>HaggleResolver.ResolveCounter</c> call on the SAME hero, and those branches apply
+    /// <c>+PinMoodBonus</c> and <c>-FleeceMoodPenalty</c> — so a difference in this witness is the
+    /// branch, not a shifted RNG draw. It is close to tautological on purpose: what carries dilemma 2
+    /// is the REACHABILITY count (are the two branches ever both available at one open round?), and
+    /// this half is the standing pin that the branches still land where they say they do.</summary>
     private static string MoodWitness(GameState state) =>
         string.Join(",", state.Heroes.Values.Select(h => $"{h.Id.Value}:{h.MoodPermille}"));
 
