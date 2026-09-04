@@ -504,7 +504,10 @@ public partial class LegendsWall : Control
             .ThenBy(entry => entry.Key);
         foreach (var (heroValue, floor) in standings)
         {
-            AddLabel(_body!, $"  floor {floor} — {HeroName(state, new HeroId(heroValue))}");
+            // P2-PEOPLE-01: the same durable-fact caption the Mine's own standings carry — one rule
+            // (ArcScenes.FloorCaption), so the two copies of this board cannot drift apart.
+            var name = HeroName(state, new HeroId(heroValue));
+            AddLabel(_body!, $"  floor {floor} — {name}{GodotClient.Ui.ArcScenes.FloorCaption(name, floor)}");
         }
     }
 

@@ -9,6 +9,8 @@
 #
 # Usage: powershell -File tools/shoot.ps1 -Out C:\tmp\town.png [-State Tavern]
 #   -State: "" (town, default) | Forge | Shop | Tavern | Gate | Counter | Watch
+#   -State TavernScene / TavernSceneAtBar (P2-PEOPLE-01): the arc-scene row on a patron's card, and
+#   the scene itself once pursued. Both set SHOT_ARC_SCENE below.
 #   -State Watch (§11.14.7): a hand-built, already-resolved two-floor fight staged straight into
 #   MineWatch (MainUi.StageWatchFightReceipt, gated on SHOT_WATCH_FIGHT below) -- the real day-cycle
 #   route to a populated watch is unreliable to park a screenshot on (a fresh campaign's day-1 party
@@ -37,6 +39,11 @@ Write-Host $stamp -ForegroundColor DarkGray
 $env:SHOT_OUT = $Out
 $env:SHOT_STATE = $State
 $env:SHOT_WATCH_FIGHT = if ($State -eq "Watch") { "1" } else { "" }
+# P2-PEOPLE-01: TavernScene / TavernSceneAtBar need one FACT planted before the tavern is opened --
+# a player-marked piece in Torvald's hands (MainUi.StageArcSceneReceipt). The scene engine then
+# decides for itself whether to offer, so the capture still proves the real eligibility rule rather
+# than a staged screen. Same seam and same never-in-real-play contract as SHOT_WATCH_FIGHT above.
+$env:SHOT_ARC_SCENE = if ($State -eq "TavernScene" -or $State -eq "TavernSceneAtBar") { "1" } else { "" }
 if (Test-Path $Out) { Remove-Item $Out -Force }
 
 Write-Host "capturing state='$State' -> $Out" -ForegroundColor Cyan

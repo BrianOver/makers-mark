@@ -127,7 +127,8 @@ const KNOWN_STATES := [
 	"HeroErrand", "HeroTrinket", "Ledger", "LedgerProvenance", "Lessons", "MemoryRow",
 	"MineGateFocus", "Mirror",
 	"OccupancyCorner", "Primer", "Provenance", "ReturnAtNight", "ReturnEmerge", "ReturnQuestEmpty",
-	"SendOff", "ShopPanel", "ShopTrinket", "SplitLessons", "SystemMenu", "TavernPanel", "Telling",
+	"SendOff", "ShopPanel", "ShopTrinket", "SplitLessons", "SystemMenu", "TavernPanel",
+	"TavernScene", "TavernSceneAtBar", "Telling",
 	"TellingFall", "TellingFork", "TellingVerdict", "TownOverview", "TutorialLookIn",
 	"TutorialOffCamera", "Watch", "WarrantFirstMorning",
 ]
@@ -550,7 +551,14 @@ func _process(_delta: float) -> bool:
 					+ "the shot below is the plain town and proves nothing about the hold-or-sell fix.")
 				quit(1)
 				return false
-		elif _state == "TavernPanel":
+		elif _state == "TavernPanel" or _state == "TavernScene" or _state == "TavernSceneAtBar":
+			# P2-PEOPLE-01: TavernScene captures Act 1 -- the arc-scene row on Torvald's patron
+			# card, beside the commission/ore rows it shares a mechanism with. TavernSceneAtBar
+			# presses that row's own Pursue (frame 120 below) so the capture is the scene itself,
+			# playing in the same section a handshake closes in. Both need SHOT_ARC_SCENE=1 on the
+			# launching process (tools/shoot.ps1 sets it for these two states) -- that plants the
+			# one FACT the scene requires, a player-marked piece in his hands, and the engine then
+			# decides for itself whether to offer.
 			if _ui.has_method("OpenPanel"):
 				_ui.call("OpenPanel", "Tavern")
 		elif _state == "DepthsPanel":
@@ -959,6 +967,18 @@ func _process(_delta: float) -> bool:
 		var bell = _ui.find_child("AdvancePhase", true, false)
 		if bell:
 			bell.emit_signal("pressed")
+	# P2-PEOPLE-01, TavernSceneAtBar's second beat: the Tavern drawer opened at frame 0 has settled,
+	# so press the arc-scene row's own Pursue -- the production path a player takes, the same one
+	# the commission and ore rows beside it take. Loud on a miss: a shot that quietly photographed a
+	# tavern with no scene in it would read as "the words are fine" while proving nothing at all.
+	if _state == "TavernSceneAtBar" and _frames == 120:
+		var pursue_scene = _ui.find_child("Pursue_Scene_1", true, false)
+		if pursue_scene:
+			pursue_scene.emit_signal("pressed")
+		else:
+			push_error("[shot] SHOT_STATE=TavernSceneAtBar could not find Pursue_Scene_1 -- either "
+				+ "SHOT_ARC_SCENE is unset on the launching process or the scene did not offer, and "
+				+ "the shot below proves nothing about Torvald's first scene.")
 	# HeroTrinket/ShopTrinket's second beat: the drawer opened above (frame 60) has settled --
 	# reach the panel INSIDE DrawerHost specifically (not a bare find_child("Heroes", ...) off the
 	# whole tree, which would just as happily match Town2D's own "Heroes" Node2D root and silently

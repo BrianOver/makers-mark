@@ -70,6 +70,18 @@ namespace GodotClient.Panels;
 /// (<c>GameSim.Advisor.ActionLegality</c>'s mirror, never re-derived), reported through
 /// <see cref="SimPanel.Confirm"/> so a commit can never claim success the kernel didn't grant.
 /// Zero <c>sim/</c> diff: both threads are read-only projections over existing state.</para>
+///
+/// <para><b>A third thread (P2-PEOPLE-01): the patron who has something to SAY.</b> Ruling 11.7.3 —
+/// no important information without a face — names this file's Pursue/Handshake pair and
+/// <see cref="Ui.CustomerVoice"/>'s counter opener as the two shipped precedents, and says to extend
+/// that pattern rather than invent a second mechanism. So an arc scene is a third
+/// <see cref="PursuedThreadKind"/> and nothing more: <see cref="BuildSceneRow"/> puts one row on one
+/// patron's card, Pursue stages it, and <see cref="BuildSceneAtTheBar"/> plays it in the same
+/// section a commission closes in. It differs from its two siblings in exactly one way, and that
+/// difference is the unit's hard constraint: it queues no action and touches no sim field, so the
+/// serialized world is byte-identical either side of a whole scene. At most one scene is offered per
+/// day town-wide, an unoffered one waits indefinitely, and nothing anywhere summarises a scene a
+/// hero died before telling — see <see cref="Ui.ArcSceneFlow"/>.</para>
 /// </summary>
 public partial class TavernPanel : SimPanel
 {
@@ -83,14 +95,34 @@ public partial class TavernPanel : SimPanel
     {
         Commission,
         Ore,
+
+        /// <summary>P2-PEOPLE-01: a patron with something to SAY rather than something to sell. The
+        /// third kind is the whole delivery mechanism for the arc scenes — ruling 11.7.3 says extend
+        /// the shipped pattern rather than invent a second one, and this is that pattern: the row
+        /// says there is something to hear, Pursue puts it at the bar, and the same section that
+        /// closes a commission closes the scene. Unlike the other two kinds it queues no
+        /// <c>PlayerAction</c> and changes no sim field at all — see <see cref="Ui.ArcScenes"/>.
+        /// </summary>
+        Scene,
     }
 
     /// <summary>The one thread the player is currently working toward closing — staging, not a
     /// commit (the ForgePanel "pick a recipe before you swing" precedent). Cleared the instant the
-    /// Handshake resolves it (accept/decline/buy) or finds it already gone.</summary>
-    private readonly record struct PursuedThread(int HeroId, PursuedThreadKind Kind);
+    /// Handshake resolves it (accept/decline/buy/close) or finds it already gone.
+    ///
+    /// <para><see cref="SceneId"/> is <see cref="PursuedThreadKind.Scene"/>-only, and it is carried
+    /// rather than re-derived for one reason: a scene is REVEALED the moment its words go on the
+    /// screen, so by the next refresh it is no longer the day's offer and a hero-keyed lookup would
+    /// find nothing. The player must be able to finish reading.</para></summary>
+    private readonly record struct PursuedThread(int HeroId, PursuedThreadKind Kind, string SceneId = "");
 
     private PursuedThread? _pursued;
+
+    /// <summary>The one scene the town may offer today, or null — recomputed every
+    /// <see cref="Refresh"/> off live state (never cached across refreshes), so the row disappears
+    /// the instant it is revealed and cannot survive a hero's death. At most one per day town-wide
+    /// (P2-KTD7), which is why this is a panel-level value and not a per-patron lookup.</summary>
+    private Ui.ArcScene? _todaysScene;
 
     /// <summary>Gossip-card icon tile edge length (px) — a small chip weight, matching
     /// <c>ForgePanel</c>'s talent rune icon.</summary>
@@ -134,7 +166,24 @@ public partial class TavernPanel : SimPanel
         var state = Adapter.CurrentState;
         Clear(_content!);
 
+        // P2-PEOPLE-01: a pure read — ArcSceneFlow decides eligibility from recorded events and the
+        // revealed set, and writes nothing while deciding.
+        _todaysScene = Ui.ArcSceneFlow.OfferFor(state);
+
         var gossipLines = state.EventLog.OfType<GossipEmitted>().TakeLast(ScrollbackLines).Reverse().ToList();
+
+        // P2-PEOPLE-01: a pursued SCENE is built first, above the gossip and the room. The section
+        // itself is unchanged and unmoved for the other two thread kinds — this is placement, and
+        // the reason is measured rather than aesthetic: a rendered capture of the first build showed
+        // the Pursue press land correctly and the words arrive four screens down, past six patron
+        // cards, in a scroll the player had no reason to take. A face speaking to you is the screen
+        // while it is speaking; a commission you are closing is a line item, and stays one.
+        var sceneFirst = _pursued is { Kind: PursuedThreadKind.Scene };
+        if (sceneFirst)
+        {
+            BuildHandshakeSection(state);
+        }
+
         BuildGossipSection(gossipLines);
 
         var (awaySet, awayEntries) = CollectAwayRoster(state);
@@ -143,7 +192,11 @@ public partial class TavernPanel : SimPanel
         var justBack = MostRecentlyReturned(state);
 
         BuildBarSection(state, awaySet, gossipTopics, needsByHero, justBack);
-        BuildHandshakeSection(state);
+        if (!sceneFirst)
+        {
+            BuildHandshakeSection(state);
+        }
+
         BuildAwaySection(awayEntries);
     }
 
@@ -253,10 +306,40 @@ public partial class TavernPanel : SimPanel
         AddHeader(body, "CARRYING:");
         BuildGearLine(body, state, hero);
 
+        BuildSceneRow(body, state, hero);
         BuildThreadRow(body, state, hero, PursuedThreadKind.Commission);
         BuildThreadRow(body, state, hero, PursuedThreadKind.Ore);
 
         return card;
+    }
+
+    /// <summary>
+    /// P2-PEOPLE-01, Act 1's third thread: this patron has something to say tonight. Renders only
+    /// for the ONE hero the day's single offer belongs to (<see cref="_todaysScene"/>), and only
+    /// while it is unrevealed — every other patron's card is untouched, which is the anti-pile-up
+    /// budget doing its job rather than a filter applied afterwards.
+    ///
+    /// <para><b>Pursuing reveals it.</b> The moment the words are on the screen is the moment the
+    /// player knows, so that is when the fact is recorded — not when a box is dismissed. It means
+    /// the muster board's caption changes while Torvald is still talking, which is the correct
+    /// order, and it means the day's budget is spent by reading rather than by closing.</para>
+    /// </summary>
+    private void BuildSceneRow(Node parent, GameState state, Hero hero)
+    {
+        if (_todaysScene is not { } scene || Ui.ArcScenes.ArcHero(state, scene)?.Id != hero.Id)
+        {
+            return;
+        }
+
+        var row = AddRow(parent);
+        AddLabel(row, $"  {scene.RenderRow(state, hero)}");
+
+        AddButton(row, $"Pursue_Scene_{hero.Id.Value}", "Pursue", Verdict.Ok, () =>
+        {
+            Ui.ArcSceneFlow.Reveal(scene, state.Day);
+            _pursued = new PursuedThread(hero.Id.Value, PursuedThreadKind.Scene, scene.Id);
+            Refresh();
+        });
     }
 
     /// <summary>
@@ -321,7 +404,11 @@ public partial class TavernPanel : SimPanel
     /// </summary>
     private void BuildHandshakeSection(GameState state)
     {
-        var section = Section("THE HANDSHAKE");
+        // P2-PEOPLE-01: the section is one mechanism with two registers. "THE HANDSHAKE" over a man
+        // telling you about his dead brother would be the wrong three words in the largest type on
+        // the screen, so a pursued scene retitles it — and only it. No tutorial anchor points at
+        // this section (checked), so the derived node name moving with the title costs nothing.
+        var section = Section(_pursued is { Kind: PursuedThreadKind.Scene } ? "A WORD AT THE BAR" : "THE HANDSHAKE");
         _content!.AddChild(section.Root);
 
         if (_pursued is not { } pursued || !state.Heroes.TryGetValue(pursued.HeroId, out var hero) || !hero.Alive)
@@ -339,7 +426,52 @@ public partial class TavernPanel : SimPanel
             case PursuedThreadKind.Ore:
                 BuildOreHandshake(section.Body, state, hero);
                 break;
+            case PursuedThreadKind.Scene:
+                BuildSceneAtTheBar(section.Body, state, hero, pursued.SceneId);
+                break;
         }
+    }
+
+    /// <summary>
+    /// P2-PEOPLE-01, Act 2 for a scene: the words themselves, at the bar, in the same section a
+    /// commission or an ore offer closes in.
+    ///
+    /// <para><b>Nothing here commits anything.</b> There is no <c>Adapter.Queue</c> call, no
+    /// <see cref="SimPanel.Confirm"/>, no phase gate — because there is nothing to gate. The close
+    /// button ends the scene and clears the pursued thread, and the sim is byte-identical either
+    /// side of the whole exchange. That is the unit's own hard constraint (P2-KTD9), and it is
+    /// pinned on the WHOLE serialized state rather than on a list of fields somebody remembered.
+    /// </para>
+    ///
+    /// <para>A scene id this build no longer knows resolves to nothing and is reported as gone,
+    /// exactly as a commission accepted from another panel is — the file's standing rule that a
+    /// thread is re-resolved from live data every render and never trusted from a cached value.
+    /// </para>
+    /// </summary>
+    private void BuildSceneAtTheBar(Node parent, GameState state, Hero hero, string sceneId)
+    {
+        if (Ui.ArcScenes.ById(sceneId) is not { } scene)
+        {
+            _pursued = null;
+            AddLabel(parent, $"  ({hero.Name} has said his piece — back to the room)");
+            return;
+        }
+
+        AddHeader(parent, $"{hero.Name.ToUpperInvariant()} — {scene.Title.ToUpperInvariant()}");
+
+        // AddLabel already wraps WordSmart — a scene paragraph is the longest text this panel
+        // renders and relies on that, so it is worth knowing the wrap is not opt-in here.
+        foreach (var line in scene.Render(state, hero))
+        {
+            AddLabel(parent, $"  {line}");
+        }
+
+        var row = AddRow(parent);
+        AddButton(row, $"SceneClose_{hero.Id.Value}", scene.CloseVerb, Verdict.Ok, () =>
+        {
+            _pursued = null;
+            Refresh();
+        });
     }
 
     /// <summary>Morning's handshake: shake on the commission (<see cref="AcceptCommissionAction"/>)

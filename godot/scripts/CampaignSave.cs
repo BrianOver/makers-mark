@@ -65,10 +65,20 @@ public static class CampaignSave
     /// (<see cref="Schema"/> stays 1; this is not the sim's own trailing-optional-property
     /// discipline, but the same idea applied to the envelope). A save from before this unit simply
     /// renders Continue without the profession/saved-at clauses — degraded, never broken.</para>
+    ///
+    /// <para><b>P2-PEOPLE-01:</b> <see cref="Scenes"/> is the arc-scene engine's revealed set
+    /// (<see cref="Ui.ArcSceneFlow.Snapshot"/>) — which of a hero's authored scenes this campaign
+    /// has already heard, and on which day. It is client state by necessity: the sim cannot know
+    /// what a screen has shown, and a scene that wrote into the world would move the golden replay.
+    /// It lives HERE rather than in a <c>user://</c> preference file because it belongs to one
+    /// campaign — Torvald's brother is not a fact about the player's install. Trailing-optional on
+    /// the same terms as the two fields above, so every save written before this unit still loads,
+    /// as a campaign that has simply heard nothing yet. <see cref="SaveCodec"/> is untouched: the
+    /// sim's own bytes do not change, so no golden moves.</para>
     /// </summary>
     public sealed record Envelope(
         int SchemaVersion, int Day, string Phase, string State,
-        string? ProfessionId = null, string? SavedAtUtc = null);
+        string? ProfessionId = null, string? SavedAtUtc = null, string? Scenes = null);
 
     /// <summary>A save's headline, for the Continue button's label. Null when there is nothing to
     /// resume — which is also what a corrupt file reports. <see cref="ProfessionId"/>/
@@ -101,8 +111,14 @@ public static class CampaignSave
             // either way, and never wrong (both are genuinely selected).
             var professionId = state.Player.SelectedProfessions.FirstOrDefault();
             var savedAtUtc = UtcNowSource().ToString("O", CultureInfo.InvariantCulture);
+
+            // P2-PEOPLE-01: the arc scenes this campaign has heard, written in the same breath as
+            // the world they belong to. Read live off the flow rather than passed in, so no caller
+            // has to remember it exists — the same shape UtcNowSource above already takes.
+            var scenes = Ui.ArcSceneFlow.Snapshot();
             var envelope = new Envelope(
-                Schema, state.Day, state.Phase.ToString(), SaveCodec.Serialize(state), professionId, savedAtUtc);
+                Schema, state.Day, state.Phase.ToString(), SaveCodec.Serialize(state), professionId, savedAtUtc,
+                scenes.Length == 0 ? null : scenes);
             var json = JsonSerializer.Serialize(envelope, EnvelopeOptions);
 
             using var file = GodotFileAccess.Open(SavePath, GodotFileAccess.ModeFlags.Write);
@@ -148,7 +164,15 @@ public static class CampaignSave
 
         try
         {
-            return SaveCodec.Deserialize(envelope.State);
+            var state = SaveCodec.Deserialize(envelope.State);
+
+            // P2-PEOPLE-01: the world and the scenes it has told come back TOGETHER or not at all.
+            // Restoring one without the other is exactly how the muster board's "Halvar's floor"
+            // caption and the scene that earned it come to disagree — so this is not left to the
+            // caller, of which there are four. Restore fails soft on every bad input, so a save
+            // whose scene snapshot is unreadable still returns a fully playable world.
+            Ui.ArcSceneFlow.Restore(envelope.Scenes);
+            return state;
         }
         catch (Exception ex)
         {
@@ -159,9 +183,17 @@ public static class CampaignSave
     }
 
     /// <summary>Discard the save. Used when starting a fresh campaign, so a new run cannot leave a
-    /// stale Continue pointing at the previous one.</summary>
+    /// stale Continue pointing at the previous one.
+    ///
+    /// <para>P2-PEOPLE-01: the arc scenes go with it. A new campaign inheriting the last one's
+    /// revealed set would mean a Torvald who has already told you about his brother on day 1 of a
+    /// world where he has never been down a stair — the same class of defect
+    /// <c>TutorialFlow.ResetForNewGame</c> exists to fix for the course, closed here at the one call
+    /// every fresh campaign already makes.</para></summary>
     public static void Clear()
     {
+        Ui.ArcSceneFlow.ResetForNewGame();
+
         try
         {
             if (GodotFileAccess.FileExists(SavePath))
