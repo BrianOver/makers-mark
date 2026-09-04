@@ -20,6 +20,9 @@ public static class Report
         AppendOrderingViolations(sb, result.OrderingViolations);
         AppendDanglingDocs(sb, result.DanglingDocs);
         AppendCollisions(sb, result.Collisions);
+        AppendReceiptDispatchTraps(sb, result.ReceiptDispatchTraps);
+        AppendMissingOrMalformedReceipts(sb, result.MissingOrMalformedReceipts);
+        AppendFalseReceipts(sb, result.FalseReceipts);
         AppendUnparseable(sb, result.Unparseable);
         AppendSummary(sb, result);
 
@@ -51,7 +54,8 @@ public static class Report
             {
                 var status = row.Status switch
                 {
-                    UnitStatus.Landed => $"LANDED  {ShortSha(row.Sha)}" + (row.PrNumber is { } pr ? $" #{pr}" : ""),
+                    UnitStatus.Landed => $"LANDED  {ShortSha(row.Sha)}" + (row.PrNumber is { } pr ? $" #{pr}" : "")
+                        + (row.Evidence == LandedEvidence.FileExistence ? " [via file, no commit tag]" : ""),
                     UnitStatus.Open => "OPEN    " + (row.PrNumber is { } pr2 ? $"#{pr2}" : "(untagged)"),
                     UnitStatus.Unbuilt => "UNBUILT",
                     _ => "?",
@@ -148,6 +152,69 @@ public static class Report
         sb.AppendLine();
     }
 
+    private static void AppendReceiptDispatchTraps(StringBuilder sb, IReadOnlyList<ReceiptDispatchTrap> traps)
+    {
+        sb.AppendLine("## 6. Redundant-dispatch trap (a Serves: receipt claims a unit this run still reports as not landed)");
+        sb.AppendLine();
+
+        if (traps.Count == 0)
+        {
+            sb.AppendLine("None.");
+        }
+        else
+        {
+            foreach (var t in traps)
+            {
+                sb.AppendLine($"- {t.UnitId} — PR #{t.PrNumber} (\"{t.PrTitle}\") claims `Serves: {t.UnitId}`, but no commit tag or file on origin/main confirms it landed. Verify before dispatching this unit again.");
+            }
+        }
+
+        sb.AppendLine();
+    }
+
+    private static void AppendMissingOrMalformedReceipts(StringBuilder sb, IReadOnlyList<MissingOrMalformedReceipt> findings)
+    {
+        sb.AppendLine("## 7. Merged PRs missing a Serves: line, or with a malformed one (rule 12 / §11.6 rule 3)");
+        sb.AppendLine();
+
+        if (findings.Count == 0)
+        {
+            sb.AppendLine("None.");
+        }
+        else
+        {
+            foreach (var f in findings)
+            {
+                var reason = f.Kind == ServesKind.Missing
+                    ? "no `Serves:` line found"
+                    : $"malformed value `{f.RawValue}` (fits none of P<n> / link<1-5> / substrate / overhead — booked)";
+                sb.AppendLine($"- PR #{f.PrNumber} (\"{f.PrTitle}\"): {reason}");
+            }
+        }
+
+        sb.AppendLine();
+    }
+
+    private static void AppendFalseReceipts(StringBuilder sb, IReadOnlyList<FalseReceipt> findings)
+    {
+        sb.AppendLine("## 8. False receipts (Serves: names a unit whose own path is not on origin/main)");
+        sb.AppendLine();
+
+        if (findings.Count == 0)
+        {
+            sb.AppendLine("None.");
+        }
+        else
+        {
+            foreach (var f in findings)
+            {
+                sb.AppendLine($"- PR #{f.PrNumber} claims `Serves: {f.UnitId}`, but `{f.Path}` is not on origin/main. The receipt can lie; the census cannot (rule 12).");
+            }
+        }
+
+        sb.AppendLine();
+    }
+
     private static void AppendUnparseable(StringBuilder sb, IReadOnlyList<UnparseableRow> unparseable)
     {
         sb.AppendLine("## Unparseable rows (id-shaped but malformed — not a failure, but reported, never dropped)");
@@ -184,11 +251,17 @@ public static class Report
         sb.AppendLine($"- Ordering violations: {result.OrderingViolations.Count}");
         sb.AppendLine($"- Dangling doc references: {result.DanglingDocs.Count}");
         sb.AppendLine($"- Unit-id collisions: {result.Collisions.Count}");
+        sb.AppendLine($"- Redundant-dispatch traps (Serves: claims a unit still reported not-landed): {result.ReceiptDispatchTraps.Count}");
+        sb.AppendLine($"- Merged PRs missing/malformed Serves: line (reported, does not gate exit code — see below): {result.MissingOrMalformedReceipts.Count}");
+        sb.AppendLine($"- False receipts (Serves: names a unit whose path is missing): {result.FalseReceipts.Count}");
 
-        var failing = result.MissingFiles.Count > 0 || result.OrderingViolations.Count > 0 || result.Collisions.Count > 0;
+        var failing = result.MissingFiles.Count > 0 || result.OrderingViolations.Count > 0 || result.Collisions.Count > 0
+            || result.ReceiptDispatchTraps.Count > 0 || result.FalseReceipts.Count > 0;
         sb.AppendLine();
         sb.AppendLine(failing
-            ? "EXIT NON-ZERO: missing-file, ordering, or collision findings above are defects, not information."
-            : "EXIT ZERO: no misfiled paths, ordering violations, or id collisions.");
+            ? "EXIT NON-ZERO: missing-file, ordering, collision, redundant-dispatch, or false-receipt findings above are defects, not information."
+            : "EXIT ZERO: no misfiled paths, ordering violations, id collisions, dispatch traps, or false receipts.");
+        sb.AppendLine("(Section 7 — missing/malformed Serves: lines — is a historical compliance backlog, not a"
+            + " defect in the plan's current state; it is reported but does not by itself fail this exit code.)");
     }
 }
