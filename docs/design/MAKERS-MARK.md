@@ -4389,18 +4389,22 @@ name (§11.6 rule 4).
 | P2-HONEST-17 | `GameState.RivalMarketSharePermille` gets a client reader — the idle-day cost becomes legible | `godot/scripts/panels/ShopPanel.cs` | — | [G] |
 | P2-HONEST-18 | `InFlightExpedition.Gold` gets a client reader, or its withholding gets a stated reason | `godot/scripts/panels/CampPanel.cs` | — | [G] |
 
-One hundred and two rows: 17 screen, 10 onboarding, 7 proof, 17 memory, 14 people, 23 long game,
-14 honesty. Eight carry a Contracts micro-PR; ten carry a golden re-record; eight carry a balance
-re-baseline — and per P2-KTD5 those ceremonies serialize.
+The per-domain counts, the landed/unbuilt split, and which rows carry a Contracts micro-PR, a
+golden re-record or a balance re-baseline are **derived, not stated here**: run
+`dotnet run --project tools/Progress`. It reads `git ls-tree`, `git log origin/main`, merged PR
+bodies' `Serves:` receipts and the tree itself, stores nothing, and derives fresh every run — so it
+cannot become the next stale number. Per P2-KTD5 the ceremonies serialize.
 
-*Every number in that paragraph was wrong before this pass, in the same direction.* It read
-"Ninety units: 14 screen" against a table already holding 91 rows and 15 screen units
-(`P2-SCREEN-15` was added and the count was not), and "six Contracts micro-PRs; five golden
-re-records" against 8 and 10 respectively — while the Serialization bullet above it said "six"
-over an enumeration naming eight units. This is family B on the plan itself: a hand-typed second
-copy of a list in the same file, correct the day it was typed. Counts are retained here only
-because the ceremony totals are what P2-KTD5 schedules against; they are re-derived from the
-table, never edited by hand.
+*Why this paragraph no longer counts anything.* It has now drifted three times in the same
+direction, each time by a row being added or removed without the prose following. It read "Ninety
+units: 14 screen" against a table holding 91 rows and 15 screen units; it was corrected to "One
+hundred and two rows"; then #709 deleted 22 shipped specs and rebuilt the table, leaving 73 rows
+against a paragraph still claiming 102 — drift introduced by the very pass that was cleaning up
+drift. This is **family B on the plan itself** — a hand-typed second copy of a list in the same
+file, correct only on the day it was typed. Earlier passes kept the counts on the grounds that
+P2-KTD5 schedules against the ceremony totals; that justification died the moment `tools/Progress`
+could derive them, and keeping a hand-maintained count of a hand-maintained table is a rule-8
+liability with no remaining upside. The numbers are gone rather than corrected a third time.
 
 Two units already booked elsewhere are deliberately **absent** from this index: the worn-trinket
 fix and the honest-input price test are T10's U48 and U49 (§11.14.14 Wave 7), and re-booking them
