@@ -4892,6 +4892,104 @@ default applied.**
   own class doc has been asking for since it shipped — is the missing instrument, and is the honest
   prerequisite for tuning the premium against a distribution rather than against a constant.
 
+- **P2-OQ10. Does the blacksmith's dead zone generalize to Alchemy/Tanning/Engineering? — measured
+  2026-09-04, owner ruling of the same date ("measure them first, then decide").** `#705`
+  (§11.7.11) fixed `ForgeScorer`'s SUBTRACTIVE-with-a-zero-floor dead zone; the PR that landed it
+  also checked the other three active-craft scorers and reported the shape does not generalize —
+  `AlchemyPuzzleScorer`/`TanningScrapeScorer`/`EngineeringAssemblyScorer` are all `grade = base +
+  bonus`, clamped at 1000, so any saturation sits at the TOP of the range, not the bottom. **The
+  claim holds, with two wrinkles the one-line description misses:** Engineering adds a second,
+  independent additive axis (a 0-90‰ build-order bonus, on top of the placement-accuracy base,
+  before the talent bonus) — so Engineering can saturate from placement accuracy and build order
+  stacking together, not from talent alone. Tanning subtracts a per-ruined-cell penalty before the
+  bonus is added — a bottom-side concern, irrelevant to the top-saturation question below, and not
+  a dead zone (ruin is capped by how many cells were actually overworked, never blanket-erases a
+  range). Neither wrinkle changes the mechanism: all three are additive-then-clamped at the top,
+  confirmed.
+
+  **The bigger finding: none of it is reachable by anything that has ever run.** Every scripted
+  policy in `sim/GameSim/Harness/` (`BaselinePlayer`, `CounterPlayer`, `ApprenticePlayer`,
+  `MasterworkSeekingPlayer`, `HandForgePlayer`, `LateMasteryPlayer`) was grepped for the three
+  puzzle-input types and for talent unlocks on these three professions. Zero hits. `BaselinePlayer`
+  DOES craft alchemy/tanning/engineering recipes — its Expedition loop ranks recipes from every
+  profession by tier then stat sum and crafts whichever legal one has a buyer — but every
+  `CraftAction` it (and every other policy) emits for these professions uses the two-argument
+  constructor (`RecipeId`, `MaterialKey`), leaving `Puzzle` null, which is the AUTO-CRAFT branch in
+  `CraftingHandlers.ApplyCraft` — a completely different code path that never touches these three
+  scorers. `HandForgePlayer` only ever attaches a `Puzzle` to a *blacksmith* recipe (an explicit
+  `recipe.Profession != ProfessionRegistry.BlacksmithId` guard sends everything else through
+  unmodified), and only `BaselinePlayer`'s Morning branch ever emits `UnlockTalentAction`, scoped
+  entirely to `ProfessionRegistry.BlacksmithId`. So the balance gate, the 20-seed telemetry farm,
+  and both `handforge`/`latemastery` sweeps have exhaustively measured these three professions'
+  AUTO-CRAFT path and never once exercised the puzzle-scored path or its talent chain — the ONLY
+  callers of `AlchemyReagentPuzzle`/`TanningScrapeInput`/`EngineeringAssemblyInput` in the whole
+  repo are the Godot minigame overlays (`AlchemyBrewPuzzle.cs`, `TanningFrame.cs`,
+  `EngineeringBench.cs`) and unit tests. This is the same blind spot `HandForgePlayer` closed for
+  blacksmith, unclosed for its three siblings.
+
+  **Numbers (direct enumeration of each scorer's own `base + bonus` arithmetic across every recipe
+  length and every reachable talent-bonus total; script kept at
+  `runs/scratch_measure_scorers.py`, gitignored, not part of the scoring code):** every profession
+  uses the identical 50/70/80 generic chain plus a 50‰ recipe-slot specialist (Alchemy: Measured
+  Pour/Careful Distillation/Master Alchemist + Potent Brews on Consumables; Tanning: Steady
+  Hand/Supple Work/Master Tanner + Armorer on Armor; Engineering: Precision/Fine Tolerance/Master
+  Machinist + Gadgeteer on Trinkets) — so max generic bonus is 200‰, max scoped bonus is 250‰,
+  everywhere.
+
+  | Profession / shape | @B=200 (full generic chain) | @B=250 (+ eligible slot specialist) |
+  |---|---|---|
+  | Alchemy t1 (3-pour) | saturates >=833‰ (top 16.7%) | same, >=833‰ (top 16.7%) |
+  | Alchemy t2 (4-pour) | >=875‰ (top 12.5%) | >=750‰ (top 25.0%) |
+  | Alchemy t3 (5-pour) | >=800‰ (top 20.0%) | same, >=800‰ (top 20.0%) |
+  | Engineering t1 (3 sockets + order) | >=833‰ (top 16.7%) | >=756‰ (top 24.4%) |
+  | Engineering t2 (4 sockets + order) | >=840‰ (top 16.0%) | >=750‰ (top 25.0%) |
+  | Engineering t3 (5 sockets + order) | >=800‰ (top 20.0%) | >=790‰ (top 21.0%) |
+  | Tanning (40-cell grid) | >=800‰ (top 20.0%) | >=750‰ (top 25.0%) |
+
+  Below roughly B=120-130 (depending on recipe length) there is NO saturation anywhere — full
+  precision holds bottom to top, because each scorer's `points`-based base score is strictly
+  increasing with zero natural ties (unlike pre-fix `ForgeScorer`, none of the three has a bottom
+  dead zone). Saturation is a step function that appears once accumulated bonus crosses about half
+  the top scoring step, not a gradual widening.
+
+  **Answering the five questions asked:**
+  1. *Width:* top 12.5%-20% of the achievable range at max GENERIC talent investment, top 20-25% at
+     max SCOPED investment (slot-specialist talent on an eligible recipe) — converges tightly
+     across all three professions and every recipe tier, per the table above.
+  2. *From which day:* never, in any measured corpus — B stays 0 forever because no scripted policy
+     ever unlocks these three professions' talents (see the blind-spot finding above). If a
+     hypothetical policy invested the way `BaselinePlayer` does for blacksmith, the mechanism gives
+     no reason it would be slower: unlocking a node costs one action slot and no gold/TP, gated by
+     the same 2-3-level prerequisite depth as blacksmith's own chain, which `P2-OQ9`'s table above
+     measures reaching full ceiling-lock by day 3 (greedy) to day 6 (deliberately deferred). That is
+     inference from identical tree shape, not a measurement — nothing in the repo drives this path
+     today.
+  3. *Ordering:* holds weakly, not strictly, and only at the top. `base` is strictly increasing in
+     raw performance for every recipe length checked, so a strictly worse performance never
+     outscores a better one at any talent level — but inside the saturated band, a strictly better
+     performance can score NO better (a tie at 1000), the same shape as blacksmith's pre-fix defect
+     but confined to the crafter's own best few results instead of blanket-erasing the whole error
+     band.
+  4. *Master vs. novice:* still clearly better, everywhere except the saturated tip. The talent
+     bonus is a flat shift applied to the ENTIRE base range (e.g. Alchemy t1: a base-500 pour scores
+     500 untalented, 750 at B=250) — mastery keeps paying off on every ordinary result; only the
+     crafter's own near-perfect and perfect outcomes become indistinguishable from each other.
+  5. *Share of real output in the band:* 0%, but because the scorer is NEVER INVOKED, not because
+     the band is rare — see the blind-spot finding above. A defect with zero corpus exposure cannot
+     be measured "in practice" until something exercises the path at all.
+
+  **Verdict: this does not meet the bar `#705` met.** The blacksmith's pre-fix dead zone tied BAD
+  swings to FLAWLESS ones and swallowed 94%+ of every 100-day campaign by day 6, in every seed,
+  under both talent orders — it changed what ordinary play meant. This family's defect never ties
+  bad to good, never reverses ordering, only compresses the top 12.5%-25% of an already-narrow
+  discrete puzzle space (6-10 raw point-levels per recipe), and — measured, not assumed — nothing
+  in the balance corpus has ever reached it. **Recommendation: no scoring-curve change.** The
+  higher-value, cheaper unit is coverage, not curve: a policy that actually unlocks Alchemy/
+  Tanning/Engineering talents and submits real puzzle inputs (mirroring `HandForgePlayer`'s role
+  for blacksmith) would close the same blind spot `#705`'s own investigation exists to warn about —
+  until it ships, these three professions are exactly what blacksmith was before `HandForgePlayer`:
+  a scoring path the balance gate has certified against nothing.
+
 ## What must survive, named so this program cannot quietly discard it
 
 Everything in §11.14.14's own survival list binds here unchanged — the `Skipped` third state, the
