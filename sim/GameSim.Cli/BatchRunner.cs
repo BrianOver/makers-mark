@@ -3,6 +3,7 @@ using GameSim;
 using GameSim.Chronicle;
 using GameSim.Contracts;
 using GameSim.Harness;
+using GameSim.Professions;
 
 namespace GameSim.Cli;
 
@@ -19,7 +20,7 @@ namespace GameSim.Cli;
 public static class BatchRunner
 {
     public const string Usage =
-        "usage: batch --seeds <count> [--seed <startSeed>] [--days <days>] [--out <dir>] [--policy baseline|counter|apprentice|handforge|latemastery]";
+        "usage: batch --seeds <count> [--seed <startSeed>] [--days <days>] [--out <dir>] [--policy baseline|counter|apprentice|handforge|latemastery|alchemy|tanning|engineering]";
 
     /// <summary>
     /// The player policy a sweep drives (U0: <see cref="CounterPlayer"/> was previously
@@ -35,6 +36,14 @@ public static class BatchRunner
     /// (<see cref="LateMasteryPlayer"/>) — the same hand-forge loop, with the two mastery talents
     /// deferred behind every other node the tree allows, so the resulting quality curve can be
     /// compared against <see cref="Policy.HandForge"/>'s greedy-order one.
+    /// P2-OQ10 adds <see cref="Policy.AlchemyPuzzle"/>/<see cref="Policy.TanningPuzzle"/>/
+    /// <see cref="Policy.EngineeringPuzzle"/> (<see cref="AlchemyPuzzlePlayer"/>/
+    /// <see cref="TanningPuzzlePlayer"/>/<see cref="EngineeringPuzzlePlayer"/>) — each selects ITS
+    /// OWN profession alone (<see cref="PolicyStartingProfession"/> routes the campaign through
+    /// <see cref="GameComposition.NewCampaign(ulong,string)"/> instead of the blacksmith-default
+    /// overload) and actually walks its scorer's active-craft path, closing the blind spot no
+    /// existing policy ever touched: none of them crafts outside <c>RecipeTable.All</c> (blacksmith),
+    /// so these three professions had ZERO measured crafts of any kind before this axis.
     /// </summary>
     public enum Policy
     {
@@ -43,6 +52,9 @@ public static class BatchRunner
         Apprentice,
         HandForge,
         LateMastery,
+        AlchemyPuzzle,
+        TanningPuzzle,
+        EngineeringPuzzle,
     }
 
     /// <summary>Parsed batch parameters. Defaults: 20 seeds starting at 1, 100 days, runs/, baseline policy.</summary>
@@ -120,8 +132,17 @@ public static class BatchRunner
             case "latemastery":
                 policy = Policy.LateMastery;
                 break;
+            case "alchemy":
+                policy = Policy.AlchemyPuzzle;
+                break;
+            case "tanning":
+                policy = Policy.TanningPuzzle;
+                break;
+            case "engineering":
+                policy = Policy.EngineeringPuzzle;
+                break;
             default:
-                error.WriteLine($"batch: unknown --policy '{policyArg}' (expected 'baseline', 'counter', 'apprentice', 'handforge', or 'latemastery')");
+                error.WriteLine($"batch: unknown --policy '{policyArg}' (expected 'baseline', 'counter', 'apprentice', 'handforge', 'latemastery', 'alchemy', 'tanning', or 'engineering')");
                 error.WriteLine(Usage);
                 return null;
         }
@@ -137,6 +158,9 @@ public static class BatchRunner
         Policy.Apprentice => "apprentice",
         Policy.HandForge => "handforge",
         Policy.LateMastery => "latemastery",
+        Policy.AlchemyPuzzle => "alchemy",
+        Policy.TanningPuzzle => "tanning",
+        Policy.EngineeringPuzzle => "engineering",
         _ => "baseline",
     };
 
@@ -148,7 +172,24 @@ public static class BatchRunner
         Policy.Apprentice => ApprenticePlayer.ActionsFor,
         Policy.HandForge => HandForgePlayer.ActionsFor,
         Policy.LateMastery => LateMasteryPlayer.ActionsFor,
+        Policy.AlchemyPuzzle => AlchemyPuzzlePlayer.ActionsFor,
+        Policy.TanningPuzzle => TanningPuzzlePlayer.ActionsFor,
+        Policy.EngineeringPuzzle => EngineeringPuzzlePlayer.ActionsFor,
         _ => BaselinePlayer.ActionsFor,
+    };
+
+    /// <summary>
+    /// P2-OQ10: the three new puzzle-coverage policies each need their OWN profession selected from
+    /// day 1 (<see cref="ProfessionHandlers.MaxSelected"/> caps a save at 1-2, and none of these
+    /// three is blacksmith) — null for every existing policy, which stays on the blacksmith-default
+    /// <see cref="GameComposition.NewCampaign(ulong)"/> overload exactly as before.
+    /// </summary>
+    private static string? PolicyStartingProfession(Policy policy) => policy switch
+    {
+        Policy.AlchemyPuzzle => AlchemyProfession.Id,
+        Policy.TanningPuzzle => TanningProfession.Id,
+        Policy.EngineeringPuzzle => EngineeringProfession.Id,
+        _ => null,
     };
 
     /// <summary>
@@ -190,10 +231,13 @@ public static class BatchRunner
         var kernel = GameComposition.BuildKernel();
         var policyFn = PolicyFn(batch.PlayerPolicy);
         var policyTag = PolicyFileTag(batch.PlayerPolicy);
+        var startingProfession = PolicyStartingProfession(batch.PlayerPolicy);
         for (var i = 0; i < batch.SeedCount; i++)
         {
             var seed = batch.StartSeed + (ulong)i;
-            var state = GameComposition.NewCampaign(seed);
+            var state = startingProfession is null
+                ? GameComposition.NewCampaign(seed)
+                : GameComposition.NewCampaign(seed, startingProfession);
             while (state.Day <= batch.Days)
             {
                 state = kernel.Tick(state, policyFn(state)).NewState;
