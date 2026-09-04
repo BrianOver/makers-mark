@@ -849,6 +849,35 @@ at a fixed floor or derived from the target? Is enchanting-as-graduated-modifier
 a distinct pipeline owed for feel? Does spellcrafting make v1.x at all? And how many disciplines
 should one campaign realistically open — all of them, or most-but-not-all, so campaigns differ?
 
+**11.7.11 Accuracy must keep mattering: the forge's forgiveness scales, it never erases — ruled
+2026-09-03, superseding the mastery pin of the same date.** *(Later than this section's 2026-08-07
+batch, and unlike that batch this one does authorize a sim change and a re-baseline; it lives here
+because §11.7 is the standing owner direction CLAUDE.md points every session at.)* **What was
+measured:** across 20 seeds x 100 days under two OPPOSITE talent-pacing policies — `handforge`
+(greedy, the mastery chain bought as early as prerequisites allow) and `latemastery` (deferred,
+both mastery nodes held behind every other node the tree offers) — the Anvil-Map minigame's
+accuracy stopped changing the grade by about day 6 under BOTH, i.e. for 94% or more of every
+campaign in every seed, zero exceptions. **The collapse is structural, not a policy artifact:** two
+opposite unlock orders converging on the same day-6 collapse rules out the schedule as the cause,
+and the real cause is arithmetic. `ForgeScorer` applied every forgiveness axis SUBTRACTIVELY with a
+zero floor — `max(0, dev - forgiveness)` — so every deviation at or under the accumulated
+forgiveness scored *identically* to a flawless one. That is a dead zone, and it is the whole
+mechanism: talents were never compressing the skill range, they were deleting the bottom of it, and
+once Master's Touch and Legendary Craft both landed the dead zone covered the entire error band a
+real hand operates in. **The ruling: a bad swing must still cost you at day 50. Talents must not
+erase the skill range** — they raise your FLOOR, while accuracy still determines your CEILING. So
+forgiveness scales the penalty instead of erasing it, which preserves strict ordering at every
+talent level (a better swing always scores better, forever, and no talent stack can ever flatten
+the slope) while paying mastery in the shape a safety net should have: the same mistake costs a
+master less than a novice, and the gap widens the worse the swing gets. Two constraints bind any
+future re-tune of this curve. Talents must stay clearly worth unlocking — a master must visibly
+out-earn a novice on the identical swing — and late crafting must not become punishing: the goal is
+that skill keeps mattering, not that the game gets harder. This supersedes the "talents are
+mastery, and mastery means certainty" ruling `ForgeMasteryPinTests` recorded earlier the same day;
+that pin is rewritten to the new property, never softened. It does not settle the premium-rarity
+question in `P2-OQ9` — the top-grade pay bonus is retuned as its own unit, calibrated against the
+distribution this change produces, never against the one this change invalidates.
+
 ### 11.8 The finale is unreachable — measured 2026-08-08, root cause found
 
 P3's assertions were written and went red on their first run. This is not a test that needs
@@ -5201,9 +5230,15 @@ default applied.**
 
 - **P2-OQ9. The hand-forge quality curve — investigated 2026-09-03, second talent order measured
   2026-09-03, not a P2 dossier fork; parked here because this is where the plan's open questions
-  live.** Companion to the mastery pin `ForgeMasteryPinTests` records at the code level (2026-09-03
-  owner ruling: talents are mastery, mastery means certainty). The owner asked for the curve
-  measured on its own — no retune, no balance value touched. **Measured** (20 seeds x 100 days,
+  live.** **SUPERSEDED IN PART, 2026-09-03, by §11.7.11.** The measurements below stand exactly as
+  recorded — they are what the owner was shown — but the ruling they were read against does not.
+  Shown this collapse, the owner ruled that accuracy must keep mattering; `ForgeScorer`'s
+  forgiveness is now proportional rather than subtractive, the dead zone this entry measured no
+  longer exists, and every distribution below is now a BEFORE number. The affected paragraphs are
+  flagged inline. Companion to the mastery pin `ForgeMasteryPinTests` records at the code level
+  (2026-09-03 owner ruling: talents are mastery, mastery means certainty — itself superseded by
+  §11.7.11). The owner asked for the curve measured on its own — no retune, no balance value
+  touched. **Measured** (20 seeds x 100 days,
   `HandForgePlayer`, the exact sweep `HandForgePlayer`'s own class doc cites, independently re-run
   twice now — once for the first investigation, once more composing the same sweep through the
   kernel directly for this entry's own second-order question below): the cited distribution
@@ -5265,7 +5300,8 @@ default applied.**
   total campaign crafts, 1,696 vs 1,522 — a real but secondary effect of reordering which talents
   land early, left unexplained by design per this question's own no-retune instruction.)
 
-  **What does the Anvil-Map minigame's own accuracy buy, given both orders agree?** Under either
+  **What does the Anvil-Map minigame's own accuracy buy, given both orders agree? — ANSWERED FOR
+  THE SUPERSEDED CURVE ONLY; see §11.7.11.** Under either
   order, the window where a hand-forge's OWN accuracy still moves the grade is the campaign's first
   2-6 days — under 6% of a 100-day run, no matter which of the two extremes a player's talent
   spending resembles. Past that window (94%+ of every campaign, both orders, zero exceptions), the
@@ -5277,9 +5313,13 @@ default applied.**
   eligibility, and batch-echo seeding, none of which auto-craft can ever reach regardless of talent
   state. Early on (days 1-6), it is still a genuine skill check with real stakes — a sloppy trace
   before both talents land can cost real grade. Both are true at once, and now both are measured,
-  not argued: this is not a defect to fix, it is what "talents are mastery, mastery means certainty"
-  (the `ForgeMasteryPinTests` ruling) actually cashes out to for the minigame's role across a whole
-  campaign.
+  not argued: this is what "talents are mastery, mastery means certainty" (the then-current
+  `ForgeMasteryPinTests` ruling) actually cashed out to for the minigame's role across a whole
+  campaign. **The owner read this paragraph and ruled the other way (§11.7.11): it IS a defect, and
+  the fix is that forgiveness scales the penalty instead of erasing it. Accuracy now moves the grade
+  on every day of every campaign at every talent level, so the "94%+ of a campaign is not a skill
+  ladder" finding above describes the superseded curve only — the minigame is a skill ladder AND the
+  ritual that makes a craft provably a hand-forge, not one instead of the other.**
 
   **The premium-rarity tension — fine or wrong?** `WillingnessModel.QualityWillingnessBonusPermille`
   (+220 permille Masterwork, +130 Superior, -120 Poor) and `ItemForge` (160% stats at Masterwork vs
@@ -5306,8 +5346,50 @@ default applied.**
   stat table around the distribution hand-forging actually produces* — a balance re-baseline
   touching every haggle/pricing fixture that crafts a non-Common item. (d) *Leave the mechanics; fix
   the framing* — item flavor text, Signed-Works language, any copy that implies "Masterwork is
-  rare" — cheapest, zero balance/golden risk, and compatible with the Task 1 ruling that this
-  ceiling is the intended reward for two earned talents, not a bug.
+  rare" — cheapest, zero balance/golden risk. (Recommendation (d)'s original justification — that
+  the ceiling is the intended reward for two earned talents rather than a bug — died with §11.7.11;
+  (d) now stands or falls on the post-change distribution alone, and (c) is the owner's stated
+  direction: the top-grade pay bonus is cut to match how common top-grade actually turns out to be
+  once accuracy governs the curve.)
+
+  **AFTER §11.7.11 — the post-change measurement, and the input the pay retune must calibrate
+  against (2026-09-03, same sweeps re-run on the proportional rule):**
+
+  | Grade | handforge BEFORE | handforge AFTER | latemastery BEFORE | latemastery AFTER |
+  |---|---|---|---|---|
+  | Poor | 0.0% | 0.0% | 0.0% | 0.0% |
+  | Common | 0.0% | 0.0% | 0.0% | 0.0% |
+  | Fine | 2.0% (30) | **4.7% (79)** | 1.8% (30) | **4.9% (78)** |
+  | Superior | 46.3% (705) | **95.3% (1,594)** | 49.2% (834) | **95.1% (1,529)** |
+  | Masterwork | 51.7% (787) | **0.0% (0)** | 49.1% (832) | **0.0% (0)** |
+  | Items crafted | 1,522 | 1,673 | 1,696 | 1,607 |
+
+  Two readings matter more than the headline. First, **the two talent-pacing policies now produce
+  the SAME distribution** (95.3/4.7 against 95.1/4.9, where before they differed at 51.7% against
+  49.1%). That is the ruling working as designed: grade is now set by the hand, and both policies
+  simulate the identical fixed 50-per-mille hand, so the talent-pacing axis no longer moves the
+  outcome. Second, and this is the trap for the retune, **the 0.0% is a property of the INSTRUMENT,
+  not a prediction about human play.** `HandForgePlayer` swings a constant 50-per-mille deviation
+  forever and never improves; under the new curve that is a solidly-Superior hand at every talent
+  level (800 per-mille at zero talents rising to 879 at full mastery, never crossing the 930
+  Masterwork floor even with the +25 jitter). Masterwork did not become unreachable — it became
+  **reachable only by accuracy**, which is exactly what was asked for. Measured against the real
+  scorer, the deviation each band tolerates is:
+
+  | Band | Novice (no talents) | Full mastery | Talent widening |
+  |---|---|---|---|
+  | Masterwork (>=930) | dev <= 17 | dev <= 29 | x1.71 |
+  | Superior (>=780) | dev <= 55 | dev <= 91 | x1.65 |
+  | Fine (>=550) | dev <= 112 | dev <= 186 | x1.66 |
+
+  So the honest calibration input for recommendation (c) is not "top grade is 0% common" — it is
+  **top grade now costs about 3% tracking accuracy (dev <= 29) even for a fully-talented smith,
+  where before it cost nothing at all past day 3-6.** A premium priced for "exceptional" is closer
+  to defensible now than it was under the measurement above; whether it still needs cutting, and by
+  how much, is a judgement against real player accuracy, which no scripted policy in this repo yet
+  models. A harness that varies its hand — the "second, WORSE competence profile" `HandForgePlayer`'s
+  own class doc has been asking for since it shipped — is the missing instrument, and is the honest
+  prerequisite for tuning the premium against a distribution rather than against a constant.
 
 ## What must survive, named so this program cannot quietly discard it
 

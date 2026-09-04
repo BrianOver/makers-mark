@@ -334,6 +334,29 @@ public class AtomicEquivalenceTests
     // 100-day Balance gate is IDENTICALLY 67/67 both before and after for the same reason —
     // BalanceSimTests drives BaselinePlayer.ActionsFor and MasterworkDominanceBalanceTests drives
     // MasterworkSeekingPlayer, and neither ever hand-forges either.
+    // 2026-09-03 (ForgeScorer forgiveness: subtractive -> proportional, owner ruling §11.7.11,
+    // "accuracy must keep mattering"): **NO-OP — hash UNCHANGED, value not re-pinned.** This is a
+    // deliberate BALANCE change (grades move, so items move, so the economy could move), so it was
+    // run as a full re-baseline ceremony and the ceremony's honest verdict is that nothing on this
+    // trace moved. Two independent reasons, either of which alone is sufficient. (1) REACHABILITY,
+    // exactly the BatchEchoFloor entry's argument directly above: ForgeScorer is reached only from
+    // CraftingHandlers' hand-forge branch — a CraftAction whose Puzzle is a ForgeTraceInput — and
+    // this trace's driver, BaselinePlayer, never constructs one (nor do MasterworkSeekingPlayer,
+    // ApprenticePlayer, or SkilledSmithPlayer; only HandForgePlayer/LateMasteryPlayer and the Godot
+    // minigame do). The changed code is never executed on this trace at all. (2) ARITHMETIC
+    // IDENTITY, which is the stronger guarantee and the reason this change is far narrower than
+    // "grades move" suggests: the new rule is penalty = dev * retained * DevScale / 1000 where
+    // retained = 1000 - min(forgiveness * ForgivenessGain, MaxForgivenessPermille). At zero
+    // unlocked assist talents, forgiveness is 0, retained is 1000, and the expression reduces to
+    // exactly the old dev * DevScale. So even a trace that DID hand-forge would score identically
+    // until the first assist talent unlocks — nothing about an untalented smith changed. Only the
+    // talented hand-forge path moves, and no golden or Balance fixture drives one. Confirmed
+    // directly, not argued: the fast lane is 1859/1859 green with the change in (this exact test
+    // among them, same hash), and the 100-day Balance gate is IDENTICALLY 67/67 with no threshold
+    // moved — including PhaseDSinksBalanceTests' `item.Quality >= Superior` assertion, the one
+    // fixture a downward grade shift would have flipped first. The measured 20-seed/100-day
+    // hand-forge sweeps that DO move (both talent-pacing policies) are reported in the PR body;
+    // they are the point of the change and are deliberately not pinned here.
     private const string ExpectedPreCounterSha256 =
         "F5488949CB39A39B47F99A4F1EDD27457D7523DBFA9A7ED171FF8DE50F8D8B6D";
 

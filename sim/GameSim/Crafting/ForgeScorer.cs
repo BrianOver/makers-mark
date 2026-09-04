@@ -64,6 +64,29 @@ public readonly record struct ForgeScore(int GradePermille, ImmutableList<int> S
 /// (forgives deviation everywhere), Legendary Craft forgives off-beat forge strikes, and Weapon
 /// Specialist adds its own sweet-zone width but ONLY on Weapon recipes — the same slot-scoping
 /// pattern as the alchemist's Potent Brews.</para>
+///
+/// <para><b>Forgiveness SCALES the penalty; it never erases it (owner ruling 2026-09-03,
+/// <c>MAKERS-MARK.md</c> §11.7.11) — this supersedes the "mastery means certainty" ruling of the
+/// same date.</b> Every forgiveness axis used to be SUBTRACTIVE with a zero floor
+/// (<c>max(0, dev - forgiveness)</c>), and that shape has a dead zone: every deviation at or under
+/// the accumulated forgiveness scored IDENTICALLY to a flawless one. Talents therefore did not
+/// compress the skill range, they DELETED the bottom of it, and as talents stacked the dead zone
+/// swallowed the whole realistic error band — measured across 20 seeds x 100 days under two
+/// opposite talent-pacing policies, accuracy stopped changing the grade at all by about day 6.
+/// The rule is now proportional: <c>penalty = dev * retained * DevScale / 1000</c>, where
+/// <c>retained</c> is the share of the penalty that survives forgiveness
+/// (see <see cref="RetainedPermille"/>). The consequences are the point —
+/// <list type="bullet">
+///   <item><description><b>Ordering is total and permanent.</b> A strictly worse swing always
+///   scores strictly worse, at EVERY talent level, because the slope is never zero (see
+///   <see cref="MaxForgivenessPermille"/>). Accuracy sets the ceiling forever.</description></item>
+///   <item><description><b>Talents raise the floor instead.</b> The same mistake costs a master
+///   less than a novice, and the gap WIDENS as the swing gets worse — which is exactly when a
+///   safety net should be worth something. Talents stay clearly worth unlocking.</description></item>
+///   <item><description><b>An untalented smith is scored exactly as before.</b> Zero forgiveness
+///   leaves <c>retained</c> at 1000 and the formula collapses to the old <c>dev * DevScale</c> —
+///   a mathematical identity, which is why every zero-talent pin in the suite is unchanged.</description></item>
+/// </list></para>
 /// </summary>
 public static class ForgeScorer
 {
@@ -73,6 +96,26 @@ public static class ForgeScorer
     /// <summary>Deviation-to-score slope: a sub-score hits 0 once effective deviation reaches
     /// 1000/DevScale = 250 per-mille.</summary>
     private const int DevScale = 4;
+
+    /// <summary>
+    /// Converts one per-mille point of a talent's <see cref="MinigameAssist"/> width into
+    /// PROPORTIONAL penalty relief — each point scales the deviation penalty down by this many
+    /// per-mille, rather than cancelling that many per-mille of deviation outright. Chosen against
+    /// the measured sweep (see the class doc): it leaves a fully-talented smith's average swing
+    /// clearly ahead of an untalented one on the same trace, while keeping a sloppy swing visibly
+    /// worse than a clean one at every talent level.
+    /// </summary>
+    private const int ForgivenessGain = 3;
+
+    /// <summary>
+    /// The hard ceiling on accumulated proportional relief, in per-mille. At least 250 per-mille of
+    /// EVERY deviation therefore always survives, at every talent level, forever. This is the
+    /// structural guarantee that the dead zone cannot return: the deviation-to-score slope can
+    /// never reach zero, so a worse swing can never score equal-or-better through talent alone. A
+    /// future talent that pushes accumulated forgiveness past this cap buys nothing further — which
+    /// is deliberate, and is the invariant <c>ForgeScorerTests</c>' ordering theory pins.
+    /// </summary>
+    private const int MaxForgivenessPermille = 750;
 
     /// <summary>Any sample above this y anywhere in the trace counts as scorched.</summary>
     private const int ScorchThreshold = 900;
@@ -107,6 +150,14 @@ public static class ForgeScorer
         var path = ForgePath.Generate(recipe.Tier, recipe.Slot, recipe.BaseStats.Weight, trace.PathSeed);
         var (sweetZoneBonus, driftReduction, offBeatForgiveness) = AssistBonuses(profession, unlockedTalents, recipe.Slot);
 
+        // Forgiveness is loop-invariant, so each axis's retained-penalty multiplier is resolved
+        // ONCE here rather than per sample. Smelt and quench share an axis (sweet zone + drift),
+        // the forge sample axis sees drift only, and strikes see off-beat forgiveness only — the
+        // same three-axis mapping the subtractive rule used, now expressed as a proportion.
+        var smeltQuenchRetained = RetainedPermille(sweetZoneBonus + driftReduction);
+        var forgeRetained = RetainedPermille(driftReduction);
+        var strikeRetained = RetainedPermille(offBeatForgiveness);
+
         var samples = trace.Samples ?? ImmutableList<int>.Empty;
         var strikes = trace.Strikes ?? ImmutableList<int>.Empty;
 
@@ -118,7 +169,7 @@ public static class ForgeScorer
         var forgeSampleCount = 0;
         var quenchSum = 0;
         var quenchCount = 0;
-        var quenchDevSum = 0;
+        var quenchDevSum = 0L;
         var quenchDevCount = 0;
 
         var maxY = int.MinValue;
@@ -142,19 +193,20 @@ public static class ForgeScorer
             }
 
             var target = ForgePath.HeatAt(path, x);
-            var dev = Math.Abs(y - target);
+            // Widened to long BEFORE the subtraction: a hostile out-of-range y can overflow
+            // `y - target` as ints, and Math.Abs(int.MinValue) throws — this scorer is
+            // contractually total for ANY trace value (see Score's own doc comment).
+            var dev = Math.Abs((long)y - target);
 
             if (x <= SmeltZoneEnd)
             {
-                var devEff = Math.Max(0, dev - sweetZoneBonus - driftReduction);
-                smeltSum += SubscoreFor(devEff);
+                smeltSum += SubscoreFor(dev, smeltQuenchRetained);
                 smeltCount++;
                 TrackOneHeat(y, ref wasBelowEntry, ref risingEdges);
             }
             else if (x <= ForgeZoneEnd)
             {
-                var devEff = Math.Max(0, dev - driftReduction);
-                forgeSampleSum += SubscoreFor(devEff);
+                forgeSampleSum += SubscoreFor(dev, forgeRetained);
                 forgeSampleCount++;
 
                 if (y < CrackThreshold)
@@ -166,10 +218,9 @@ public static class ForgeScorer
             }
             else
             {
-                var devEff = Math.Max(0, dev - sweetZoneBonus - driftReduction);
-                quenchSum += SubscoreFor(devEff);
+                quenchSum += SubscoreFor(dev, smeltQuenchRetained);
                 quenchCount++;
-                quenchDevSum += devEff;
+                quenchDevSum += ScaledDev(dev, smeltQuenchRetained);
                 quenchDevCount++;
             }
         }
@@ -182,8 +233,7 @@ public static class ForgeScorer
         for (var i = 0; i < strikePairCount; i++)
         {
             var tempoError = strikes[i * 2 + 1];
-            var penalty = Math.Max(0, tempoError - offBeatForgiveness);
-            forgeStrikeSum += SubscoreFor(penalty);
+            forgeStrikeSum += SubscoreFor(Math.Max(0L, tempoError), strikeRetained);
         }
 
         var forgeStrikeCount = strikePairCount;
@@ -245,7 +295,29 @@ public static class ForgeScorer
         }
     }
 
-    private static int SubscoreFor(int devEff) => Math.Clamp(1000 - devEff * DevScale, 0, 1000);
+    /// <summary>
+    /// The share of a deviation's penalty that SURVIVES <paramref name="forgiveness"/>, in
+    /// per-mille — the whole of the proportional rule (see the class doc). Zero forgiveness returns
+    /// 1000, so an untalented smith is scored by exactly the pre-ruling <c>dev * DevScale</c> slope;
+    /// the cap keeps the return value at or above 250, so the slope is never flat and the dead zone
+    /// can never re-form.
+    /// </summary>
+    private static int RetainedPermille(int forgiveness) =>
+        1000 - Math.Clamp(forgiveness * ForgivenessGain, 0, MaxForgivenessPermille);
+
+    /// <summary>
+    /// One sample's per-mille sub-score. The division comes LAST, on purpose: scaling
+    /// <paramref name="dev"/> first and rounding to an integer would truncate small deviations to
+    /// the same value and re-introduce a (much smaller, but real) dead zone at high forgiveness.
+    /// Ordering is only ever as fine-grained as this arithmetic, so it keeps the full precision.
+    /// </summary>
+    private static int SubscoreFor(long dev, int retainedPermille) =>
+        (int)Math.Clamp(1000L - (dev * retainedPermille * DevScale / 1000L), 0L, 1000L);
+
+    /// <summary>The forgiveness-scaled deviation itself rather than its score — what
+    /// <see cref="ForgeMoment.PerfectQuench"/> averages against
+    /// <see cref="PerfectQuenchDevThreshold"/>.</summary>
+    private static long ScaledDev(long dev, int retainedPermille) => dev * retainedPermille / 1000L;
 
     /// <summary>
     /// Sums the unlocked blacksmith talents' <see cref="MinigameAssist"/> fields into the three
