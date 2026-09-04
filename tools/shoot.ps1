@@ -44,6 +44,12 @@ $env:SHOT_WATCH_FIGHT = if ($State -eq "Watch") { "1" } else { "" }
 # decides for itself whether to offer, so the capture still proves the real eligibility rule rather
 # than a staged screen. Same seam and same never-in-real-play contract as SHOT_WATCH_FIGHT above.
 $env:SHOT_ARC_SCENE = if ($State -eq "TavernScene" -or $State -eq "TavernSceneAtBar") { "1" } else { "" }
+# M2b: the storied-gear states need FACTS planted before anything opens -- a marked blade with real
+# recorded deeds in every hero's hands, and one marginally better blade shelved
+# (MainUi.StageStoriedGearReceipt). The threshold, the wall row, the card line and the counter's
+# refusal are then all decided by the sim itself. Same seam and same never-in-real-play contract as
+# SHOT_WATCH_FIGHT / SHOT_ARC_SCENE above.
+$env:SHOT_STORIED = if ($State -eq "Storied" -or $State -eq "StoriedCard" -or $State -eq "StoriedRefusal") { "1" } else { "" }
 if (Test-Path $Out) { Remove-Item $Out -Force }
 
 Write-Host "capturing state='$State' -> $Out" -ForegroundColor Cyan

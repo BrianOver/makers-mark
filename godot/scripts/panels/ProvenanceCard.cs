@@ -104,6 +104,19 @@ public partial class ProvenanceCard : Control
             channelLabel.Name = "ProvenanceChannelLine";
         }
 
+        // M2b: the promotion the sim has been making silently. Once a worn piece crosses its own
+        // bearer's storied threshold (ShoppingAi's sentimental gate, trait-shifted per hero), that
+        // hero stops trading it away for a marginal upgrade — a real behaviour change with nothing
+        // on screen admitting it until now. Recorded facts only: the bearer, the deed count the
+        // sim already counts, and what it decided. Renders nothing when the item is ordinary, the
+        // same honest-empty-state contract as the channel and heirloom clauses above.
+        if (StoriedGear.Clause(StoriedGear.For(state, item.Id)) is { Length: > 0 } storiedClause)
+        {
+            var storiedLabel = AddLabel(_body!, storiedClause);
+            storiedLabel.Name = "ProvenanceStoriedLine";
+            storiedLabel.AddThemeColorOverride("font_color", GameTheme.HeaderColor);
+        }
+
         if (ProvenanceQuery.HeirloomClause(item) is { } heirloomClause)
         {
             var heirloomLabel = AddLabel(_body!, heirloomClause);

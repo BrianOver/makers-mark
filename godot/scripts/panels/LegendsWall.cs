@@ -77,6 +77,13 @@ public partial class LegendsWall : Control
     /// test hook.</summary>
     public int LegendItemCount { get; private set; }
 
+    /// <summary>M2b: count of storied-gear rows rendered by the last <see cref="ShowWall"/> call —
+    /// test hook, mirroring <see cref="LegendItemCount"/>. Deliberately a SEPARATE counter: the
+    /// Memory act's tutorial row arms on <see cref="HasLegendItems"/>, and storied gear must not
+    /// change when that fires — this section is a second, quieter kind of record, not more of the
+    /// first.</summary>
+    public int StoriedItemCount { get; private set; }
+
     public override void _Ready() => EnsureBuilt();
 
     /// <summary>P2-ONBOARD-02: sets the once-ever "legends-wall-taught" caption — called from <see
@@ -104,7 +111,15 @@ public partial class LegendsWall : Control
 
         var legendItems = LegendItems(state);
         LegendItemCount = legendItems.Count;
-        ShowedEmptyState = state.Drama.Memorials.IsEmpty && state.Drama.DepthsBoard.IsEmpty && legendItems.Count == 0;
+
+        // M2b: the wall's floor beneath the beat. A night where nothing crossed a counterfactual
+        // threshold leaves the player's work out of the record entirely, and that silence is what
+        // reads as "it didn't matter"; storied gear is the ordinary night's evidence — an object
+        // the sim has already decided its bearer will not give up.
+        var storiedItems = StoriedItems(state);
+        StoriedItemCount = storiedItems.Count;
+        ShowedEmptyState = state.Drama.Memorials.IsEmpty && state.Drama.DepthsBoard.IsEmpty
+            && legendItems.Count == 0 && storiedItems.Count == 0;
 
         if (ShowedEmptyState)
         {
@@ -125,6 +140,7 @@ public partial class LegendsWall : Control
         RenderMemorials(state);
         RenderDepthsRecords(state);
         RenderLegendItems(state, legendItems);
+        RenderStoriedItems(state, storiedItems);
 
         Visible = true;
     }
@@ -555,6 +571,52 @@ public partial class LegendsWall : Control
             note.AddThemeColorOverride("font_color", GameTheme.HeaderColor);
         }
     }
+
+    /// <summary>
+    /// M2b: the wall lists objects the town has not made legends of yet but will not let go of —
+    /// gear whose bearer has crossed their OWN storied threshold (<see cref="StoriedGear"/>), so the
+    /// sim already refuses to trade it away for a marginal upgrade. Rows state the recorded facts
+    /// and nothing else: the bearer, and the deeds their memories record for it. No total across
+    /// the player's work, no ratio, no rank against the other rows, no score — this is the record of
+    /// what an object did, not a scoreboard of what the player is owed.
+    /// </summary>
+    private void RenderStoriedItems(GameState state, System.Collections.Generic.List<StoriedGearInfo> storiedItems)
+    {
+        AddHeader(_body!, "STORIED GEAR");
+
+        var storiedSection = new VBoxContainer { Name = "StoriedItemsSection" };
+        _body!.AddChild(storiedSection);
+
+        if (storiedItems.Count == 0)
+        {
+            AddLabel(storiedSection, "  No storied gear yet — a piece earns this down in the Mine, one fight at a time.");
+            return;
+        }
+
+        foreach (var storied in storiedItems)
+        {
+            var name = state.Items.TryGetValue(storied.Item.Value, out var item) ? item.Name : "A piece of your work";
+            var label = $"◆ {name} — {storied.BearerName} has carried it through "
+                        + $"{storied.Deeds} {StoriedGear.FightsWord(storied.Deeds)}.";
+            var button = AddButton(storiedSection, $"Storied_{storied.Item.Value}", label,
+                () => OnShowProvenance(state, storied.Item));
+            button.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+            button.Alignment = HorizontalAlignment.Left;
+        }
+    }
+
+    /// <summary>
+    /// The storied pieces this wall lists — <see cref="StoriedGear.All"/> narrowed to work that
+    /// carries a maker's mark. A rival's blade can cross the same threshold and the item's own card
+    /// says so honestly, but THIS wall is the town's memory of the player's work (link 5); a row
+    /// here for someone else's stock would be the exact participation-credit inversion link 4
+    /// forbids. Order comes straight from the query (hero id, then fixed slot order), so two runs of
+    /// the same state list them identically.
+    /// </summary>
+    private static System.Collections.Generic.List<StoriedGearInfo> StoriedItems(GameState state) =>
+        StoriedGear.All(state)
+            .Where(storied => state.Items.TryGetValue(storied.Item.Value, out var item) && item.Mark is not null)
+            .ToList();
 
     /// <summary>Items that earn a legend row: a Signed Work (U19), or at least
     /// <see cref="LegendQuery.FamousBeatThreshold"/> proven attribution beats. Signed Works first,

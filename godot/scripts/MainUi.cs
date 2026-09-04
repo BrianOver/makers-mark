@@ -530,6 +530,17 @@ public partial class MainUi : Control
             state = StageArcSceneReceipt(state);
         }
 
+        // M2b receipt seam ONLY, same contract as the three above: the storied-gear promotion needs
+        // deeds a hero can only earn over several real delves, which a screenshot has no business
+        // driving. This plants the FACTS (a marked blade in each hand, the deeds their memories
+        // record for it, one marginally better blade on the shelf) and nothing else — the storied
+        // query and ShoppingAi's own gate then decide for themselves what to say and whether to
+        // refuse, exactly as they would in play. Never reads in real play.
+        if (System.Environment.GetEnvironmentVariable("SHOT_STORIED") == "1")
+        {
+            state = StageStoriedGearReceipt(state);
+        }
+
         return new SimAdapter(state);
     }
 
@@ -568,6 +579,89 @@ public partial class MainUi : Control
                 }),
         };
     }
+
+    /// <summary>
+    /// Dev/receipt tool only (never called from real play): gives every living hero one marked
+    /// blade with four recorded deeds in their own <see cref="Hero.Memories"/>, and shelves one
+    /// blade two points better. That is all — the storied threshold
+    /// (<see cref="GameSim.Drama.StoriedGear"/>, trait-shifted per hero) and the loyalty gate
+    /// (<see cref="GameSim.Heroes.ShoppingAi"/>) judge those facts themselves, so the wall, the item
+    /// card and the counter's refusal in the resulting capture are the real rule firing rather than
+    /// staged screens. Every hero is given one because the morning's counter queue
+    /// (<c>CounterForecast.Queue</c>) picks who steps up, and a receipt that depended on guessing
+    /// that would photograph an ordinary sale half the time.
+    /// </summary>
+    private static GameState StageStoriedGearReceipt(GameState state)
+    {
+        var living = state.Heroes.Values.Where(h => h.Alive).OrderBy(h => h.Id.Value).ToImmutableList();
+        if (living.IsEmpty)
+        {
+            return state; // defensive — a fresh campaign always seeds the starting six
+        }
+
+        var nextItemId = state.NextItemId;
+        var items = state.Items;
+        var heroes = state.Heroes;
+
+        for (var i = 0; i < living.Count; i++)
+        {
+            var hero = living[i];
+            var bladeId = new ItemId(nextItemId++);
+            var blade = new Item(
+                bladeId,
+                "shortsword",
+                i < StoriedReceiptBladeNames.Length ? StoriedReceiptBladeNames[i] : $"{hero.Name}'s Blade",
+                ItemSlot.Weapon,
+                QualityGrade.Fine,
+                new ItemStats(6, 0, 3),
+                new MakersMark("Player", 1),
+                ImmutableList.Create(
+                    new ItemHistoryEntry(1, "kill", "a cave rat on floor 1"),
+                    new ItemHistoryEntry(2, "kill", "a tunnel spider on floor 2"),
+                    new ItemHistoryEntry(3, "save", "the blow read 9 on floor 2"),
+                    new ItemHistoryEntry(3, "kill", "a gloomhound on floor 3")));
+
+            items = items.Add(bladeId.Value, blade);
+            heroes = heroes.SetItem(hero.Id.Value, hero with
+            {
+                Gear = hero.Gear.WithSlot(ItemSlot.Weapon, bladeId),
+                Memories = hero.Memories.Add(new ItemMemory(bladeId, Kills: 3, Saves: 1)),
+            });
+        }
+
+        // Two attack points better and priced at a copper: a real upgrade, and a small enough one
+        // that the loyalty gate is the ONLY thing that can stop the sale.
+        var plainId = new ItemId(nextItemId++);
+        var plain = new Item(
+            plainId, "shortsword", "Plain Blade", ItemSlot.Weapon, QualityGrade.Fine,
+            new ItemStats(8, 0, 3), new MakersMark("Player", 1), ImmutableList<ItemHistoryEntry>.Empty);
+
+        return state with
+        {
+            NextItemId = nextItemId,
+            Items = items.Add(plainId.Value, plain),
+            Heroes = heroes,
+            // The ONLY thing on the shelf, so the receipt's Present press cannot land on some other
+            // piece of starting stock and photograph an ordinary sale under this state's name.
+            Player = state.Player with { Shelf = ImmutableList.Create(new ShelfEntry(plainId, 1)) },
+        };
+    }
+
+    /// <summary>Names for <see cref="StageStoriedGearReceipt"/>'s blades, so the wall's storied rows
+    /// read as six different objects rather than six copies of one.</summary>
+    private static readonly string[] StoriedReceiptBladeNames =
+    {
+        "Emberfang", "Old Iron", "Chipped Edge", "Grey Tooth", "Hearthsteel", "Ashwake",
+    };
+
+    /// <summary>
+    /// Dev/receipt tool only (never called from real play): opens the Legends Wall on the LIVE
+    /// campaign state, bypassing <c>OpenGatedSurface</c>'s day-1 surface lock (which a receipt
+    /// capture cannot satisfy without driving a whole week). Nothing is staged — the wall renders
+    /// exactly what <see cref="Adapter"/> holds, which with <c>SHOT_STORIED=1</c> is a campaign
+    /// whose heroes really are carrying storied work.
+    /// </summary>
+    public void Dev_ShowLegendsWallLive() => Legends.ShowWall(Adapter.CurrentState);
 
     /// <summary>
     /// Dev/receipt tool only (never called from real play): builds a REAL two-floor fight —

@@ -1,3 +1,5 @@
+using System.Collections.Immutable;
+using System.Linq;
 using GameSim.Contracts;
 using GameSim.Drama;
 using GameSim.Heroes;
@@ -69,6 +71,108 @@ public static class CustomerVoice
         _ => throw new System.ArgumentOutOfRangeException(
             nameof(kind), kind, $"CustomerVoice has no Present reply for verdict kind {kind}."),
     };
+
+    /// <summary>
+    /// M2b: <see cref="PassReasonKind"/> members that deliberately have no spoken line of their own,
+    /// each with the reason it is exempt. Deny-by-default — <c>StoriedGearTests</c> reflects over the
+    /// WHOLE enum and requires every member to either produce a non-empty reply from
+    /// <see cref="PassReply"/> or appear here, and pins this map's size, so a new pass reason cannot
+    /// be added and quietly go unvoiced. A hand-listed roster is exactly the guard shape that has
+    /// stopped covering its family in this repo before; nothing here is hand-listed at the call site.
+    /// </summary>
+    public static readonly ImmutableSortedDictionary<PassReasonKind, string> UnvoicedPassReasons =
+        ImmutableSortedDictionary<PassReasonKind, string>.Empty.Add(
+            PassReasonKind.None,
+            "Buy verdicts only. A Buy opens a haggle round instead of walking the customer, so no "
+            + "walk-away line ever carries this reason and there is nothing for a bubble to say.");
+
+    /// <summary>
+    /// The customer's spoken refusal, keyed on the sim's OWN typed pass reason
+    /// (<see cref="PassReasonKind"/>) rather than on prose. Every arm but one hands back
+    /// <paramref name="simReason"/> — the R8 line the sim already wrote — verbatim, which is exactly
+    /// what shipped before this method existed.
+    ///
+    /// <para>The one exception is <see cref="PassReasonKind.Sentimental"/>, the storied-gear loyalty
+    /// gate: when the hero is refusing because of what a piece of your old work has already done for
+    /// them, they say so in their own voice instead of the log's. That line is a mechanism, not
+    /// decoration — <see cref="WalkReply"/> is the ONLY production caller and it will not reach this
+    /// arm unless <see cref="ShoppingAi.EvaluateItem"/>, re-run read-only against live state,
+    /// reproduces the recorded refusal exactly.</para>
+    ///
+    /// <para>Exhaustive by construction: an unknown member throws rather than rendering an empty
+    /// bubble (the <see cref="PresentReply"/> precedent), which is what makes the reflective
+    /// deny-by-default test above able to fail on a newly added reason.</para>
+    /// </summary>
+    public static string PassReply(PassReasonKind kind, string simReason, string? storiedGearName) => kind switch
+    {
+        PassReasonKind.Sentimental when storiedGearName is { Length: > 0 } worn =>
+            $"I'm keeping the {worn} — it's been down there with me.",
+        PassReasonKind.Sentimental => simReason,
+        PassReasonKind.RoleMismatch => simReason,
+        PassReasonKind.TooHeavy => simReason,
+        PassReasonKind.CannotAfford => simReason,
+        PassReasonKind.NotAnUpgrade => simReason,
+        PassReasonKind.QualityTooLow => simReason,
+        _ => throw new System.ArgumentOutOfRangeException(
+            nameof(kind), kind, $"CustomerVoice has no pass reply for reason kind {kind}."),
+    };
+
+    /// <summary>
+    /// What a customer who just walked away actually says. <see cref="CustomerWalked"/> records the
+    /// hero, the item and the R8 prose but not the typed reason, so this re-derives it the way this
+    /// whole file derives everything: by calling the sim's OWN evaluator read-only against live
+    /// state, never by parsing the prose and never by inventing a second rule.
+    ///
+    /// <para><b>Why the equality guard.</b> A re-run verdict is only trusted when its
+    /// <see cref="ShoppingVerdict.Reason"/> matches the recorded one character for character. That
+    /// makes the storied-gear line impossible to render as decoration: it appears when, and only
+    /// when, the sim will still produce that exact refusal for that exact hero and item. Anything
+    /// else — the hero gone, the item off the shelf, a verdict that no longer matches — falls back
+    /// to the recorded reason verbatim, which is what this surface rendered before M2b.</para>
+    /// </summary>
+    public static string WalkReply(GameState state, HeroId hero, ItemId? presented, string recordedReason)
+    {
+        var kind = ReplayPassReason(state, hero, presented, recordedReason, out var storiedGearName);
+        return kind is null ? recordedReason : PassReply(kind.Value, recordedReason, storiedGearName);
+    }
+
+    /// <summary>The read-only replay behind <see cref="WalkReply"/> — null whenever the recorded
+    /// refusal cannot be reproduced exactly, which is the caller's signal to say nothing new.</summary>
+    private static PassReasonKind? ReplayPassReason(
+        GameState state, HeroId hero, ItemId? presented, string recordedReason, out string? storiedGearName)
+    {
+        storiedGearName = null;
+
+        if (presented is not { } itemId
+            || !state.Heroes.TryGetValue(hero.Value, out var customer)
+            || !state.Items.TryGetValue(itemId.Value, out var item))
+        {
+            return null;
+        }
+
+        // The price the sim judged is the shelf price (CounterQueueSystem.ResolvePresentedItem
+        // reads the same entry); an item that has since left the shelf cannot be replayed.
+        var shelfEntry = state.Player.Shelf.FirstOrDefault(entry => entry.Item == itemId);
+        if (shelfEntry is null)
+        {
+            return null;
+        }
+
+        var verdict = ShoppingAi.EvaluateItem(customer, item, shelfEntry.Price, state.Items);
+        if (verdict.Kind != ShoppingVerdictKind.Pass || verdict.Reason != recordedReason)
+        {
+            return null;
+        }
+
+        if (verdict.PassReason == PassReasonKind.Sentimental
+            && customer.Gear.Slot(item.Slot) is { } wornId
+            && state.Items.TryGetValue(wornId.Value, out var worn))
+        {
+            storiedGearName = worn.Name;
+        }
+
+        return verdict.PassReason;
+    }
 
     /// <summary>
     /// The customer's spoken reaction to a Suggest — derived from whether the sim's OWN upsell bonus

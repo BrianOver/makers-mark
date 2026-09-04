@@ -187,8 +187,12 @@ public static class ShoppingAi
     }
 
     /// <summary>Wave 2b: total deeds (Kills + Saves) the hero's <see cref="Hero.Memories"/> record
-    /// for one worn item — the "how storied is this gear" signal for the sentimental gate.</summary>
-    private static int WornDeeds(Hero hero, ItemId worn)
+    /// for one worn item — the "how storied is this gear" signal for the sentimental gate.
+    /// <para>Public (M2b) so <see cref="GameSim.Drama.StoriedGear"/> can render the SAME count the
+    /// gate reads rather than re-summing memories itself: a card that disagreed with the refusal it
+    /// is explaining would be worse than the silence it replaces. Read-only — this method has never
+    /// written anything.</para></summary>
+    public static int WornDeeds(Hero hero, ItemId worn)
     {
         var total = 0;
         foreach (var memory in hero.Memories)
