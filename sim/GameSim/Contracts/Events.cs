@@ -92,9 +92,25 @@ public sealed record RecruitArrived(HeroId Hero) : GameEvent;
 public sealed record HeroDecisionExplained(HeroId Hero, string Chosen, string RunnerUp, string Reason, int GapPermille) : GameEvent;
 
 /// <summary>
-/// Phase B (B0, R-B3): the hero crossed a cosmetic RANK threshold on accrued <see cref="Hero.Xp"/>
-/// (e.g. "Delver"). A label only — it NEVER touches <see cref="Hero.Level"/> or CombatMath; the
-/// XP→Level flip is deliberately deferred to Phase C's hardening window.
+/// The hero crossed a rung of the XP ladder on accrued <see cref="Hero.Xp"/> (e.g. "Delver").
+///
+/// <para><b>This is not a cosmetic label, and the comment that said so was wrong for a whole
+/// phase.</b> Phase B (B0, R-B3) introduced this event as a pure label, and its doc recorded that
+/// the XP→Level flip was "deliberately deferred to Phase C's hardening window". That flip LANDED
+/// (U-C6): <c>HeroRank.LevelFor</c> derives a real <see cref="Hero.Level"/> off the same single
+/// ladder <c>HeroRank.For</c> names, and <c>CombatMath</c> reads <see cref="Hero.Level"/> into
+/// Attack and Defense. So a hero who ranks up is mechanically stronger, and this event marks the
+/// moment it happened.</para>
+///
+/// <para>The stale claim was not harmless. <c>HeroPanel</c> hand-wrote its own four thresholds on
+/// the strength of it, disagreeing with the sim's six — reporting "Veteran" at 150 XP where the
+/// ladder says Journeyman, and "Legend" at 400 where the ladder still says Veteran. The card was
+/// wrong about combat strength while this comment said the number could not matter. Fixed in #712,
+/// which now derives the rung from <c>HeroRank.For</c> and pins it reflectively over every rung.</para>
+///
+/// <para><see cref="Rank"/> carries the ladder's own name for the new rung, so a renderer never
+/// re-derives it. There is ONE ladder and it lives in <c>sim/GameSim/Heroes/HeroXp.cs</c>; a second
+/// copy anywhere is the defect above, repeating.</para>
 /// </summary>
 public sealed record HeroRankUp(HeroId Hero, string Rank) : GameEvent;
 
