@@ -1240,6 +1240,13 @@ It never submits: `PostBountyAction`, any counter action, `BuyMaterialAction`,
 `ConcludeApprenticeshipAction`. Any plan claiming baseline coverage of bounties, the counter,
 the vigil, or the Morning vendor is wrong.
 
+`BaselinePlayer` is not the corpus, though, and this paragraph is not the authority on what the
+corpus covers. Which of these the *whole* `Category=Balance` set actually submits along a real
+trajectory — versus merely offers as a legal candidate that no policy ever takes — is executable in
+`sim/GameSim.Tests/Hygiene/BalanceCorpusCoverageCensusTests.cs`, which reflects the live
+`PlayerAction` hierarchy, denies by default, and fails by name. Read that test, not this paragraph,
+before claiming corpus coverage of any verb.
+
 **`CounterPlayer.ActionsFor`** (`sim/GameSim/Harness/CounterPlayer.cs:29-84`): Morning only —
 `OpenCounterAction`; then per state: `PresentItemAction` (best role-fit shelf item),
 `HaggleResponseAction(Counter, band-center)` (never Accept, never HoldFirm),

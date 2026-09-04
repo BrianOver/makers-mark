@@ -184,9 +184,9 @@ public class BalanceCorpusCoverageCensusTests
         var offered = OfferedByActionLegality();
         var (policies, submitted) = SubmittedByTheCorpus();
 
-        var neverSubmitted = allNames.Where(n => !submitted.Contains(n)).ToList();
-        var offeredOnly = neverSubmitted.Where(offered.Contains).ToList();
-        var neither = neverSubmitted.Where(n => !offered.Contains(n)).ToList();
+        var split = Classify(allNames, offered, submitted, KnownNeverSubmitted);
+        var offeredOnly = split.OfferedOnly;
+        var neither = split.Neither;
 
         _output.WriteLine($"PlayerAction hierarchy: {allNames.Count} concrete types.");
         _output.WriteLine("Sweep policies discovered live from Balance-tagged tests ("
@@ -207,7 +207,7 @@ public class BalanceCorpusCoverageCensusTests
             + "either the corpus stopped using scripted policies or this census's discovery regex "
             + "no longer matches the real call shape.");
 
-        var uncited = neverSubmitted.Where(n => !KnownNeverSubmitted.ContainsKey(n)).ToList();
+        var uncited = split.Uncited;
         Assert.True(uncited.Count == 0,
             "An action type is reachable by no sweep policy in the corpus and has no pinned, cited "
             + "reason in KnownNeverSubmitted — this is either a real regression (a policy that used "
@@ -215,7 +215,7 @@ public class BalanceCorpusCoverageCensusTests
             + "never a silent widen of what the balance corpus is allowed not to know about:\n  "
             + string.Join("\n  ", uncited));
 
-        var stale = KnownNeverSubmitted.Keys.Where(n => !neverSubmitted.Contains(n)).ToList();
+        var stale = split.Stale;
         Assert.True(stale.Count == 0,
             "KnownNeverSubmitted still pins a type the corpus actually submits now — delete the "
             + "stale entry instead of leaving a closed gap on record (CLAUDE.md rule 8):\n  "
@@ -230,6 +230,81 @@ public class BalanceCorpusCoverageCensusTests
     {
         const string snippet = "actions.Add(new PostBountyAction(3, 10));";
         Assert.Contains("PostBountyAction", ExtractActionTypeNames(snippet));
+    }
+
+    /// <summary>The planted-policy proof for the SHRINK direction, and the reason
+    /// <see cref="Classify"/> is a pure function rather than six lines inlined in the census above.
+    /// The detector proof one method up shows that a construction is SEEN; it says nothing about
+    /// whether the census's own classification then reports the loss BY NAME, which is the whole
+    /// failure this unit is supposed to produce. Here a planted policy whose repertoire shrank to
+    /// two verbs runs through the real extractor, the real offered set, and the real pinned ledger:
+    /// every verb the live corpus submits beyond those two must come back named in
+    /// <c>Uncited</c> — the exact list the census interpolates into its failure message.</summary>
+    [Fact]
+    public void PlantedPolicyThatStoppedSubmittingACoveredVerb_IsReportedByName()
+    {
+        const string plantedPolicy = """
+            actions.Add(new CraftAction(recipe.RecipeId, recipe.MaterialKey));
+            actions.Add(new StockAction(item.Id, price));
+            """;
+
+        var (_, liveSubmitted) = SubmittedByTheCorpus();
+        Assert.Contains("BuyOreAction", liveSubmitted);
+
+        var split = Classify(
+            AllActionTypes.Select(t => t.Name).ToList(),
+            OfferedByActionLegality(),
+            ExtractActionTypeNames(plantedPolicy),
+            KnownNeverSubmitted);
+
+        // BuyOreAction is submitted by the live corpus and pinned by nothing, so a policy that
+        // stopped submitting it is a regression the census must name, never merely count.
+        Assert.Contains("BuyOreAction", split.Uncited);
+
+        // ...and the two verbs the planted policy kept must NOT be named, or the proof would pass
+        // for a classifier that simply reports everything.
+        Assert.DoesNotContain("CraftAction", split.Uncited);
+        Assert.DoesNotContain("StockAction", split.Uncited);
+    }
+
+    /// <summary>The planted-policy proof for the WIDEN direction. A pinned gap that quietly closes
+    /// is the other half of the same lie: the ledger would keep asserting the corpus cannot see a
+    /// verb it now exercises, which is a rule-8 stale claim living in a compiled file. A planted
+    /// policy that starts submitting a pinned type must come back named in <c>Stale</c>.</summary>
+    [Fact]
+    public void PlantedPolicyThatClosedAPinnedGap_IsReportedByName()
+    {
+        const string plantedPolicy = "actions.Add(new PostBountyAction(3, 10));";
+        Assert.Contains("PostBountyAction", KnownNeverSubmitted.Keys);
+
+        var split = Classify(
+            AllActionTypes.Select(t => t.Name).ToList(),
+            OfferedByActionLegality(),
+            ExtractActionTypeNames(plantedPolicy),
+            KnownNeverSubmitted);
+
+        Assert.Contains("PostBountyAction", split.Stale);
+    }
+
+    /// <summary>The classification, as a pure function over the three measured sets, so the two
+    /// planted proofs above can drive the census's real decision logic without writing a fake
+    /// policy into the live tree to scan. Kept deliberately total: every concrete action name lands
+    /// in exactly one of submitted / offered-only / neither, and independently is either pinned or
+    /// <c>Uncited</c>, with <c>Stale</c> catching a pin the corpus has outgrown.</summary>
+    private static (List<string> OfferedOnly, List<string> Neither, List<string> Uncited, List<string> Stale)
+        Classify(
+            IReadOnlyCollection<string> allNames,
+            ISet<string> offered,
+            ISet<string> submitted,
+            IReadOnlyDictionary<string, string> pinned)
+    {
+        var neverSubmitted = allNames.Where(n => !submitted.Contains(n)).ToList();
+
+        return (
+            OfferedOnly: neverSubmitted.Where(offered.Contains).ToList(),
+            Neither: neverSubmitted.Where(n => !offered.Contains(n)).ToList(),
+            Uncited: neverSubmitted.Where(n => !pinned.ContainsKey(n)).ToList(),
+            Stale: pinned.Keys.Where(n => !neverSubmitted.Contains(n)).ToList());
     }
 
     /// <summary>The negative-control proof: a comment merely NAMING a construction shape (exactly
