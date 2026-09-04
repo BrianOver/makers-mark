@@ -48,10 +48,18 @@ public partial class FullPlaytest : Node
     private const int DaysPerRun = 8;
 
     /// <summary>Every drawer panel MainUi routes. Each is opened and shot in every run, so a panel
-    /// that throws or renders empty cannot hide.</summary>
+    /// that throws or renders empty cannot hide.
+    ///
+    /// <para>"Progress" is deliberately absent: it is a gated Books Tray surface (P2-HONEST-01,
+    /// <see cref="GodotClient.Ui.SurfaceUnlocks.Gates"/>) that will not honestly be open this early
+    /// in a run (before any bounty has been posted, let alone paid) — calling the panel router
+    /// directly here would be exactly the "harness covers the surface through a hole in the wall"
+    /// bypass that unit deleted. The final-day capture below reaches it through the real tray
+    /// button instead, and reports honestly when the gate never opened that run.</para>
+    /// </summary>
     private static readonly string[] AllPanels =
     {
-        "Forge", "Shop", "Heroes", "Tavern", "Depths", "Bounties", "Demand", "HeroCards", "Progress",
+        "Forge", "Shop", "Heroes", "Tavern", "Depths", "Bounties", "Demand", "HeroCards",
     };
 
     private readonly StringBuilder _report = new();
@@ -404,9 +412,29 @@ public partial class FullPlaytest : Node
             _report.AppendLine($"- day {s.Day}: gold {s.Player.Gold}, items {s.Items.Count}, heroes {s.Heroes.Count}, bounties {s.Bounties.Count}");
             if (day == DaysPerRun)
             {
-                ui.OpenPanel("Progress");
-                await Settle(8);
-                Shot($"r{_run}_05_final_progress");
+                // P2-HONEST-01: Progress is a gated tray book (SurfaceUnlocks.Gates, first
+                // BountyPaid) — reached through the real "OpenProgress" tray button, the player's
+                // own door, rather than the panel router directly. A run whose scripted campaign
+                // never posted or never paid a bounty by day 8 honestly can't open it; that is
+                // reported, never forced.
+                if (ui.FindChild("OpenProgress", recursive: true, owned: false) is Button openProgress)
+                {
+                    openProgress.EmitSignal(BaseButton.SignalName.Pressed);
+                    await Settle(8);
+                    if (ui.Drawer.CurrentPanelId == "Progress")
+                    {
+                        Shot($"r{_run}_05_final_progress");
+                    }
+                    else
+                    {
+                        Note($"run {_run}: Progress gate still closed on day {DaysPerRun} -- no bounty was ever paid this run, so the harness has nothing to open (honest, not a bug).");
+                    }
+                }
+                else
+                {
+                    Note($"run {_run}: could not find the 'OpenProgress' tray button.");
+                }
+
                 ui.OpenPanel("Heroes");
                 await Settle(8);
                 Shot($"r{_run}_05_final_heroes");

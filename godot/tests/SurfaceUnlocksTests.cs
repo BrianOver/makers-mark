@@ -1,6 +1,7 @@
 #if GDUNIT_TESTS
 using System.Collections.Immutable;
 using System.Linq;
+using GameSim;
 using GameSim.Contracts;
 using GameSim.Kernel;
 using GdUnit4;
@@ -86,6 +87,45 @@ public class SurfaceUnlocksTests
         };
         AssertThat(SurfaceUnlocks.IsOpen(died, "Legends"))
             .OverrideFailureMessage("An unattributed first death must still open Legends — the wall has someone to remember.")
+            .IsTrue();
+    }
+
+    /// <summary>
+    /// P2-HONEST-01: the defect this unit exists to fix. Before the fix, Progress's own gate read
+    /// <c>state.Bounties.Any(b => b.Paid)</c> — permanently false, since <see cref="Bounty.Paid"/>
+    /// is never set true by the real sim (<c>BountyPayoutSystem</c> removes a paid bounty from the
+    /// board instead of ever flipping the flag). Drives a REAL campaign through the full kernel
+    /// until an actual bounty pays out — the same day-loop
+    /// <c>GameSim.Tests.Bounties.BountyTests.CompletedBounty_PaysAcceptingHero_ExactlyOnce</c> uses
+    /// — so this proves the gate opens from a genuine scripted payout, never a hand-fabricated
+    /// event standing in for one.
+    /// </summary>
+    [TestCase]
+    public void Progress_IsClosed_OnAFreshCampaign_AndOpensAfterAScriptedBountyPayout()
+    {
+        var kernel = GameComposition.BuildKernel();
+        var state = GameComposition.NewCampaign(2026);
+
+        AssertThat(SurfaceUnlocks.IsOpen(state, "Progress"))
+            .OverrideFailureMessage("Progress reads open on a fresh campaign before any bounty has ever been paid.")
+            .IsFalse();
+
+        var posted = kernel.Tick(state, ImmutableList.Create<PlayerAction>(new PostBountyAction(TargetFloor: 1, RewardGold: 40)));
+        state = posted.NewState;
+
+        BountyPaid? paid = null;
+        for (var day = 0; day < 15 && paid is null; day++)
+        {
+            var result = kernel.Tick(state, ImmutableList<PlayerAction>.Empty);
+            state = result.NewState;
+            paid = result.Events.OfType<BountyPaid>().FirstOrDefault();
+        }
+
+        AssertThat(paid)
+            .OverrideFailureMessage("No bounty paid out within 15 days -- the fixture is broken, not the gate.")
+            .IsNotNull();
+        AssertThat(SurfaceUnlocks.IsOpen(state, "Progress"))
+            .OverrideFailureMessage("A real BountyPaid event landed in the log, but Progress still reads closed.")
             .IsTrue();
     }
 
