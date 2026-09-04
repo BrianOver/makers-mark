@@ -4384,6 +4384,10 @@ name (§11.6 rule 4).
 | P2-HONEST-10 | Guards rephrase against the property — `RejectionUxTests` literals die | `godot/tests/`, `sim/GameSim.Tests/` | — | [S] |
 | P2-HONEST-13 | `TickResult.Traces` is ingested or deleted | `sim/GameSim/Kernel/GameKernel.cs`, `tools/Analytics/` or `sim/GameSim/Contracts/` | — | [S] |
 | P2-HONEST-14 | The CLI's own printed prose enters the vocabulary census's scope | `sim/GameSim.Cli/Program.cs`, `sim/GameSim.Tests/` (`PlayerVocabularyCensusTests`) | P2-HONEST-06 | [S] |
+| P2-HONEST-15 | `PlayerState.BatchEcho` gets a client reader — the batch-echo mechanic is invisible | `godot/scripts/panels/ForgePanel.cs` | — | [G] |
+| P2-HONEST-16 | `ConsumableEffect.Magnitude` gets a client reader — a potion's heal amount becomes legible | `godot/scripts/panels/ForgePanel.cs`, `godot/scripts/panels/ShopPanel.cs` | — | [G] |
+| P2-HONEST-17 | `GameState.RivalMarketSharePermille` gets a client reader — the idle-day cost becomes legible | `godot/scripts/panels/ShopPanel.cs` | — | [G] |
+| P2-HONEST-18 | `InFlightExpedition.Gold` gets a client reader, or its withholding gets a stated reason | `godot/scripts/panels/CampPanel.cs` | — | [G] |
 
 One hundred and two rows: 17 screen, 10 onboarding, 7 proof, 17 memory, 14 people, 23 long game,
 14 honesty. Eight carry a Contracts micro-PR; ten carry a golden re-record; eight carry a balance
@@ -4450,6 +4454,45 @@ down here rather than in bodies because the citation is the whole argument.
   the stale "3D" from both hints, and `godot/scripts/minigames/ForgeMinigame.cs` is the shipped
   surface the sentence now correctly describes. The claim is recorded as refuted so it is not
   re-filed.)*
+
+### The state-field census's four new rows, 2026-09-04
+
+`sim/GameSim.Tests/Presentation/StateFieldReachCensusTests.cs` walks every record type reachable
+from `GameState` (state fields, not the separately-censused event surface) and classifies each one
+RENDERED / ROUTED (naming the query) / INTERNAL (with a reason) / GAP, mirroring
+`P2-HONEST-06`'s vocabulary census and `P2-HONEST-13`'s `TickResult.Traces` finding — the same
+"the sim runs a rule with real consequence and no honest surface" shape, mechanized so the next
+instance does not depend on someone re-running a manual grep. 127 of 141 in-scope fields (each read
+by 3+ `sim/GameSim/` files, plus three fields the census flags by name despite falling under that
+bar) are RENDERED (118) or ROUTED (9); 6 are legitimately INTERNAL (a bookkeeping set, an id allocator, the
+drama director's own backstage clock — "you do not show the conductor"). Four are genuine gaps
+booked above; a fifth confirmed gap, `Hero.LadderRank`, already has an open fix
+(PR #712, `fix/hero-standing-ladder-rank`) and is deliberately NOT re-booked here — re-booking a
+field with a PR already in flight would be the numbering disease `P2-HONEST-14`'s neighbor entries
+warn about.
+
+- **`P2-HONEST-15`** — `PlayerState.BatchEcho` (U23e "batch echo": a hand-forge's grade decays
+  forward into up to 4 auto-crafted copies) is read and written entirely inside
+  `sim/GameSim/Crafting/CraftingHandlers.cs` and has zero `godot/scripts` readers. No open PR
+  addresses it as of this census.
+- **`P2-HONEST-16`** — `ConsumableEffect.Magnitude` (a consumable's heal AMOUNT) drives real math in
+  `sim/GameSim/Advisor/SuggestedPrice.cs` and `sim/GameSim/Expedition/ExpeditionResolver.cs`, but no
+  `godot/scripts` file reads it. `CampPanel.cs`/`ShopPanel.cs` already check `.Effect.Kind` (whether
+  an item heals) — they never show how much.
+- **`P2-HONEST-17`** — `GameState.RivalMarketSharePermille` (a full idle day raises the rival's
+  competitive edge, discounting their next-Morning restock; any real-work day lowers it,
+  `sim/GameSim/Economy/RivalRestockSystem.cs`) has zero `godot/scripts` readers. Its own change
+  event, `MarketShareShifted`, is a *deliberate* ticker exclusion
+  (`godot/scripts/ui/AdventureTicker.cs:256`, documented in `docs/reference/surfaces-census.md` §8)
+  — so neither the meter nor its own event ever reaches the player. `ShopPanel.cs`'s "Rival Shelf"
+  shows the rival's stock and prices but never the meter setting their discount.
+- **`P2-HONEST-18`** — `InFlightExpedition.Gold` (per-hero expedition gold accumulated so far, while
+  a party is camped mid-delve) has no `godot/scripts` reader; `CampPanel.cs`'s one `.Gold` reference
+  (line 246) is `state.Player.Gold`, the runner-fee affordability check — a different field. The
+  player only learns a raid's take at the Evening reveal (`ExpeditionResult.GoldEarnedByHero`,
+  `LedgerModal`'s earned chips). No comment anywhere claims the mid-raid withhold is a deliberate
+  suspense choice, so it reads as an oversight rather than a design decision until one of these two
+  things is true.
 
 ## Unit bodies — the critical path, the cheap fixes, and each domain's first unit
 
