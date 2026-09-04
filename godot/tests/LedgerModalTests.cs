@@ -88,6 +88,14 @@ public class LedgerModalTests
 
             var ledgerText = RenderedText(ui.Ledger);
 
+            // P2-MEMORY-01: the raw BeatType prefix ("KillingBlow:") was dropped outright — it was
+            // redundant on top of Detail's own full sentence, never merely re-spelled. The
+            // fixture's Detail prose legitimately contains the lowercase, spaced phrase "killing
+            // blow" (English, not jargon); only the concatenated PascalCase enum spelling is banned.
+            AssertThat(ledgerText.Contains("KillingBlow"))
+                .OverrideFailureMessage($"ledger still rendered the raw BeatType enum name: \"{ledgerText}\"")
+                .IsFalse();
+
             // Enumerated from ReturnCards' own output — not a hand list (U7 test contract).
             for (var i = 0; i < cards.Count; i++)
             {
