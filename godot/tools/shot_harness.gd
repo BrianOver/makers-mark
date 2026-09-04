@@ -121,7 +121,7 @@ const KNOWN_STATES := [
 	"BellTray", "Bestiary", "BrynGreedyRule", "BrynRuleRevised", "Camp", "CommissionDilemma",
 	"Chronicle", "Counter", "Demand",
 	"DepthsPanel", "Docket",
-	"ForgeAnvil", "ForgeAnvilEmpty", "ForgeExit", "ForgeFlavor", "ForgeLadder", "ForgePanel",
+	"ForgeAnvil", "ForgeAnvilEmpty", "ForgeEcho", "ForgeExit", "ForgeFlavor", "ForgeLadder", "ForgePanel",
 	"ForgeShelf", "ForgeTrinket", "GatedCounterEmptyShelf", "GateNight", "Graduation",
 	"HeroCandidateOpen", "HeroCards",
 	"HeroErrand", "HeroTrinket", "Ledger", "LedgerProvenance", "Lessons", "MemoryRow",
@@ -444,6 +444,15 @@ func _process(_delta: float) -> bool:
 			# of opening the drawer directly (R1). This state bypasses the room and opens the
 			# ForgePanel drawer straight by id, so a drawer-only receipt stays possible for
 			# comparison against the room (same idiom as Demand/HeroCards above).
+			if _ui.has_method("OpenPanel"):
+				_ui.call("OpenPanel", "Forge")
+		elif _state == "ForgeEcho":
+			# #714 rendering follow-up: open the drawer here; the second beat (frame 90 below)
+			# calls ForgePanel's own dev bridge (Dev_ShowLiveBatchEcho) to seed a live echo on
+			# the buckler recipe (the first Tier-1 card, on screen with no scroll), off the live
+			# Adapter.CurrentState (zero sim mutation), so the receipt proves the recipe card's
+			# "Echo" chip without depending on a real hand-forge (a full Anvil-Map trace) landing
+			# one this run.
 			if _ui.has_method("OpenPanel"):
 				_ui.call("OpenPanel", "Forge")
 		elif _state == "ForgeLadder":
@@ -1007,6 +1016,18 @@ func _process(_delta: float) -> bool:
 		var bell = _ui.find_child("AdvancePhase", true, false)
 		if bell:
 			bell.emit_signal("pressed")
+	# #714 rendering follow-up, ForgeEcho's second beat: the drawer opened at frame 0 has
+	# settled -- reach the panel INSIDE DrawerHost specifically (same collision-avoidance
+	# reasoning as HeroTrinket/ShopTrinket above) and call its own dev bridge, same "hand-built
+	# GameState, zero sim mutation" idiom as ShopPanel.Dev_ShowSampleUnshelvedTrinket.
+	if _state == "ForgeEcho" and _frames == 90:
+		var forge_echo_drawer = _ui.find_child("DrawerHost", true, false)
+		var forge_echo_panel = forge_echo_drawer.find_child("Forge", true, false) if forge_echo_drawer else null
+		if forge_echo_panel and forge_echo_panel.has_method("Dev_ShowLiveBatchEcho"):
+			forge_echo_panel.call("Dev_ShowLiveBatchEcho")
+		else:
+			push_error("[shot] SHOT_STATE=ForgeEcho could not reach ForgePanel.Dev_ShowLiveBatchEcho -- "
+				+ "the shot below is a plain recipe list and proves nothing about the echo chip.")
 	# M2b, StoriedCard's second beat: the wall opened at frame 0 has settled, so press a real
 	# storied row -- the same Button -> OnShowProvenance path a player clicking it takes. Loud on a
 	# miss: a shot that quietly photographed a wall with no storied row would read as "the card is
@@ -1221,6 +1242,20 @@ func _process(_delta: float) -> bool:
 		var last_ladder_card = _ui.find_child("RecipeCard_emberglass-draught", true, false)
 		if craft_scroll and last_ladder_card:
 			craft_scroll.ensure_control_visible(last_ladder_card)
+	if _state == "ForgeEcho" and _frames == 120:
+		# The dev bridge (frame 90 above) seeded the echo and rebuilt the card -- the "Echo" chip
+		# is the LAST child added to the buckler card's controlsRow (ForgePanel's own comment on
+		# why: so it can only ever be the thing that wraps, never an earlier button), which can
+		# push the card taller than the viewport. Same ensure_control_visible idiom as ForgeLadder
+		# above -- when the target is taller than the viewport it lands on the BOTTOM edge, which
+		# is exactly where the trailing Echo chip now sits.
+		var echo_craft_scroll = _ui.find_child("CraftScroll", true, false)
+		var echo_card = _ui.find_child("RecipeCard_buckler", true, false)
+		if echo_craft_scroll and echo_card:
+			echo_craft_scroll.ensure_control_visible(echo_card)
+		else:
+			push_error("[shot] SHOT_STATE=ForgeEcho could not find CraftScroll/RecipeCard_buckler -- "
+				+ "the shot below may not actually show the echo chip.")
 	if _state == "ForgeTrinket" and _frames == 120:
 		# The trinket recipe (engineering-utility-multitool) sorts (Tier, then RecipeId) behind
 		# this profession's Weapon/Shield/Armor Tier-1 cards, same "below the fold" shape
