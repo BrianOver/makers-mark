@@ -2155,7 +2155,7 @@ changes when it is done. A regression pin now holds that.
 | U36 | She has a body and a face | `art/specs/`, `godot/scripts/ui/MentorBanner.cs` | U33 |
 | U37 | She is somewhere, and she remembers | `godot/scripts/town2d/`, `godot/scripts/ui/TutorialFlow.cs` | U34, U35 |
 | U38 | A harness takes the course | `godot/scripts/tools/FullPlaytest.cs` | U15, U29 |
-| U39 | Copy cannot outlive its control | `godot/tests/`, `godot/scripts/tools/PlaytestLog.cs` | U33 |
+| U39 | Copy cannot outlive its control | `godot/tests/`, `godot/scripts/PlaytestLog.cs` | U33 |
 | U40 | The sixth decision becomes teachable | `godot/scripts/ui/TutorialFlow.cs`, `godot/tests/DilemmaLessonsTests.cs` | U27 |
 | U41 | The clock's own doc stops contradicting the clock | `godot/scripts/PhaseClock.cs` | — |
 | U42 | The off-camera marker stops landing on the objective card | `godot/scripts/ui/TutorialOverlay.cs`, `godot/scripts/ui/ObjectiveTracker.cs` | U15 |
@@ -2648,7 +2648,7 @@ changes when it is done. A regression pin now holds that.
 
 - Goal: widen the tripwires to the corpus they are supposed to guard, and make a tester's session measurable.
 - Requirements: R35, R36, R28
-- Files: `godot/tests/`, `godot/scripts/tools/PlaytestLog.cs`
+- Files: `godot/tests/`, `godot/scripts/PlaytestLog.cs`
 - Approach: her never-orders check today reads two lines and two patterns while her corpus is scattered across
   seven files; consolidate the corpus into one table and iterate all of it. Extend followability to the primer
   and to her lines. Correct the card's fit gate, which enforces three lines against an allowance twice the
@@ -4332,7 +4332,7 @@ name (§11.6 rule 4).
 | P2-MEMORY-10 | The book shell — `LegendsWall` refit, verbs and anchors migrated | `godot/scripts/panels/LegendsWall.cs` | — | [G] |
 | P2-MEMORY-11 | The fallen's pages and the item pages | `godot/scripts/panels/LegendsWall.cs`, `godot/scripts/panels/ProvenanceCard.cs` | P2-MEMORY-10 | [G] |
 | P2-MEMORY-12 | Day pages absorb the ticker's composer; the marquee dies (P2-OQ3) | `godot/scripts/ui/AdventureTicker.cs` (`FormatLine` survives), `godot/scripts/MainUi.cs` | P2-MEMORY-10 | [G] |
-| P2-MEMORY-13 | `ChronicleComposer` and the fifteen predicates | `sim/GameSim/Chronicle/ChronicleComposer.cs`, `sim/GameSim.Tests/` | — | [S] |
+| P2-MEMORY-13 | `ChronicleComposer` and the fifteen predicates | new `sim/GameSim/Chronicle/ChronicleComposer.cs`, `sim/GameSim.Tests/` | — | [S] |
 | P2-MEMORY-14 | The bind and the export; `ChronicleScroll.cs` deleted (P2-OQ4) | `godot/scripts/panels/LegendsWall.cs`, `godot/scripts/panels/ChronicleScroll.cs` | P2-MEMORY-11, P2-MEMORY-13 | [G] |
 | P2-MEMORY-15 | `BountyRefunded` — the silent refund gets an event | `sim/GameSim/Contracts/Events.cs`, `sim/GameSim/Bounties/BountySystems.cs` | — | [S][C][GOLD] |
 | P2-MEMORY-16 | `Fleeced` on the close event; fleece and pinned gossip | `sim/GameSim/Contracts/Events.cs`, `sim/GameSim/Counter/HaggleResolver.cs`, `sim/GameSim/Drama/GossipGenerator.cs` | P2-MEMORY-15 (serialize) | [S][C][GOLD] |
@@ -4379,7 +4379,7 @@ name (§11.6 rule 4).
 | P2-HONEST-05 | Classes and materials get display names | `sim/GameSim/Materials/MaterialDefinition.cs`, `sim/GameSim/Classes/` | — | [S] |
 | P2-HONEST-06 | The vocabulary census — seven generators, first run triaged | `sim/GameSim.Tests/` (`PlayerVocabularyCensusTests`) | P2-HONEST-04, P2-HONEST-05 | [S] |
 | P2-HONEST-07 | The satisfiable-gate census | `sim/GameSim.Tests/` | — | [S] |
-| P2-HONEST-08 | The comment sweep and the comment census | `sim/GameSim/` (adds `Venues/Emberfall/EmberfallFoundryVenue.cs:109`, `Contracts/World.cs:33-35`), `godot/scripts/`, `sim/GameSim.Tests/` | — | [S] |
+| P2-HONEST-08 | The comment sweep and the comment census (the two known stale comments are `EmberfallFoundryVenue`'s "Mine-peer difficulty curve" and `World`'s own header) | `sim/GameSim/Venues/Emberfall/EmberfallFoundryVenue.cs`, `sim/GameSim/Contracts/World.cs`, `godot/scripts/`, `sim/GameSim.Tests/` | — | [S] |
 | P2-HONEST-09 | `SkilledSmithPlayer` and `SmithSkill` die — 123 lines held alive by their own tests | `sim/GameSim/Harness/` | — | [S] |
 | P2-HONEST-10 | Guards rephrase against the property — `RejectionUxTests` literals die | `godot/tests/`, `sim/GameSim.Tests/` | — | [S] |
 | P2-HONEST-13 | `TickResult.Traces` is ingested or deleted | `sim/GameSim/Kernel/GameKernel.cs`, `tools/Analytics/` or `sim/GameSim/Contracts/` | — | [S] |
