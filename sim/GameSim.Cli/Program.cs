@@ -113,6 +113,25 @@ if (args.Length > 0 && args[0] == "seed-search")
     return ssParsed is null ? 1 : GameSim.Cli.SeedSearch.Run(ssParsed, Console.Out, Console.Error);
 }
 
+// Long-wall mode (P2-LONG-01, one-off measurement, not a gate): `-- long-wall [--seeds N]
+// [--days N] [--out DIR]` re-dates the day-11 wall (legal-verb + demand-slot variety per day,
+// first-occurrence days per seed) and reports the Emberfall floor-5 (climax) clear rate.
+if (args.Length > 0 && args[0] == "long-wall")
+{
+    var lwSeeds = 20;
+    var lwDays = 100;
+    var lwOut = Path.Combine("runs", "long-wall");
+    for (var i = 1; i < args.Length; i++)
+    {
+        if (args[i] == "--seeds" && i + 1 < args.Length && int.TryParse(args[i + 1], out var s)) { lwSeeds = s; i++; }
+        else if (args[i] == "--days" && i + 1 < args.Length && int.TryParse(args[i + 1], out var d)) { lwDays = d; i++; }
+        else if (args[i] == "--out" && i + 1 < args.Length) { lwOut = args[i + 1]; i++; }
+        else { Console.Error.WriteLine($"long-wall: unknown/invalid arg near '{args[i]}' — usage: long-wall [--seeds N] [--days N] [--out DIR]"); return 1; }
+    }
+
+    return GameSim.Cli.LongWallSweep.Run(lwSeeds, 2026UL, lwDays, lwOut, Console.Out, Console.Error);
+}
+
 // Interactive mode accepts ONLY `--seed N`. Anything else is a hard error — a typo'd batch
 // invocation ('Batch', misordered flags) must never fall through to the interactive REPL,
 // where redirected stdin would EOF and exit 0 having written zero chronicles (silent green).
