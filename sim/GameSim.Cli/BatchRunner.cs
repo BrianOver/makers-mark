@@ -124,37 +124,11 @@ public static class BatchRunner
             return null;
         }
 
-        Policy policy;
-        switch (policyArg.ToLowerInvariant())
+        if (ParsePolicy(policyArg) is not { } policy)
         {
-            case "baseline":
-                policy = Policy.Baseline;
-                break;
-            case "counter":
-                policy = Policy.Counter;
-                break;
-            case "apprentice":
-                policy = Policy.Apprentice;
-                break;
-            case "handforge":
-                policy = Policy.HandForge;
-                break;
-            case "latemastery":
-                policy = Policy.LateMastery;
-                break;
-            case "alchemy":
-                policy = Policy.AlchemyPuzzle;
-                break;
-            case "tanning":
-                policy = Policy.TanningPuzzle;
-                break;
-            case "engineering":
-                policy = Policy.EngineeringPuzzle;
-                break;
-            default:
-                error.WriteLine($"batch: unknown --policy '{policyArg}' (expected 'baseline', 'counter', 'apprentice', 'handforge', 'latemastery', 'alchemy', 'tanning', or 'engineering')");
-                error.WriteLine(Usage);
-                return null;
+            error.WriteLine($"batch: unknown --policy '{policyArg}' ({PolicyNames})");
+            error.WriteLine(Usage);
+            return null;
         }
 
         CraftHand hand;
@@ -188,6 +162,28 @@ public static class BatchRunner
         return new BatchArgs(seedCount, startSeed, days, outDir, policy, hand);
     }
 
+    /// <summary>The <c>--policy</c> values this CLI accepts, rendered for an error line. One
+    /// string, shared by every sweep that offers the axis, so a new policy is spelled out in one
+    /// place instead of in each command's own error message.</summary>
+    internal const string PolicyNames =
+        "expected 'baseline', 'counter', 'apprentice', 'handforge', 'latemastery', 'alchemy', 'tanning', or 'engineering'";
+
+    /// <summary>Map a <c>--policy</c> argument onto its <see cref="Policy"/>, or null when the
+    /// argument names no policy. Shared by <see cref="Parse"/> and every other sweep that offers the
+    /// same axis (<see cref="ArcStallSweep"/>), so the two can never drift apart on spelling.</summary>
+    internal static Policy? ParsePolicy(string policyArg) => policyArg.ToLowerInvariant() switch
+    {
+        "baseline" => Policy.Baseline,
+        "counter" => Policy.Counter,
+        "apprentice" => Policy.Apprentice,
+        "handforge" => Policy.HandForge,
+        "latemastery" => Policy.LateMastery,
+        "alchemy" => Policy.AlchemyPuzzle,
+        "tanning" => Policy.TanningPuzzle,
+        "engineering" => Policy.EngineeringPuzzle,
+        _ => null,
+    };
+
     /// <summary>Does this policy submit a real craft-minigame input, so that a
     /// <see cref="CraftHand"/> means anything to it?</summary>
     private static bool HandAware(Policy policy) => policy
@@ -205,7 +201,7 @@ public static class BatchRunner
             : $"{PolicyFileTag(policy)}-{hand.ToString().ToLowerInvariant()}";
 
     /// <inheritdoc cref="PolicyFileTag(Policy, CraftHand)"/>
-    private static string PolicyFileTag(Policy policy) => policy switch
+    internal static string PolicyFileTag(Policy policy) => policy switch
     {
         Policy.Counter => "counter",
         Policy.Apprentice => "apprentice",
@@ -219,7 +215,7 @@ public static class BatchRunner
 
     /// <summary>The scripted policy driving this sweep (defaults to <see cref="BaselinePlayer"/> —
     /// never changes for an existing caller that omits <c>--policy</c>).</summary>
-    private static Func<GameState, ImmutableList<PlayerAction>> PolicyFn(Policy policy, CraftHand hand) => policy switch
+    internal static Func<GameState, ImmutableList<PlayerAction>> PolicyFn(Policy policy, CraftHand hand) => policy switch
     {
         Policy.Counter => CounterPlayer.ActionsFor,
         Policy.Apprentice => ApprenticePlayer.ActionsFor,
@@ -237,7 +233,7 @@ public static class BatchRunner
     /// three is blacksmith) — null for every existing policy, which stays on the blacksmith-default
     /// <see cref="GameComposition.NewCampaign(ulong)"/> overload exactly as before.
     /// </summary>
-    private static string? PolicyStartingProfession(Policy policy) => policy switch
+    internal static string? PolicyStartingProfession(Policy policy) => policy switch
     {
         Policy.AlchemyPuzzle => AlchemyProfession.Id,
         Policy.TanningPuzzle => TanningProfession.Id,
