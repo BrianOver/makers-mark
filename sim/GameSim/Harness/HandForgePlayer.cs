@@ -136,17 +136,46 @@ public static class HandForgePlayer
     /// that ties it to <see cref="Crafting.QualityRoller"/>'s own <c>AutoCraftGrade</c> (800).</summary>
     private const int AverageDeviationPermille = 50;
 
+    /// <summary>
+    /// P2-OQ11: the same three <see cref="CraftHand"/> levels the other three professions' policies
+    /// now offer, expressed in the only axis this craft has — how far the hand strays from the
+    /// target heat line, at every sample and every strike's tempo.
+    ///
+    /// <para><see cref="Crafting.ForgeScorer"/>'s slope is linear (1000 − deviation×4, per its own
+    /// <c>DevScale</c>), so these three deviations grade 440 / 800 / 940 per-mille before any talent
+    /// assist — Common, Superior, Masterwork. The indifferent figure is chosen to land on
+    /// <see cref="Crafting.CraftCurve.IndifferentAnchorPermille"/>, which is what makes the four
+    /// crafts' indifferent hands comparable at all: the forge is the archetype the other three were
+    /// calibrated to (that type's class doc), so its own indifferent hand has to be identified in
+    /// the same place before the comparison means anything.</para>
+    ///
+    /// <para><see cref="AverageDeviationPermille"/> keeps its value, its name and its reasoning:
+    /// it is the figure #705's ruling was measured and tuned against, and the 0% Masterwork it
+    /// produced was the reading that prompted this whole unit. It is retained as the middle level
+    /// rather than re-derived, so every §11.7.11 pin still means what it meant.</para>
+    /// </summary>
+    private static int DeviationFor(CraftHand hand) => hand switch
+    {
+        CraftHand.Indifferent => 140,
+        CraftHand.Average => AverageDeviationPermille,
+        _ => 15,
+    };
+
     /// <summary>The three hammer-strike x-positions this policy always swings at — the same
     /// x-positions the existing <c>PerfectStrikes</c> test fixtures in <c>BatchEchoTests</c>/
-    /// <c>ForgeTraceCraftTests</c> already use, just with <see cref="AverageDeviationPermille"/>'s
-    /// tempo error instead of a perfect (zero-error) swing.</summary>
-    private static readonly ImmutableList<int> AverageStrikes = ImmutableList.Create(
-        400, AverageDeviationPermille,
-        500, AverageDeviationPermille,
-        600, AverageDeviationPermille);
+    /// <c>ForgeTraceCraftTests</c> already use, just with the hand's own tempo error instead of a
+    /// perfect (zero-error) swing.</summary>
+    private static ImmutableList<int> StrikesFor(CraftHand hand)
+    {
+        var error = DeviationFor(hand);
+        return ImmutableList.Create(400, error, 500, error, 600, error);
+    }
 
     public static ImmutableList<PlayerAction> ActionsFor(GameState state) =>
-        HandForgeOver(state, BaselinePlayer.ActionsFor(state));
+        ActionsFor(state, CraftHand.Average);
+
+    public static ImmutableList<PlayerAction> ActionsFor(GameState state, CraftHand hand) =>
+        HandForgeOver(state, BaselinePlayer.ActionsFor(state), hand);
 
     /// <summary>
     /// The hand-forge craft-injection step alone, decoupled from which policy produced
@@ -157,7 +186,12 @@ public static class HandForgePlayer
     /// recipe (the only profession <see cref="ForgeTraceInput"/> is valid for — CraftingHandlers.
     /// ApplyCraft guard 6) is ever replaced with a hand-forge trace plus echo copies.
     /// </summary>
-    public static ImmutableList<PlayerAction> HandForgeOver(GameState state, ImmutableList<PlayerAction> baseline)
+    public static ImmutableList<PlayerAction> HandForgeOver(GameState state, ImmutableList<PlayerAction> baseline) =>
+        HandForgeOver(state, baseline, CraftHand.Average);
+
+    /// <inheritdoc cref="HandForgeOver(GameState, ImmutableList{PlayerAction})"/>
+    public static ImmutableList<PlayerAction> HandForgeOver(
+        GameState state, ImmutableList<PlayerAction> baseline, CraftHand hand)
     {
         if (state.Phase != DayPhase.Expedition)
         {
@@ -177,7 +211,7 @@ public static class HandForgePlayer
         }
 
         var actions = ImmutableList.CreateBuilder<PlayerAction>();
-        actions.Add(craft with { Puzzle = BuildTrace(recipe) });
+        actions.Add(craft with { Puzzle = BuildTrace(recipe, hand) });
 
         // Batch-echo coverage (see class doc): submit further identical, puzzle-less auto-crafts
         // while the day's shared action-slot budget allows. Legality is asked ONCE, up front,
@@ -198,25 +232,26 @@ public static class HandForgePlayer
     }
 
     /// <summary>
-    /// Builds the "average" hand-forge trace for <paramref name="recipe"/>: the recipe's own
-    /// deterministic target polyline (<see cref="ForgePath.Generate"/>), reusing that path's own
-    /// vertices as the captured samples — the same minimal-trace shape the existing
-    /// <c>PerfectTrace</c> test helpers already use, just offset by
-    /// <see cref="AverageDeviationPermille"/> at every vertex instead of matching it exactly. The
-    /// offset direction (running a little hot) is arbitrary — <see cref="Crafting.ForgeScorer"/>
-    /// only ever scores the absolute deviation — chosen positive purely for concreteness.
+    /// Builds the hand-forge trace for <paramref name="recipe"/> at <paramref name="hand"/>'s skill
+    /// level: the recipe's own deterministic target polyline (<see cref="ForgePath.Generate"/>),
+    /// reusing that path's own vertices as the captured samples — the same minimal-trace shape the
+    /// existing <c>PerfectTrace</c> test helpers already use, just offset by
+    /// <see cref="DeviationFor"/> at every vertex instead of matching it exactly. The offset
+    /// direction (running a little hot) is arbitrary — <see cref="Crafting.ForgeScorer"/> only ever
+    /// scores the absolute deviation — chosen positive purely for concreteness.
     /// </summary>
-    private static ForgeTraceInput BuildTrace(Recipe recipe)
+    public static ForgeTraceInput BuildTrace(Recipe recipe, CraftHand hand)
     {
         var path = ForgePath.Generate(recipe.Tier, recipe.Slot, recipe.BaseStats.Weight, PathSeed);
+        var deviation = DeviationFor(hand);
 
         var samples = ImmutableList.CreateBuilder<int>();
         for (var i = 0; i < path.Count; i += 2)
         {
             samples.Add(path[i]);
-            samples.Add(Math.Clamp(path[i + 1] + AverageDeviationPermille, 0, 1000));
+            samples.Add(Math.Clamp(path[i + 1] + deviation, 0, 1000));
         }
 
-        return new ForgeTraceInput(samples.ToImmutable(), AverageStrikes, PathSeed);
+        return new ForgeTraceInput(samples.ToImmutable(), StrikesFor(hand), PathSeed);
     }
 }

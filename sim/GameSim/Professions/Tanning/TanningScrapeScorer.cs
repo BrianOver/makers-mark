@@ -22,9 +22,18 @@ public sealed record TanningScrapeScore(int GradePermille, int CoveragePermille,
 ///
 /// <para><b>Cell kinds and their ideal work.</b> A plain cell wants 1-2 passes. A <i>flaw</i> patch is
 /// stubborn and wants 3-4. A <i>thin</i> patch tolerates exactly 1. Anything beyond a cell's tolerance
-/// wears through: that cell scores nothing AND counts toward <see cref="TanningScrapeScore.RuinPermille"/>,
-/// which docks the grade. Leather with holes is still leather, just poorer — a botched hide never
-/// voids the craft (the same partial-credit stance as the brew).</para>
+/// wears through: that cell scores nothing and counts toward
+/// <see cref="TanningScrapeScore.RuinPermille"/>, the legible sub-axis the overlay shows. Leather
+/// with holes is still leather, just poorer — a botched hide never voids the craft (the same
+/// partial-credit stance as the brew).</para>
+///
+/// <para><b>Restraint costs more than it used to, and via one channel instead of two</b> (P2-OQ11).
+/// Scraping a cell through used to forfeit its points AND dock a separate 12-per-mille grade
+/// penalty — together about 2.4% of the scale, which is to say nothing at all. It now costs only
+/// the forfeited points, but because the shared <see cref="CraftCurve"/> spends the whole climb from
+/// Common to Masterwork across this hide's last five points, forfeiting a cell is worth roughly a
+/// band and a half. One channel, and it finally bites; the second was deleted rather than retuned
+/// because two knobs pointed at one idea is how the first one came to be worth nothing.</para>
 /// </summary>
 public static class TanningScrapeScorer
 {
@@ -43,12 +52,24 @@ public static class TanningScrapeScorer
     /// <summary>Points for a flaw patch that was worked, but not enough.</summary>
     private const int PartialPoints = 1;
 
-    /// <summary>Grade docked per cell scraped through, in per-mille.</summary>
-    private const int RuinPenaltyPermille = 12;
-
     /// <summary>How many cells hide a stubborn flaw, and how many run thin.</summary>
     private const int FlawPatches = 5;
     private const int ThinPatches = 4;
+
+    /// <summary>
+    /// What the INDIFFERENT hand earns — the calibration <see cref="CraftCurve"/> anchors to the
+    /// middle of Common. That hand is "one pass over every cell, never varying": it lands inside
+    /// the 1-2 band on all <c>CellCount - FlawPatches</c> plain-or-thin cells for full credit, and
+    /// leaves every stubborn flaw patch under-worked for <see cref="PartialPoints"/> each. Derived
+    /// from the constants above rather than written as a literal, so changing the patch mix or the
+    /// pass bands can never silently leave this calibration behind (the failure mode
+    /// <c>BatchEchoFloor</c> hit — see <c>HandForgePlayer</c>'s class doc).
+    ///
+    /// <para>A uniform hand cannot do better than this: two passes everywhere scrapes all four
+    /// thin cells through, and three ruins the plain majority as well.</para>
+    /// </summary>
+    private const int IndifferentHandPoints =
+        ((CellCount - FlawPatches) * CellPoints) + (FlawPatches * PartialPoints);
 
     /// <summary>What a given cell wants.</summary>
     public enum CellKind
@@ -153,8 +174,16 @@ public static class TanningScrapeScorer
             }
         }
 
-        var basePermille = points * 1000 / (CellPoints * CellCount);
-        var grade = basePermille - ruined * RuinPenaltyPermille + AssistBonusPermille(profession, unlockedTalents, recipe.Slot);
+        // P2-OQ11: the shared curve (see CraftCurve's class doc). Tanning is the profession the
+        // measurement caught red-handed — 87.3% Masterwork from day 6 — because its INDIFFERENT
+        // hand was nearly a perfect score: one unvarying pass over the whole hide satisfies the
+        // 31 plain cells AND all 4 thin cells outright, so 75 of the 80 points were free and the
+        // grade started at 937 before anyone looked at the hide. Anchoring that same hand to the
+        // middle of Common is the fix, and it makes the craft's own stated skill — find the
+        // stubborn patches, work them, and scrape nothing through — the whole of the climb from
+        // Common to Masterwork.
+        var basePermille = CraftCurve.GradeFor(points, IndifferentHandPoints, CellPoints * CellCount);
+        var grade = basePermille + AssistBonusPermille(profession, unlockedTalents, recipe.Slot);
         if (grade < 0)
         {
             grade = 0;

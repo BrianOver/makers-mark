@@ -21,9 +21,22 @@ Brian: "run a telemetry batch"
   6. Brian approves the PR (auto-merge does the rest)                          [human]
 ```
 
-Batch axes today: seed sweep only. The arg surface reserves room for `--policy <persona>`
-(scripted player variants — tests player-influence) and tuning A/B overrides; they are
-**deferred**, design in `docs/plans/2026-07-17-001-feat-observability-telemetry-plan.md`.
+Batch axes today: seed sweep, `--policy`, and `--hand`. (This paragraph used to say "seed sweep
+only" and call `--policy` deferred, citing a `docs/plans/` design doc; both claims were false —
+`--policy` has eight values in `BatchRunner`, and `docs/plans/` no longer exists. Corrected
+2026-09-04, P2-OQ11.)
+
+- `--policy baseline|counter|apprentice|handforge|latemastery|alchemy|tanning|engineering` — which
+  scripted player drives the sweep. The last four play a craft minigame for real; the rest
+  auto-craft.
+- `--hand indifferent|average|skilled` — how good that player's hand is at the minigame, defined
+  once for every craft in `Harness/CraftHand`. Legal with the five minigame-playing policies
+  (`handforge`, `latemastery`, `alchemy`, `tanning`, `engineering`); asking for a non-default hand
+  on an auto-crafting one is refused rather than silently ignored, because a sweep that believes it
+  measured a skilled hand and did not is the specific mis-read that cost two investigations
+  (§11.7.12).
+
+Tuning A/B overrides remain unbuilt.
 
 ## Reading anomalies.md
 

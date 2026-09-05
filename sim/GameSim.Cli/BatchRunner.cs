@@ -20,7 +20,9 @@ namespace GameSim.Cli;
 public static class BatchRunner
 {
     public const string Usage =
-        "usage: batch --seeds <count> [--seed <startSeed>] [--days <days>] [--out <dir>] [--policy baseline|counter|apprentice|handforge|latemastery|alchemy|tanning|engineering]";
+        "usage: batch --seeds <count> [--seed <startSeed>] [--days <days>] [--out <dir>] "
+        + "[--policy baseline|counter|apprentice|handforge|latemastery|alchemy|tanning|engineering] "
+        + "[--hand indifferent|average|skilled]";
 
     /// <summary>
     /// The player policy a sweep drives (U0: <see cref="CounterPlayer"/> was previously
@@ -57,8 +59,11 @@ public static class BatchRunner
         EngineeringPuzzle,
     }
 
-    /// <summary>Parsed batch parameters. Defaults: 20 seeds starting at 1, 100 days, runs/, baseline policy.</summary>
-    public sealed record BatchArgs(int SeedCount, ulong StartSeed, int Days, string OutDir, Policy PlayerPolicy);
+    /// <summary>Parsed batch parameters. Defaults: 20 seeds starting at 1, 100 days, runs/, baseline
+    /// policy, average hand.</summary>
+    public sealed record BatchArgs(
+        int SeedCount, ulong StartSeed, int Days, string OutDir, Policy PlayerPolicy,
+        CraftHand Hand = CraftHand.Average);
 
     /// <summary>Parse args after the `batch` token. Null (with an error line) = invalid.</summary>
     public static BatchArgs? Parse(string[] args, TextWriter error)
@@ -68,6 +73,7 @@ public static class BatchRunner
         var days = 100;
         var outDir = "runs";
         var policyArg = "baseline";
+        var handArg = "average";
 
         for (var i = 0; i < args.Length; i++)
         {
@@ -91,6 +97,10 @@ public static class BatchRunner
                     break;
                 case "--policy" when i + 1 < args.Length:
                     policyArg = args[i + 1];
+                    i++;
+                    break;
+                case "--hand" when i + 1 < args.Length:
+                    handArg = args[i + 1];
                     i++;
                     break;
                 default:
@@ -147,11 +157,54 @@ public static class BatchRunner
                 return null;
         }
 
-        return new BatchArgs(seedCount, startSeed, days, outDir, policy);
+        CraftHand hand;
+        switch (handArg.ToLowerInvariant())
+        {
+            case "indifferent":
+                hand = CraftHand.Indifferent;
+                break;
+            case "average":
+                hand = CraftHand.Average;
+                break;
+            case "skilled":
+                hand = CraftHand.Skilled;
+                break;
+            default:
+                error.WriteLine($"batch: unknown --hand '{handArg}' (expected 'indifferent', 'average', or 'skilled')");
+                error.WriteLine(Usage);
+                return null;
+        }
+
+        if (hand != CraftHand.Average && !HandAware(policy))
+        {
+            // Refused rather than silently ignored: a sweep that thinks it measured a skilled hand
+            // and actually measured an auto-crafting policy is exactly the mis-read P2-OQ11 exists
+            // to stop (see CraftHand's class doc).
+            error.WriteLine($"batch: --hand {handArg} needs a policy that plays a craft minigame "
+                + $"(handforge, latemastery, alchemy, tanning, engineering) — '{policyArg}' auto-crafts");
+            return null;
+        }
+
+        return new BatchArgs(seedCount, startSeed, days, outDir, policy, hand);
     }
 
+    /// <summary>Does this policy submit a real craft-minigame input, so that a
+    /// <see cref="CraftHand"/> means anything to it?</summary>
+    private static bool HandAware(Policy policy) => policy
+        is Policy.HandForge or Policy.LateMastery
+        or Policy.AlchemyPuzzle or Policy.TanningPuzzle or Policy.EngineeringPuzzle;
+
     /// <summary>Lowercase name embedded in the chronicle filename (corpus hygiene) — matches the
-    /// <c>--policy</c> value so a filename always tells you which policy produced it.</summary>
+    /// <c>--policy</c> value, plus the <c>--hand</c> value when it is not the default, so a filename
+    /// always tells you which policy AND which skill level produced it. The default hand is left off
+    /// deliberately: every chronicle written before <c>--hand</c> existed was an average hand, so
+    /// omitting it keeps the existing corpus's names meaning exactly what they always meant.</summary>
+    private static string PolicyFileTag(Policy policy, CraftHand hand) =>
+        hand == CraftHand.Average
+            ? PolicyFileTag(policy)
+            : $"{PolicyFileTag(policy)}-{hand.ToString().ToLowerInvariant()}";
+
+    /// <inheritdoc cref="PolicyFileTag(Policy, CraftHand)"/>
     private static string PolicyFileTag(Policy policy) => policy switch
     {
         Policy.Counter => "counter",
@@ -166,15 +219,15 @@ public static class BatchRunner
 
     /// <summary>The scripted policy driving this sweep (defaults to <see cref="BaselinePlayer"/> —
     /// never changes for an existing caller that omits <c>--policy</c>).</summary>
-    private static Func<GameState, ImmutableList<PlayerAction>> PolicyFn(Policy policy) => policy switch
+    private static Func<GameState, ImmutableList<PlayerAction>> PolicyFn(Policy policy, CraftHand hand) => policy switch
     {
         Policy.Counter => CounterPlayer.ActionsFor,
         Policy.Apprentice => ApprenticePlayer.ActionsFor,
-        Policy.HandForge => HandForgePlayer.ActionsFor,
-        Policy.LateMastery => LateMasteryPlayer.ActionsFor,
-        Policy.AlchemyPuzzle => AlchemyPuzzlePlayer.ActionsFor,
-        Policy.TanningPuzzle => TanningPuzzlePlayer.ActionsFor,
-        Policy.EngineeringPuzzle => EngineeringPuzzlePlayer.ActionsFor,
+        Policy.HandForge => state => HandForgePlayer.ActionsFor(state, hand),
+        Policy.LateMastery => state => LateMasteryPlayer.ActionsFor(state, hand),
+        Policy.AlchemyPuzzle => state => AlchemyPuzzlePlayer.ActionsFor(state, hand),
+        Policy.TanningPuzzle => state => TanningPuzzlePlayer.ActionsFor(state, hand),
+        Policy.EngineeringPuzzle => state => EngineeringPuzzlePlayer.ActionsFor(state, hand),
         _ => BaselinePlayer.ActionsFor,
     };
 
@@ -229,8 +282,8 @@ public static class BatchRunner
         }
 
         var kernel = GameComposition.BuildKernel();
-        var policyFn = PolicyFn(batch.PlayerPolicy);
-        var policyTag = PolicyFileTag(batch.PlayerPolicy);
+        var policyFn = PolicyFn(batch.PlayerPolicy, batch.Hand);
+        var policyTag = PolicyFileTag(batch.PlayerPolicy, batch.Hand);
         var startingProfession = PolicyStartingProfession(batch.PlayerPolicy);
         for (var i = 0; i < batch.SeedCount; i++)
         {

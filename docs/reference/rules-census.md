@@ -1275,9 +1275,9 @@ factory.
 (`Program.cs:128-129`), queues actions only when `kernel.Accepts` passes
 (`Program.cs:1050-1062`), and advances exclusively through `kernel.Tick(current, batch)`
 (`Program.cs:1073`) — the CLI never calls `ApplyNow` (grep: no hits under `sim/GameSim.Cli/`).
-`batch` runs seed sweeps under `BaselinePlayer` (default 20 seeds × 100 days, `--policy counter`
-switches to `CounterPlayer`) writing chronicles to `runs/` (`sim/GameSim.Cli/BatchRunner.cs:36`,
-`:41-45`). `ConsequenceProbe` (`sim/GameSim.Cli/ConsequenceProbe.cs`) owns the whole-state
+`batch` runs seed sweeps under `BaselinePlayer` by default (20 seeds × 100 days), writing
+chronicles to `runs/`; `--policy` selects any of eight scripted players and `--hand` selects the
+craft-minigame skill level for the four that play one (`sim/GameSim.Cli/BatchRunner.cs`). `ConsequenceProbe` (`sim/GameSim.Cli/ConsequenceProbe.cs`) owns the whole-state
 fingerprint the verbs-change-outcomes law test reuses. `Characterize`
 (`sim/GameSim.Cli/Characterize.cs`) prints party-power/floor tables under `BaselinePlayer`.
 `DecisionLogger`/`DecisionPlay` drive the same kernel for playtest telemetry. None of these add
