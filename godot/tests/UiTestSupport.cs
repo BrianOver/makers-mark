@@ -376,6 +376,45 @@ public static class UiTestSupport
     }
 
     /// <summary>
+    /// Condition-waiting twin of <see cref="SettleLayout"/>, for the narrower case
+    /// <see cref="SettleLayout"/> is NOT for: a single mutation whose effect must propagate before
+    /// an assertion reads it, where that effect IS expressible as one boolean (unlike a general
+    /// container layout cascade, which has no single value to poll — <see cref="SettleLayout"/>
+    /// still owns that case). Diagnosed 2026-09-04: <c>OffCameraPointerTests</c>' own camera-move
+    /// assertion flaked in CI twice in one day under a fixed 3-frame <see cref="SettleLayout"/>
+    /// pump, because "3 frames" is a GUESSED duration, not the condition itself — CI is slower on
+    /// wall-clock but FASTER per-frame (rendering disabled), so 3 frames can elapse before the one
+    /// frame's worth of real propagation the assertion actually needs has landed.
+    ///
+    /// <para>Checks <paramref name="until"/> BEFORE each pump (so an already-true predicate never
+    /// waits a single frame), then pumps one real process frame and checks again, up to
+    /// <paramref name="frameBudget"/> times. On exhausting the budget without <paramref
+    /// name="until"/> ever holding, throws naming <paramref name="conditionDescription"/> — a bare
+    /// "timed out" teaches nothing about what to fix; the condition that never became true is the
+    /// whole point of the message.</para>
+    /// </summary>
+    public static async Task SettleUntil(
+        Node node, Func<bool> until, int frameBudget, string conditionDescription)
+    {
+        var tree = (SceneTree)Engine.GetMainLoop();
+        for (var i = 0; i < frameBudget; i++)
+        {
+            if (until())
+            {
+                return;
+            }
+
+            await node.ToSignal(tree, SceneTree.SignalName.ProcessFrame);
+        }
+
+        if (!until())
+        {
+            throw new InvalidOperationException(
+                $"SettleUntil timed out after {frameBudget} frames waiting for: {conditionDescription}");
+        }
+    }
+
+    /// <summary>
     /// World-rework U8: pump a few physics frames so 2D physics-space mutations (a freshly
     /// added CollisionShape2D, a camera scroll, a queued picking event) are committed before
     /// the test reads results. The physics twin of <see cref="SettleLayout"/>.

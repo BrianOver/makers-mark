@@ -224,8 +224,25 @@ public class OffCameraPointerTests
             // owns — that the marker reacts correctly once the target is on screen.
             ui.Town.Cam.GlobalPosition = mineGate.GlobalPosition;
             ui.Town.Cam.ResetSmoothing();
-            await SettleLayout(ui); // let the canvas transform pick up the new camera position
-            ui.Overlay.Tick(0.016);
+
+            // Diagnosed 2026-09-04: a fixed 3-frame SettleLayout pump here flaked in CI twice in one
+            // day (once on a docs-only PR). Town2D.WorldToScreen bakes in
+            // WorldViewport.GetCanvasTransform(), which only catches up to Cam's new GlobalPosition
+            // once the engine actually PROCESSES a frame carrying it — a guessed frame count is not
+            // that condition. Poll the real production signal instead: Overlay.Tick recomputes
+            // OffCameraMarkerVisible from the CURRENT canvas transform every call (see
+            // TutorialOverlay.UpdateOffCameraMarker's own inset.HasPoint(targetScreen) check), so
+            // ticking once per pumped frame and watching for the marker to clear IS watching the
+            // transform propagate, not guessing when it "probably" has. Budget 30 frames — half a
+            // second at 60fps, ~30x the steady-state cost (this passes on frame 1 in every local run
+            // observed) — generous enough to absorb CI scheduling jitter without ever being the
+            // bottleneck when the marker is behaving correctly.
+            await SettleUntil(
+                ui,
+                () => { ui.Overlay.Tick(0.016); return !ui.Overlay.OffCameraMarkerVisible; },
+                frameBudget: 30,
+                conditionDescription: "Overlay.OffCameraMarkerVisible to clear once the camera's " +
+                    "canvas transform catches up to Cam's new GlobalPosition");
 
             AssertThat(ui.Overlay.OffCameraMarkerVisible)
                 .OverrideFailureMessage("The target is now centered on camera — the marker must clear, not keep pointing at it.")
@@ -344,6 +361,45 @@ public class OffCameraPointerTests
                     "an existing, separately-triggered focus beat like a party departure) may move the " +
                     "camera.")
                 .IsLess(1f);
+        }
+        finally { Unmount(ui); }
+    }
+
+    [TestCase]
+    /// <summary>
+    /// Diagnosed 2026-09-04: proves <see cref="UiTestSupport.SettleUntil"/> itself is a real guard,
+    /// not a pump that can never fail. A deliberately-impossible predicate (<c>() => false</c>) with
+    /// a tiny budget must throw, and the thrown message must NAME the condition that never held — a
+    /// bare "timed out" was explicitly rejected for this fix (it teaches nothing about what to look
+    /// at next), so this pins that the caller-supplied description actually reaches the failure.
+    /// </summary>
+    public async Task SettleUntil_FailsByName_WhenItsConditionNeverHolds()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            const string condition = "a condition that can never hold (guard test)";
+            InvalidOperationException? caught = null;
+            try
+            {
+                await SettleUntil(ui, () => false, frameBudget: 2, conditionDescription: condition);
+            }
+            catch (InvalidOperationException ex)
+            {
+                caught = ex;
+            }
+
+            AssertThat(caught)
+                .OverrideFailureMessage(
+                    "SettleUntil must throw once its frame budget is exhausted without its predicate " +
+                    "ever holding — a guard that cannot fail is not a guard.")
+                .IsNotNull();
+
+            AssertThat(caught!.Message.Contains(condition, StringComparison.Ordinal))
+                .OverrideFailureMessage(
+                    $"SettleUntil's failure message must NAME the condition that never held, not just " +
+                    $"say 'timed out'. Got: \"{caught.Message}\"")
+                .IsTrue();
         }
         finally { Unmount(ui); }
     }
