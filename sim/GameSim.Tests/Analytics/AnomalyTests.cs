@@ -158,6 +158,89 @@ public class AnomalyTests
         Assert.DoesNotContain(Anomalies.Detect([run]), a => a.Rule == "dead-shop");
     }
 
+    /// <summary>Opening window sells 8 (healthy), trailing window sells 0 — the exact shape measured
+    /// real on 2 of 20 baseline seeds (2026-09-04 sweep, docs on <c>Anomalies.ShopCollapse</c>): a
+    /// shop that WAS selling goes fully quiet, which <c>dead-shop</c> (whole-run zero) cannot see.</summary>
+    private static ImmutableList<GameEvent> ShopSales(int openingCount, int trailingCount, int throughDay)
+    {
+        var events = HealthyBeats(throughDay).ToBuilder();
+        var id = 800;
+        for (var i = 0; i < openingCount; i++)
+        {
+            events.Add(new ItemSold(new ItemId(i + 1), new HeroId(1), Price: 20, FromPlayerShop: true) with
+            { Id = new EventId(id++), Day = 1 + (i % 10) });
+        }
+
+        for (var i = 0; i < trailingCount; i++)
+        {
+            events.Add(new ItemSold(new ItemId(i + 100), new HeroId(1), Price: 20, FromPlayerShop: true) with
+            { Id = new EventId(id++), Day = throughDay - (i % 10) });
+        }
+
+        return events.ToImmutable();
+    }
+
+    [Fact]
+    public void ShopCollapse_Fires_WhenHealthySalesGoQuiet()
+    {
+        // 8 sales in days 1-10, 0 in the trailing window (days 91-100): total collapse.
+        var run = Run(seed: 20, day: 101, ShopSales(openingCount: 8, trailingCount: 0, throughDay: 100));
+
+        var hit = Assert.Single(Anomalies.Detect([run]), a => a.Rule == "shop-collapse");
+        Assert.Equal(AnomalySeverity.Medium, hit.Severity);
+        Assert.Equal(91, hit.DayFrom);
+        Assert.Equal(100, hit.DayTo);
+        Assert.Contains("fell from 8", hit.Detail, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ShopCollapse_Silent_WhenSalesStayHealthy()
+    {
+        // 8 sales opening, 8 sales trailing: no collapse.
+        var run = Run(seed: 21, day: 101, ShopSales(openingCount: 8, trailingCount: 8, throughDay: 100));
+
+        Assert.DoesNotContain(Anomalies.Detect([run]), a => a.Rule == "shop-collapse");
+    }
+
+    [Fact]
+    public void ShopCollapse_Silent_WhenTheShopWasNeverMeaningfullyActive()
+    {
+        // Opening below ShopCollapseMinOpeningSales (2 < 3): dead-shop's territory, not this rule's.
+        var run = Run(seed: 22, day: 101, ShopSales(openingCount: 2, trailingCount: 0, throughDay: 100));
+
+        Assert.DoesNotContain(Anomalies.Detect([run]), a => a.Rule == "shop-collapse");
+    }
+
+    /// <summary>
+    /// The real-corpus calibration finding: 18 of 20 baseline seeds show this SAME sales-to-zero
+    /// shape, but only after their own <see cref="CampaignEnded"/> (day ~23-33) — well before the
+    /// decay sets in (day ~40+). <see cref="Anomalies.PlayableHorizon"/> must clip the collapse out
+    /// of the measured window for them exactly like it does for gold-mint-spike, or this rule would
+    /// have fired on 20 of 20 seeds instead of the 2 that are actually broken.
+    /// </summary>
+    [Fact]
+    public void ShopCollapse_Silent_WhenTheCollapseIsPastCampaignEnding()
+    {
+        var events = HealthyBeats(30).ToBuilder();
+        var id = 900;
+        // Sales in the opening window (1-10) AND still healthy right up to the ending day (16-25) —
+        // the measured real shape: every seed keeps selling fine through its own ending; the decay
+        // only shows up decades later, in days nobody plays.
+        foreach (var day in new[] { 1, 2, 3, 4, 16, 17, 18, 19 })
+        {
+            events.Add(new ItemSold(new ItemId(id), new HeroId(1), Price: 20, FromPlayerShop: true) with
+            { Id = new EventId(id++), Day = day });
+        }
+
+        // Total silence AFTER the ending (days 26-30) — the afterlife, which a batch export keeps
+        // simulating but PlayableHorizon must exclude.
+        events.Add(new CampaignEnded(5, 1, 1, 25, 5, 1) with { Id = new EventId(999), Day = 25 });
+        var run = Run(seed: 23, day: 31, events.ToImmutable());
+
+        Assert.Equal(25, Anomalies.PlayableHorizon(run));
+        Assert.DoesNotContain(Anomalies.Detect([run]), a => a.Rule == "shop-collapse");
+    }
+
     [Fact]
     public void TariffSaturation_Fires_OnRepeatedAtCapDeltas()
     {

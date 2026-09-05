@@ -4531,6 +4531,46 @@ warn about.
   suspense choice, so it reads as an oversight rather than a design decision until one of these two
   things is true.
 
+### The anomaly-coverage sweep, 2026-09-05
+
+`tools/Analytics/Anomalies.cs`'s six detectors watched for too much gold
+(`gold-mint-spike`, trend-aware) and for a shop that never sold at all (`dead-shop`,
+`playerSales == 0` over the WHOLE run) — nothing watched for a shop that sold fine and then died.
+Measured with a new data tool, `sim/GameSim.Cli/EconTrajectory.cs` (day-by-day
+gold/materials/shelf/sales/commissions under `BaselinePlayer`, 20 seeds × 100 days,
+`dotnet run --project sim/GameSim.Cli -- econ-trajectory`), before touching the detector:
+
+- The decay shape is real and universal in the corpus — player-shop sales in every one of 20
+  seeds climb through roughly day 40 and then decay toward zero by day 70-100. It is **not** a
+  2-seed fluke; it is the corpus's default late-game shape under this policy.
+- It is invisible to a player in 18 of 20 seeds, because each of those seeds' own
+  `CampaignEnded` lands day 23-33 — well before the decay starts — so
+  `Anomalies.PlayableHorizon` correctly clips it out of the measured window, same as it already
+  does for `gold-mint-spike`'s afterlife problem. This matches `P2-LONG-01`/`P2-LONG-26`'s own
+  finding that the climax lands day 20-25 and the felt wall lands day 12: days 60-100 are past
+  everything this build has to show, for a campaign that ends on schedule.
+- The other 2 of 20 seeds (10%) never reach `CampaignEnded` inside the 100-day horizon at all.
+  For exactly those seeds the same decay lands entirely inside playable time: player-shop sales go
+  from a healthy 8 in days 1-10 to a flat **zero for the last ~65 days**, gold and materials held
+  freeze completely, and heroes keep posting commissions that all expire unfulfilled
+  (`commP`/`commX` climb every window; `commF` never moves again). `dead-shop` cannot see this —
+  the shop sold plenty early on.
+
+Fix shipped: `Anomalies.ShopCollapse` (rule `shop-collapse`, MEDIUM), `dead-shop`'s trend-aware
+mirror on the `gold-mint-spike` two-window shape (inverted: collapse down, not runaway up). Fires
+only on the 2 real seeds when run against the measured corpus, silent on the other 18 — proof it
+is calibrated against what the corpus actually produces, not against an ideal.
+
+**Left open, for the owner:** *why* do 2 of 20 `BaselinePlayer` seeds never reach a campaign
+ending inside 100 days? That is a possible symptom of something upstream (party progression
+stalling, not a shop bug per se) and was out of scope for an analytics/detector task — flagged
+here rather than investigated, so it is not lost. Whether `tools/Analytics` should run in CI at
+all (today it is hand-invoked only, `docs/debugging.md`'s own gap) is a separate call: a fresh
+100-day/20-seed sweep is real wall-clock cost on every PR, for a defect that (per the above) rarely
+matters within the playable horizon. Recommendation is advisory-only for now, run by hand or in a
+periodic/nightly job rather than a new per-PR gate — `.github/` is out of this session's reach
+regardless, so this is a recommendation, not a change.
+
 ## Unit bodies — the critical path, the cheap fixes, and each domain's first unit
 
 Twenty-four bodies: the ten screen units that must land before the onboarding rework starts, the
