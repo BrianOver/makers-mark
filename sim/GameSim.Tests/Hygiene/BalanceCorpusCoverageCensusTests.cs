@@ -32,13 +32,18 @@ namespace GameSim.Tests.Hygiene;
 /// never does); <c>CampProvisioningBalanceTests</c> layers a hand-written send policy on top of
 /// <c>BaselinePlayer</c> that submits <c>SendSupplyAction</c>; <c>PhaseDSinksBalanceTests</c> drives
 /// a dedicated scripted script (no policy function at all) that submits
-/// <c>CommissionLegendaryWorkAction</c> unconditionally, until its cap bites. So the corpus's real
-/// "never submitted" set is narrower than <c>BaselinePlayer</c>'s alone — four of the fourteen types
+/// <c>CommissionLegendaryWorkAction</c> unconditionally, until its cap bites; and, since P2-OQ12,
+/// <c>CraftCurveBalanceTests</c> drives the four minigame-playing policies
+/// (<c>AlchemyPuzzlePlayer</c>, <c>TanningPuzzlePlayer</c>, <c>EngineeringPuzzlePlayer</c>,
+/// <c>HandForgePlayer</c>), which is what finally puts <c>BuyMaterialAction</c> on a real
+/// trajectory: those three professions buy their own materials off the standing Morning vendor
+/// floor every morning, because there is no ore-offer path that reaches them. So the corpus's real
+/// "never submitted" set is narrower than <c>BaselinePlayer</c>'s alone — five of the fourteen types
 /// the census quotes above ARE actually exercised somewhere in the corpus once every Balance-tagged
 /// test is counted, not just the one everybody reads. <see cref="KnownNeverSubmitted"/> pins the
-/// corrected, corpus-wide remainder (fifteen types — the fourteen named entries above expand to
+/// corrected, corpus-wide remainder (fourteen types — the fourteen named entries above expand to
 /// nineteen concrete <see cref="PlayerAction"/> types once "any counter action" unpacks to five,
-/// minus the four that graduate once the whole corpus is counted).</para>
+/// minus the five that graduate once the whole corpus is counted).</para>
 ///
 /// <para><b>Offered is not submitted (the refinement that decides whether this test proves
 /// anything).</b> <c>Balance/VerbConsequenceFloorTests</c> already probes every option
@@ -104,8 +109,16 @@ public class BalanceCorpusCoverageCensusTests
 
     /// <summary>Matches a Harness/ policy delegation — <c>BaselinePlayer.ActionsFor(</c>,
     /// <c>MasterworkSeekingPlayer.ActionsFor(</c> — so which policies are "in the corpus" is
-    /// discovered live from what the Balance-tagged tests actually call, never hand-listed.</summary>
-    private static readonly Regex PolicyDelegation = new(@"\b(\w+Player)\.ActionsFor\(", RegexOptions.Compiled);
+    /// discovered live from what the Balance-tagged tests actually call, never hand-listed.
+    ///
+    /// <para><b>Deliberately does not require the open paren (P2-OQ12).</b> The first cut did, and
+    /// it had a blind spot big enough to hide a whole fixture: a test that stores its policies in a
+    /// table (<c>CraftCurveBalanceTests</c> holds one <c>Func</c> per profession) references them as
+    /// METHOD GROUPS — <c>AlchemyPuzzlePlayer.ActionsFor</c>, no paren — so the corpus could grow
+    /// four new sweep policies without this census noticing any of them. It would have stayed green
+    /// while its own pinned ledger went stale, which is the exact failure it exists to catch, one
+    /// level up.</para></summary>
+    private static readonly Regex PolicyDelegation = new(@"\b(\w+Player)\.ActionsFor\b", RegexOptions.Compiled);
 
     /// <summary>(action type name) -> reason citing the ruling that documents it, same citation
     /// contract as <c>GearWornCheckCensusTests.Exceptions</c> / <c>StaleCommentCensusTests</c>. Every
@@ -126,8 +139,6 @@ public class BalanceCorpusCoverageCensusTests
             + "no Balance-tagged test ever drives — rules-census.md:1236-1241. P2-HONEST-12.",
         ["CloseCounterAction"] = "Counter-session verbs are exercised only by CounterPlayer, which no "
             + "Balance-tagged test ever drives — rules-census.md:1236-1241. P2-HONEST-12.",
-        ["BuyMaterialAction"] = "The standing Morning vendor floor is never bought from by any corpus "
-            + "sweep policy — rules-census.md:1236-1241. P2-HONEST-12.",
         ["SetProfessionsAction"] = "Profession selection happens once, out of band, before any "
             + "scripted policy runs a tick; no sweep policy re-submits it — "
             + "rules-census.md:1236-1241. P2-HONEST-12.",
@@ -147,7 +158,7 @@ public class BalanceCorpusCoverageCensusTests
             + "apprenticeship warrant early — rules-census.md:1236-1241. P2-HONEST-12.",
     };
 
-    private const int ExpectedNeverSubmittedCount = 15;
+    private const int ExpectedNeverSubmittedCount = 14;
 
     [Fact]
     public void PlayerActionHierarchyHasTheMemberCountThisCensusExpects()
@@ -361,15 +372,30 @@ public class BalanceCorpusCoverageCensusTests
         }
 
         var harnessDir = Path.Combine(RepoRoot(), "sim", "GameSim", "Harness");
+        var harnessSources = Directory.EnumerateFiles(harnessDir, "*.cs", SearchOption.TopDirectoryOnly)
+            .OrderBy(f => f, StringComparer.Ordinal)
+            .Select(f => (Path: f, Code: StripComments(File.ReadAllText(f))))
+            .ToList();
+
         foreach (var policy in policies)
         {
-            var path = Path.Combine(harnessDir, policy + ".cs");
-            Assert.True(File.Exists(path),
-                $"{policy}.ActionsFor is called from a Balance-tagged test, but {path} does not "
-                + "exist — the policy was renamed or moved and this census's live discovery needs "
-                + "to follow it.");
+            // Found by DECLARATION, never by filename (P2-OQ12): three of the corpus's sweep
+            // policies — AlchemyPuzzlePlayer, TanningPuzzlePlayer, EngineeringPuzzlePlayer — share
+            // one file with the engine they wrap (Harness/ActiveProfessionPlayer.cs), so the old
+            // "policy name + .cs" guess would have asserted them missing the moment a Balance test
+            // drove one.
+            var declaration = new Regex(@"\bclass\s+" + Regex.Escape(policy) + @"\b");
+            var sources = harnessSources.Where(f => declaration.IsMatch(f.Code)).ToList();
 
-            submitted.UnionWith(ExtractActionTypeNames(StripComments(File.ReadAllText(path))));
+            Assert.True(sources.Count > 0,
+                $"{policy}.ActionsFor is referenced from a Balance-tagged test, but no file under "
+                + $"{harnessDir} declares that type — the policy was renamed or moved and this "
+                + "census's live discovery needs to follow it.");
+
+            foreach (var source in sources)
+            {
+                submitted.UnionWith(ExtractActionTypeNames(source.Code));
+            }
         }
 
         return (policies, submitted);
