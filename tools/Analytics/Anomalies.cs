@@ -61,6 +61,13 @@ public sealed record Anomaly(
 /// campaign's opening rate: inflation runaway.</item>
 /// <item><b>dead-shop</b> (MEDIUM) — the player crafts but nothing sells from the player shop:
 /// crafting into the void.</item>
+/// <item><b>shop-collapse</b> (MEDIUM) — <c>dead-shop</c>'s trend-aware mirror (the
+/// <c>gold-mint-spike</c> precedent, inverted): the player shop WAS selling, then trailing sales
+/// collapsed to a fraction of the opening rate. <c>dead-shop</c> reads <c>playerSales == 0</c> over
+/// the WHOLE run, so a shop that sold well for 60 days and then died reads as healthy; this rule is
+/// the fix. Measured real (2026-09-04 anomaly-coverage sweep): 2 of 20 baseline seeds hit total,
+/// sustained player-shop silence — 0 sales for the last 50+ days of a 100-day run — with no
+/// <c>CampaignEnded</c> to explain it away.</item>
 /// <item><b>tariff-saturation</b> (LOW) — tariff repeatedly at/near the cap: standing pegged, the
 /// lever stopped mattering.</item>
 /// <item><b>bounty-monoculture</b> (LOW) — bounty judgments almost all one direction: the decision
@@ -87,6 +94,8 @@ public static class Anomalies
     public const int MintSpikeMinGold = 500;            // and the trailing window minted at least this
     public const int DeadShopMinCrafts = 5;
     public const int DeadShopMinDay = 15;
+    public const int ShopCollapseFactor = 4;             // opening > factor × trailing ⇔ collapsed
+    public const int ShopCollapseMinOpeningSales = 3;     // opening window must have been meaningfully active
     public const int TariffSaturationPerMille = 90;     // Σ|delta| ≥ 9% of Σbase ≈ averaging at the 10% cap
     public const int TariffSaturationMinEvents = 8;
     public const int TariffSaturationMinSpanDays = 5;
@@ -139,6 +148,7 @@ public static class Anomalies
             }
             GoldMintSpike(run, lastFullDay, policy, found);
             DeadShop(run, lastFullDay, policy, found);
+            ShopCollapse(run, lastFullDay, policy, found);
             TariffSaturation(run, lastFullDay, policy, found);
             BountyMonoculture(run, lastFullDay, policy, found);
         }
@@ -323,6 +333,48 @@ public static class Anomalies
                 policy));
         }
     }
+
+    /// <summary>
+    /// <c>dead-shop</c>'s trend-aware mirror (<c>gold-mint-spike</c>'s two-window shape, inverted:
+    /// there it is a runaway UP, here it is a collapse DOWN). Measured real on a 20-seed/100-day
+    /// <c>BaselinePlayer</c> sweep (2026-09-04, <c>sim/GameSim.Cli/EconTrajectory.cs</c>): player-shop
+    /// sales are healthy through roughly day 40, then decay toward zero by day 70-100 in EVERY seed —
+    /// but 18 of 20 seeds reach their own <c>CampaignEnded</c> around day 23-33, well before the decay
+    /// starts, so <see cref="PlayableHorizon"/> clips the collapse out of the measured window for them
+    /// (exactly as intended — nobody plays the afterlife). The other 2 seeds never end within the
+    /// horizon, so the SAME decay lands entirely inside playable time: player-shop sales go from a
+    /// healthy 6+ in days 1-10 to a flat ZERO for the last 50-65 days, while heroes keep posting
+    /// commissions that all expire unfulfilled. Nothing else in this file can see that shape:
+    /// <c>dead-shop</c> reads <c>playerSales == 0</c> over the WHOLE run, and a shop that sold early
+    /// reads as healthy under that rule forever after.
+    /// </summary>
+    private static void ShopCollapse(ChronicleData run, int lastFullDay, string policy, List<Anomaly> found)
+    {
+        if (lastFullDay < TrailingWindowDays * 2)
+        {
+            return; // need two disjoint full windows (GoldMintSpike precedent)
+        }
+
+        var opening = PlayerSalesIn(run, 1, TrailingWindowDays);
+        if (opening < ShopCollapseMinOpeningSales)
+        {
+            return; // shop was never meaningfully active to begin with — dead-shop's job, not this rule's
+        }
+
+        var trailingFrom = lastFullDay - TrailingWindowDays + 1;
+        var trailing = PlayerSalesIn(run, trailingFrom, lastFullDay);
+        if (trailing * ShopCollapseFactor < opening)
+        {
+            found.Add(new Anomaly(
+                AnomalySeverity.Medium, "shop-collapse", run.Seed, trailingFrom, lastFullDay,
+                $"player-shop sales fell from {opening} in days 1-{TrailingWindowDays} to {trailing} in the "
+                + "trailing window — a shop that WAS selling has gone quiet.",
+                policy));
+        }
+    }
+
+    private static int PlayerSalesIn(ChronicleData run, int from, int to) =>
+        run.Events.OfType<ItemSold>().Count(e => e.FromPlayerShop && e.Day >= from && e.Day <= to);
 
     private static void TariffSaturation(ChronicleData run, int lastFullDay, string policy, List<Anomaly> found)
     {

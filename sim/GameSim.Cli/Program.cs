@@ -152,6 +152,16 @@ if (args.Length > 0 && args[0] == "felt-wall")
     return GameSim.Cli.FeltWallSweep.Run(fwSeeds, 2026UL, fwDays, fwOut, Console.Out, Console.Error);
 }
 
+// Econ-trajectory mode (anomaly-coverage measurement, 2026-09-04, one-off measurement, not a
+// gate): `-- econ-trajectory [--seeds N] [--seed S] [--days N] [--sample N]` samples
+// BaselinePlayer's gold/materials/shelf/sales/commissions day-by-day, to check whether a
+// late-campaign economy collapse is real before any detector is calibrated to it.
+if (args.Length > 0 && args[0] == "econ-trajectory")
+{
+    var etParsed = GameSim.Cli.EconTrajectory.Parse(args[1..], Console.Error);
+    return etParsed is null ? 1 : GameSim.Cli.EconTrajectory.Run(etParsed, Console.Out, Console.Error);
+}
+
 // Interactive mode accepts ONLY `--seed N`. Anything else is a hard error — a typo'd batch
 // invocation ('Batch', misordered flags) must never fall through to the interactive REPL,
 // where redirected stdin would EOF and exit 0 having written zero chronicles (silent green).
