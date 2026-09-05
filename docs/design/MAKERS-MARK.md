@@ -5274,12 +5274,85 @@ default applied.**
   recipe per craft, passed everything, and missed both engineering bugs, which is exactly how a
   per-tier defect hides under a green suite.
 
-  **Still owed, and named so it is not mistaken for done: the 100-day balance gate has never been
-  run with a minigame-playing policy as a fixture.** Every Balance driver is `BaselinePlayer` (11 of
-  12) or `MasterworkSeekingPlayer`, and both auto-craft, so the gate certifies this curve against
-  nothing — the same sentence `P2-OQ10` wrote about these three professions, now true one level up
-  about the curve itself. The gate passing 68/68 across this change is therefore evidence of no
-  collateral damage, not evidence the curve is balanced.
+  **The limitation this entry shipped with — "the 100-day balance gate has never been run with a
+  minigame-playing policy as a fixture" — is closed by `P2-OQ12` below, and the curve survived it.**
+
+- **P2-OQ12. The balance gate finally plays the minigame, and the curve holds — measured 2026-09-05.**
+  `P2-OQ11` changed the quality curve for three of the four professions and then honestly reported
+  that its own re-baseline could not see the change: every Balance driver was `BaselinePlayer` (11
+  of 12) or `MasterworkSeekingPlayer`, both auto-craft, and both craft exclusively off
+  `RecipeTable.All` — 22 recipes, every one blacksmith. Re-verified before building on it, and the
+  gap was slightly wider than `P2-OQ11` framed it: the three changed scorers were not merely
+  auto-crafted past, they were **unreachable** on every trace in the corpus. That 68/68 was evidence
+  of no collateral damage and nothing else.
+
+  `Balance/CraftCurveBalanceTests` is the fixture that closes it: one minigame-playing policy per
+  registered profession — `AlchemyPuzzlePlayer` / `TanningPuzzlePlayer` / `EngineeringPuzzlePlayer`
+  from `P2-OQ10`, and `HandForgePlayer` for the blacksmith — each driven at all three `CraftHand`
+  levels over 100-day campaigns. The fixture table is checked against `ProfessionRegistry.All`, so a
+  fifth profession cannot join the game without either joining this gate or turning it red.
+
+  **What it asserts: properties, never the numbers.** Pinning the measured shares would make every
+  future retune a false failure and would record one more instrument reading as a fact. The
+  contracts are §11.7.12's own — adjacent skill rungs never invert (on the whole distribution AND on
+  the top band), a skilled hand strictly outscores an indifferent one end to end (the check a merely
+  non-decreasing test cannot make, and the one Tanning's skill-blind curve would have failed), the
+  top grade is reached by a skilled hand and never once by an indifferent one, the assist tree is
+  actually affordable, an ordinary mastered day still grades Fine or better, and every cell crafts at
+  volume so no share is vacuous. Everything measured is reported, not asserted.
+
+  **Reading 3 — the curve as a hero actually receives it.** 100-day campaigns; five seeds per craft
+  for the three `P2-OQ11` changed, two for the blacksmith control (a `BaselinePlayer`-composed
+  campaign costs roughly fifty times an alchemy one — the seed count is a cost dial, never a property
+  dial, and every contract is asserted identically in every cell).
+
+  | Craft | Indifferent | Average | Skilled | mean grade, I/A/S |
+  |---|---|---|---|---|
+  | Alchemy | 0% Mw (78.6% Fine) | 26.1% Mw | **54.2% Mw** | 517 / 774 / 846‰ |
+  | Tanning | 0% Mw (92.9% Fine) | 8.9% Mw | **90.8% Mw** | 482 / 760 / 977‰ |
+  | Engineering | 0% Mw (95.8% Fine) | 1.8% Mw | **45.9% Mw** | 489 / 687 / 856‰ |
+  | Blacksmith | 0% Mw | 0% Mw (95.3% Superior) | **46.8% Mw** | 622 / 738 / 862‰ |
+
+  The campaign agrees with `P2-OQ11`'s scorer-level sweep to within a couple of points in every cell,
+  which is the useful result: **the curve is fine, and now it is fine for a reason the gate can
+  restate.** Four campaign-level forces sat between the scorer and the grade a hero receives — the
+  material ceiling (which caps a craft at Fine whenever the economy only ever affords a material a
+  grade below the recipe, and would have made the top grade unreachable in play with a flawless
+  curve), the real pace of the talent tree, the economy's choice of which recipes get made at all,
+  and the +/-25 jitter. None of them bends the curve.
+
+  **Three things the campaign shows that no scorer test could.**
+  1. **Skill changes how MUCH you make, and not in one direction.** Better work in Tanning funds more
+     of it (126 crafts indifferent → 272 skilled); in Alchemy and Engineering it does the opposite
+     (140 → 96, 191 → 157), because better gear saturates what the roster still needs and `HasBuyer`
+     starts refusing. Worth knowing before anyone reads a craft count as an engagement number.
+  2. **Poor is dead content for a crafting player.** Not one Poor item was produced in any of the
+     twelve cells — 1,952 crafts. Even an indifferent hand grades Fine or better 92.9-100% of the
+     time once the assist tree is full. "No craft is punishing" is satisfied so completely that the
+     bottom band is unreachable; whether the floor should be that generous is a design question this
+     entry only measures.
+  3. **The blacksmith's average hand is deliberately capped below the top**, at 0% Masterwork and
+     95.3% Superior, because `HandForgePlayer`'s average deviation is pinned to equal auto-craft's
+     own 800 grade. Monotone, but flat between indifferent and average at the top band — the
+     archetype's shape, unchanged by `P2-OQ11` and now proven so end to end rather than argued.
+
+  **A defect found in the census that was supposed to catch this.**
+  `Hygiene/BalanceCorpusCoverageCensusTests` discovers the corpus's sweep policies live, by regex,
+  and required an open paren: `XPlayer.ActionsFor(`. A fixture that keeps its policies in a table
+  references them as method groups, so the corpus gained four sweep policies and the census saw
+  none of them — it would have stayed green while its own pinned ledger went stale, which is the
+  exact failure it exists to catch, one level up. Fixed both ways: the delegation regex no longer
+  requires the call, and a policy is now resolved to its source by DECLARATION rather than by
+  guessing `<name>.cs` (the three puzzle policies share one file with the engine they wrap, so the
+  filename guess would have asserted them missing). With that fixed, `BuyMaterialAction` graduates
+  out of `KnownNeverSubmitted` — those three professions buy their own materials off the standing
+  Morning vendor floor every morning, since no ore-offer path reaches them — and the pin is retired
+  rather than left on record as a closed gap.
+
+  **The gate: `Failed: 0, Passed: 75` (was 68 + 7 new). The pre-existing 68 did not move**, run
+  separately to prove it rather than inferred from the total. Cost is named rather than hidden: the
+  balance job goes from ~2m20 to ~3m30 in Release, almost all of it the blacksmith column, whose
+  `BaselinePlayer`-composed campaign is the corpus's richest.
 
 ## What must survive, named so this program cannot quietly discard it
 
