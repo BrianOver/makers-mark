@@ -1127,8 +1127,10 @@ and needs both. Not built here — this entry is the diagnosis, and 1–3 all ne
 line is written.
 
 **A note on the instrument, again.** §11.8's own closing note said the analytics pass owed an
-arc-completion check, and `tools/Analytics` still reports no anomaly for "this campaign never
-ends." The 11-seed sample that closed §11.8 was not wrong about its own seeds; it was simply too
+arc-completion check. `Anomalies.ShopCollapse` (#724) now fires on exactly these two baseline
+seeds and stays silent on the other 198 — a useful oracle for "is this seed one of the broken
+ones" — but it names the *symptom*, and there is still no anomaly for "this campaign never ends."
+The 11-seed sample that closed §11.8 was not wrong about its own seeds; it was simply too
 small to see a 1%-of-seeds event, and the plan then recorded "the finale is reachable" as settled
 rather than "reachable on the seeds we ran." A sample that cannot distinguish "rare" from "never"
 should not be allowed to close a reachability question — that is the reusable lesson, and it is
