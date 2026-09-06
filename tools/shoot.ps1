@@ -50,6 +50,9 @@ $env:SHOT_ARC_SCENE = if ($State -eq "TavernScene" -or $State -eq "TavernSceneAt
 # refusal are then all decided by the sim itself. Same seam and same never-in-real-play contract as
 # SHOT_WATCH_FIGHT / SHOT_ARC_SCENE above.
 $env:SHOT_STORIED = if ($State -eq "Storied" -or $State -eq "StoriedCard" -or $State -eq "StoriedRefusal") { "1" } else { "" }
+# P2-END-01 (§11.8.1, "say it out loud"): the gate-held-streak Ledger receipt -- same
+# never-in-real-play staging contract as SHOT_WATCH_FIGHT/SHOT_ARC_SCENE/SHOT_STORIED above.
+$env:SHOT_GATE_HELD_STREAK = if ($State -eq "GateHeldStreak") { "1" } else { "" }
 if (Test-Path $Out) { Remove-Item $Out -Force }
 
 Write-Host "capturing state='$State' -> $Out" -ForegroundColor Cyan

@@ -7,6 +7,7 @@ using GameSim.Expedition;
 using GameSim.Factions;
 using GameSim.Kernel;
 using GameSim.Narrative;
+using GameSim.Venues;
 using Godot;
 using GodotClient.Ui;
 
@@ -327,6 +328,11 @@ public partial class LedgerModal : SimPanel
         // card, tutorial tip, or empty state below.
         AddNarratorLine();
 
+        // P2-END-01 option 4 (§11.8.1, "say it out loud"): a party held at the same structural
+        // gate night after night is a different, worse fact than one held once — see this
+        // method's own doc.
+        AddGateHeldStreakLine(state, day);
+
         if (cards.IsEmpty)
         {
             AddTutorialTip();
@@ -463,6 +469,57 @@ public partial class LedgerModal : SimPanel
         line.Name = "LedgerNarratorLine";
         line.CustomMinimumSize = new Vector2(CardGridColumnWidth, 0);
         line.AddThemeColorOverride("font_color", GameTheme.AccentColor);
+    }
+
+    /// <summary>
+    /// P2-END-01 option 4 (MAKERS-MARK.md §11.8.1, "say it out loud" — the finale's own gate is
+    /// structural and absorbing: a party a single point under it can sit there for dozens of
+    /// nights with nothing on screen saying why). One quiet line, rendered ONCE per distinct venue
+    /// per night (the same "one shared fact, not one per hero card" rule <see
+    /// cref="AddNarratorLine"/> and the first-loss block already use — every hero in a held party
+    /// reports the same <see cref="ExpeditionHalt.GateHeld"/>, so their cards would otherwise say
+    /// this in triplicate).
+    ///
+    /// <para>Reads ONLY <see cref="GateHeldStreakQuery"/>'s pure count over the already-persisted
+    /// <see cref="DecisionExplained"/> trail — never a fresh gate-versus-power comparison. The
+    /// exact number and the venue name are both recorded facts (law 4); nothing here computes a
+    /// threshold the resolver did not already decide, which is the client-recomputation defect
+    /// this repo has paid for twice (HeroPanel's stale ladder thresholds).</para>
+    ///
+    /// <para>The anti-nag half: <see cref="GateHeldStreakQuery.IsMilestoneNight"/> gates this to
+    /// doubling nights (2, 4, 8, 16, 32, 64) — a gate held for dozens of consecutive nights says
+    /// this a handful of times, never every single evening (the killed 1,287x memorial-advisor
+    /// shape this repo already scarred on once).</para>
+    /// </summary>
+    private void AddGateHeldStreakLine(GameState state, int day)
+    {
+        if (Adapter is null || Adapter.LastRevealedDay != day || Adapter.LastRevealedExpeditions.IsEmpty)
+        {
+            return;
+        }
+
+        var namedVenues = new HashSet<string>();
+        foreach (var result in Adapter.LastRevealedExpeditions)
+        {
+            if (result.Halt != ExpeditionHalt.GateHeld || !namedVenues.Add(result.VenueId))
+            {
+                continue;
+            }
+
+            var streak = GateHeldStreakQuery.ConsecutiveNights(state, result.VenueId, day);
+            if (!GateHeldStreakQuery.IsMilestoneNight(streak))
+            {
+                continue;
+            }
+
+            var venue = VenueRegistry.Require(result.VenueId);
+            var line = AddLabel(_cardGrid!, $"Still held at {venue.DisplayName}'s gate — {streak} nights running.");
+            line.Name = $"GateHeldStreakLine_{result.VenueId}";
+            // Same width floor as every other loose label in this HFlowContainer grid (AddNarratorLine's
+            // own note explains why an autowrapping Label needs it here).
+            line.CustomMinimumSize = new Vector2(CardGridColumnWidth, 0);
+            line.AddThemeColorOverride("font_color", GameTheme.WarnColor);
+        }
     }
 
     /// <summary>U7's own one-line tutorial explainer (R10), now hoisted to render after the lead

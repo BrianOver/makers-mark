@@ -1027,5 +1027,132 @@ public class LedgerModalTests
             Unmount(ui);
         }
     }
+
+    // ── P2-END-01 option 4 (§11.8.1, "say it out loud"): the streak line on a repeatedly-held
+    // gate — recorded fact, never a client recomputation; the anti-nag milestone gate ─────────────
+
+    private static readonly HeroId GateHeldHeroId = new(4);
+
+    /// <summary>
+    /// A one-hero night ending in <paramref name="haltTonight"/> (default <see
+    /// cref="ExpeditionHalt.GateHeld"/>) for venue "mine", with <paramref name="priorHeldDays"/>
+    /// CONSECUTIVE days immediately before <paramref name="day"/> already recorded as held —
+    /// hand-seeded <see cref="DecisionExplained"/> events, the exact shape
+    /// <c>ExpeditionRevealSystem</c> persists every Evening (§11.14.8), so <paramref name="day"/>
+    /// itself becomes the (priorHeldDays+1)th consecutive night. Tonight's own halt is still driven
+    /// through the REAL <c>ExpeditionRevealSystem</c> via <see cref="SimAdapter.AdvancePhase"/> —
+    /// same idiom as <see cref="FloorLostNight"/> — so only the PAST nights are a fixture; tonight's
+    /// wiring (resolver-shape result in, reveal, ledger) is exercised for real.
+    /// </summary>
+    private static GameState GateHeldNight(
+        int day, int priorHeldDays, ExpeditionHalt haltTonight = ExpeditionHalt.GateHeld)
+    {
+        var hero = new Hero(
+            GateHeldHeroId, "Perrin", ClassRegistry.VanguardId, Level: 4, MaxHp: 30, Gold: 0,
+            Gear: GearSet.Empty, Memories: ImmutableList<ItemMemory>.Empty, Alive: true,
+            DeepestFloorReached: 3, DiedOnDay: null);
+
+        var result = new ExpeditionResult(
+            Party: ImmutableList.Create(GateHeldHeroId), TargetFloor: 4, DeepestFloorCleared: 3,
+            Floors: ImmutableList<FloorOutcome>.Empty,
+            Survivors: ImmutableList.Create(GateHeldHeroId), Deaths: ImmutableList<HeroId>.Empty,
+            Beats: ImmutableList<AttributionBeat>.Empty, Loot: ImmutableList<OreLoot>.Empty,
+            GoldEarnedByHero: ImmutableSortedDictionary<int, int>.Empty, VenueId: "mine",
+            Halt: haltTonight);
+
+        var priorEvents = ImmutableList.CreateBuilder<GameEvent>();
+        for (var d = day - priorHeldDays; d < day; d++)
+        {
+            priorEvents.Add(new DecisionExplained(
+                GateHeldStreakQuery.ExpeditionHaltWhat("mine"), nameof(ExpeditionHalt.GateHeld), "test fixture")
+            {
+                Id = new EventId(d),
+                Day = d,
+            });
+        }
+
+        return GameFactory.NewGame(6161) with
+        {
+            Day = day,
+            Phase = DayPhase.Evening,
+            Heroes = ImmutableSortedDictionary<int, Hero>.Empty.Add(GateHeldHeroId.Value, hero),
+            PendingExpeditions = ImmutableList.Create(result),
+            EventLog = priorEvents.ToImmutable(),
+        };
+    }
+
+    [TestCase]
+    public void GateHeldNight_OnAMilestoneStreak_RendersTheStreakLine()
+    {
+        // Days 1-3 already recorded held at "mine" — day 4 becomes the 4th consecutive night,
+        // a milestone (GateHeldStreakQuery.IsMilestoneNight(4) == true).
+        var ui = MountMainUi(new SimAdapter(GateHeldNight(day: 4, priorHeldDays: 3)));
+        try
+        {
+            ui.Adapter.AdvancePhase(); // Evening -> next phase: the reveal processes PendingExpeditions
+
+            ui.Ledger.ShowFor(4);
+            var line = ui.Ledger.FindChild("GateHeldStreakLine_mine", recursive: true, owned: false) as Label;
+
+            AssertThat(line)
+                .OverrideFailureMessage("the 4th consecutive GateHeld night must render the streak fact")
+                .IsNotNull();
+            AssertThat(line!.Text).Contains("4 nights running");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void GateHeldNight_OffAMilestoneStreak_RendersNothingExtra()
+    {
+        // Days 1-2 already held — day 3 is the 3rd consecutive night, NOT a milestone (2, 4, 8, ...),
+        // so the anti-nag rule keeps this evening silent on the STREAK line specifically. (The base
+        // per-hero "Turned back at the gate" status line, already shipped pre-#167, is untouched by
+        // this rule and still renders — this test is only about the NEW line's own frequency.)
+        var ui = MountMainUi(new SimAdapter(GateHeldNight(day: 3, priorHeldDays: 2)));
+        try
+        {
+            ui.Adapter.AdvancePhase();
+
+            ui.Ledger.ShowFor(3);
+            var line = ui.Ledger.FindChild("GateHeldStreakLine_mine", recursive: true, owned: false);
+
+            AssertThat(line)
+                .OverrideFailureMessage("a non-milestone night must not repeat the streak line (anti-nag rule)")
+                .IsNull();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void ANormalReturn_NeverRendersTheGateHeldStreakLine_EvenWithPriorHeldHistory()
+    {
+        // Tonight cleared the gate (TargetReached) even though the log shows 3 held nights just
+        // before it — the fact must vanish the instant it stops being true, never a stale echo of a
+        // wall the party is no longer standing at.
+        var ui = MountMainUi(new SimAdapter(
+            GateHeldNight(day: 4, priorHeldDays: 3, haltTonight: ExpeditionHalt.TargetReached)));
+        try
+        {
+            ui.Adapter.AdvancePhase();
+
+            ui.Ledger.ShowFor(4);
+            var line = ui.Ledger.FindChild("GateHeldStreakLine_mine", recursive: true, owned: false);
+
+            AssertThat(line)
+                .OverrideFailureMessage("a clean return must never render the gate-held streak line")
+                .IsNull();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
 }
 #endif

@@ -541,6 +541,15 @@ public partial class MainUi : Control
             state = StageStoriedGearReceipt(state);
         }
 
+        // P2-END-01 receipt seam ONLY, same contract as the three above (§11.8.1, "say it out
+        // loud"): a party held at the same structural gate several consecutive nights running is
+        // not reachable from a fresh day-1 campaign without scripting dozens of real days against
+        // a gate a screenshot has no business tuning.
+        if (System.Environment.GetEnvironmentVariable("SHOT_GATE_HELD_STREAK") == "1")
+        {
+            state = StageGateHeldStreakReceipt(state);
+        }
+
         return new SimAdapter(state);
     }
 
@@ -644,6 +653,58 @@ public partial class MainUi : Control
             // The ONLY thing on the shelf, so the receipt's Present press cannot land on some other
             // piece of starting stock and photograph an ordinary sale under this state's name.
             Player = state.Player with { Shelf = ImmutableList.Create(new ShelfEntry(plainId, 1)) },
+        };
+    }
+
+    /// <summary>
+    /// Dev/receipt tool only (never called from real play): plants three prior evenings' worth of
+    /// the persisted "expedition-halt:mine" <see cref="DecisionExplained"/> record — the exact fact
+    /// <c>GameSim.Drama.ExpeditionRevealSystem</c> writes every Evening (§11.14.8), never a receipt
+    /// invention — then parks a fourth, <see cref="ExpeditionHalt.GateHeld"/>, ready to reveal. The
+    /// campaign is fast-forwarded straight to that Evening (bypassing the real Expedition tick
+    /// entirely, same idiom as <see cref="StageWatchFightReceipt"/> above), so pressing the real
+    /// AdvancePhase bell once actually runs <c>ExpeditionRevealSystem</c> for real and the Ledger's
+    /// <c>GateHeldStreakQuery</c>-driven streak line decides for itself whether it fires — nothing
+    /// about the count or the milestone gate is staged.
+    /// </summary>
+    private static GameState StageGateHeldStreakReceipt(GameState state)
+    {
+        var hero = state.Heroes.Values.OrderBy(h => h.Id.Value).FirstOrDefault();
+        if (hero is null)
+        {
+            return state; // defensive -- a fresh campaign always seeds the starting six
+        }
+
+        var result = new ExpeditionResult(
+            Party: ImmutableList.Create(hero.Id),
+            TargetFloor: 4,
+            DeepestFloorCleared: 3,
+            Floors: ImmutableList<FloorOutcome>.Empty,
+            Survivors: ImmutableList.Create(hero.Id),
+            Deaths: ImmutableList<HeroId>.Empty,
+            Beats: ImmutableList<AttributionBeat>.Empty,
+            Loot: ImmutableList<OreLoot>.Empty,
+            GoldEarnedByHero: ImmutableSortedDictionary<int, int>.Empty,
+            VenueId: "mine",
+            Halt: ExpeditionHalt.GateHeld);
+
+        var what = GameSim.Drama.GateHeldStreakQuery.ExpeditionHaltWhat("mine");
+        var priorEvents = ImmutableList.CreateBuilder<GameEvent>();
+        for (var d = 1; d <= 3; d++)
+        {
+            priorEvents.Add(new DecisionExplained(what, nameof(ExpeditionHalt.GateHeld), "receipt fixture")
+            {
+                Id = new EventId(d),
+                Day = d,
+            });
+        }
+
+        return state with
+        {
+            Day = 4,
+            Phase = DayPhase.Evening,
+            PendingExpeditions = ImmutableList.Create(result),
+            EventLog = state.EventLog.AddRange(priorEvents),
         };
     }
 

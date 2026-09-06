@@ -122,7 +122,7 @@ const KNOWN_STATES := [
 	"Chronicle", "Counter", "Demand",
 	"DepthsPanel", "Docket",
 	"ForgeAnvil", "ForgeAnvilEmpty", "ForgeEcho", "ForgeExit", "ForgeFlavor", "ForgeLadder", "ForgePanel",
-	"ForgeShelf", "ForgeTrinket", "GatedCounterEmptyShelf", "GateNight", "Graduation",
+	"ForgeShelf", "ForgeTrinket", "GatedCounterEmptyShelf", "GateHeldStreak", "GateNight", "Graduation",
 	"HeroCandidateOpen", "HeroCards",
 	"HeroErrand", "HeroTrinket", "Ledger", "LedgerProvenance", "Lessons", "MemoryRow",
 	"MineGateFocus", "Mirror",
@@ -742,6 +742,18 @@ func _process(_delta: float) -> bool:
 			var bell_l = _ui.find_child("AdvancePhase", true, false)
 			if bell_l:
 				bell_l.emit_signal("pressed")
+		elif _state == "GateHeldStreak":
+			# P2-END-01 (§11.8.1, "say it out loud"): MainUi.StageGateHeldStreakReceipt
+			# (SHOT_GATE_HELD_STREAK=1, set by shoot.ps1 for this state) has already parked the
+			# campaign at DayPhase.Evening with a GateHeld result pending AND three prior
+			# evenings worth of the persisted "expedition-halt:mine" record seeded -- no day-cycle
+			# navigation needed. One real AdvancePhase press (rather than the four "Ledger" walks
+			# through) is enough, since the state starts already at Evening; the Ledger itself is
+			# opened a beat later (the _frames == 100 block below), through the real "OpenLedger"
+			# tray button -- same idiom "Ledger" above uses, not a direct ShowFor call.
+			var bell_g = _ui.find_child("AdvancePhase", true, false)
+			if bell_g:
+				bell_g.emit_signal("pressed")
 		elif _state == "LedgerProvenance":
 			# P2-MEMORY-03/-17: the beat names its channel AND its presence -- the receipt for
 			# the Evening Ledger's beat row composing both onto one line. Real combat RNG landing
@@ -1321,6 +1333,14 @@ func _process(_delta: float) -> bool:
 		var open_ledger = _ui.find_child("OpenLedger", true, false)
 		if open_ledger:
 			open_ledger.emit_signal("pressed")
+	if _state == "GateHeldStreak" and _frames == 100:
+		# P2-END-01: the single AdvancePhase press at frame 60 above already ran the real Evening
+		# tick (the state was staged AT Evening, so no day-cycle walk is needed first) -- open the
+		# Ledger the same way the "Ledger" state does, through the real "OpenLedger" tray button,
+		# once that tick's own work has had a beat to settle.
+		var open_ledger_gate_held = _ui.find_child("OpenLedger", true, false)
+		if open_ledger_gate_held:
+			open_ledger_gate_held.emit_signal("pressed")
 	# ForgeAnvilEmpty's five talent-unlock presses (above) are a means to an end (draining the
 	# action budget on zero gold/materials) -- Bryn's own first-touch teaching banner
 	# ("ForgeMentorBanner", ForgePanel's own node) fires as a side effect of the FIRST talent
