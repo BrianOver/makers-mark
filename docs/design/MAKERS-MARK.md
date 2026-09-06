@@ -5467,16 +5467,19 @@ default applied.**
   volume so no share is vacuous. Everything measured is reported, not asserted.
 
   **Reading 3 — the curve as a hero actually receives it.** 100-day campaigns; five seeds per craft
-  for the three `P2-OQ11` changed, two for the blacksmith control (a `BaselinePlayer`-composed
-  campaign costs roughly fifty times an alchemy one — the seed count is a cost dial, never a property
-  dial, and every contract is asserted identically in every cell).
+  for the three `P2-OQ11` changed, one for the blacksmith control. The seed count is a cost dial,
+  never a property dial — every contract is asserted identically in every cell — and the split is
+  owner-ruled (2026-09-05): `Crafting/CraftCurveTests` already pins every blacksmith property
+  deterministically over every recipe at every tier, so the campaign column only needs to show the
+  archetype survives a real economy once, while full seed coverage stays on the three crafts that
+  actually changed, which is where a regression would appear.
 
   | Craft | Indifferent | Average | Skilled | mean grade, I/A/S |
   |---|---|---|---|---|
   | Alchemy | 0% Mw (78.6% Fine) | 26.1% Mw | **54.2% Mw** | 517 / 774 / 846‰ |
   | Tanning | 0% Mw (92.9% Fine) | 8.9% Mw | **90.8% Mw** | 482 / 760 / 977‰ |
   | Engineering | 0% Mw (95.8% Fine) | 1.8% Mw | **45.9% Mw** | 489 / 687 / 856‰ |
-  | Blacksmith | 0% Mw | 0% Mw (95.3% Superior) | **46.8% Mw** | 622 / 738 / 862‰ |
+  | Blacksmith | 0% Mw | 0% Mw (96.9% Superior) | **46.4% Mw** | 616 / 742 / 860‰ |
 
   The campaign agrees with `P2-OQ11`'s scorer-level sweep to within a couple of points in every cell,
   which is the useful result: **the curve is fine, and now it is fine for a reason the gate can
@@ -5492,12 +5495,13 @@ default applied.**
      (140 → 96, 191 → 157), because better gear saturates what the roster still needs and `HasBuyer`
      starts refusing. Worth knowing before anyone reads a craft count as an engagement number.
   2. **Poor is dead content for a crafting player.** Not one Poor item was produced in any of the
-     twelve cells — 1,952 crafts. Even an indifferent hand grades Fine or better 92.9-100% of the
+     twelve cells — 1,713 crafts (1,952 before the blacksmith column was trimmed to one seed; the
+     finding is unchanged and is booked separately for its own unit). Even an indifferent hand grades Fine or better 92.9-100% of the
      time once the assist tree is full. "No craft is punishing" is satisfied so completely that the
      bottom band is unreachable; whether the floor should be that generous is a design question this
      entry only measures.
   3. **The blacksmith's average hand is deliberately capped below the top**, at 0% Masterwork and
-     95.3% Superior, because `HandForgePlayer`'s average deviation is pinned to equal auto-craft's
+     96.9% Superior, because `HandForgePlayer`'s average deviation is pinned to equal auto-craft's
      own 800 grade. Monotone, but flat between indifferent and average at the top band — the
      archetype's shape, unchanged by `P2-OQ11` and now proven so end to end rather than argued.
 
@@ -5515,9 +5519,16 @@ default applied.**
   rather than left on record as a closed gap.
 
   **The gate: `Failed: 0, Passed: 75` (was 68 + 7 new). The pre-existing 68 did not move**, run
-  separately to prove it rather than inferred from the total. Cost is named rather than hidden: the
-  balance job goes from ~2m20 to ~3m30 in Release, almost all of it the blacksmith column, whose
-  `BaselinePlayer`-composed campaign is the corpus's richest.
+  separately to prove it rather than inferred from the total.
+
+  **Cost, and the trim the owner ruled on it.** The first cut ran the blacksmith control on two
+  seeds, which took `balance-sim` — already CI's long pole, with the whole pipeline queued behind
+  it — from 19m39s to 28m29s. A 45% throughput tax for the one scorer `P2-OQ11` deliberately did not
+  change is the wrong trade, so the blacksmith column dropped to one seed: locally the gate went
+  2m40s -> 3m33s -> **2m40s** in Release (~2m20s before this entry existed at all), and the class
+  itself 2m40s -> 1m45s. Every property still holds, with the blacksmith's margins essentially
+  unmoved (46.8% -> 46.4% Masterwork for a skilled hand; mean 622/738/862 -> 616/742/860 per-mille).
+  This is what the "cost dial, never a property dial" line above is for.
 
 ## What must survive, named so this program cannot quietly discard it
 

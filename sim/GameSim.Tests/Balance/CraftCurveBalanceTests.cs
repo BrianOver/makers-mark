@@ -71,28 +71,44 @@ public class CraftCurveBalanceTests
     private const int LateWindowFirstDay = 51;
 
     /// <summary>
-    /// Seeds for the three crafts <c>#722</c> actually changed. Five, not one: a single campaign's
-    /// recipe mix is one trajectory, and a property that only holds on seed 2026 is an instrument
-    /// reading. Drawn from the corpus's own seed set (<see cref="BalanceSimTests"/>' main seed and
-    /// four of <see cref="ForgeTierProgressionBalanceTests"/>', including the two that file names as
-    /// known composed-world misses — a marginal economy is exactly where a curve property is worth
-    /// checking).
+    /// Seeds for the three crafts <c>#722</c> actually changed. Five, not one: these are the curves
+    /// this gate exists to certify, nothing else pins them at the campaign level, and a single
+    /// campaign's recipe mix is one trajectory — a property that only held on seed 2026 would be an
+    /// instrument reading. Drawn from the corpus's own seed set (<see cref="BalanceSimTests"/>' main
+    /// seed and four of <see cref="ForgeTierProgressionBalanceTests"/>', including the two that file
+    /// names as known composed-world misses — a marginal economy is exactly where a curve property
+    /// is worth checking).
+    ///
+    /// <para>The blacksmith column runs on ONE seed instead, and that is not this rule being bent:
+    /// see <see cref="ArchetypeSeeds"/> for why an unchanged scorer already pinned recipe-by-recipe
+    /// elsewhere needs a different amount of campaign evidence than a changed one that is pinned
+    /// nowhere else.</para>
     /// </summary>
     private static readonly ulong[] ChangedCraftSeeds = [2026UL, 1UL, 42UL, 7UL, 99UL];
 
     /// <summary>
-    /// Seeds for the blacksmith column. Fewer, and the reason is cost rather than confidence:
+    /// The seed for the blacksmith column — one, deliberately, and owner-ruled 2026-09-05.
+    ///
+    /// <para><b>Why one is the right number HERE and five is the right number above.</b>
+    /// <c>Crafting/CraftCurveTests</c> already pins every blacksmith property deterministically over
+    /// every recipe at every tier, with no seed and no campaign at all. What this column adds is the
+    /// one thing that file cannot show — that the archetype survives a real economy — and a single
+    /// 100-day campaign shows it. Full seed coverage stays on the three crafts <c>#722</c> actually
+    /// changed, which is where a regression would appear.</para>
+    ///
+    /// <para><b>The cost that decided it, measured rather than estimated.</b>
     /// <see cref="HandForgePlayer"/> composes over <see cref="BaselinePlayer"/>, whose campaign is
-    /// the corpus's richest (measured: ~19k events and 20 heroes over 100 days against an alchemy
-    /// campaign's ~5.5k and 12) and runs roughly fifty times longer per seed. Three hands x five
-    /// seeds of it would more than double the entire balance gate's wall clock to certify the ONE
-    /// scorer #722 deliberately did not change.
+    /// the corpus's richest (~19k events and 20 heroes over 100 days, against an alchemy campaign's
+    /// ~5.5k and 12) and runs roughly fifty times longer per seed: at two seeds this column was
+    /// 1m40s of the class's 2m40s in Release, for six campaigns out of fifty-one. On CI that took
+    /// <c>balance-sim</c> — already the pipeline's long pole, everything queues behind it — from
+    /// 19m39s to 28m29s, a 45% throughput tax for the one scorer <c>#722</c> did not touch.</para>
     ///
     /// <para>The seed count is a cost dial, never a property dial: every contract below is asserted
     /// identically in every cell, the report names the seed count behind each row, and the
     /// blacksmith's margins are the widest in the table.</para>
     /// </summary>
-    private static readonly ulong[] ArchetypeSeeds = [2026UL, 1UL];
+    private static readonly ulong[] ArchetypeSeeds = [2026UL];
 
     private static readonly CraftHand[] Ladder =
         [CraftHand.Indifferent, CraftHand.Average, CraftHand.Skilled];
