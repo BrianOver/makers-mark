@@ -608,7 +608,7 @@ tally-ending.
 |---|------|------|-----------|-----------------|--------|
 | P1 | **Night leads with the mark** (loop U5 / H3): the reveal opens with the attribution beat; sale-and-deed grouped by item | session, godot-only | nothing | Hero: tonight's bearer of your marked item. Ledger line: *is* the item — the beat becomes the opening card | Landed 2026-08-07 (wave U1) |
 | P2 | **The send-off names your work** (H4 / Q-1): the departure slate captions which marchers carry your items | session, godot-only | nothing (reads better after P1) | Hero: the named marchers. Ledger line: the antecedent Night points back to | Landed 2026-08-07 (wave U2) — and see the §8 correction: the naive version was already shipped; what was owed was the 2-line cap, the staging, and an honest empty state |
-| P3 | **Protect the finale**: two-sided balance assertions (floor 5 *reached* by day ≤N on the main seed; ending *fires* within 100 days) + one scripted full-length client run confirming Act III on the real HUD | session, tests-only | nothing | Invariant: the campaign has an end. (Chain-test clause 3 — protect the substrate) | Landed 2026-08-10 (forward-ladder L0-L7, closes draft #413). Venues are a forward ladder now; routing keys on `Hero.LadderRank`, not the power latch that stranded parties. Two-sided and green on the main seed (rung-0 clear day 18, Act III day 18, Climax day 26, Ending day 31) and on the 10-seed sweep (Ending ≤ day 36). See §11.8. The scripted full-length client-HUD run remains open |
+| P3 | **Protect the finale**: two-sided balance assertions (floor 5 *reached* by day ≤N on the main seed; ending *fires* within 100 days) + one scripted full-length client run confirming Act III on the real HUD | session, tests-only | nothing | Invariant: the campaign has an end. (Chain-test clause 3 — protect the substrate) | Landed 2026-08-10 (forward-ladder L0-L7, closes draft #413). Venues are a forward ladder now; routing keys on `Hero.LadderRank`, not the power latch that stranded parties. Two-sided and green on the main seed (rung-0 clear day 18, Act III day 18, Climax day 26, Ending day 31) and on the 10-seed sweep (Ending ≤ day 36). **REOPENED 2026-09-05: the finale is reachable on 11 seeds but not universally — at 200 seeds `BaselinePlayer` locks 2 campaigns permanently and `ApprenticePlayer` locks 156 of 200. The ladder's gates are absorbing: a party that plateaus under one can never climb out, and the game says nothing. Cause found, fix needs an owner ruling: §11.8.1.** The scripted full-length client-HUD run also remains open |
 | P4 | **The human feel-test** (§9.8): `play.ps1`, one real evening, the five written questions — with the fifth (the boredom day) checked against the wall, now two measured numbers: `P2-LONG-01`'s menu-novelty wall (median day 25.0, 20-seed sweep, was assumed day-11, unmeasured) and `P2-LONG-26`'s felt-routine wall (median day 12.0, same sweep machinery — the sharper predictor of boredom specifically) | an evening (owner) | P1+P2 merged — *with a deadline, not a dependency* (see ties) | Not a build item — the gate that rules 9.3, 9.5, 9.7, confirms R4/R6, and confirms both re-dated walls from the human side | OPEN — **put it on the calendar now** (§12, review C: the bottleneck is the owner, not the agents) |
 | P5 | **The vigil branch**: (a) surface the irony, or (b) retune wave, or (c) damp compensation — V-3's hero-chips ride whichever branch wins | (a) session / (b) wave + **re-baseline** / (c) session-wave + **re-baseline** | **R1** | Hero: the camped party. Ledger line: the delivery's `Provisioned`/`PotionLifesave` beat — or the death delta, depending on the branch | BLOCKED (R1) |
 | P6 | **Endgame surfaces**: buttons + bell-tray wiring for UpgradeForge, BuyForgeSupply, MasterworkAttempt, CommissionLegendaryWork | ~2 sessions, godot-only | R2 — **RULED: build** | Hero: whoever carries the guaranteed Masterwork. Ledger line: the attempt's cost and the resulting item's beats | Landed 2026-08-07 (wave U3/U4). Dominance measured before shipping the buttons: 17.0% of crafted value flows through purchased attempts at Tier II with a 5000g reserve — hand-work keeps the field. `BaselinePlayer` untouched, no re-baseline |
@@ -1010,6 +1010,131 @@ green (L6, closing draft #413). On the main seed a full `BaselinePlayer` campaig
 the latest — every seed lands inside the plan's own windows on the first measurement. The finale
 P3 exists to protect is reachable. §11.4's P3 row is updated in this same PR; the plan doc itself
 is deleted per rule 7 — git history is the archive.
+
+**Reopened 2026-09-05 at a wider sample — see §11.8.1.** Every sentence above is true of the
+sample it names (the main seed plus a 10-seed sweep). "The finale is reachable" is not true as a
+universal: at 200 seeds `BaselinePlayer` leaves 2 campaigns permanently locked, and under the
+guided course's own script 156 of 200 are. The gates L3/L4 characterized are **absorbing** —
+a party that plateaus under one can never climb out — and that property was invisible at 11 seeds.
+
+### 11.8.1 The ladder's gates are absorbing — measured 2026-09-05 (P2-END-01)
+
+**The observation that started it.** A 20-seed / 100-day `BaselinePlayer` corpus: 18 campaigns
+end on day 23–33, **2 never end inside 100 days**. That measurement named no cause, and its
+headline rate turned out to be wrong in both directions. Both are settled below.
+
+**The chain the Ending hangs from.** `ArcDirectorSystem` fires the Ending 5 days after the
+Climax; the Climax fires when a hero's `Hero.LadderRank` reaches `ClimaxRank`; rank is earned one
+rung at a time, by a rank-*r* party clearing a rank-*r* venue's own bottom floor
+(`ExpeditionRevealSystem` is that field's only write site). Every one of those clears passes
+through `ExpeditionResolver`'s **structural** gate — `PartyAveragePower(fighters) < venue.Gate(floor)`
+halts the run at `ExpeditionHalt.GateHeld` with **no roll involved**. There is no luck to wait for.
+
+**The cause: party power runs out of terms.** `CombatMath.EffectivePower` is class base (fixed)
++ `Level` (capped at **6** by `HeroRank.Ladder`'s six rungs, reached long before day 40) + equipped
+gear. Once the roster is level-capped, **gear is the only remaining variable** — and every recipe
+above Tier 3 is gated on ore that only flows from a venue *behind* the gate it would open.
+`RecipeTable.cs` says so in its own words for both upper rungs: rung-1's Tier 8–9 rows need
+material that "only enter[s] `Player.Materials` via Gloomwood loot, which only flows once a party
+graduates", and rung-2's Tier 12–14 rows need Emberfall ore, which needs Gloomwood graduated. The
+gear curve is strictly behind the gate it must open.
+
+So a seed whose Tier-1–3 plateau lands *under* a rung's gate is locked there permanently, and
+runs out the horizon with nothing changing. Measured, `--policy baseline`:
+
+| seed | wall rung | party power | that rung's gate | halts | for how long |
+|---|---|---|---|---|---|
+| 4 | 0 (`mine`, floor 5) | frozen at **67** from day 40 | **70** | `GateHeld` 94 of 100 nights | 60 days, no change |
+| 5 | 1 (`gloomwood`, floor 4) | frozen at **72** from day 50 | **73** | `GateHeld` 61 of 61 Gloomwood nights | 50 days, no change |
+
+Three points short, and one point short. Neither seed ever reaches Emberfall — seed 4 never even
+reaches Gloomwood.
+
+**Why it is absorbing, not merely slow.** Every economic quantity freezes at the same moment.
+Seed 5, day 45 → day 100: player gold **37**, crafts **20**, shelf **2**, open ore offers **21**,
+player-shop sales **23** — not one of them moves by a single unit across those 55 days. Meanwhile
+hero gold climbs to **24,149**, and heroes keep walking past the same two shelf items and refusing
+them at about **12 refusals a day** (1,042 over the campaign). The player is too poor to buy the
+ore, so cannot craft; with nothing new on the shelf, nothing sells; with nothing sold, no gold.
+The loop has no exit, and the length of the horizon does not matter.
+
+**The no-softlock guarantee does not cover this, and is not broken.** `DestitutionRecoverySystem`
+(Playable Core R5/KD3) never fires on either seed — correctly, by its own test: 37–48 gold buys 2
+copper and crafts a Tier-1 recipe. Its guarantee is *a craft is always reachable*, not *a rung is*.
+A Tier-1 dagger cannot move a party from 67 to 70. This is a scope gap, not a defect in that
+system.
+
+**This is NOT the late-campaign economic decay.** The decay is real and universal, but in the 18
+healthy seeds it begins *after* the ending has already fired. The stalled seeds never had an
+economy to decay: their shop dies around day 30–40 and the wall is contemporaneous with it, not
+consequent on it. The two facts share a mechanism (the gear economy) but not a direction.
+
+**The rate is a property of the player's hand, not of the game — name the policy or the number
+means nothing.** 100-day runs from seed 1, `arc-stall`:
+
+| policy | seeds | stalled | rate | ending day (min/median/max) | wall rungs |
+|---|---|---|---|---|---|
+| `handforge` | 100 | 0 | **0%** | 27 / 34 / 47 | — |
+| `baseline` | 200 | 2 (seeds 4 and 5) | **1%** | 22 / 28 / 45 | rank 0: 1, rank 1: 1 |
+| `apprentice` | 200 | **156** | **78%** | 30 / 46 / 94 | rank 0: 72, rank 1: 82, rank 2: 2 |
+
+Two corrections fall out of that table, and both matter more than the original observation.
+
+**The 10% was small-sample noise.** At 200 seeds `baseline` stalls on 1% — the same two seeds,
+4 and 5, that the 20-seed corpus happened to contain. A 20-seed window is not a rate.
+
+**But the spread between policies is enormous, and it is the real finding.** `HandForgePlayer`
+— a hand that actually plays the forge minigame — never stalls in 100 seeds.
+`ApprenticePlayer` — the guided course's own script, which *does* open the counter, accept fair
+offers and buy ore, the blind spots `BaselinePlayer` is usually blamed for — stalls **78% of the
+time**, because it deliberately crafts one Tier-1 gear recipe (`dagger`) and nothing else. With
+a 1–3 point margin at the gate, **hand quality decides reachability outright**. Any single stall
+rate is an instrument reading; 0%, 1% and 78% are all true of this build.
+
+**Which reorders the fix.** The lock is rare under competent play and normal under weak play, so
+the population that meets it is beginners — including anyone who plays the guided course
+literally. That makes option 4 below (name the wall) the urgent half rather than the polite one:
+today a locked campaign is indistinguishable, from inside, from a campaign that is merely going
+slowly, for sixty identical days.
+
+**Repro** (the sweep is `sim/GameSim.Cli/ArcStallSweep.cs`, `--trace` writes the day-by-day CSV):
+
+```bash
+dotnet run --project sim/GameSim.Cli -- arc-stall --seed 1 --seeds 200 --days 100 --policy baseline
+dotnet run --project sim/GameSim.Cli -- arc-stall --seed 4 --seeds 1 --days 100 --trace 4
+```
+
+**The fix is an owner decision, because every option is a balance lever with a re-baseline.**
+Four, with the tradeoff named:
+1. **Break the material gate.** Give each rung at least one gear recipe craftable from the
+   *previous* rung's ore (or from vendor-priced material), so the gear curve is no longer strictly
+   behind the gate it must open. Removes the absorbing property at its source; moves every power
+   curve, so it re-baselines the balance gate.
+2. **Make `GateHeld` change state.** A party turned away repeatedly banks *something* — the
+   structural retreat currently costs the world nothing and teaches it nothing. Keeps the gates,
+   kills the fixed point; needs a rule for what accrues and a re-baseline.
+3. **Widen the no-softlock guarantee** from "a craft is reachable" to "the next rung is
+   reachable": `DestitutionRecoverySystem`'s test becomes a power-versus-next-gate comparison and
+   its rescue tops up *ore*, not gold. Smallest structural change, but it makes a rescue system
+   load-bearing for progression, which is a design call.
+4. **Say it out loud.** Today a walled campaign gives no signal whatsoever — it plays on for
+   sixty identical days. Whatever lever wins, the game should name the wall. This one is honest
+   regardless of the others and does not need a re-baseline.
+
+Recommended pairing: **4 first, then 1**. 4 needs no ruling and no re-baseline and it is what
+stops a beginner staring at sixty identical days; 1 removes the absorbing property at its source
+and needs both. Not built here — this entry is the diagnosis, and 1–3 all need a ruling before a
+line is written.
+
+**A note on the instrument, again.** §11.8's own closing note said the analytics pass owed an
+arc-completion check. `Anomalies.ShopCollapse` (#724) now fires on exactly these two baseline
+seeds and stays silent on the other 198 — a useful oracle for "is this seed one of the broken
+ones" — but it names the *symptom*, and there is still no anomaly for "this campaign never ends."
+The 11-seed sample that closed §11.8 was not wrong about its own seeds; it was simply too
+small to see a 1%-of-seeds event, and the plan then recorded "the finale is reachable" as settled
+rather than "reachable on the seeds we ran." A sample that cannot distinguish "rare" from "never"
+should not be allowed to close a reachability question — that is the reusable lesson, and it is
+why the arc-completion check §11.8 asked for is still owed.
 
 ### 11.9 The bet
 

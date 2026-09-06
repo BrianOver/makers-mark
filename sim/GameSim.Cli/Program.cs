@@ -162,6 +162,44 @@ if (args.Length > 0 && args[0] == "econ-trajectory")
     return etParsed is null ? 1 : GameSim.Cli.EconTrajectory.Run(etParsed, Console.Out, Console.Error);
 }
 
+// Arc-stall mode (P2-END-01, one-off measurement, not a gate): `-- arc-stall [--seeds N]
+// [--seed S] [--days N] [--policy P] [--out DIR]` asks WHY a campaign fails to reach its ending
+// inside the playable horizon — did a party ever reach the terminal rung, and could it ever
+// muster the terminal gate's power — so a stall can be told from a slow finish, and a doom loop
+// (the ending gated on power the collapsed economy can no longer buy) from neither.
+if (args.Length > 0 && args[0] == "arc-stall")
+{
+    var asSeeds = 20;
+    var asStart = 1UL;
+    var asDays = 100;
+    var asPolicy = "baseline";
+    var asOut = Path.Combine("runs", "arc-stall");
+    ulong? asTrace = null;
+    for (var i = 1; i < args.Length; i++)
+    {
+        if (args[i] == "--seeds" && i + 1 < args.Length && int.TryParse(args[i + 1], out var s)) { asSeeds = s; i++; }
+        else if (args[i] == "--seed" && i + 1 < args.Length && ulong.TryParse(args[i + 1], out var st)) { asStart = st; i++; }
+        else if (args[i] == "--days" && i + 1 < args.Length && int.TryParse(args[i + 1], out var d)) { asDays = d; i++; }
+        else if (args[i] == "--policy" && i + 1 < args.Length) { asPolicy = args[i + 1]; i++; }
+        else if (args[i] == "--trace" && i + 1 < args.Length && ulong.TryParse(args[i + 1], out var tr)) { asTrace = tr; i++; }
+        else if (args[i] == "--out" && i + 1 < args.Length) { asOut = args[i + 1]; i++; }
+        else
+        {
+            Console.Error.WriteLine($"arc-stall: unknown/invalid arg near '{args[i]}' — usage: "
+                + "arc-stall [--seeds N] [--seed S] [--days N] [--policy P] [--trace SEED] [--out DIR]");
+            return 1;
+        }
+    }
+
+    if (asSeeds <= 0 || asDays <= 0)
+    {
+        Console.Error.WriteLine("arc-stall: --seeds and --days must be positive");
+        return 1;
+    }
+
+    return GameSim.Cli.ArcStallSweep.Run(asSeeds, asStart, asDays, asOut, asPolicy, asTrace, Console.Out, Console.Error);
+}
+
 // Interactive mode accepts ONLY `--seed N`. Anything else is a hard error — a typo'd batch
 // invocation ('Batch', misordered flags) must never fall through to the interactive REPL,
 // where redirected stdin would EOF and exit 0 having written zero chronicles (silent green).
