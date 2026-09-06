@@ -5653,13 +5653,28 @@ default applied.**
   separately to prove it rather than inferred from the total.
 
   **Cost, and the trim the owner ruled on it.** The first cut ran the blacksmith control on two
-  seeds, which took `balance-sim` — already CI's long pole, with the whole pipeline queued behind
-  it — from 19m39s to 28m29s. A 45% throughput tax for the one scorer `P2-OQ11` deliberately did not
-  change is the wrong trade, so the blacksmith column dropped to one seed: locally the gate went
-  2m40s -> 3m33s -> **2m40s** in Release (~2m20s before this entry existed at all), and the class
-  itself 2m40s -> 1m45s. Every property still holds, with the blacksmith's margins essentially
-  unmoved (46.8% -> 46.4% Masterwork for a skilled hand; mean 622/738/862 -> 616/742/860 per-mille).
-  This is what the "cost dial, never a property dial" line above is for.
+  seeds. The owner ruled it down to one, on the reasoning that `Crafting/CraftCurveTests` already
+  pins every blacksmith property recipe-by-recipe at every tier, so the campaign column only needs
+  to show the archetype survives a real economy once, while full seed coverage stays on the three
+  crafts that actually changed — which is where a regression would appear. Counted in the unit that
+  does not drift: at two seeds the blacksmith was **6 of the fixture's 51 campaigns and cost more
+  than the other 45 combined**; at one seed it is 3 of 48. Every property still holds, with the
+  blacksmith's margins essentially unmoved (46.8% -> 46.4% Masterwork for a skilled hand; mean
+  622/738/862 -> 616/742/860 per-mille). This is what the "cost dial, never a property dial" line
+  above is for.
+
+  **A correction to this entry's own first receipt, kept rather than quietly deleted.** The trim was
+  originally argued to the owner as a CI measurement — `balance-sim` going 19m39s to 28m29s, a "45%
+  throughput tax" on the pipeline's long pole. **That number was not sound.** It compared a single
+  post-change sample against the *fastest* pre-change one. Nine runs of that job on `main` span
+  **19m39s to 39m22s** across code that does not differ by anything close to that, and the trimmed
+  build duly came back at 29m06s — *slower* than the two-seed run it improves on. Local timings are
+  quieter but not clean either: this suite in Debug measured 5m25s and 7m47s on identical code,
+  minutes apart, with other work sharing the machine. The ruling stands undisturbed, because its
+  reason was never the timing; but this program treats a receipt that does not match the tree as a
+  lie living in git (rule 12), including when the receipt is its own. **Standing consequence: no
+  wall clock in this repo — CI's least of all — is evidence about what a change costs. Count the
+  work: campaigns, ticks, tests. `balance-sim`'s duration is runner weather.**
 
 ## What must survive, named so this program cannot quietly discard it
 

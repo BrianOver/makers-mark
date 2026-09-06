@@ -96,13 +96,27 @@ public class CraftCurveBalanceTests
     /// 100-day campaign shows it. Full seed coverage stays on the three crafts <c>#722</c> actually
     /// changed, which is where a regression would appear.</para>
     ///
-    /// <para><b>The cost that decided it, measured rather than estimated.</b>
+    /// <para><b>The cost that decided it, counted in campaigns rather than clocked.</b>
     /// <see cref="HandForgePlayer"/> composes over <see cref="BaselinePlayer"/>, whose campaign is
-    /// the corpus's richest (~19k events and 20 heroes over 100 days, against an alchemy campaign's
-    /// ~5.5k and 12) and runs roughly fifty times longer per seed: at two seeds this column was
-    /// 1m40s of the class's 2m40s in Release, for six campaigns out of fifty-one. On CI that took
-    /// <c>balance-sim</c> — already the pipeline's long pole, everything queues behind it — from
-    /// 19m39s to 28m29s, a 45% throughput tax for the one scorer <c>#722</c> did not touch.</para>
+    /// the corpus's richest — ~19k events and 20 heroes over 100 days, against an alchemy
+    /// campaign's ~5.5k and 12. At two seeds the blacksmith was <b>6 of this file's 51 campaigns
+    /// and cost more than the other 45 put together</b> (measured by deleting the column: 1m00s
+    /// against the full 2m40s in Release). One seed makes it 3 of 48, and every property still
+    /// holds with the widest margins in the table.</para>
+    ///
+    /// <para><b>Why that is stated as campaigns and not as a saved wall clock — a correction to
+    /// this file's own first receipt.</b> The trim was originally argued from <c>balance-sim</c>'s
+    /// CI wall clock, 19m39s against 28m29s, read as a 45% tax. <b>That comparison was unsound</b>:
+    /// it put one post-change sample against the FASTEST pre-change one. Nine runs of that job on
+    /// main span 19m39s to 39m22s across code that does not differ by anything close to that, and
+    /// the trimmed build then came back at 29m06s — SLOWER than the two-seed run it improves on.
+    /// Local runs are quieter but not clean either: this same suite in Debug measured 5m25s and
+    /// 7m47s on identical code, minutes apart, while other work shared the machine. So no wall
+    /// clock here is load-bearing; the campaign count is, because it is what the code actually
+    /// does. The ruling stands undisturbed either way, since its reason was never the timing:
+    /// <c>CraftCurveTests</c> pins the blacksmith recipe-by-recipe already. Recorded rather than
+    /// quietly dropped — a receipt that does not match the tree is the failure this whole line of
+    /// work exists to undo, and it does not stop being one when it is mine.</para>
     ///
     /// <para>The seed count is a cost dial, never a property dial: every contract below is asserted
     /// identically in every cell, the report names the seed count behind each row, and the
