@@ -90,11 +90,39 @@ public static class ArcStallSweep
 
     public static int Run(
         int seedCount, ulong startSeed, int days, string outDir, string policyArg, ulong? traceSeed,
-        TextWriter output, TextWriter error)
+        TextWriter output, TextWriter error, string handArg = "average")
     {
         if (BatchRunner.ParsePolicy(policyArg) is not { } policy)
         {
             error.WriteLine($"arc-stall: unknown --policy '{policyArg}' ({BatchRunner.PolicyNames})");
+            return 1;
+        }
+
+        // The craft hand is the axis P2-END-01 turned on: a gate one to three points wide is decided
+        // by item quality, so "does the wall still hold" is only answerable if the sweep can drive a
+        // deliberately BAD hand as well as an average one. Same three names and the same refusal rule
+        // `batch` uses (BatchRunner.Parse) — a non-average hand against an auto-crafting policy is
+        // rejected rather than silently ignored, because a sweep that thinks it measured an
+        // indifferent smith and actually measured auto-craft is the exact mis-read this axis exists
+        // to prevent.
+        var hand = handArg.ToLowerInvariant() switch
+        {
+            "indifferent" => (CraftHand?)CraftHand.Indifferent,
+            "average" => CraftHand.Average,
+            "skilled" => CraftHand.Skilled,
+            _ => null,
+        };
+
+        if (hand is null)
+        {
+            error.WriteLine($"arc-stall: unknown --hand '{handArg}' (expected 'indifferent', 'average', or 'skilled')");
+            return 1;
+        }
+
+        if (hand != CraftHand.Average && !BatchRunner.HandAware(policy))
+        {
+            error.WriteLine($"arc-stall: --hand {handArg} needs a policy that plays a craft minigame "
+                + $"(handforge, latemastery, alchemy, tanning, engineering) — '{policyArg}' auto-crafts");
             return 1;
         }
 
@@ -109,9 +137,9 @@ public static class ArcStallSweep
         }
 
         var kernel = GameComposition.BuildKernel();
-        var policyFn = BatchRunner.PolicyFn(policy, CraftHand.Average);
+        var policyFn = BatchRunner.PolicyFn(policy, hand.Value);
         var startingProfession = BatchRunner.PolicyStartingProfession(policy);
-        var policyTag = BatchRunner.PolicyFileTag(policy);
+        var policyTag = BatchRunner.PolicyFileTag(policy, hand.Value);
 
         // The rungs, read from the registry exactly as the arc director reads them — never
         // hand-pinned, so a new rung added to the ladder moves this sweep with it. The venue a rank

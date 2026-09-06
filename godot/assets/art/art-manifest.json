@@ -52,6 +52,7 @@
   "item-hauberk": { "diffuse": true, "normal": false },
   "item-kite-shield": { "diffuse": true, "normal": false },
   "item-longsword": { "diffuse": true, "normal": false },
+  "item-mithril-warblade": { "diffuse": true, "normal": false },
   "item-moonresin-draught": { "diffuse": true, "normal": false },
   "item-rival-armor": { "diffuse": true, "normal": false },
   "item-rival-shield": { "diffuse": true, "normal": false },

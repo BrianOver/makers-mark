@@ -1,5 +1,7 @@
 using GameSim.Contracts;
 using GameSim.Crafting;
+using GameSim.Professions;
+using GameSim.Venues;
 
 namespace GameSim.Tests.Crafting;
 
@@ -11,17 +13,19 @@ public class RecipeTableTests
         // Forward-ladder plan 2026-08-10-003 L3/L4: +3 rung-1 rows (gloomsteel-blade weapon,
         // wardenweave-mail armor, moonresin-draught consumable) and +3 rung-2 rows (cinderforge-blade
         // weapon, ashguild-plate armor, emberglass-draught consumable) land on top of the original
-        // 15 gear + 1 consumable — 22 total, 19 stat-carriers, 3 consumables, weapon/armor at 7
-        // each, shield untouched at 5 (no rung shield was scoped on either rung).
-        Assert.Equal(22, RecipeTable.All.Count);
-        Assert.Equal(19, RecipeTable.All.Values.Count(r => r.Effect is null));
+        // 15 gear + 1 consumable. P2-END-01 (owner ruling 2026-09-06) adds the ONE rung-0 row the
+        // ladder was missing — mithril-warblade, Tier 4 — so 23 total, 20 stat-carriers, 3
+        // consumables, weapons at 8, armor at 7, shield untouched at 5 (no rung shield was scoped on
+        // any rung).
+        Assert.Equal(23, RecipeTable.All.Count);
+        Assert.Equal(20, RecipeTable.All.Values.Count(r => r.Effect is null));
         Assert.Equal(3, RecipeTable.All.Values.Count(r => r.Slot == ItemSlot.Consumable));
 
-        Assert.Equal(7, RecipeTable.All.Values.Count(r => r.Slot == ItemSlot.Weapon));
+        Assert.Equal(8, RecipeTable.All.Values.Count(r => r.Slot == ItemSlot.Weapon));
         Assert.Equal(5, RecipeTable.All.Values.Count(r => r.Slot == ItemSlot.Shield));
         Assert.Equal(7, RecipeTable.All.Values.Count(r => r.Slot == ItemSlot.Armor));
 
-        Assert.Equal(new[] { 1, 2, 3, 8, 9, 12, 13, 14 }, RecipeTable.All.Values.Select(r => r.Tier).Distinct().OrderBy(t => t));
+        Assert.Equal(new[] { 1, 2, 3, 4, 8, 9, 12, 13, 14 }, RecipeTable.All.Values.Select(r => r.Tier).Distinct().OrderBy(t => t));
     }
 
     [Fact]
@@ -31,11 +35,12 @@ public class RecipeTableTests
         {
             Assert.Equal(key, recipe.RecipeId);
             Assert.False(string.IsNullOrWhiteSpace(recipe.Name));
-            // Three bands only: the original Tier 1-3 gear/consumable, the rung-1 Tier 8-9 Gloomwood
-            // recipes (L3), and the rung-2 Tier 12-14 Emberfall recipes (L4) — Tier 4-7 and Tier
-            // 10-11 are deliberately empty (no rung between them).
-            Assert.True(recipe.Tier is >= 1 and <= 3 or >= 8 and <= 9 or >= 12 and <= 14,
-                $"{key}: tier {recipe.Tier} is outside all three recipe bands (1-3, 8-9, 12-14)");
+            // Four bands only: the original Tier 1-3 gear/consumable, the rung-0 Tier 4 Mine row
+            // (P2-END-01), the rung-1 Tier 8-9 Gloomwood recipes (L3), and the rung-2 Tier 12-14
+            // Emberfall recipes (L4) — Tier 5-7 and Tier 10-11 are deliberately empty (no rung
+            // between them).
+            Assert.True(recipe.Tier is >= 1 and <= 4 or >= 8 and <= 9 or >= 12 and <= 14,
+                $"{key}: tier {recipe.Tier} is outside all four recipe bands (1-4, 8-9, 12-14)");
             Assert.True(recipe.MaterialQuantity >= 1);
             Assert.True(RecipeTable.MaterialGrades.ContainsKey(recipe.MaterialKey), $"{key}: unknown material '{recipe.MaterialKey}'");
 
@@ -108,6 +113,42 @@ public class RecipeTableTests
         Assert.True(RecipeTable.All["tower-shield"].BaseStats.Weight > RecipeTable.All["kite-shield"].BaseStats.Weight);
         // Heavy armor outweighs the standard armor of the same tier.
         Assert.True(RecipeTable.All["half-plate"].BaseStats.Weight > RecipeTable.All["hauberk"].BaseStats.Weight);
+    }
+
+    [Fact]
+    public void RungZeroRecipe_IsCraftableFromOreReachableBeneathItsOwnGate()
+    {
+        // P2-END-01, owner ruling 2026-09-06 ("break the material gate"): every rung must own at
+        // least one gear recipe craftable from ore reachable BEFORE that rung's own bottom-floor
+        // gate. Rung 0 owned none — the table stopped at Tier 3 (steel, grade 3) and the Mine's
+        // deeper ore had no home at all — which is what made the rung-0 gate absorbing for a seed
+        // whose party plateaued under it.
+        Assert.True(RecipeTable.TryGet("mithril-warblade", out var blade));
+        Assert.Equal(4, blade!.Tier);
+        Assert.Equal("mithril", blade.MaterialKey);
+        Assert.Equal(4, RecipeTable.MaterialGrades[blade.MaterialKey]); // grade == tier, gloomsteel-blade's own shape
+
+        // The reachability claim itself, re-derived from the live venue rather than asserted: the
+        // floor that mints this recipe's material is gated STRICTLY BELOW the bottom floor whose
+        // gate the recipe exists to answer. If a future re-gate inverts that, this row stops being
+        // an answer to rung 0 and this test says so.
+        var mine = VenueRegistry.Mine;
+        var mithrilFloor = mine.Floors.Single(f => f.OreKey == blade.MaterialKey);
+        Assert.True(
+            mine.Gate(mithrilFloor.Floor) < mine.Gate(mine.FloorCount),
+            $"mithril is minted on floor {mithrilFloor.Floor} (gate {mine.Gate(mithrilFloor.Floor)}), which must stay "
+                + $"below the bottom floor's gate ({mine.Gate(mine.FloorCount)}) or the recipe is behind the wall it opens");
+
+        // A real step over the Tier-3 ceiling, and still under the next rung's own answer — the
+        // curve stays monotone across all four bands.
+        Assert.True(blade.BaseStats.Attack > RecipeTable.All["greatsword"].BaseStats.Attack);
+        Assert.True(blade.BaseStats.Attack < RecipeTable.All["gloomsteel-blade"].BaseStats.Attack);
+
+        // Never talent-gated: Tier 4 carries no TierGate row, which is what makes it reachable to a
+        // smith the Forge Tier ladder has stranded. Tier 2/3 ARE gated, deliberately, and stay so.
+        Assert.False(ProfessionRegistry.Blacksmith.TierGate.ContainsKey(blade.Tier));
+        Assert.True(ProfessionRegistry.Blacksmith.TierGate.ContainsKey(2));
+        Assert.True(ProfessionRegistry.Blacksmith.TierGate.ContainsKey(3));
     }
 
     [Fact]

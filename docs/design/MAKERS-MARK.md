@@ -608,7 +608,7 @@ tally-ending.
 |---|------|------|-----------|-----------------|--------|
 | P1 | **Night leads with the mark** (loop U5 / H3): the reveal opens with the attribution beat; sale-and-deed grouped by item | session, godot-only | nothing | Hero: tonight's bearer of your marked item. Ledger line: *is* the item — the beat becomes the opening card | Landed 2026-08-07 (wave U1) |
 | P2 | **The send-off names your work** (H4 / Q-1): the departure slate captions which marchers carry your items | session, godot-only | nothing (reads better after P1) | Hero: the named marchers. Ledger line: the antecedent Night points back to | Landed 2026-08-07 (wave U2) — and see the §8 correction: the naive version was already shipped; what was owed was the 2-line cap, the staging, and an honest empty state |
-| P3 | **Protect the finale**: two-sided balance assertions (floor 5 *reached* by day ≤N on the main seed; ending *fires* within 100 days) + one scripted full-length client run confirming Act III on the real HUD | session, tests-only | nothing | Invariant: the campaign has an end. (Chain-test clause 3 — protect the substrate) | Landed 2026-08-10 (forward-ladder L0-L7, closes draft #413). Venues are a forward ladder now; routing keys on `Hero.LadderRank`, not the power latch that stranded parties. Two-sided and green on the main seed (rung-0 clear day 18, Act III day 18, Climax day 26, Ending day 31) and on the 10-seed sweep (Ending ≤ day 36). **REOPENED 2026-09-05: the finale is reachable on 11 seeds but not universally — at 200 seeds `BaselinePlayer` locks 2 campaigns permanently and `ApprenticePlayer` locks 156 of 200. The ladder's gates are absorbing: a party that plateaus under one can never climb out, and the game says nothing. Cause found, fix needs an owner ruling: §11.8.1.** The scripted full-length client-HUD run also remains open |
+| P3 | **Protect the finale**: two-sided balance assertions (floor 5 *reached* by day ≤N on the main seed; ending *fires* within 100 days) + one scripted full-length client run confirming Act III on the real HUD | session, tests-only | nothing | Invariant: the campaign has an end. (Chain-test clause 3 — protect the substrate) | Landed 2026-08-10 (forward-ladder L0-L7, closes draft #413). Venues are a forward ladder now; routing keys on `Hero.LadderRank`, not the power latch that stranded parties. Two-sided and green on the main seed (rung-0 clear day 18, Act III day 18, Climax day 26, Ending day 31) and on the 10-seed sweep (Ending ≤ day 36). **Reopened 2026-09-05, half-closed 2026-09-06 (P2-END-01).** The ladder's rung-0 gate was absorbing — a party that plateaued under it could never climb out, because the blacksmith's table stopped at Tier 3 while the Mine's own deeper ore had no recipe at all. Option 1 of §11.8.1 shipped (one Tier-4 mithril row) and `BaselinePlayer` now reaches an ending on **200 of 200** seeds, up from 198, with the healthy seeds' ending-day median unmoved at 28. `ApprenticePlayer`'s 156-of-200 figure did NOT move and never could: it is a property of that harness SCRIPT, which crafts one Tier-1 recipe forever — see §11.8.1's close-out before quoting it. Still open: the game says nothing when a party IS walled (§11.8.1 option 4), and the scripted full-length client-HUD run |
 | P4 | **The human feel-test** (§9.8): `play.ps1`, one real evening, the five written questions — with the fifth (the boredom day) checked against the wall, now two measured numbers: `P2-LONG-01`'s menu-novelty wall (median day 25.0, 20-seed sweep, was assumed day-11, unmeasured) and `P2-LONG-26`'s felt-routine wall (median day 12.0, same sweep machinery — the sharper predictor of boredom specifically) | an evening (owner) | P1+P2 merged — *with a deadline, not a dependency* (see ties) | Not a build item — the gate that rules 9.3, 9.5, 9.7, confirms R4/R6, and confirms both re-dated walls from the human side | OPEN — **put it on the calendar now** (§12, review C: the bottleneck is the owner, not the agents) |
 | P5 | **The vigil branch**: (a) surface the irony, or (b) retune wave, or (c) damp compensation — V-3's hero-chips ride whichever branch wins | (a) session / (b) wave + **re-baseline** / (c) session-wave + **re-baseline** | **R1** | Hero: the camped party. Ledger line: the delivery's `Provisioned`/`PotionLifesave` beat — or the death delta, depending on the branch | BLOCKED (R1) |
 | P6 | **Endgame surfaces**: buttons + bell-tray wiring for UpgradeForge, BuyForgeSupply, MasterworkAttempt, CommissionLegendaryWork | ~2 sessions, godot-only | R2 — **RULED: build** | Hero: whoever carries the guaranteed Masterwork. Ledger line: the attempt's cost and the resulting item's beats | Landed 2026-08-07 (wave U3/U4). Dominance measured before shipping the buttons: 17.0% of crafted value flows through purchased attempts at Tier II with a 5000g reserve — hand-work keeps the field. `BaselinePlayer` untouched, no re-baseline |
@@ -1039,6 +1039,16 @@ material that "only enter[s] `Player.Materials` via Gloomwood loot, which only f
 graduates", and rung-2's Tier 12–14 rows need Emberfall ore, which needs Gloomwood graduated. The
 gear curve is strictly behind the gate it must open.
 
+> **Corrected 2026-09-06, while building option 1.** That last inference is wrong for the two
+> UPPER rungs and right only for rung 0. Those `RecipeTable` comments describe reaching a rung, not
+> clearing it: a rank-1 party walks Gloomwood's floors 1–3 (gates 0/20/45) on its way to the boss
+> floor and loots each one, so greenheart/amberpitch/moonresin are in hand well before the gate of
+> 73 — and Emberfall is the same shape. The rung that genuinely had no answer was **rung 0**, where
+> the table simply stopped at Tier 3 and the Mine's own mithril (floor 4, gate 60, strictly beneath
+> the floor-5 gate of 70) had no recipe at all. See this section's close-out below for the trace
+> that shows a party carrying Mine-ore gear straight through both upper rungs with zero Gloomwood
+> ore in the shop.
+
 So a seed whose Tier-1–3 plateau lands *under* a rung's gate is locked there permanently, and
 runs out the horizon with nothing changing. Measured, `--policy baseline`:
 
@@ -1091,11 +1101,19 @@ time**, because it deliberately crafts one Tier-1 gear recipe (`dagger`) and not
 a 1–3 point margin at the gate, **hand quality decides reachability outright**. Any single stall
 rate is an instrument reading; 0%, 1% and 78% are all true of this build.
 
-**Which reorders the fix.** The lock is rare under competent play and normal under weak play, so
-the population that meets it is beginners — including anyone who plays the guided course
-literally. That makes option 4 below (name the wall) the urgent half rather than the polite one:
-today a locked campaign is indistinguishable, from inside, from a campaign that is merely going
-slowly, for sixty identical days.
+**Which reorders the fix.** The lock is rare under competent play and normal under weak play. That
+makes option 4 below (name the wall) the urgent half rather than the polite one: today a locked
+campaign is indistinguishable, from inside, from a campaign that is merely going slowly, for sixty
+identical days.
+
+> **Corrected 2026-09-06, while building option 1.** The sentence this paragraph originally ended
+> on — "the population that meets it is beginners, including anyone who plays the guided course
+> literally" — does not follow from the 78% and is retracted. `ApprenticePlayer`'s rate is a
+> property of that harness SCRIPT (one hard-coded Tier-1 recipe, one hard-coded material), not of
+> the ladder, and it is provably unreachable by any balance change: the 200-seed summary is
+> byte-identical before and after option 1 shipped. The corrected reading, and what the number
+> actually asks of onboarding, are in this section's close-out below. Option 4 remains owed on its
+> own merits.
 
 **Repro** (the sweep is `sim/GameSim.Cli/ArcStallSweep.cs`, `--trace` writes the day-by-day CSV):
 
@@ -1135,6 +1153,119 @@ small to see a 1%-of-seeds event, and the plan then recorded "the finale is reac
 rather than "reachable on the seeds we ran." A sample that cannot distinguish "rare" from "never"
 should not be allowed to close a reachability question — that is the reusable lesson, and it is
 why the arc-completion check §11.8 asked for is still owed.
+
+#### Option 1, built and measured — 2026-09-06
+
+**What shipped: one recipe.** `mithril-warblade` (Tier 4, 4x mithril, Attack 46, Weight 8) — the
+whole sim-side change. `BaselinePlayer` now reaches an ending on **200 of 200** seeds where it
+reached 198, and the healthy seeds' pacing does not move: ending day min 22 / median 28 / max 45,
+identical to the before-run in all three figures. `HandForgePlayer` stays at 0 stalled and finishes
+about five days sooner (median 34 -> 29), which is the honest cost of the change and the only
+number in the table that a reader should argue with.
+
+| policy (200 seeds, 100 days, from seed 1) | stalled before | stalled after | ending day before | ending day after |
+|---|---|---|---|---|
+| `baseline` | 2 (1.0%) | **0 (0.0%)** | 22 / 28 / 45 | 22 / 28 / 45 |
+| `handforge` (average hand) | 0 (0.0%) | 0 (0.0%) | 25 / 34 / 55 | 22 / 29 / 55 |
+| `apprentice` | 156 (78.0%) | **156 (78.0%)** | 30 / 46 / 94 | 30 / 46 / 94 |
+
+**Is the gate still a wall? Yes — but it never was the wall the question assumes.** The worry the
+owner's ruling names is that a reachable recipe turns a gate into a formality, so that a smith who
+ignores the minigame walks through it. Three facts, in the order they settle the question.
+
+First, the gate's actual job is untouched. `RivalCatalog`'s AE3 ceilings are unchanged, and
+`RivalCatalogTests` still re-derives the live floor-5 gate and asserts the best possible all-rival
+loadout (Attack 20 + Defense 16 + Defense 18 = 54) stays under it. A town with no working player
+smith still cannot clear rung 0. That is the wall, and this change does not touch a number in it.
+
+Second, the gate never discriminated on hand quality, before this change or after. `BaselinePlayer`
+AUTO-crafts — it submits no minigame trace at all, which is a strictly weaker hand than
+`CraftHand.Indifferent` — and it already passed rung 0 on **198 of 200** seeds. A bar that 99% of
+the weakest possible hands already cleared was never measuring skill. What discriminates a good
+smith from a poor one is the quality curve and everything downstream of it — price, the veteran's
+outright refusal of Poor work (`ShoppingAi.VeteranMinQualityGrade`), and how many beats the
+counterfactual replay awards — which is precisely where §11.7.12 put that job.
+
+Third, and the reason this is a softlock fix rather than a difficulty cut: the weakest hand's
+outcome distribution did not move on any seed that was already finishing. `BaselinePlayer`'s ending
+day is **22 / 28 / 45 before and 22 / 28 / 45 after**, across 200 seeds. The only campaigns that
+changed are the two that were frozen. Nothing got easier; two things stopped being impossible.
+
+**Three corrections to the diagnosis above, all found by measuring while building the fix. Read
+them before quoting any number from this section.**
+
+**1. Rungs 1 and 2 were never materially circular; only rung 0 was.** The entry above reads
+`RecipeTable`'s own comments as saying the Tier 8-9 and Tier 12-14 rows sit behind the gates they
+must open. They do not. Those comments describe *reaching the rung* (a rank-0 party graduating into
+Gloomwood), not *clearing* it. A rank-1 party targets Gloomwood's floor 4 and `ResolveFloors` walks
+floors 1..4 in order, looting each cleared floor on the way — and Gloomwood's floors 1-3 are gated
+0/20/45 against a boss gate of 73, so greenheart, amberpitch and moonresin all flow long before the
+boss falls. Emberfall is the same shape: floors 1-4 (gates 0/15/35/60) mint firebrick, slagiron,
+quench-salt and emberglass against a boss gate of 73. Measured on a healthy `baseline` seed (seed 1,
+`--trace`): the party graduates rank 0 on day 22 and rank 2 on day 23, with the player's Gloomwood
+ore stock still at **zero** — it carries Mine-ore gear straight through both upper rungs, and the
+Gloomwood ore only reaches the shop on day 25, after the rung it supposedly gated is already behind
+it. The upper rungs' recipes are a reward for arriving, not a toll for leaving.
+
+**2. Rung 0's pinch point is mithril specifically, and the circularity was total.** The Mine mints
+copper/iron/steel/mithril/adamant on floors 1-5. Floor 4's gate is 60, strictly below floor 5's 70,
+so a party three points short of graduating still farms mithril every night — it is the deepest ore
+reachable *beneath* the gate it would open. It graded 4 and had **no recipe at all**, which left the
+blacksmith's whole table topping out at Tier 3. And Tier 2 and Tier 3 are the only tiers
+`ProfessionRegistry.Blacksmith.TierGate` locks behind a talent — a talent which
+`TalentTree.ForgeTierRequirement` puts behind a 400-gold Forge Tier purchase. So the stalled seeds
+were not merely short of good ore; they were locked to **Tier 1**. Measured, seed 4 at day 100
+(`--trace` plus a scratch diagnostic column): materials `copper:26` and nothing else, no
+`tier-2-smithing`, no `tier-3-smithing`, gold 48 against a 400-gold upgrade, and a legal-recipe set
+of exactly the seven Tier-1 rows — every one of which produces gear weaker than the rival catalog's
+freely-restocked Tier-2 blade (Attack 20, the AE3 cap). A shop that can only make what the rival
+gives away for nothing cannot sell, and a shop that cannot sell cannot buy the ore. That is the
+absorbing loop, stated exactly. Tier 4 carries no `TierGate` row, which is what makes one row at
+that tier reach a smith the Forge Tier ladder has stranded — the same material-availability rule the
+Tier 8-14 rows already ship under.
+
+Confirmed through the intended mechanism, not by aggregate luck: seed 4 after the change crafts its
+twelfth and thirteenth items on days 17-18, party power steps 61 -> 72 across the 70 gate, gold
+climbs 119 -> 433, and the rung falls on day 20. Before, crafting stopped at thirteen items on day
+30 and power sat at 67 for the remaining seventy days.
+
+**3. `ApprenticePlayer`'s 78% is a property of that harness SCRIPT, not of the ladder, and no
+balance change can move it.** The policy crafts exactly one recipe id (`dagger`) with exactly one
+material (`copper`), hard-coded; its best possible product is Attack 8 scaled by the Masterwork
+multiplier, or 12, against the rival catalog's free Attack-20 blade. Nothing it makes has ever been
+worth equipping, so nothing in `RecipeTable`, `TierGate`, `MaterialRegistry` or any venue gate can
+reach it. The 200-seed sweep proves it rather than asserting it: the after-run's summary file is
+**byte-identical to the before-run's** — same 156, same rung split (rank 0: 72, rank 1: 82, rank 2:
+2), same 30/46/94. It is also not a poverty story; the stalled apprentice seeds end with 850-1000
+gold banked, 350 copper and 190 iron in the bin, and the 400-gold Forge Tier II sitting legal and
+unbought, because the script never buys it.
+
+So **the sentence "the guided course's own script stalls 78% of the time" is true and the sentence
+"a beginner who follows the course is locked out 78% of the time" is not** — the second is an
+instrument reading dressed as a finding, and this section published it. What the number actually
+asks is an onboarding question, not a balance one: *does the course ever tell the player to leave
+Tier 1?* Nothing in `TutorialFlow`, `FirstTouchLessons`, `MentorBanner` or `ObjectiveTracker`
+mentions a recipe by name, so the `dagger` constant is the harness's simplification and not the
+course's instruction — which means the course may be silent on the one move that matters, and that
+is worth a `P2-ONBOARD` unit and an owner look. Booked, not built here.
+
+**Still open from the four options.** Option 4 — *say it out loud* — is untouched and is now the
+whole remainder of this finding: a walled campaign still gives no signal, and rule 8's own logic
+applies to a game that lets a player watch sixty identical days without naming what they are looking
+at. Options 2 and 3 stay unbuilt and, on this measurement, unneeded for `baseline`. The rung-0 band
+holds exactly one row; a shield or armour sibling was measured as unnecessary (the single weapon row
+closes all 200 seeds on its own) and would cost a second art session for no measured gain.
+
+**One coupling worth budgeting for, because it surprised this unit.**
+`AssetResolutionCensusTests.EveryRecipeItemIcon_ResolvesToCommittedArt` iterates
+`ProfessionRegistry.AllRecipes` and requires committed pixels for every one. That guard is right —
+it exists because six ladder recipes shipped iconless — but its consequence is that **a sim-side
+balance change that adds a recipe cannot merge without a GPU art session**, which the
+art-pipeline design assigns to a different, serial owner. This unit paid it (32 candidates in two
+batches; the first batch's four single-subject survivors were all daggers, so the spec's negative
+gained the dagger/knife/short-blade family before the second batch produced the one usable long
+blade). A future session proposing "just add a recipe" should price that in, or propose the recipe
+and hand the icon to the art lane as a separate unit.
 
 ### 11.9 The bet
 
