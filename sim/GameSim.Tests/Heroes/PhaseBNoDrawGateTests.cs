@@ -160,6 +160,23 @@ public class PhaseBNoDrawGateTests
         // CraftCurve is pure integer arithmetic with no RNG parameter to draw from, and a scoring
         // rule cannot add, remove, or reorder a draw. See AtomicEquivalenceTests.cs's matching entry
         // for the reachability half (this trace's driver never crafts a non-blacksmith recipe at all).
+        // 2026-09-06 (P2-END-01, "break the material gate" — owner ruling of the same date): **NO-OP —
+        // neither `Inc` nor `State` moves.** RecipeTable gains one row, `mithril-warblade` (Tier 4,
+        // mithril), so that rung 0 owns a gear recipe craftable from ore reachable BENEATH its own
+        // bottom-floor gate — the ladder's gates were absorbing without one (§11.8.1). That is a
+        // balance change by any reading (a new craftable moves gear, so it moves the economy), so
+        // this file's two stated checks were run in order rather than assumed: `Inc` is byte-identical
+        // (13279888329118852579), and `git diff` over sim/GameSim/ adds no `rng.` call site at all —
+        // the whole sim-side diff is one data row in an ImmutableSortedDictionary initializer plus its
+        // comment. The reason nothing moves on THIS trace is reachability, the same argument the
+        // BatchEchoFloor and CraftCurve entries above make: the trace submits no player actions for
+        // 30 days, so it never crafts, and no kernel system iterates `RecipeTable.All` — grepped, the
+        // only kernel-path readers are of `RecipeTable.MaterialGrades`, which this change does not
+        // touch (mithril was already in MaterialRegistry.PricedPool and already graded 4). Confirmed
+        // directly rather than argued: the fast lane is 1923/1923 green with the change in (this test
+        // among them, same two numbers), and the 100-day Balance gate is 75/75 with no threshold
+        // moved. What DOES move is the 200-seed arc-stall sweep, which is the point of the change and
+        // is reported in the PR body.
         Assert.Equal(new RngState(4432103899912625622UL, 13279888329118852579UL), state.Rng);
     }
 }

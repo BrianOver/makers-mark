@@ -80,6 +80,36 @@ public static class RecipeTable
         new Recipe("field-salve",  "Field Salve",  BlacksmithProfession, ItemSlot.Consumable, Tier: 1, "copper", MaterialQuantity: 2,
             new ItemStats(Attack: 0, Defense: 0, Weight: 0), new ConsumableEffect(ConsumableKind.Heal, Magnitude: 6)),
 
+        // ---- Rung 0 (P2-END-01, owner ruling 2026-09-06): the Mine's own ore, above Tier 3 ----
+        // The ladder's gates are structural (ExpeditionResolver: PartyAveragePower < venue.Gate(floor)
+        // halts at GateHeld, no roll), so the ONLY way past one is gear — and rung 0's gate (the Mine's
+        // floor 5, 70) had no craftable answer that a party stuck under it could reach. Measured
+        // (`arc-stall --policy baseline`, 200 seeds): seed 4 froze at power 67 for sixty days holding 26
+        // units of Mine ore and 48 gold, and seed 5 froze at 72 against Gloomwood's 73. Both are
+        // ABSORBING — every economic quantity stops moving on the same day — because the gear curve
+        // above Tier 3 was strictly behind the gates it had to open.
+        //
+        // Mithril is the pinch point, and it is the ONE Mine ore that was orphaned. The Mine mints
+        // copper/iron/steel/mithril/adamant on floors 1-5; floor 4's gate is 60, strictly BELOW floor
+        // 5's 70, so a party three points short of graduating still farms mithril every night. It
+        // graded 4 with no recipe of its own, which left the blacksmith's whole table topping out at
+        // Tier 3 (steel, grade 3) — and Tier 2/3 are the only tiers ProfessionRegistry.Blacksmith's
+        // TierGate locks behind a talent, which is itself behind a 400g Forge Tier purchase the stalled
+        // economy cannot fund. Tier 4 carries no TierGate row, so this row is gated by MATERIAL
+        // AVAILABILITY alone — the same rule, for the same reason, as the Tier 8-14 rung rows below.
+        //
+        // Attack 46 sits on the existing curve (Tier 3 greatsword 40 -> this 46 -> Tier 8 gloomsteel 60),
+        // deliberately NOT a leap: a Common-grade Mithril Warblade beats the rival catalog's best blade
+        // (Attack 20, the AE3 cap) by enough to move a party average, while an indifferent hand's Poor
+        // roll is still refused outright by any floor-3+ veteran (ShoppingAi.VeteranMinQualityGrade), so
+        // the gate stays a wall for a smith who does not earn the grade. Weight 8: mithril is light for
+        // its bite, and it is still far over ShoppingAi.MysticMaxWeight (4), so no mystic carries it.
+        //
+        // Measured effect, 200 seeds x 100 days, `arc-stall --policy baseline`: 2 stalls -> 0, with the
+        // healthy seeds' ending-day distribution unmoved (median 28 before, 28 after). See §11.8.1.
+        new Recipe("mithril-warblade", "Mithril Warblade", BlacksmithProfession, ItemSlot.Weapon, Tier: 4, "mithril", MaterialQuantity: 4,
+            new ItemStats(Attack: 46, Defense: 0, Weight: 8)),
+
         // ---- Rung 1 (the forward ladder, plan 2026-08-10-003 L3): Gloomwood-ore recipes ---
         // Tier 8-9, gated by MATERIAL AVAILABILITY, not a talent node — greenheart/amberpitch/
         // moonresin only enter Player.Materials via Gloomwood loot, which only flows once a

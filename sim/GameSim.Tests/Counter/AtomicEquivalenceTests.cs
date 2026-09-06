@@ -403,6 +403,28 @@ public class AtomicEquivalenceTests
     // per craft — that is the entire point of the change and is reported in the PR body rather than
     // pinned here. The band-level contract the ruling actually asked for IS pinned, in
     // Crafting/CraftCurveTests.cs, over all four professions at once.
+    // 2026-09-06 (P2-END-01, "break the material gate", owner ruling of the same date): **NO-OP —
+    // hash UNCHANGED, value not re-pinned.** RecipeTable gains one row — `mithril-warblade`, Tier 4,
+    // keyed to mithril — so rung 0 finally owns a gear recipe craftable from ore reachable BENEATH
+    // its own bottom-floor gate. Without one the ladder's rung-0 gate was absorbing: a party that
+    // plateaued under it could never climb out, because every recipe above Tier 3 needed ore from a
+    // venue behind the gate it would open (§11.8.1, measured 2026-09-05). This is squarely a balance
+    // change — a new craftable moves gear, so it moves the economy — so it was run as a full
+    // re-baseline ceremony, and the ceremony's honest verdict is again that nothing on this trace
+    // moved. REACHABILITY, the same argument the BatchEchoFloor / ForgeScorer / CraftCurve entries
+    // above make, and stronger here than in any of them: this trace submits ZERO player actions for
+    // 30 days, so it never crafts anything at all, and no kernel system iterates `RecipeTable.All`.
+    // Grepped before writing this: every kernel-path reader of RecipeTable reads
+    // `RecipeTable.MaterialGrades`, which is derived from `MaterialRegistry.PricedPool` and is
+    // untouched — mithril was already in the pool and already graded 4, so the grade map is
+    // byte-identical. The only other reader is `ProfessionRegistry.Blacksmith.Recipes`, whose sole
+    // consumers outside the handlers are Harness policies, and this trace drives none.
+    // Confirmed directly, not argued: the fast lane is 1923/1923 green with the change in (this exact
+    // test among them, same hash), and the 100-day Balance gate is 75/75 with no threshold moved.
+    // PhaseBNoDrawGateTests is likewise unmoved in BOTH numbers; see its matching entry for the two
+    // draw-site checks, which were run in order regardless. What DOES move is the 200-seed / 100-day
+    // arc-stall sweep — `BaselinePlayer` 2 stalled campaigns to 0, the healthy seeds' ending-day
+    // median unmoved at 28 — which is the entire point of the change and is reported in the PR body.
     private const string ExpectedPreCounterSha256 =
         "F997CA17CA59593684727CD1EB5B5D192588FBA5803BD2E6A296631B6CFE890F";
 

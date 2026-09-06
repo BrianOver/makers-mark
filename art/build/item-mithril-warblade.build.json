@@ -1,0 +1,20 @@
+{
+  "Seed": 969434135,
+  "Model": "sd_xl_base_1.0.safetensors",
+  "Lora": null,
+  "Steps": 28,
+  "CfgMilli": 6500,
+  "SamplerResolved": "dpmpp_2m",
+  "SchedulerResolved": "karras",
+  "PaletteSha256": null,
+  "DiffuseSha256": "aaa0efb11ed09f3a1cb7b3b274c712eef230df5dac7126fec017cfa20fc05605",
+  "NormalSha256": null,
+  "Uid": "uid://p04fzu2b2stv2",
+  "HandFinished": false,
+  "Status": "locked",
+  "Provenance": {
+    "drafts": "32 candidates in two batches, generated locally via ComfyUI (SDXL base 1.0) at the frozen Active-track settings the AssetSpec dictates, seeds AssetSeed.SeedFor(\"item-mithril-warblade\")=969434113 plus 0..15 (batch 1) and plus 16..31 (batch 2), written to the gitignored runs/ scratch dir and curated off a per-batch contact sheet. The two batches are NOT a re-roll for luck, and the difference between them is recorded in the spec itself: batch 1's four single-subject survivors were every one of them a DAGGER -- a short curved knife, usually on a light ground -- because the item track's own clause says \"one hand-held object\" and SDXL resolves an unqualified blade at dagger scale. A Tier-4 warblade that reads as a knife beside item-greatsword is the 'resolves, but to the wrong thing' failure #316 was, so ItemSpecsMine's subject gained explicit length wording and its NegativeExtra gained the dagger/knife/short-blade family before batch 2. Batch 2 yielded one clean single-subject long blade on a plain dark ground (offset +22, seed 969434135), which is this icon. Yield across both batches: 32 rendered, 5 single-subject, 1 the right object -- consistent with the 2026-08-14 measurement that item curation is art direction, not throughput.",
+    "paintoverNote": "No hand-finish, no paintover. Two mechanical stages only, both scripted: BiRefNet cutout via art/pipeline/cutout.py --trim (489x472 RGBA), then an offline LANCZOS downsample so the long edge is 112px (112x108). That size follows item-gloomsteel-blade's own note: ShopPanel.ItemArtSize is 56 and UiKit.ArtRect draws with ExpandMode.IgnoreSize + KeepAspectCentered, so 112 is a 2x reserve over the draw box rather than a 4-9x waste.",
+    "aiDisclosure": "AI-generated (SDXL base 1.0) diffuse, background-removed via BiRefNet (cutout.py, --trim); no normal map (flat menu icon per AssetSpec.NormalMap=false -- item icons render in panels, never under Light2D)."
+  }
+}

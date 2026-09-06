@@ -186,7 +186,7 @@ public static class BatchRunner
 
     /// <summary>Does this policy submit a real craft-minigame input, so that a
     /// <see cref="CraftHand"/> means anything to it?</summary>
-    private static bool HandAware(Policy policy) => policy
+    internal static bool HandAware(Policy policy) => policy
         is Policy.HandForge or Policy.LateMastery
         or Policy.AlchemyPuzzle or Policy.TanningPuzzle or Policy.EngineeringPuzzle;
 
@@ -195,7 +195,7 @@ public static class BatchRunner
     /// always tells you which policy AND which skill level produced it. The default hand is left off
     /// deliberately: every chronicle written before <c>--hand</c> existed was an average hand, so
     /// omitting it keeps the existing corpus's names meaning exactly what they always meant.</summary>
-    private static string PolicyFileTag(Policy policy, CraftHand hand) =>
+    internal static string PolicyFileTag(Policy policy, CraftHand hand) =>
         hand == CraftHand.Average
             ? PolicyFileTag(policy)
             : $"{PolicyFileTag(policy)}-{hand.ToString().ToLowerInvariant()}";

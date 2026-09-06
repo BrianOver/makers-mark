@@ -34,7 +34,7 @@ drawn. Item-icon and town-body rows re-counted 2026-08-14; the rest still predat
 | Hero portraits | 6 + 6 normals | `AssetCatalog.HeroPortrait` → Heroes/Counter/Ledger/Tavern panels | SDXL |
 | Monster portraits (4 venues) | 38 | `AssetCatalog.MonsterPortrait` → Bestiary, MineWatch, DelveStage | SDXL |
 | Venue backdrops + entrances | 6 | `AssetCatalog.VenueBackdrop` / `VenueEntrance` | SDXL |
-| Item icons | 48 (45 recipes + 3 rival category) | `ForgePanel`, shop surfaces | SDXL |
+| Item icons | 49 (46 recipes + 3 rival category) | `ForgePanel`, shop surfaces | SDXL |
 | Town2D hero + townsfolk bodies | 160 (8 characters x 5 variants x 4 frames) | `TownAssets2D.ForHero`, `HeroActor2D` | Hand-pixel Python |
 | Town2D stations / shells / signs / props | ~42 | `WorkshopVocab`, `InteriorLayout2D`, `TownAssets2D.ForProp` | Hand-pixel Python |
 | Player smith | 5 | `PlayerController2D` | Hand-pixel Python |

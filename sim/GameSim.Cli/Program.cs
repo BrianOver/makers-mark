@@ -173,6 +173,7 @@ if (args.Length > 0 && args[0] == "arc-stall")
     var asStart = 1UL;
     var asDays = 100;
     var asPolicy = "baseline";
+    var asHand = "average";
     var asOut = Path.Combine("runs", "arc-stall");
     ulong? asTrace = null;
     for (var i = 1; i < args.Length; i++)
@@ -181,12 +182,13 @@ if (args.Length > 0 && args[0] == "arc-stall")
         else if (args[i] == "--seed" && i + 1 < args.Length && ulong.TryParse(args[i + 1], out var st)) { asStart = st; i++; }
         else if (args[i] == "--days" && i + 1 < args.Length && int.TryParse(args[i + 1], out var d)) { asDays = d; i++; }
         else if (args[i] == "--policy" && i + 1 < args.Length) { asPolicy = args[i + 1]; i++; }
+        else if (args[i] == "--hand" && i + 1 < args.Length) { asHand = args[i + 1]; i++; }
         else if (args[i] == "--trace" && i + 1 < args.Length && ulong.TryParse(args[i + 1], out var tr)) { asTrace = tr; i++; }
         else if (args[i] == "--out" && i + 1 < args.Length) { asOut = args[i + 1]; i++; }
         else
         {
             Console.Error.WriteLine($"arc-stall: unknown/invalid arg near '{args[i]}' — usage: "
-                + "arc-stall [--seeds N] [--seed S] [--days N] [--policy P] [--trace SEED] [--out DIR]");
+                + "arc-stall [--seeds N] [--seed S] [--days N] [--policy P] [--hand H] [--trace SEED] [--out DIR]");
             return 1;
         }
     }
@@ -197,7 +199,7 @@ if (args.Length > 0 && args[0] == "arc-stall")
         return 1;
     }
 
-    return GameSim.Cli.ArcStallSweep.Run(asSeeds, asStart, asDays, asOut, asPolicy, asTrace, Console.Out, Console.Error);
+    return GameSim.Cli.ArcStallSweep.Run(asSeeds, asStart, asDays, asOut, asPolicy, asTrace, Console.Out, Console.Error, asHand);
 }
 
 // Interactive mode accepts ONLY `--seed N`. Anything else is a hard error — a typo'd batch
