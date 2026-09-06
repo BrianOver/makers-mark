@@ -16,7 +16,7 @@ namespace GameSim.Tests.Balance;
 /// <see cref="BaselinePlayer"/> (11 of 12) or <see cref="MasterworkSeekingPlayer"/>, and both
 /// auto-craft, so the gate certifies this curve against nothing." Re-verified before writing this
 /// file rather than taken on trust, and the gap is real and slightly wider than that framing: every
-/// Balance driver crafts off <c>RecipeTable.All</c> — 22 recipes, every one blacksmith — so the
+/// Balance driver crafts off <c>RecipeTable.All</c>, every row of which is blacksmith, so the
 /// three scorers #722 changed were not merely auto-crafted past, they were <b>unreachable</b> on
 /// every trace in the corpus. #722's 68/68 was therefore evidence of no collateral damage and
 /// nothing else.</para>
