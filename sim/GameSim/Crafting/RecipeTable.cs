@@ -27,9 +27,12 @@ public sealed record Recipe(
 
 /// <summary>
 /// Static recipe data (U4/P2): 15 gear recipes (5 per gear slot, tiers 1–3) plus the
-/// reference consumable. Stats scale with tier; two-handed weapons and heavy shields/armor
-/// carry more weight than their tier peers. Tier 2/3 recipes are gated behind the
-/// tier-unlock talent nodes (see <see cref="TalentTree"/>). Consumables live in the SAME
+/// reference consumable, then one row per LADDER RUNG on top of them — rung 0's Tier 4 Mine-ore
+/// weapon (P2-END-01) and rungs 1-2's Tier 8-9 and Tier 12-14 sets, each gated by material
+/// availability rather than a talent (see their own comments below). Stats scale with tier;
+/// two-handed weapons and heavy shields/armor carry more weight than their tier peers.
+/// Tier 2/3 recipes are gated behind the tier-unlock talent nodes (see
+/// <see cref="TalentTree"/>). Consumables live in the SAME
 /// table as gear — one recipe pipeline, one lookup path — distinguished purely by
 /// <see cref="Recipe.Effect"/> data, so an add-on profession ships consumables the same
 /// way it ships gear (see docs/addon-guide.md).

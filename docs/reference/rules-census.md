@@ -202,11 +202,12 @@ blacksmith weapon, alchemy consumable, tanning armor, engineering trinket;
 
 ### 3.2 Recipes and materials
 
-45 recipes total. Blacksmith: 22 (`sim/GameSim/Crafting/RecipeTable.cs:54-129`) — 15 gear (5 per
-slot, tiers 1–3), Field Salve (Heal 6, `RecipeTable.cs:80-81`), 3 Gloomwood-ore recipes tier 8–9
-(Gloomsteel Blade Atk 60 / Wardenweave Mail Def 50 / Moonresin Draught Heal 18,
-`RecipeTable.cs:94-101`), 3 Emberfall-ore recipes tier 12–14 (Cinderforge Blade Atk 90 / Ashguild
-Plate Def 75 / Emberglass Draught Heal 30, `RecipeTable.cs:121-128`). Alchemy: 8
+46 recipes total. Blacksmith: 23 (`sim/GameSim/Crafting/RecipeTable.cs`) — 15 gear (5 per
+slot, tiers 1–3), Field Salve (Heal 6), 1 Mine-ore recipe tier 4 (Mithril Warblade Atk 46 —
+P2-END-01, the rung-0 answer: mithril is minted on the Mine's floor 4, gated 60, strictly below
+the floor-5 gate of 70 a party must pass to graduate), 3 Gloomwood-ore recipes tier 8–9
+(Gloomsteel Blade Atk 60 / Wardenweave Mail Def 50 / Moonresin Draught Heal 18), 3 Emberfall-ore recipes tier 12–14 (Cinderforge Blade Atk 90 / Ashguild
+Plate Def 75 / Emberglass Draught Heal 30). Alchemy: 8
 (`AlchemyProfession.cs:68-91`) — a heal ladder 6/10/15/22/30 plus a robe and two trinkets.
 Tanning: 7 (`TanningProfession.cs:60-76`) — light armor/shields plus Field Poultice (Heal 5).
 Engineering: 8 (`EngineeringProfession.cs:72-90`) — weapons/shield/armor/trinkets plus Field

@@ -1191,6 +1191,24 @@ outcome distribution did not move on any seed that was already finishing. `Basel
 day is **22 / 28 / 45 before and 22 / 28 / 45 after**, across 200 seeds. The only campaigns that
 changed are the two that were frozen. Nothing got easier; two things stopped being impossible.
 
+Measured on the hand axis directly, since that is what the question asks about —
+`arc-stall --policy handforge --hand …`, seeds 1–30, 100 days, the flag this unit added for exactly
+this purpose:
+
+| hand | stalled before | stalled after | ending day before | ending day after |
+|---|---|---|---|---|
+| `indifferent` | 0 / 30 | 0 / 30 | 29 / 37 / 45 | 23 / 31 / 40 |
+| `skilled` | 0 / 30 | 0 / 30 | 27 / 34 / 42 | 23 / 30 / 35 |
+
+Neither hand ever stalled, before or after — which is the same fact the `baseline` column already
+carried, restated on the axis it is usually argued on. Both hands finish about six days sooner, and
+the PACE advantage a skilled hand held narrows from three days of median to one. That last number is
+the honest cost of this change and should not be buried: at 30 seeds it is close to noise, and
+ending day is a coarse proxy for whether skill matters — the quality curve's own tests, the price a
+Masterwork commands, the veteran's refusal of Poor work, and the beat count in the counterfactual
+replay are the measures that actually carry link 4 — but the direction is real and a future tuning
+pass should re-read it before adding a second row to this band.
+
 **Three corrections to the diagnosis above, all found by measuring while building the fix. Read
 them before quoting any number from this section.**
 
@@ -5402,8 +5420,8 @@ default applied.**
   puzzle-input types and for talent unlocks on these three professions. Zero hits. **Corrected
   2026-09-04 (P2-OQ11) — this paragraph originally claimed `BaselinePlayer` "DOES craft
   alchemy/tanning/engineering recipes", ranking recipes "from every profession". That is false, and
-  the source contradicts it: `BaselinePlayer`'s Expedition loop iterates `RecipeTable.All`, and all
-  22 recipes in that table are constructed with `RecipeTable.BlacksmithProfession` — there is not a
+  the source contradicts it: `BaselinePlayer`'s Expedition loop iterates `RecipeTable.All`, and every
+  recipe in that table is constructed with `RecipeTable.BlacksmithProfession` — there is not a
   single non-blacksmith entry in it (`ProfessionRegistry.AllRecipes` is the table that spans the
   four, and no policy read it before `ActiveProfessionPlayer`).** So the gap was stronger than
   stated: the corpus held ZERO items from these three professions, not merely zero puzzle-scored
@@ -5577,7 +5595,7 @@ default applied.**
   `P2-OQ11` changed the quality curve for three of the four professions and then honestly reported
   that its own re-baseline could not see the change: every Balance driver was `BaselinePlayer` (11
   of 12) or `MasterworkSeekingPlayer`, both auto-craft, and both craft exclusively off
-  `RecipeTable.All` — 22 recipes, every one blacksmith. Re-verified before building on it, and the
+  `RecipeTable.All`, every row of which is blacksmith. Re-verified before building on it, and the
   gap was slightly wider than `P2-OQ11` framed it: the three changed scorers were not merely
   auto-crafted past, they were **unreachable** on every trace in the corpus. That 68/68 was evidence
   of no collateral damage and nothing else.
