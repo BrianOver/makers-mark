@@ -214,4 +214,58 @@ public class ArcStallSweepTests : IDisposable
         Assert.Contains("not-a-policy", error.ToString());
         Assert.False(Directory.Exists(_dir) && Directory.GetFiles(_dir).Length > 0);
     }
+
+    /// <summary>An unknown hand fails the same way an unknown policy does. Same reason: a sweep that
+    /// silently fell back to the average hand would report an average hand's numbers under a
+    /// skilled or indifferent label, and P2-END-01 turned on exactly that distinction — a gate one
+    /// to three points wide is decided by item quality.</summary>
+    [Fact]
+    public void ArcStall_UnknownHand_FailsLoudlyAndWritesNothing()
+    {
+        var error = new StringWriter();
+        var exit = ArcStallSweep.Run(
+            seedCount: 1, startSeed: 1, days: 2, outDir: _dir, policyArg: "handforge",
+            traceSeed: null, TextWriter.Null, error, handArg: "brilliant");
+
+        Assert.Equal(1, exit);
+        Assert.Contains("brilliant", error.ToString());
+        Assert.False(Directory.Exists(_dir) && Directory.GetFiles(_dir).Length > 0);
+    }
+
+    /// <summary>A non-average hand against an AUTO-CRAFTING policy is refused, never silently
+    /// ignored — the same rule <c>BatchRunner.Parse</c> already enforces for the batch tool,
+    /// restated here because the two flags are now offered on two tools and a divergence would be
+    /// invisible. A sweep that believes it measured an indifferent smith and actually measured
+    /// auto-craft is the mis-read that makes every number downstream of it a lie.</summary>
+    [Fact]
+    public void ArcStall_NonAverageHand_AgainstAnAutoCraftingPolicy_IsRefused()
+    {
+        var error = new StringWriter();
+        var exit = ArcStallSweep.Run(
+            seedCount: 1, startSeed: 1, days: 2, outDir: _dir, policyArg: "baseline",
+            traceSeed: null, TextWriter.Null, error, handArg: "skilled");
+
+        Assert.Equal(1, exit);
+        Assert.Contains("auto-craft", error.ToString());
+        Assert.False(Directory.Exists(_dir) && Directory.GetFiles(_dir).Length > 0);
+    }
+
+    /// <summary>The hand actually reaches the campaign: two runs of the SAME seed differing only in
+    /// <c>handArg</c> must not produce the same summary. Without this the flag could be accepted,
+    /// echoed into the filename, and dropped on the floor — the shape of every instrument bug this
+    /// file's siblings were written to catch.</summary>
+    [Fact]
+    public void ArcStall_HandChangesTheCampaign_NotJustTheFilename()
+    {
+        string RunOnce(string hand)
+        {
+            var dir = Path.Combine(_dir, hand);
+            Assert.Equal(0, ArcStallSweep.Run(
+                seedCount: 1, startSeed: 4, days: 12, outDir: dir, policyArg: "handforge",
+                traceSeed: null, TextWriter.Null, TextWriter.Null, handArg: hand));
+            return File.ReadAllText(Directory.GetFiles(dir, "arc-stall-*.md").Single());
+        }
+
+        Assert.NotEqual(RunOnce("indifferent"), RunOnce("skilled"));
+    }
 }
