@@ -169,8 +169,22 @@ public class StateFieldReachCensusTests
 
     private const int MinReaderFiles = 3;
 
+    /// <summary>
+    /// Fields below the <see cref="MinReaderFiles"/> bar that are censused anyway, because the bar
+    /// counts READER FILES and a field can be both rarely-read and exactly the thing a player cannot
+    /// see. Written once at one site and never read again is the signature of a recorded fact with
+    /// no surface — the failure this census exists for — so a file count must not be allowed to hide
+    /// one. Every entry names why it is here.
+    /// </summary>
     private static readonly HashSet<string> ForcedInclude =
-        ["PlayerState.BatchEcho", "Item.HeirloomLineage", "DirectorState.DroughtDays"];
+    [
+        "PlayerState.BatchEcho", "Item.HeirloomLineage", "DirectorState.DroughtDays",
+
+        // P2-END-01: the two numbers the structural gate compared. Written at one site
+        // (ExpeditionResolver's gate check) and read nowhere — which is the point. A party can sit
+        // one point under a gate for sixty nights, and these are the only record of by how much.
+        "GateReading.PartyPower", "GateReading.GateRequired", "ExpeditionResult.GateHeldAt",
+    ];
 
     private enum FieldKind { Rendered, Routed, Internal, Gap }
 
@@ -191,6 +205,23 @@ public class StateFieldReachCensusTests
         ["AttributionBeat.Floor"] = new(FieldKind.Rendered, "godot/scripts/panels/ScryingMirror.cs (AttributionBeat_{item}_{floor} provenance buttons)"),
         ["AttributionBeat.Hero"] = new(FieldKind.Rendered, "godot/scripts/panels/LedgerModal.cs (lead attribution card, LedgerCard_0)"),
         ["AttributionBeat.Item"] = new(FieldKind.Rendered, "godot/scripts/panels/ScryingMirror.cs (AttributionBeat_{item}_{floor} provenance buttons)"),
+
+        // ---- GateReading: recorded now so it CAN be shown; the renderer is the next unit ----
+        // P2-END-01. The structural gate turns a party back with no roll, and until this record the
+        // two numbers it compared were discarded — which is why a party one point under a gate
+        // produced sixty identical silent nights. #728 renders the STREAK (how many nights held) off
+        // the persisted halt trail; the shortfall itself still has no reader, so it is honestly a GAP
+        // today rather than a rendered field. Booked in MAKERS-MARK.md 11.8.1.
+        ["GateReading.Floor"] = new(FieldKind.Gap,
+            "P2-END-01: which floor's gate held. Recorded at ExpeditionResolver's structural check; "
+            + "no godot/scripts reader yet — the shortfall surface is 11.8.1's follow-up."),
+        ["GateReading.PartyPower"] = new(FieldKind.Gap,
+            "P2-END-01: the party's average power at the gate. See GateReading.Floor."),
+        ["GateReading.GateRequired"] = new(FieldKind.Gap,
+            "P2-END-01: the power the gate demanded. See GateReading.Floor."),
+        ["ExpeditionResult.GateHeldAt"] = new(FieldKind.Gap,
+            "P2-END-01: null unless the halt was GateHeld. Carries the two numbers a walled player "
+            + "currently cannot see. See GateReading.Floor."),
 
         // ---- BatchEchoState: the confirmed real gap ----
         ["BatchEchoState.Day"] = new(FieldKind.Gap, "whole type has zero godot/scripts reader — see PlayerState.BatchEcho"),
@@ -447,7 +478,11 @@ public class StateFieldReachCensusTests
     private const int ExpectedRenderedCount = 118;
     private const int ExpectedRoutedCount = 9;
     private const int ExpectedInternalCount = 6;
-    private const int ExpectedGapCount = 8;
+    // 8 -> 12: P2-END-01 adds GateReading's three fields plus ExpeditionResult.GateHeldAt, all
+    // recorded-but-unrendered by design — the Contracts half lands first so a renderer has something
+    // honest to read, rather than a client recomputing a gate threshold (the defect this repo has
+    // already paid for twice). Booked in MAKERS-MARK.md 11.8.1.
+    private const int ExpectedGapCount = 12;
 
     // ---------------------------------------------------------------------------------------
     // Guard tests
