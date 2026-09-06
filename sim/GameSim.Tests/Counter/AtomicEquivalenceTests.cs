@@ -425,8 +425,28 @@ public class AtomicEquivalenceTests
     // draw-site checks, which were run in order regardless. What DOES move is the 200-seed / 100-day
     // arc-stall sweep — `BaselinePlayer` 2 stalled campaigns to 0, the healthy seeds' ending-day
     // median unmoved at 28 — which is the entire point of the change and is reported in the PR body.
+    //
+    // RE-BASELINED (2026-09-06, P2-END-01: the gate records what it compared). VALUES ONLY, AND
+    // DRAW-FREE — the cleanest class there is, and the evidence is that PhaseBNoDrawGateTests stayed
+    // GREEN through this change without being touched: neither `Inc` NOR `State` moved. Only the
+    // serialized shape did.
+    //
+    // ExpeditionResult gains a trailing `GateHeldAt` (a GateReading: floor, party power, gate
+    // required), set only when the halt was GateHeld. Recording two integers that already existed
+    // for one instant inside ExpeditionResolver's structural gate check adds no comparison, no
+    // branch on chance, and no `rng.` call site — verified by grep, per this file's sibling gate's
+    // own instruction to check Inc first and draw sites second.
+    //
+    // Why the change: the gate is a power check with NO ROLL, and until now both numbers were
+    // discarded. A party one point under a gate is turned back every night forever, and from inside
+    // the game that is indistinguishable from a campaign merely going slowly — measured at 61 held
+    // nights of 61 on one seed, 94 of 100 on another. ApprenticePlayer, the guided course's own
+    // script, reaches that state on 78% of 200 seeds, so the population meeting this wall is
+    // beginners. The Contracts half lands first, deliberately, so a renderer has an honest number to
+    // read instead of recomputing a gate threshold client-side — the exact defect this repo has
+    // already paid for twice. See MAKERS-MARK.md 11.8.1.
     private const string ExpectedPreCounterSha256 =
-        "F997CA17CA59593684727CD1EB5B5D192588FBA5803BD2E6A296631B6CFE890F";
+        "1D21E32EC1624F3897ABB9905A7181747EDA62967EB3F045475B4B513EE088BF";
 
     [Fact]
     public void ThirtyDayRun_NoCounterActions_IsByteIdenticalToPrePa3Kernel()

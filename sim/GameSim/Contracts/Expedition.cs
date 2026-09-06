@@ -49,6 +49,31 @@ public sealed record AttributionBeat(BeatType Beat, ItemId Item, HeroId Hero, in
 public sealed record OreLoot(HeroId Hero, string MaterialKey, int Quantity);
 
 /// <summary>
+/// The two numbers the STRUCTURAL gate compared, recorded at the moment it turned a party back.
+///
+/// <para>The gate is a power check with no roll (<c>ExpeditionResolver</c>: party average power vs
+/// <c>VenueDefinition.Gate(floor)</c>) — under it, the party goes home. Both numbers exist for one
+/// instant inside the resolver and were, until this record, discarded. That silence is the defect
+/// this exists to end: a party can sit ONE point under a gate for sixty identical nights, and from
+/// inside, a locked campaign is indistinguishable from a slow one. Measured on two seeds: held
+/// 61 nights of 61, and 94 of 100.</para>
+///
+/// <para>Recorded facts, never advice (law 4). This says what the sim compared. It does not say
+/// what to craft, and nothing may derive a recommendation from it — a renderer that turns
+/// <see cref="Shortfall"/> into "make a better sword" has crossed from reporting into ordering.</para>
+///
+/// <para>Read this rather than recomputing: a client that re-derives a gate threshold is the
+/// defect this repo has already paid for twice (a panel hand-wrote XP thresholds that disagreed
+/// with the sim's own ladder, and reported the wrong rung of a number that drives combat).</para>
+/// </summary>
+public sealed record GateReading(int Floor, int PartyPower, int GateRequired)
+{
+    /// <summary>How far under the gate the party was. Always positive — the gate only holds when
+    /// power is strictly below it.</summary>
+    public int Shortfall => GateRequired - PartyPower;
+}
+
+/// <summary>
 /// One party member's combat-relevant record AS THEY MARCHED, snapshotted at result-build time.
 ///
 /// This exists because attribution is computed at departure and the reveal tick then applies XP,
@@ -98,6 +123,12 @@ public sealed record ExpeditionResult(
     /// init member on the <see cref="VenueId"/>/<see cref="Halt"/> precedent: saves written before
     /// this property deserialize to empty, and an empty snapshot means "this result predates the
     /// snapshot", never "the party was empty".</summary>
+    /// <summary>Set only when <see cref="Halt"/> is <see cref="ExpeditionHalt.GateHeld"/>: the two
+    /// numbers that decided it. Null on every other halt, and on saves written before this property
+    /// existed — so null means "no gate reading", never "the shortfall was zero" (a zero shortfall
+    /// is impossible; the gate holds only when power is strictly under it).</summary>
+    public GateReading? GateHeldAt { get; init; } = null;
+
     public ImmutableList<HeroAtDeparture> PartyAtDeparture { get; init; } =
         ImmutableList<HeroAtDeparture>.Empty;
 }

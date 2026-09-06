@@ -42,7 +42,7 @@ public static class ExpeditionResolver
         var floors = ImmutableList.CreateBuilder<FloorOutcome>();
         var loot = ImmutableList.CreateBuilder<OreLoot>();
 
-        var (deepestCleared, rawHalt) = ResolveFloors(
+        var (deepestCleared, rawHalt, gateHeldAt) = ResolveFloors(
             party, items, venue, 1, targetFloor, hp, packs, gold, dead, retreated, floors, loot,
             retreatExemptHeroes ?? ImmutableHashSet<int>.Empty, retreatExemptThroughFloor, warrantHolds, rng);
 
@@ -51,7 +51,7 @@ public static class ExpeditionResolver
         var halt = ClassifyHalt(deepestCleared, targetFloor, rawHalt);
 
         return BuildResult(
-            party, items, venue, targetFloor, deepestCleared, floors.ToImmutable(), loot.ToImmutable(), gold, dead, halt);
+            party, items, venue, targetFloor, deepestCleared, floors.ToImmutable(), loot.ToImmutable(), gold, dead, halt, gateHeldAt);
     }
 
     /// <summary>
@@ -98,7 +98,7 @@ public static class ExpeditionResolver
         var floors = ImmutableList.CreateBuilder<FloorOutcome>();
         var loot = ImmutableList.CreateBuilder<OreLoot>();
 
-        var (deepestCleared, rawHalt) = ResolveFloors(
+        var (deepestCleared, rawHalt, gateHeldAt) = ResolveFloors(
             party, items, venue, 1, checkpointFloor, hp, packs, gold, dead, retreated, floors, loot,
             retreatExemptHeroes ?? ImmutableHashSet<int>.Empty, retreatExemptThroughFloor, warrantHolds, rng);
 
@@ -108,7 +108,7 @@ public static class ExpeditionResolver
         if (rawHalt != ExpeditionHalt.TargetReached)
         {
             var completed = BuildResult(
-                party, items, venue, targetFloor, deepestCleared, floors.ToImmutable(), loot.ToImmutable(), gold, dead, rawHalt);
+                party, items, venue, targetFloor, deepestCleared, floors.ToImmutable(), loot.ToImmutable(), gold, dead, rawHalt, gateHeldAt);
             return (completed, null);
         }
 
@@ -159,6 +159,8 @@ public static class ExpeditionResolver
 
         int deepestCleared;
         ExpeditionHalt halt;
+        // Null on the recall path by construction: a recalled party never reaches a gate.
+        GateReading? gateHeldAt = null;
         if (inFlight.Recalled)
         {
             // The recall bell rang at Camp: bank stage-1 clears/ore and surface without rolling
@@ -174,7 +176,7 @@ public static class ExpeditionResolver
             // through the camp — InFlightExpedition (a Contract) stays unchanged.
             var retreated = SeedRetreatedThrough(party, inFlight.DeepestFloorCleared, dead, exempt, retreatExemptThroughFloor);
 
-            var (stage2Deepest, rawHalt) = ResolveFloors(
+            var (stage2Deepest, rawHalt, stage2GateHeldAt) = ResolveFloors(
                 party, items, venue, inFlight.CheckpointFloor + 1, inFlight.TargetFloor, hp, packs, gold, dead, retreated, floors, loot,
                 exempt, retreatExemptThroughFloor, warrantHolds, rng);
 
@@ -182,10 +184,11 @@ public static class ExpeditionResolver
             // the stage-1 deepest so the merged value equals the unstaged single accumulator.
             deepestCleared = stage2Deepest > 0 ? stage2Deepest : inFlight.DeepestFloorCleared;
             halt = ClassifyHalt(deepestCleared, inFlight.TargetFloor, rawHalt);
+            gateHeldAt = stage2GateHeldAt;
         }
 
         return BuildResult(
-            party, items, venue, inFlight.TargetFloor, deepestCleared, floors.ToImmutable(), loot.ToImmutable(), gold, dead, halt);
+            party, items, venue, inFlight.TargetFloor, deepestCleared, floors.ToImmutable(), loot.ToImmutable(), gold, dead, halt, gateHeldAt);
     }
 
     /// <summary>
@@ -214,7 +217,8 @@ public static class ExpeditionResolver
         ImmutableList<OreLoot> loot,
         Dictionary<int, int> gold,
         HashSet<int> dead,
-        ExpeditionHalt halt)
+        ExpeditionHalt halt,
+        GateReading? gateHeldAt = null)
     {
         var survivors = party.Where(h => !dead.Contains(h.Id.Value)).Select(h => h.Id).ToImmutableList();
         var deaths = party.Where(h => dead.Contains(h.Id.Value)).Select(h => h.Id).ToImmutableList();
@@ -240,6 +244,7 @@ public static class ExpeditionResolver
             halt)
         {
             PartyAtDeparture = partyAtDeparture,
+            GateHeldAt = halt == ExpeditionHalt.GateHeld ? gateHeldAt : null,
         };
     }
 
@@ -256,7 +261,7 @@ public static class ExpeditionResolver
     /// a verbatim move of the original loop so the RNG draw order is byte-identical. The halt is a
     /// pure classification of the exit taken; it draws no RNG and changes no forward state.
     /// </summary>
-    private static (int DeepestCleared, ExpeditionHalt Halt) ResolveFloors(
+    private static (int DeepestCleared, ExpeditionHalt Halt, GateReading? GateHeldAt) ResolveFloors(
         ImmutableList<Hero> party,
         ImmutableSortedDictionary<int, Item> items,
         VenueDefinition venue,
@@ -278,6 +283,7 @@ public static class ExpeditionResolver
         // Default: the loop runs the whole range to completion (range fully cleared, nobody too
         // hurt). Every early exit below overwrites this with its cause.
         var halt = ExpeditionHalt.TargetReached;
+        GateReading? gateHeldAt = null;
 
         // Phase C U-C1: the aggregate craft-modifier effect per hero, read ONCE from equipped gear
         // (constant across the expedition). A hero whose gear carries no modifier resolves to None,
@@ -298,9 +304,14 @@ public static class ExpeditionResolver
             }
 
             // STRUCTURAL gate (AE3): under-geared parties retreat at the gate — no roll involved.
-            if (CombatMath.PartyAveragePower(fighters, items) < venue.Gate(floor))
+            // Both numbers are recorded (P2-END-01): they exist for this one instant, and discarding
+            // them is why a party one point under a gate produced sixty identical silent nights.
+            var partyPower = CombatMath.PartyAveragePower(fighters, items);
+            var gateRequired = venue.Gate(floor);
+            if (partyPower < gateRequired)
             {
                 halt = ExpeditionHalt.GateHeld;
+                gateHeldAt = new GateReading(floor, partyPower, gateRequired);
                 break;
             }
 
@@ -419,7 +430,7 @@ public static class ExpeditionResolver
             ApplyCompetenceRetreat(party, floor + 1, dead, retreated, retreatExemptHeroes, retreatExemptThroughFloor);
         }
 
-        return (deepestCleared, halt);
+        return (deepestCleared, halt, gateHeldAt);
     }
 
     /// <summary>
