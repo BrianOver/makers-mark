@@ -1043,9 +1043,16 @@ public class LedgerModalTests
     /// through the REAL <c>ExpeditionRevealSystem</c> via <see cref="SimAdapter.AdvancePhase"/> —
     /// same idiom as <see cref="FloorLostNight"/> — so only the PAST nights are a fixture; tonight's
     /// wiring (resolver-shape result in, reveal, ledger) is exercised for real.
+    ///
+    /// <para><paramref name="gateHeldAt"/> (#729 join): null by default, matching every save
+    /// written before <c>ExpeditionResult.GateHeldAt</c> existed. Tests that need the shortfall
+    /// number pass a <see cref="GateReading"/> here and assert against ITS OWN properties — never a
+    /// hand-computed shortfall — so the fixture stays the single source of truth the renderer is
+    /// also reading.</para>
     /// </summary>
     private static GameState GateHeldNight(
-        int day, int priorHeldDays, ExpeditionHalt haltTonight = ExpeditionHalt.GateHeld)
+        int day, int priorHeldDays, ExpeditionHalt haltTonight = ExpeditionHalt.GateHeld,
+        GateReading? gateHeldAt = null)
     {
         var hero = new Hero(
             GateHeldHeroId, "Perrin", ClassRegistry.VanguardId, Level: 4, MaxHp: 30, Gold: 0,
@@ -1058,7 +1065,10 @@ public class LedgerModalTests
             Survivors: ImmutableList.Create(GateHeldHeroId), Deaths: ImmutableList<HeroId>.Empty,
             Beats: ImmutableList<AttributionBeat>.Empty, Loot: ImmutableList<OreLoot>.Empty,
             GoldEarnedByHero: ImmutableSortedDictionary<int, int>.Empty, VenueId: "mine",
-            Halt: haltTonight);
+            Halt: haltTonight)
+        {
+            GateHeldAt = gateHeldAt,
+        };
 
         var priorEvents = ImmutableList.CreateBuilder<GameEvent>();
         for (var d = day - priorHeldDays; d < day; d++)
@@ -1098,6 +1108,115 @@ public class LedgerModalTests
                 .OverrideFailureMessage("the 4th consecutive GateHeld night must render the streak fact")
                 .IsNotNull();
             AssertThat(line!.Text).Contains("4 nights running");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void GateHeldNight_OnAMilestoneStreak_WithNoGateReading_RendersStreakWithoutAShortfall()
+    {
+        // The pre-#729-save case: GateHeldAt defaults to null (no reading param passed). The
+        // streak still renders (unchanged #728 behavior) but must never fabricate a number —
+        // rendering nothing rather than a zero (a zero shortfall is impossible: the gate only
+        // holds when power is strictly under it, so any digit here would be invented, not read).
+        var ui = MountMainUi(new SimAdapter(GateHeldNight(day: 4, priorHeldDays: 3)));
+        try
+        {
+            ui.Adapter.AdvancePhase();
+
+            ui.Ledger.ShowFor(4);
+            var line = ui.Ledger.FindChild("GateHeldStreakLine_mine", recursive: true, owned: false) as Label;
+
+            AssertThat(line).IsNotNull();
+            AssertThat(line!.Text).Contains("4 nights running");
+            AssertThat(line.Text)
+                .OverrideFailureMessage("null GateHeldAt must not render a fabricated shortfall number")
+                .NotContains("short");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void GateHeldNight_OnAMilestoneStreak_WithGateReading_RendersTheRecordedShortfall()
+    {
+        // #729 join: the resolver's own recorded comparison (floor 5, gate needs 23, party carries
+        // 20) must appear verbatim, asserted against THIS SAME GateReading's own properties —
+        // Shortfall is ITS derived property (GateRequired - PartyPower), never a client
+        // recomputation from PartyAveragePower/venue.Gate(floor).
+        var reading = new GateReading(Floor: 5, PartyPower: 20, GateRequired: 23);
+        var ui = MountMainUi(new SimAdapter(
+            GateHeldNight(day: 4, priorHeldDays: 3, gateHeldAt: reading)));
+        try
+        {
+            ui.Adapter.AdvancePhase();
+
+            ui.Ledger.ShowFor(4);
+            var line = ui.Ledger.FindChild("GateHeldStreakLine_mine", recursive: true, owned: false) as Label;
+
+            AssertThat(line).IsNotNull();
+            AssertThat(line!.Text).Contains("4 nights running");
+            AssertThat(line.Text).Contains($"Floor {reading.Floor}");
+            AssertThat(line.Text).Contains($"needs {reading.GateRequired} power");
+            AssertThat(line.Text).Contains($"the party has {reading.PartyPower}");
+            AssertThat(line.Text).Contains($"{reading.Shortfall} short");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void GateHeldNight_OffAMilestoneStreak_WithGateReading_StillRendersNothing()
+    {
+        // The doubling-night anti-nag rule (#728) must hold even when a GateReading is present —
+        // a number attached to the fact is not a license to speak more often.
+        var reading = new GateReading(Floor: 5, PartyPower: 20, GateRequired: 23);
+        var ui = MountMainUi(new SimAdapter(
+            GateHeldNight(day: 3, priorHeldDays: 2, gateHeldAt: reading)));
+        try
+        {
+            ui.Adapter.AdvancePhase();
+
+            ui.Ledger.ShowFor(3);
+            var line = ui.Ledger.FindChild("GateHeldStreakLine_mine", recursive: true, owned: false);
+
+            AssertThat(line)
+                .OverrideFailureMessage("a non-milestone night must stay silent even with a GateReading recorded")
+                .IsNull();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void RenderingTheShortfallLine_WritesNoSimState()
+    {
+        // The whole-state fingerprint (CLAUDE.md's "hand-listed field set silently lies" scar) —
+        // rendering the ledger, including the new GateHeldAt read, must be a pure projection.
+        var reading = new GateReading(Floor: 5, PartyPower: 20, GateRequired: 23);
+        var ui = MountMainUi(new SimAdapter(
+            GateHeldNight(day: 4, priorHeldDays: 3, gateHeldAt: reading)));
+        try
+        {
+            ui.Adapter.AdvancePhase();
+            var before = SaveCodec.Serialize(ui.Adapter.CurrentState);
+
+            ui.Ledger.ShowFor(4);
+            AssertThat(ui.Ledger.FindChild("GateHeldStreakLine_mine", recursive: true, owned: false))
+                .IsNotNull();
+
+            AssertThat(SaveCodec.Serialize(ui.Adapter.CurrentState))
+                .OverrideFailureMessage("rendering the gate-held shortfall line must never mutate sim state")
+                .IsEqual(before);
         }
         finally
         {

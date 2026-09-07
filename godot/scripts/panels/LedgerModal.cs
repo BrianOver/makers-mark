@@ -490,6 +490,15 @@ public partial class LedgerModal : SimPanel
     /// doubling nights (2, 4, 8, 16, 32, 64) — a gate held for dozens of consecutive nights says
     /// this a handful of times, never every single evening (the killed 1,287x memorial-advisor
     /// shape this repo already scarred on once).</para>
+    ///
+    /// <para>#729 join: when <see cref="ExpeditionResult.GateHeldAt"/> carries a <see
+    /// cref="GateReading"/> (every GateHeld halt from that PR forward), the line names the exact
+    /// floor, the gate's requirement, the party's power and the derived <see
+    /// cref="GateReading.Shortfall"/> — all four READ off the resolver's own recorded comparison,
+    /// never recomputed here (the "client re-derives a gate threshold" defect this repo has paid
+    /// for twice). <c>GateHeldAt</c> is null on every save predating #729; that case renders the
+    /// streak alone rather than fabricate a number (a zero shortfall is impossible, so printing one
+    /// would announce a bug, not a fact).</para>
     /// </summary>
     private void AddGateHeldStreakLine(GameState state, int day)
     {
@@ -513,7 +522,14 @@ public partial class LedgerModal : SimPanel
             }
 
             var venue = VenueRegistry.Require(result.VenueId);
-            var line = AddLabel(_cardGrid!, $"Still held at {venue.DisplayName}'s gate — {streak} nights running.");
+            var text = $"Still held at {venue.DisplayName}'s gate — {streak} nights running.";
+            if (result.GateHeldAt is { } reading)
+            {
+                text += $" Floor {reading.Floor} needs {reading.GateRequired} power; the party has "
+                    + $"{reading.PartyPower} — {reading.Shortfall} short.";
+            }
+
+            var line = AddLabel(_cardGrid!, text);
             line.Name = $"GateHeldStreakLine_{result.VenueId}";
             // Same width floor as every other loose label in this HFlowContainer grid (AddNarratorLine's
             // own note explains why an autowrapping Label needs it here).

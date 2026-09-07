@@ -180,9 +180,10 @@ public class StateFieldReachCensusTests
     [
         "PlayerState.BatchEcho", "Item.HeirloomLineage", "DirectorState.DroughtDays",
 
-        // P2-END-01: the two numbers the structural gate compared. Written at one site
-        // (ExpeditionResolver's gate check) and read nowhere — which is the point. A party can sit
-        // one point under a gate for sixty nights, and these are the only record of by how much.
+        // P2-END-01: the two numbers the structural gate compared. Written at one sim site
+        // (ExpeditionResolver's gate check) — a single-file-but-real mechanic the reader-file-COUNT
+        // bar would otherwise hide, same shape as BatchEcho. Now RENDERED (LedgerModal's gate-held
+        // streak line, this PR); forced in regardless, since the sim-side write site is still one file.
         "GateReading.PartyPower", "GateReading.GateRequired", "ExpeditionResult.GateHeldAt",
     ];
 
@@ -206,22 +207,22 @@ public class StateFieldReachCensusTests
         ["AttributionBeat.Hero"] = new(FieldKind.Rendered, "godot/scripts/panels/LedgerModal.cs (lead attribution card, LedgerCard_0)"),
         ["AttributionBeat.Item"] = new(FieldKind.Rendered, "godot/scripts/panels/ScryingMirror.cs (AttributionBeat_{item}_{floor} provenance buttons)"),
 
-        // ---- GateReading: recorded now so it CAN be shown; the renderer is the next unit ----
-        // P2-END-01. The structural gate turns a party back with no roll, and until this record the
-        // two numbers it compared were discarded — which is why a party one point under a gate
-        // produced sixty identical silent nights. #728 renders the STREAK (how many nights held) off
-        // the persisted halt trail; the shortfall itself still has no reader, so it is honestly a GAP
-        // today rather than a rendered field. Booked in MAKERS-MARK.md 11.8.1.
-        ["GateReading.Floor"] = new(FieldKind.Gap,
-            "P2-END-01: which floor's gate held. Recorded at ExpeditionResolver's structural check; "
-            + "no godot/scripts reader yet — the shortfall surface is 11.8.1's follow-up."),
-        ["GateReading.PartyPower"] = new(FieldKind.Gap,
-            "P2-END-01: the party's average power at the gate. See GateReading.Floor."),
-        ["GateReading.GateRequired"] = new(FieldKind.Gap,
-            "P2-END-01: the power the gate demanded. See GateReading.Floor."),
-        ["ExpeditionResult.GateHeldAt"] = new(FieldKind.Gap,
-            "P2-END-01: null unless the halt was GateHeld. Carries the two numbers a walled player "
-            + "currently cannot see. See GateReading.Floor."),
+        // ---- GateReading: the join (#729 Contracts + this PR's renderer) ----
+        // P2-END-01. The structural gate turns a party back with no roll; #728 rendered the STREAK
+        // (how many nights held) off the persisted halt trail, but had no number to show because
+        // nothing recorded the comparison. #729 (Contracts) added GateReading; this PR reads it in
+        // LedgerModal.AddGateHeldStreakLine — the streak line now names the exact floor, the gate's
+        // requirement, the party's power and the derived Shortfall, all four read off the resolver's
+        // own recorded comparison, never recomputed client-side.
+        ["GateReading.Floor"] = new(FieldKind.Rendered,
+            "godot/scripts/panels/LedgerModal.cs:528 (\"Floor {reading.Floor} needs...\" gate-held streak line)"),
+        ["GateReading.PartyPower"] = new(FieldKind.Rendered,
+            "godot/scripts/panels/LedgerModal.cs:529 (\"...the party has {reading.PartyPower}...\")"),
+        ["GateReading.GateRequired"] = new(FieldKind.Rendered,
+            "godot/scripts/panels/LedgerModal.cs:528 (\"...needs {reading.GateRequired} power...\")"),
+        ["ExpeditionResult.GateHeldAt"] = new(FieldKind.Rendered,
+            "godot/scripts/panels/LedgerModal.cs:526 (result.GateHeldAt is { } reading — null renders "
+            + "the streak alone, the pre-#729-save case)"),
 
         // ---- BatchEchoState: the confirmed real gap ----
         ["BatchEchoState.Day"] = new(FieldKind.Gap, "whole type has zero godot/scripts reader — see PlayerState.BatchEcho"),
@@ -475,14 +476,17 @@ public class StateFieldReachCensusTests
 
     private static readonly HashSet<FieldKind> GapAndInternalKinds = [FieldKind.Gap, FieldKind.Internal];
 
-    private const int ExpectedRenderedCount = 118;
+    // 118 -> 122: the #728/#729 join. GateReading's three fields plus ExpeditionResult.GateHeldAt
+    // move from GAP to RENDERED — LedgerModal.AddGateHeldStreakLine now reads all four off the
+    // resolver's own recorded gate comparison (floor, requirement, party power, derived shortfall),
+    // never recomputing a threshold client-side. The census working as intended: a GAP this repo
+    // named on purpose closed the moment a renderer actually read the field, and the count moves,
+    // not just the row.
+    private const int ExpectedRenderedCount = 122;
     private const int ExpectedRoutedCount = 9;
     private const int ExpectedInternalCount = 6;
-    // 8 -> 12: P2-END-01 adds GateReading's three fields plus ExpeditionResult.GateHeldAt, all
-    // recorded-but-unrendered by design — the Contracts half lands first so a renderer has something
-    // honest to read, rather than a client recomputing a gate threshold (the defect this repo has
-    // already paid for twice). Booked in MAKERS-MARK.md 11.8.1.
-    private const int ExpectedGapCount = 12;
+    // 12 -> 8: the same join, mirrored — the four fields that left GAP for RENDERED above.
+    private const int ExpectedGapCount = 8;
 
     // ---------------------------------------------------------------------------------------
     // Guard tests

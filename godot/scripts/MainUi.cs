@@ -666,6 +666,11 @@ public partial class MainUi : Control
     /// AdvancePhase bell once actually runs <c>ExpeditionRevealSystem</c> for real and the Ledger's
     /// <c>GateHeldStreakQuery</c>-driven streak line decides for itself whether it fires — nothing
     /// about the count or the milestone gate is staged.
+    ///
+    /// <para>#729 join: carries a <see cref="GateReading"/> on <see
+    /// cref="ExpeditionResult.GateHeldAt"/> so the receipt shows the shipped shape (a GateHeld halt
+    /// with a recorded reading) rather than the pre-#729 null case — the renderer still decides for
+    /// itself what to print from it.</para>
     /// </summary>
     private static GameState StageGateHeldStreakReceipt(GameState state)
     {
@@ -686,7 +691,10 @@ public partial class MainUi : Control
             Loot: ImmutableList<OreLoot>.Empty,
             GoldEarnedByHero: ImmutableSortedDictionary<int, int>.Empty,
             VenueId: "mine",
-            Halt: ExpeditionHalt.GateHeld);
+            Halt: ExpeditionHalt.GateHeld)
+        {
+            GateHeldAt = new GateReading(Floor: 4, PartyPower: 18, GateRequired: 22),
+        };
 
         var what = GameSim.Drama.GateHeldStreakQuery.ExpeditionHaltWhat("mine");
         var priorEvents = ImmutableList.CreateBuilder<GameEvent>();
