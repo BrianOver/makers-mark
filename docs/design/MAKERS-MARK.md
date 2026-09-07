@@ -5825,6 +5825,62 @@ default applied.**
   current recipe set offers is a content-breadth question, not a curve or code defect, and this
   measurement is offered as evidence for that question rather than as a unit of its own.
 
+- **P2-OQ14. Does the craft-dryness `P2-OQ13`'s second finding measured reach the felt-wall-to-
+  novelty-wall stretch (days 12-25), or only the post-day-25 tail where the campaign is already
+  over? — measured 2026-09-06, re-slice only, no re-sweep.** `P2-OQ13` read `LateCrafts` as one
+  bucket, day 51+. That bucket cannot distinguish "dry from day 26 on" from "dry from day 12 on,"
+  and the difference is the whole question: the felt wall sits at median day 12 (`P2-LONG-26`),
+  the last genuinely new menu option at median day 25 (`P2-LONG-01`), and the climax at day 20-25
+  — so day 51+ is comfortably past all three, while days 12-25 are where the game is still being
+  played. Re-sliced the same `CraftCurveBalanceTests` corpus (same seeds, same policies, zero new
+  campaigns) into four windows chosen off those landmarks: **D1-11** (before the felt wall),
+  **D12-25** (felt wall through novelty wall/climax — the window in question), **D26-50** (past
+  the novelty wall, before the existing instrument's own late-window boundary), **D51-100**
+  (`P2-OQ13`'s own boundary, kept as-is for direct comparison). Done via a one-line-per-craft
+  temporary bucket added to `CraftCurveBalanceTests.Measure`/`Reading`, run once, reverted — not
+  shipped, per this file's own precedent.
+
+  **Sanity check before trusting the re-slice: the D51-100 column reproduces `P2-OQ13`'s own
+  booked counts to the digit** — alchemy Average 4, engineering Skilled 1, tanning Indifferent 2,
+  tanning Skilled 93 — same instrument, same seeds, just bucketed finer.
+
+  **Crafts per campaign-day, by window (all twelve cells; hand named on every row, per this
+  program's own standing warning about instrument readings):**
+
+  | craft | hand | D1-11 (/11d) | D12-25 (/14d) | D26-50 (/25d) | D51-100 (/50d) |
+  |---|---|---|---|---|---|
+  | alchemy | Indifferent | 4.27 | **0.86** | 1.44 | 0.90 |
+  | alchemy | Average | 4.09 | **1.43** | 0.92 | 0.08 |
+  | alchemy | Skilled | 4.09 | **1.50** | 1.00 | 0.10 |
+  | engineering | Indifferent | 5.00 | 5.00 | 1.72 | 0.46 |
+  | engineering | Average | 5.00 | 5.00 | 1.32 | 0.18 |
+  | engineering | Skilled | 5.00 | 5.00 | 1.24 | 0.02 |
+  | tanning | Indifferent | 4.90 | 3.71 | 0.72 | 0.04 |
+  | tanning | Average | 4.90 | 4.07 | 1.84 | 0.70 |
+  | tanning | Skilled | 4.90 | 4.36 | 2.56 | 1.86 |
+  | blacksmith (1 seed, control) | Indifferent | 1.64 | 1.64 | 1.32 | 0.48 |
+  | blacksmith (1 seed, control) | Average | 1.55 | 2.14 | 1.28 | 0.28 |
+  | blacksmith (1 seed, control) | Skilled | 1.82 | 1.64 | 1.44 | 0.10 |
+
+  **Plain answer, and it is not one answer for all three: yes for Alchemy, no for Engineering, no
+  for Tanning.** Alchemy's rate already falls to 35-37% of its opening pace by D12-25 at every
+  hand (Indifferent falls hardest, to 20%, before a partial mid-campaign recoil) — the dryness
+  `P2-OQ13` measured at day 51+ is not a late-game-only artifact for this craft, it is already
+  well underway inside the window that matters. Engineering runs at its FULL D1-11 rate straight
+  through D12-25 at every hand (5.00 = 5.00, no drop at all) and only begins to fall in D26-50,
+  collapsing hardest after day 51 — its dryness is real but is entirely a post-novelty-wall, and
+  mostly a post-day-51, phenomenon. Tanning declines only mildly by D12-25 (11-24% off pace) and,
+  at its skilled end, never goes dry at all — 1.86 crafts/day through day 100, the profession
+  `P2-OQ13` already flagged as running the other way. The blacksmith control (one seed, reported
+  for context only per `ArchetypeSeeds`' own caveat) tracks Engineering's shape, not Alchemy's.
+
+  **So: reaches days 12-25 for one of the three professions `P2-OQ13` named, not all three.** Not
+  costed further here, per the same scope line `P2-OQ13` closed on and per this unit's own
+  instruction not to touch `ShoppingAi`, roster needs, or the demand board: whether Alchemy's
+  recipe set or its `HasBuyer` reach needs widening is a content-breadth question for whoever picks
+  up `P2-OQ13`'s "recipe set offers" thread next, now scoped tighter than before — to one
+  profession, and to the window that actually matters.
+
 ## What must survive, named so this program cannot quietly discard it
 
 Everything in §11.14.14's own survival list binds here unchanged — the `Skipped` third state, the
