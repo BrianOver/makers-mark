@@ -50,11 +50,25 @@ public class RealClickReachesBuildingTests
 
             var forge = town.FindBuilding("forge");
 
-            // Put the camera on the forge so it is unambiguously on screen, then let a frame settle
-            // so the canvas transform below reflects that camera position.
+            // Put the camera on the forge so it is unambiguously on screen, then wait for the canvas
+            // transform below to actually reflect that camera position.
+            //
+            // Diagnosed 2026-09-04 (#723, OffCameraPointerTests): this is the identical camera-move ->
+            // canvas-transform shape that flaked in CI twice in one day under a fixed frame-count
+            // pump, because "N frames" is a GUESSED duration, not the condition itself — CI is slower
+            // on wall-clock but FASTER per-frame (rendering disabled), so a fixed count can elapse
+            // before the transform has actually caught up. Poll the transform itself instead of
+            // guessing how long it takes. Budget 30 frames — ~15x the 2 frames this used to guess,
+            // generous enough to absorb CI scheduling jitter without ever being the bottleneck when
+            // the camera move is behaving correctly (this clears on frame 1 in every observed run).
+            var staleTransform = town.WorldViewport.GetCanvasTransform();
             town.Cam.GlobalPosition = forge.GlobalPosition;
             town.Cam.ResetSmoothing();
-            await AwaitFrames(2);
+            await UiTestSupport.SettleUntil(
+                town,
+                () => town.WorldViewport.GetCanvasTransform() != staleTransform,
+                frameBudget: 30,
+                conditionDescription: "WorldViewport.GetCanvasTransform() to reflect the camera's move onto the forge");
 
             // Aim at the centre of the interact shape itself, not the building's origin: the origin
             // is the door ROW (the y-sort line at the building's foot), which sits on the shape's
@@ -71,7 +85,15 @@ public class RealClickReachesBuildingTests
             var screenPoint = canvasPoint * town.CanvasShrink;
 
             PushClick(town, screenPoint);
-            await AwaitFrames(4);
+
+            // Same shape as the camera-transform wait above: a fixed count guesses how long the
+            // pushed input takes to travel through physics picking to Building2D.Picked ->
+            // BuildingClicked. Poll the actual result instead. Same 30-frame budget/reasoning.
+            await UiTestSupport.SettleUntil(
+                town,
+                () => picked != string.Empty,
+                frameBudget: 30,
+                conditionDescription: "BuildingClicked to fire after the pushed screen click reaches the forge's physics pick");
 
             AssertThat(picked)
                 .OverrideFailureMessage(
@@ -111,14 +133,5 @@ public class RealClickReachesBuildingTests
     }
 
     private static void AddNodeToTree(Node node) => ((SceneTree)Engine.GetMainLoop()).Root.AddChild(node);
-
-    private static async System.Threading.Tasks.Task AwaitFrames(int frames)
-    {
-        var tree = (SceneTree)Engine.GetMainLoop();
-        for (var i = 0; i < frames; i++)
-        {
-            await tree.ToSignal(tree, SceneTree.SignalName.PhysicsFrame);
-        }
-    }
 }
 #endif
