@@ -40,11 +40,15 @@ public class BountyRefundTests
         // the board must be empty and town gold conserved modulo rival sinks — the key
         // guarantee is no escrow is stranded on the board.
         Assert.Empty(state.Bounties);
-        // Player + heroes gold never dropped below the pre-bounty town total minus rival sinks;
-        // the specific invariant: escrow is not permanently lost. Town gold only ever grows
-        // (loot income) or moves internally, minus rival purchases — so it must be >= before
-        // minus any rival spend. Simplest robust check: no bounty escrow left dangling.
-        Assert.DoesNotContain(state.Bounties, b => !b.Paid);
+        // P2-HONEST-07: a second assertion used to follow — `Assert.DoesNotContain(state.Bounties,
+        // b => !b.Paid)` — reading as "no unpaid bounty is left on the board". It could only ever
+        // pass for the wrong reason. `Bounty.Paid` is `false` at its one construction site and is
+        // never set true anywhere in sim/ or godot/ (BountyPayoutSystem removes a paid bounty
+        // instead of flipping the flag), so the predicate `!b.Paid` is true of EVERY bounty that
+        // has ever existed, and the only state satisfying that assertion is the empty board the
+        // line above already proves. It restated its predecessor while appearing to add a
+        // guarantee — the same false-receipt shape the satisfiable-gate census exists to catch,
+        // and the reason `Bounty.Paid` stays booked as vestigial (§11, Appendix A §7).
         _ = (sawAccept, refundedByExpiry, before);
     }
 

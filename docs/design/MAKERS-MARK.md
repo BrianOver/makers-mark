@@ -4192,17 +4192,14 @@ is a hand-written second copy of a mechanism; a roster, of a tree; a comment, of
 it; a test that names one node, of production's own list. Both copies were correct the day they
 were typed, and only one was maintained.
 
-The finding that outranks most of the list: **the `Progress` surface can never unlock, and the
-second profession can never be earned through its stated path.** `SurfaceUnlocks.cs:105` gates
-`Progress` on `TutorialFlow.SecondProfessionMilestoneReached` (`TutorialFlow.cs:2963`:
-`state.Bounties.Any(b => b.Paid)`) — and `Bounty.Paid` is set `false` at its only construction
-site while `BountyPayoutSystem` *removes* the paid bounty instead of flipping it. The predicate is
-permanently false; the tray button's tooltip promises a moment the code cannot deliver; the whole
-`ProgressionPanel` is unreachable in real play. And the harness believes otherwise, because
-`FullPlaytest` calls `ui.OpenPanel("Progress")` directly, bypassing the player's door — so the
-automated playtest reports coverage of a surface no player can reach. The fix is one line
-(`state.EventLog.OfType<BountyPaid>().Any()` — the event is emitted and the log is append-only,
-preserving the gate's monotonicity contract), and the *family* fix is P2-R28 and P2-R29.
+The finding that outranked most of the list — **the `Progress` surface could never unlock, and the
+second profession could never be earned through its stated path** — is fixed and guarded, so the
+finding text is gone rather than kept in the present tense a merged PR contradicts (rule 8: a stale
+finding is an instruction the next session obeys). `P2-HONEST-01` (#699) re-derived the gate from
+`EventLog.OfType<BountyPaid>()` and deleted `FullPlaytest`'s `OpenPanel("Progress")` bypass, which
+was reporting coverage of a door no player could open. The *family* fix is P2-R28, P2-R29 and
+P2-R30, and `SatisfiableGateCensusTests` (`P2-HONEST-07`) is P2-R30's executable half — its class
+doc carries the full anatomy of the defect, next to the code that now catches its shape.
 
 The four families, each with its tripwire:
 
@@ -4425,8 +4422,12 @@ Numbered in the Phase 2 namespace; each traces to the dossier evidence above.
 
 - P2-R29. Player copy names only what the player can see; the vocabulary census owns generators,
   not words, and runs in the fast lane.
-- P2-R30. Every unlock-gate predicate is satisfiable by reachable state or listed as
-  deliberately-late, asserted in the fast lane.
+- P2-R30. Every discovered gate predicate's INPUTS are provably writable — each term it reads is
+  somewhere written to a non-default value — or the gate is pinned with a cited reason, asserted in
+  the fast lane by `SatisfiableGateCensusTests`. Worded as *writability*, not *reachability*, on
+  purpose: that is what the census actually proves, and the earlier wording ("satisfiable by
+  reachable state") promised a guarantee no fast-lane guard delivers. What is still unguarded is
+  named in `P2-HONEST-19`, not implied to be covered.
 - P2-R31. A harness reaches every surface through the player's door — no direct `OpenPanel`
   bypasses.
 - P2-R32. No doc comment restates a constant from its own file with a different value, and no
@@ -4695,6 +4696,7 @@ name (§11.6 rule 4).
 | P2-HONEST-16 | `ConsumableEffect.Magnitude` gets a client reader — a potion's heal amount becomes legible | `godot/scripts/panels/ForgePanel.cs`, `godot/scripts/panels/ShopPanel.cs` | — | [G] |
 | P2-HONEST-17 | `GameState.RivalMarketSharePermille` gets a client reader — the idle-day cost becomes legible | `godot/scripts/panels/ShopPanel.cs` | — | [G] |
 | P2-HONEST-18 | `InFlightExpedition.Gold` gets a client reader, or its withholding gets a stated reason | `godot/scripts/panels/CampPanel.cs` | — | [G] |
+| P2-HONEST-19 | The numeric-threshold gate family gets a satisfiability guard — `SatisfiableGateCensusTests` cannot see it | `sim/GameSim.Tests/`, `sim/GameSim/Drama/DirectorSystem.cs`, `sim/GameSim/Venues/`, `sim/GameSim/Crafting/TalentTree.cs` | P2-HONEST-07 | [S][BAL] |
 
 The per-domain counts, the landed/unbuilt split, and which rows carry a Contracts micro-PR, a
 golden re-record or a balance re-baseline are **derived, not stated here**: run
@@ -4719,7 +4721,12 @@ here would be the numbering disease in a new costume. U48 landed inside #667, wh
 `GearWornCheckCensusTests` — the deny-by-default reflection over `GearSet`'s own slot properties,
 so the next hand-written worn-gear slot list fails by name.
 
-### The audit round's five smaller rows, with the evidence that booked them
+### The audit round's smaller rows, with the evidence that booked them
+
+<!-- The count is out of this heading on purpose: it said "five" while a sixth row was being added
+     below, which is the same hand-maintained-second-copy drift the paragraph above the index
+     already retired its own counts over. -->
+
 
 Index-level on purpose. Each is one unit's worth of work and none needs a ruling; they are written
 down here rather than in bodies because the citation is the whole argument.
@@ -4755,6 +4762,19 @@ down here rather than in bodies because the citation is the whole argument.
   them — they are the "why did the roll land there" story the balance work keeps re-deriving by
   hand — or the collection dies. It does not get to stay a computed dead end while this program is
   writing a census against exactly that shape.
+- **`P2-HONEST-19`** — the numeric-threshold gate family has no satisfiability guard, and
+  `P2-HONEST-07`'s census is the wrong instrument for it. That census proves *input writability*:
+  every term a gate reads is somewhere written to a non-default value. It cannot answer "can this
+  measured quantity ever reach this number", which is the entire question for
+  `DirectorSystem.Catalog`'s `MinProgressionTier`/`MinSurvived` (five incident rows filtered by
+  `EligibleIds`), `VenueDefinition.Gate`'s per-floor power floor against
+  `CombatMath.PartyAveragePower`, `TalentTree.ForgeTierRequirement`, and each profession's own
+  `TierGate` recipe-tier table. Every one is a real gate on real content, every one is a DATA TABLE
+  (so a guard over them can be derived rather than hand-listed), and an unreachable threshold is
+  the same welded-door defect `P2-HONEST-01` was — just spelled with an integer instead of a
+  `bool`. It is `[BAL]` because the honest form of the answer is a measurement over the corpus (does
+  any trajectory clear this floor?), not a text scan, which is exactly why it is booked here rather
+  than bolted onto a census that would have to lie about its own reach to include it.
 - **`P2-HONEST-14`** — the CLI's own printed prose is in nobody's scope. `P2-HONEST-06`'s
   generators ban CLI **verbs** from *client* copy, and the family-B tripwires text-scan
   `godot/scripts/`, so `sim/GameSim.Cli/`'s own player-visible strings are scanned by nothing —
