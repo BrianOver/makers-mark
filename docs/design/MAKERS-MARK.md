@@ -4437,6 +4437,17 @@ Numbered in the Phase 2 namespace; each traces to the dossier evidence above.
 - P2-R37. The balance corpus states its own coverage: the action types the sweep policies submit
   are asserted in the fast lane, so a plan claiming coverage the corpus does not have goes red by
   name.
+- P2-R38. Every integer column a content table gates content on is CLASSIFIED, and every one whose
+  measured quantity has a content-table bound is asserted against it, in the fast lane by
+  `ReachableThresholdCensusTests`. Worded as *classified* and *content-table bound*, not
+  *reachable*, on purpose — the same discipline P2-R30 was reworded under. What the guard proves is
+  that no threshold exceeds what the game's own tables can physically produce, and that a
+  gate-shaped column nobody has ruled on is a red build. It does NOT prove any threshold is reached
+  in play: the quantities with no content bound (gold, XP, material stock) are named as
+  accumulators and left unanswered, and the guard would have been green through P2-END-01, which
+  was an absorbing-economy defect rather than an unreachable threshold. That limit is stated in the
+  census's own class doc and in P2-HONEST-19's entry, and citing this requirement for
+  economic reachability is a false receipt.
 
 ## Key technical decisions
 
@@ -4696,7 +4707,7 @@ name (§11.6 rule 4).
 | P2-HONEST-16 | `ConsumableEffect.Magnitude` gets a client reader — a potion's heal amount becomes legible | `godot/scripts/panels/ForgePanel.cs`, `godot/scripts/panels/ShopPanel.cs` | — | [G] |
 | P2-HONEST-17 | `GameState.RivalMarketSharePermille` gets a client reader — the idle-day cost becomes legible | `godot/scripts/panels/ShopPanel.cs` | — | [G] |
 | P2-HONEST-18 | `InFlightExpedition.Gold` gets a client reader, or its withholding gets a stated reason | `godot/scripts/panels/CampPanel.cs` | — | [G] |
-| P2-HONEST-19 | The numeric-threshold gate family gets a satisfiability guard — `SatisfiableGateCensusTests` cannot see it | `sim/GameSim.Tests/`, `sim/GameSim/Drama/DirectorSystem.cs`, `sim/GameSim/Venues/`, `sim/GameSim/Crafting/TalentTree.cs` | P2-HONEST-07 | [S][BAL] |
+| P2-HONEST-19 | The numeric-threshold gate family gets a satisfiability guard — `SatisfiableGateCensusTests` cannot see it | `sim/GameSim.Tests/`, `sim/GameSim/Drama/DirectorSystem.cs`, `sim/GameSim/Venues/`, `sim/GameSim/Crafting/TalentTree.cs` | P2-HONEST-07 | [S] |
 
 The per-domain counts, the landed/unbuilt split, and which rows carry a Contracts micro-PR, a
 golden re-record or a balance re-baseline are **derived, not stated here**: run
@@ -4775,6 +4786,50 @@ down here rather than in bodies because the citation is the whole argument.
   `bool`. It is `[BAL]` because the honest form of the answer is a measurement over the corpus (does
   any trajectory clear this floor?), not a text scan, which is exactly why it is booked here rather
   than bolted onto a census that would have to lie about its own reach to include it.
+
+  > **Built and measured, and three of this entry's own premises are corrected by the build.**
+  > `sim/GameSim.Tests/Hygiene/ReachableThresholdCensusTests.cs` is the guard. It derives the corpus
+  > (every integer column of every static content table in `sim/GameSim/`, reached by a shape walk
+  > that recurses into nested collections — the only way `VenueRegistry.All` →
+  > `VenueDefinition.Floors` → `VenueFloor.Gate` is visible at all), decides gate-shape from the
+  > source (a relational site, one alias hop, or an int-keyed lookup), and then **denies by
+  > default**: a gate-shaped column with no registered verdict is a red build. Verdicts are `Floor`
+  > (asserted under a ceiling derived from the live tables), `Cap` (asserted over a derived floor),
+  > `Accumulator` (the quantity grows with no content-table bound — named, not answered) and
+  > `NotAThreshold` (the relational site is a sort key, a loop bound, a measured quantity, or a name
+  > collision — each carries the site it excuses). The count is pinned at 22. **Nothing in the tree
+  > is currently unreachable**: every `Floor` cell sits under its ceiling and every `Cap` over its
+  > floor.
+  >
+  > **1. A corpus measurement is NOT the honest form of the answer, and this entry's `[BAL]` reason
+  > is wrong.** A witness ("some trajectory cleared this floor") is satisfied by the 198-of-200
+  > seeds that DO clear the Mine's floor-5 gate, which is exactly the population that hid
+  > P2-END-01; and `ApprenticePlayer` stalls 78% of seeds for reasons that are a property of that
+  > harness script (§11.8.1's own close-out). A corpus proves what today's policies happen to do.
+  > The guard shipped is a **reachable-ceiling** computation instead — content-table maxima, no sim
+  > run — so the unit needed no balance lane at all.
+  >
+  > **2. A ceiling computation would NOT have caught P2-END-01, and the brief that commissioned
+  > this unit expected it to.** Stated plainly because a guard that is believed to cover a defect it
+  > cannot see is worse than no guard. The stalled seeds sat at party power 67 against a gate of 70;
+  > the *content* ceiling for that gate was ~340 both before and after #731's cure, so the assertion
+  > would have been green throughout. P2-END-01 was an **absorbing-economy** defect (the party could
+  > not afford to craft), not an unreachable-threshold defect (it could not out-gear the gate in
+  > principle). `arc-stall` plus `Anomalies.ShopCollapse` remain the instruments for the first
+  > shape; this census owns only the second.
+  >
+  > **3. The rules do not gate a recipe on its material — the ADVISOR does, and only by omission.**
+  > §11.8.1 reads `RecipeTable`'s comments as material-availability gating, and corrected that once
+  > for rungs 1–2. At the rules layer it does not hold for rung 0 either:
+  > `CraftingHandlers.ApplyCraft` and `ActionLegality.CraftLegal` both accept **any** key in
+  > `RecipeTable.MaterialGrades` (19 keys) for **any** recipe — the material shifts the quality roll,
+  > it does not gate the recipe, and only tiers 2–3 carry a `TierGate` talent at all. What actually
+  > gates it is `ActionLegality.LegalActions`, which emits exactly one craft candidate per recipe,
+  > always paired with `recipe.MaterialKey`: substitution is legal but never OFFERED, so no policy
+  > driven off the advisor's door can use it. That asymmetry — the enumerator narrower than the
+  > validator it is parity-tested against — is a genuine finding and is **not** fixed here; it is the
+  > kind of gap `ActionLegality`'s own kernel-parity test cannot see, because parity is asserted on
+  > what is offered, never on what is withheld.
 - **`P2-HONEST-14`** — the CLI's own printed prose is in nobody's scope. `P2-HONEST-06`'s
   generators ban CLI **verbs** from *client* copy, and the family-B tripwires text-scan
   `godot/scripts/`, so `sim/GameSim.Cli/`'s own player-visible strings are scanned by nothing —
