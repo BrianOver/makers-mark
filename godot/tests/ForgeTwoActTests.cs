@@ -500,6 +500,69 @@ public class ForgeTwoActTests
         }
     }
 
+    // ── #737 follow-up audit: the ceremony card is the SAME CenterContainer/no-floor shape ────────
+
+    /// <summary>
+    /// #737 follow-up (found by AUDITING, not by rendering a broken frame — this one currently
+    /// passes): <c>ShowCeremony</c>'s grade/star labels (<see cref="ForgePanel"/>'s
+    /// <c>_ceremonyGrade</c>/<c>_ceremonyStars</c>, built in <c>BuildCeremony</c>) sit under a
+    /// <see cref="CenterContainer"/> whose card (<c>ForgeCeremonyCard</c>) carries NO
+    /// <c>CustomMinimumSize</c> of its own — the exact shape that collapsed <c>ForgeMentorText</c>
+    /// (#736) and the shared <see cref="MentorBanner"/> before it (<c>CardBodyWidth</c>'s own doc).
+    /// The card only survives today because a SIBLING in the same body — the three
+    /// <c>Smelt</c>/<c>Forge</c>/<c>Quench</c> <see cref="UiKit.StatChip"/> pips — happens to demand
+    /// more minimum width (measured: a 332x170 card, both text labels at 308px) than either
+    /// autowrap label's own near-zero minimum. That is an INCIDENTAL rescue, not a contract: nothing
+    /// stops a future change to the pips row (fewer pips, a narrower <c>StatChip</c>) from silently
+    /// removing it, and <c>LayoutTests</c>' own R7 canary does not reach this card (it is a hidden-
+    /// until-fired overlay sibling of the panel, added directly under <c>ForgePanel</c> like the
+    /// minigame overlays that canary's own doc says would false-flag — see this repo's
+    /// <c>docs/design</c> discussion of that scope). This test is the missing per-site guard R7 was
+    /// deliberately never going to provide for a site shaped like this one.
+    /// </summary>
+    [TestCase]
+    public async Task ForgeCeremony_GradeAndStarLabels_RenderAtReadableWidth()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.Adapter.Queue(new BuyMaterialAction(ScriptedSession.CraftMaterial, ScriptedSession.CopperNeeded * 3));
+            ui.Adapter.AdvancePhase();
+            ui.OpenPanel("Forge");
+
+            PressEnabled(ui.Forge, $"WorkForge_{ScriptedSession.CraftRecipeId}");
+
+            var act1 = Find<ForgeMinigame>(ui.Forge, "ForgeMinigame");
+            DriveAct1ToCompletion(act1, pumpUntilPermille: 900, strikeAbovePermille: 500);
+            var quench = Find<QuenchMinigame>(ui.Forge, "QuenchMinigame");
+            quench.Plunge(); // -> OnQuenchFinished -> ShowCeremony, synchronously
+
+            await SettleLayout(ui);
+
+            AssertThat(Find<Control>(ui.Forge, "ForgeCeremonyOverlay").Visible)
+                .OverrideFailureMessage("Setup check: the ceremony never showed after a completed craft.")
+                .IsTrue();
+
+            var grade = Find<Label>(ui.Forge, "ForgeCeremonyGrade");
+            AssertThat(grade.Size.X)
+                .OverrideFailureMessage(
+                    $"ForgeCeremonyGrade (\"{grade.Text}\") rendered {grade.Size.X}px wide -- the "
+                    + "one-character-per-line collapse a CenterContainer produces on an unconstrained "
+                    + "autowrap Label once its card's real width floor (today, incidentally, the "
+                    + "Smelt/Forge/Quench pip row) shrinks below what the grade text needs.")
+                .IsGreater(100f);
+
+            var stars = Find<Label>(ui.Forge, "ForgeCeremonyStars");
+            AssertThat(stars.Size.X)
+                .OverrideFailureMessage($"ForgeCeremonyStars rendered {stars.Size.X}px wide -- same collapse.")
+                .IsGreater(100f);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
     // ── C2 (input substrate plan): plunge is an InputMap action, not a raw key ──────────────────
 
     [TestCase]
