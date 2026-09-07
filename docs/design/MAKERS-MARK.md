@@ -5649,6 +5649,15 @@ default applied.**
      time once the assist tree is full. "No craft is punishing" is satisfied so completely that the
      bottom band is unreachable; whether the floor should be that generous is a design question this
      entry only measures.
+
+     **Correction, 2026-09-06 — the count moved, the finding did not.** `#731` added
+     `mithril-warblade` to the blacksmith's own recipe table the day after this entry's
+     2026-09-05 measurement, so the twelve-cell total is no longer 1,713: an unchanged re-run of
+     this same fixture now produces **1,708** crafts across the same twelve cells (`Failed: 0,
+     Passed: 7`), Poor still 0 in every one. CLAUDE.md rule 5 (determinism) is why this is
+     confidently a recipe-table change and not noise — an unchanged fixture cannot drift on its
+     own. See `P2-OQ13` for whether that zero is a defect, every other way an `Item` can acquire a
+     `Quality`, and what reads the band.
   3. **The blacksmith's average hand is deliberately capped below the top**, at 0% Masterwork and
      96.9% Superior, because `HandForgePlayer`'s average deviation is pinned to equal auto-craft's
      own 800 grade. Monotone, but flat between indifferent and average at the top band — the
@@ -5693,6 +5702,128 @@ default applied.**
   lie living in git (rule 12), including when the receipt is its own. **Standing consequence: no
   wall clock in this repo — CI's least of all — is evidence about what a change costs. Count the
   work: campaigns, ticks, tests. `balance-sim`'s duration is runner weather.**
+
+- **P2-OQ13. Is Poor dead content, or unreachable by the wrong instrument? — investigated
+  2026-09-06.** `P2-OQ12` found zero Poor items across all twelve `CraftCurveBalanceTests` cells
+  and booked the question of whether that floor is a defect for its own unit. It is not a defect:
+  Poor is fully wired and mechanically reachable by crafting. It is simply below the floor every
+  calibrated hand in this repo's balance corpus is defined to sit at.
+
+  **Every way an `Item` acquires a `Quality`, grepped.** `ItemForge.Forge` (`Crafting/ItemForge.cs:34`,
+  quality-to-percent table at `:20-28`) is the sole minting function in the sim; it has exactly four
+  callers: `CraftingHandlers.cs:212` (an ordinary craft — auto or active), `HeirloomHandlers.cs:138`
+  (a heirloom reforge, R6 — reuses the SAME `QualityRoller` call the recipe's profession would use
+  for an ordinary craft, per its own class doc at `:32-36`), `LegendaryCommissionHandlers.cs:114`
+  (hardcoded `QualityGrade.Masterwork`, never anything else), and
+  `MasterworkAttemptHandlers.cs:135,138` (a deterministic floor of Superior stepping to Masterwork —
+  "gold buys certainty," zero RNG by construction, never Poor). Two more paths mint stats without
+  going through `ItemForge`: `RivalCatalog.cs:24,83` restocks the rival's shelf at
+  `QualityGrade.Common` only, tiers 1-2, "never a maker's mark" — never Poor. `HeroRoster.cs`'s
+  starting six and every `CreateRecruit` hero carry `GearSet.Empty` — no item, of any quality, is
+  minted for starting gear at all. `CommissionSystem.cs`'s `MinQualityFor` (`:207-227`) never asks
+  for less than `QualityGrade.Common` even at the lowest target floor, so a commission can never
+  demand Poor either — it can only refuse to accept one, same as any veteran shopper.
+
+  So the only roads to Poor are the two `QualityRoller` entry points, reached only through
+  `CraftingHandlers` and `HeirloomHandlers`: passive `Roll` (`QualityRoller.cs:46-95`, effective
+  <=14 -> Poor, a 15% chance at even material grade) and active `RollActive` (`:145-185`, effective
+  <200 -> Poor). Passive `Roll` is currently dead code for every REGISTERED profession — all four
+  (`ProfessionRegistry.cs:51`, `AlchemyProfession.cs:119`, `TanningProfession.cs:100`,
+  `EngineeringProfession.cs:116`) set `ActiveCraft: true`, and `CraftingHandlers.cs:205` /
+  `HeirloomHandlers.cs:134-136` both branch on that flag before ever reaching `Roll` — worth
+  knowing, out of this unit's scope, and a smaller version of the same "unreachable by anything
+  registered" shape `P2-OQ10` already found once.
+
+  **Poor IS reachable through `RollActive`, proven through the real kernel, not argued.**
+  `AlchemyActiveCraftTests.GarbageBrew_ThroughKernel_LandsPoor_WorseThanAutoCraft`
+  (`sim/GameSim.Tests/Professions/Alchemy/AlchemyActiveCraftTests.cs:74-88`) pours three reagents
+  the recipe never called for at all (an alchemy score of 0 raw points) through
+  `CraftingHandlers.ApplyCraft` and gets `QualityGrade.Poor` back. The mechanism is not a corner
+  case: `Crafting/CraftCurve.cs`'s own doc says it in so many words — "everything below the
+  indifferent hand is compressed linearly into the floor." Poor is where a hand WORSE than
+  Indifferent lands, and `Harness/CraftHand.cs` only ever defines three named levels, all at or
+  above Indifferent, which is itself deliberately anchored 100‰ clear of the Fine seam
+  (`CraftCurve.IndifferentAnchorPermille = 450`, `CraftCurve.cs:64`) so that this repo's own worst
+  named hand can never be dropped across a seam by jitter alone. So the balance corpus's zero is a
+  property of the three calibrated hands it uses — all defined at Indifferent-or-better by
+  `P2-OQ11`'s own owner ruling — not a property of the game. A real player who botches an
+  active-craft minigame badly enough (or, in the untested passive path, crafts meaningfully below
+  the recipe's material tier) reaches Poor exactly as designed.
+
+  **Heirloom reforge is a second live channel to Poor, never exercised by any sweep.** Grepped
+  across every scripted policy in `sim/GameSim/Harness/` and `GameSim.Cli` —
+  `ReforgeHeirloomAction` only appears in `GameSim.Cli/CliActionFormat.cs:39` and
+  `GameSim.Cli/Program.cs:702`, both human-driven console commands. No balance-corpus policy ever
+  submits one. `HeirloomHandlers` shares its whole quality path with `CraftingHandlers`, so it
+  inherits the exact same reachability: mechanically live, uncertified by any sweep. The same fix
+  `P2-OQ10` shipped for Alchemy/Tanning/Engineering (a policy that actually drives the path) would
+  close this gap too, if it is ever worth its own unit.
+
+  **Poor has committed copy and committed presentation — this is not an orphaned enum member.**
+  Copy: `docs/reference/text-census.md:736` — the raw `Quality` enum `ToString()` ("Poor", "Common",
+  "Fine", "Superior", "Masterwork") renders in every `"{Item} [{Quality}]"` label and lowercased
+  inside `ShoppingAi`'s veteran refusal line (`ShoppingAi.cs:142`, *"a floor-N veteran won't trust
+  poor work"*). Presentation: `godot/scripts/audio/SfxLibrary.cs:85,400` synthesizes a dedicated
+  `GradeStingPoor` cue ("the dullest, quietest rung of the ladder", a 196Hz tone), mixed as a
+  `CeremonialOneShot` (`MixBudget.cs:109`); `godot/scripts/panels/ForgePanel.cs:1677,1705,1717` maps
+  Poor to that cue, a sort priority of 1 (lowest), and `GameTheme.BloodColor`. No asset registry
+  (`IconRegistry.cs`, `AssetResolutionCensusTests`) carries a quality-specific sprite/icon for any
+  band, Poor included — quality is communicated by text, color, and sound, never a bespoke icon, so
+  there is no dedicated art asset sitting unused either. Nothing here is dead: it renders correctly
+  the moment an item is Poor, which — per the reforge and garbage-brew findings above — already
+  happens outside the balance corpus.
+
+  **What reads the band, beyond rendering it.** `ItemForge.QualityPercent` (`ItemForge.cs:22`, an
+  80% stat/effect-magnitude multiplier — the actual mechanical consequence of the grade),
+  `WillingnessModel.QualityWillingnessBonusPermille[Poor] = -120` (`WillingnessModel.cs:106` — the
+  harshest pricing/willingness penalty on the table), `SuggestedPrice.For` (`SuggestedPrice.cs:44`,
+  a price floor of 4 gold), `CraftModifiers.cs:148` (Poor unlocks zero modifier slots — the only
+  grade that holds none), `ShoppingAi.VeteranMinQualityGrade = Common` (`ShoppingAi.cs:81` — a
+  deep-floor veteran categorically refuses Poor gear,
+  `ShoppingAiTests.Veteran_PassesOnPoorItem_ReasonNamesFloorAndGrade`), and `ObjectiveAdvisor.cs:430`
+  (an EMPTY gear slot's minimum acceptable grade defaults to Poor — "anything crafted answers it,"
+  the deliberate no-softlock floor
+  `ShoppingAiTests.Rookie_BelowVeteranThreshold_NeverGatedOnQuality_EvenOnPoorGear` pins). Six
+  systems branch on this band. Deleting it is not cheap.
+
+  **Recommendation — both costed, neither built, per this unit's own instruction.**
+  (a) *Add a fourth, sub-Indifferent `CraftHand`* — a genuinely bad hand (wrong reagents/parts/
+  passes throughout, the shape `GarbageBrew` already proves lands Poor) — purely as a coverage
+  fixture, mirroring `P2-OQ10`'s own precedent of shipping coverage before touching a curve. Cost:
+  one new hand implemented across the three point-scored puzzles plus a fourth balance-corpus
+  column; zero curve/balance risk, since `CraftCurve`/`QualityRoller` are untouched — only the
+  instrument gets wider. This is the cheaper option and the one consistent with precedent, because
+  Poor is provably reachable already and six systems already pay for its existence.
+  (b) *Delete the band* — `QualityGrade.Poor` from the enum (`Contracts/Enums.cs:45`, deny-listed,
+  orchestrator-only), `ItemForge`/`QualityRoller`'s Poor branches, `WillingnessModel`/
+  `SuggestedPrice`/`CraftModifiers`/`ShoppingAi`/`ObjectiveAdvisor`/`DemandBoard`'s Poor-specific
+  entries, the godot-side `GradeStingPoor` cue and its `ForgePanel`/`SfxLibrary`/`MixBudget` wiring,
+  and the text-census/doc references. Cost: a contract-owning change (six sim systems plus four
+  godot files), a re-baseline of every fixture that constructs a `QualityGrade.Poor` item by hand
+  (`SuggestedPriceTests`, `WillingnessModelTests`, three `ShoppingAiTests`,
+  `CommissionFulfillmentTests`, `CommissionSystemTests`, `CraftModifiersTests`,
+  `ConsumableRecipeTests`, `ItemForgeTests`, `ArtifactSigningTests`), and a design decision about
+  what shopping/commissions/the advisor do with a five-band model that just became four. Not
+  cheaper than (a), and it deletes a band the game's own copy and audio already spent effort
+  rendering correctly.
+
+  **Second finding, checked from the existing corpus rather than re-run.** Does a saturated roster
+  leave the player with nothing worth making? Measured off `CraftCurveBalanceTests`' own
+  `Reading.LateCrafts` (day 51+, the window `EveryFixture_ActuallyCraftsAtVolume_
+  SoNoShareBelowIsAnInstrumentReading` already asserts is nonzero) via a one-line temporary
+  diagnostic added to `Report()`, run, and reverted — not shipped, since it is a read, not a build:
+  per campaign-day, alchemy Average lands 4 late crafts over 5 campaigns x 50 days = 1 every ~63
+  campaign-days; engineering Skilled lands 1 late craft total across its 5 campaigns' combined back
+  halves (250 campaign-days) = 1 every 250; tanning Indifferent lands 2 = 1 every 125. Tanning runs
+  the other way at its skilled end (93 late crafts = 1 every ~2.7 days — better tanning keeps
+  selling). So yes: for Alchemy and Engineering specifically, and for Tanning's own low-skill end,
+  the existing `HasBuyer` gate leaves a skilled crafter with close to nothing the roster still wants
+  once gear saturates — exactly the three professions this same file's finding 1 already named as
+  saturating (140->96, 191->157). The `LateCrafts > 0` floor the balance gate already asserts is
+  real but thin: "nonzero" and "one craft in 250 campaign-days" both pass it identically. Not
+  costed further here — whether the roster ever needs more slots or consumable variety than the
+  current recipe set offers is a content-breadth question, not a curve or code defect, and this
+  measurement is offered as evidence for that question rather than as a unit of its own.
 
 ## What must survive, named so this program cannot quietly discard it
 
