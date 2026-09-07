@@ -55,6 +55,141 @@ public class WaveELessonsTests
         }
     }
 
+    /// <summary>
+    /// #736 (the door #735 found and booked rather than built): before this fix,
+    /// <c>ForgePanel.ShowTalentsLesson</c> fired ONLY from <c>OnUnlockPressed</c> — the success
+    /// path — so the one lesson naming the Forge Tier requirement could only ever arrive after the
+    /// player had already satisfied it. <c>tier-2-smithing</c> has no prerequisite (see <see
+    /// cref="GameSim.Crafting.TalentTree"/>) but DOES carry a Forge Tier requirement (index 1, "Tier
+    /// 2"), and a fresh campaign's workshop starts at Tier 1 — so this button is REFUSED on a fresh
+    /// mount for exactly the Forge-Tier reason the bug names, never a missing-prerequisite one.
+    /// </summary>
+    [TestCase]
+    public void RefusedUnlockPress_TeachesTheSameTalentLesson_AtTheWallInsteadOfAfterIt()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.OpenPanel("Forge");
+
+            var button = Find<Button>(ui.Forge, "Unlock_tier-2-smithing");
+            AssertThat(button.Disabled)
+                .OverrideFailureMessage("Setup check: a refused Unlock stays pressable (onRefused keeps it enabled) — Disabled=true means this test proves nothing about a real player's press.")
+                .IsFalse();
+            AssertThat(button.Text)
+                .OverrideFailureMessage($"Setup check: expected the Forge-Tier refusal reason on the button label, got \"{button.Text}\".")
+                .Contains("Forge Tier");
+
+            Press(ui.Forge, "Unlock_tier-2-smithing");
+
+            AssertThat(Find<PanelContainer>(ui.Forge, "ForgeMentorBanner").Visible)
+                .OverrideFailureMessage("The talent lesson never showed on a REFUSED Unlock press — the exact gap #736 exists to close.")
+                .IsTrue();
+            var text = Find<Label>(ui.Forge, "ForgeMentorText").Text;
+            AssertThat(text).Contains(MentorVoice.Name);
+            AssertThat(text).Contains("Talent");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>Law: skipping stays legal, and a refused press must never itself be swallowed — the
+    /// button's own <c>onRefused</c> callback still reports the verdict's reason via
+    /// <c>ForgePanel.SetFeedback</c> exactly as before, AND still queues no
+    /// <see cref="UnlockTalentAction"/>, whether or not the lesson banner also has something to
+    /// say. Same fixture as <see cref="RefusedUnlockPress_TeachesTheSameTalentLesson_AtTheWallInsteadOfAfterIt"/>.</summary>
+    [TestCase]
+    public void RefusedUnlockPress_StillReportsItsOwnRefusalReason_AndQueuesNothing()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.OpenPanel("Forge");
+
+            Press(ui.Forge, "Unlock_tier-2-smithing");
+
+            var feedback = Find<Label>(ui.Forge, "ForgeFeedback");
+            AssertThat(feedback.Visible)
+                .OverrideFailureMessage("A refused press must still report its own reason (law: skipping stays legal) -- the lesson must never swallow the refusal.")
+                .IsTrue();
+            AssertThat(feedback.Text).Contains("Forge Tier");
+
+            AssertThat(ui.Adapter.AppliedThisPhase.OfType<UnlockTalentAction>()
+                .Any(a => a.NodeId == "tier-2-smithing"))
+                .OverrideFailureMessage("A refused Unlock press queued UnlockTalentAction anyway -- the lesson must never itself apply the gated action.")
+                .IsFalse();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>Anti-repeat rule: <see cref="TutorialFlow.ConsumeFirstTouch"/>'s once-ever contract
+    /// (the SAME mechanism every other first-touch lesson in this file relies on, not a bespoke
+    /// second one) — a player may hit a refused button many times (this repo has shipped and later
+    /// killed a lesson that fired 1,287 times); the SECOND refused press, after the banner from the
+    /// first has already been dismissed, must show nothing, while the refusal's own reason keeps
+    /// reporting every time (never gated behind the lesson).</summary>
+    [TestCase]
+    public void RepeatedRefusedPresses_NeverRepeatTheLesson_ButKeepReportingTheRefusal()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.OpenPanel("Forge");
+
+            Press(ui.Forge, "Unlock_tier-2-smithing");
+            AssertThat(Find<PanelContainer>(ui.Forge, "ForgeMentorBanner").Visible)
+                .OverrideFailureMessage("Setup check: the first refused press should teach the lesson.")
+                .IsTrue();
+            PressEnabled(ui.Forge, "ForgeMentorDismiss");
+
+            Press(ui.Forge, "Unlock_tier-2-smithing");
+            Press(ui.Forge, "Unlock_tier-2-smithing");
+
+            AssertThat(Find<PanelContainer>(ui.Forge, "ForgeMentorBanner").Visible)
+                .OverrideFailureMessage("The once-ever talent lesson fired again on a later refused press.")
+                .IsFalse();
+            var feedback = Find<Label>(ui.Forge, "ForgeFeedback");
+            AssertThat(feedback.Visible)
+                .OverrideFailureMessage("The refusal reason stopped reporting once the lesson had already fired once -- these must stay independent.")
+                .IsTrue();
+            AssertThat(feedback.Text).Contains("Forge Tier");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>The lesson is a READ of <see cref="TutorialFlow"/>'s own first-touch bookkeeping —
+    /// showing it on a refused press must never itself write sim state (whole-state fingerprint,
+    /// same idiom <c>ForgeBatchEchoTests.RenderingTheEchoChip_WritesNoSimState</c> already uses —
+    /// never a hand-listed field set that could silently miss a mutation elsewhere in the tree).</summary>
+    [TestCase]
+    public void RefusedUnlockPress_WritesNoSimState()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.OpenPanel("Forge");
+
+            var before = GameSim.Kernel.SaveCodec.Serialize(ui.Adapter.CurrentState);
+
+            Press(ui.Forge, "Unlock_tier-2-smithing");
+
+            var after = GameSim.Kernel.SaveCodec.Serialize(ui.Adapter.CurrentState);
+            AssertThat(after).IsEqual(before);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
     /// <summary>"talents and the second profession" (Progress half): <see
     /// cref="GodotClient.Panels.ProgressionPanel"/>'s own general profession-switch header is a
     /// SECOND path to the same lesson MainUi's tutorial-picker path already teaches
