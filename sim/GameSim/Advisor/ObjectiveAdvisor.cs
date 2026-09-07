@@ -268,7 +268,9 @@ public static class ObjectiveAdvisor
     /// private gap-scan), then walks that slot's recipes tier-ascending for the selected profession:
     /// the first one whose <see cref="ProfessionDefinition.TierGate"/> talent ISN'T unlocked yet is
     /// "the better item" — unlocking that gate is the direct next step (a locked tier can't be
-    /// crafted at all, so no material purchase would help yet). Once every tier is already unlocked,
+    /// crafted at all, so no material purchase would help yet), and when that unlock is itself held
+    /// shut by the workshop's Forge Tier the purchase that opens it is named instead of nothing at
+    /// all (see the branch's own comment). Once every tier is already unlocked,
     /// the gate is no longer the blocker: suggest (re)crafting the slot's HIGHEST-tier recipe with
     /// its own better baseline material, buying it first if not in stock (Morning only) — mirrors
     /// <see cref="SuggestSlotCraftOrBuy"/>'s craft-now/buy-toward-it shape exactly. Returns null when
@@ -325,12 +327,56 @@ public static class ObjectiveAdvisor
                 continue;
             }
 
+            var talents = state.Player.TalentsFor(recipe.Profession);
             var unlock = new UnlockTalentAction(gate, recipe.Profession);
-            return ActionLegality.IsLegal(state, unlock, phase)
-                ? new Suggestion(unlock,
+            if (ActionLegality.IsLegal(state, unlock, phase))
+            {
+                return new Suggestion(unlock,
                     $"{stall.HeroName} carries {targetSlot} gear below floor {nextFloor}'s {required}+ bar (currently {carried}) " +
-                    $"— unlock '{profession.TalentNodes[gate].Name}' to open the way to '{recipe.Name}'.")
-                : null;
+                    $"— unlock '{profession.TalentNodes[gate].Name}' to open the way to '{recipe.Name}'.");
+            }
+
+            // The rung BELOW the unlock, and the one this branch used to answer with silence. A gate
+            // node also requires the workshop to already stand at a matching Forge Tier
+            // (TalentTree.ForgeTierRequirement, enforced by ActionLegality.UnlockTalentLegal and
+            // CraftingHandlers.ApplyUnlock alike), so at the baseline Forge I every blacksmith gate
+            // is illegal and the `return null` above fired for the whole early campaign — the
+            // advisor went quiet at exactly the step blocking the ladder, and named the ladder only
+            // once the purchase that opens it had already been made. ObjectiveAdvisorTests'
+            // own U10 fixture had to patch a Forge-Tier-boosted projection over the real state to
+            // reach the line at all, which is that gap written down.
+            //
+            // Suggest the purchase instead, and only when it is honestly the whole answer: the
+            // prerequisite talents are already in hand (otherwise the missing prereq is the real
+            // next step, not the forge), ONE upgrade actually clears the requirement (the gate chain
+            // and the tier ladder advance in lockstep for every registered profession, so this holds
+            // today — asserted rather than assumed, so a future gate needing two upgrades falls back
+            // to today's silence rather than promising a rung it cannot reach), and
+            // UpgradeForgeAction is legal right now (Morning, gold, the floor's ore, a slot —
+            // ActionLegality decides, never a second copy of that arithmetic here).
+            var tierIndex = ForgeTierHandlers.CurrentTierIndex(state.Player);
+            var upgrade = new UpgradeForgeAction();
+            if (profession.CanUnlock(gate, talents)
+                && TalentTree.ForgeTierRequirement.TryGetValue(gate, out var requiredTierIndex)
+                && tierIndex < requiredTierIndex
+                && tierIndex + 1 >= requiredTierIndex
+                && ActionLegality.IsLegal(state, upgrade, phase))
+            {
+                // Payload first, context second — deliberately the reverse of every sibling reason
+                // above. ObjectiveTracker clamps an advisor line to two lines at its dock width and
+                // ellipsizes the tail (its own Refresh doc: "for advisor text losing the tail is
+                // fine"), and here the tail is the part that names a purchase; leading with the
+                // hero would have put the whole answer past the clamp. Every number is the sim's
+                // own (ForgeTierHandlers' cost/ore tables, and its own "Forge Tier {tierIndex + 2}"
+                // display convention for the tier a single upgrade lands on), never re-derived.
+                return new Suggestion(upgrade,
+                    $"Raise the forge to Tier {tierIndex + 2} ({ForgeTierHandlers.GoldCost[tierIndex]}g, " +
+                    $"{ForgeTierHandlers.OreQuantity} {ForgeTierHandlers.OreKey[tierIndex]}) — the way to '{recipe.Name}'. " +
+                    $"{stall.HeroName} carries {targetSlot} gear below floor {nextFloor}'s {required}+ bar " +
+                    $"(currently {carried}); '{profession.TalentNodes[gate].Name}' opens that recipe once the forge can hold it.");
+            }
+
+            return null;
         }
 
         // Every tier is already unlocked — the gate isn't the blocker. Craft (or buy toward) the
