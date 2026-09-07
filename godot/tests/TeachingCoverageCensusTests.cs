@@ -68,15 +68,21 @@ namespace GodotClient.Tests;
 /// <para><b>U6 correction (§11.14.14): coverage is not discovery, and no census in this file measures
 /// discovery.</b> A first-touch claim proves an id string sits at a live call site — it says nothing
 /// about WHEN that call site fires relative to the player finding the verb. Every first-touch lesson
-/// wired in this repo today fires reactively: AFTER the player has already located and pressed the
-/// button it explains, never before. The clearest example is <c>ForgePanel.OnUnlockPressed</c>, which
-/// queues <see cref="UnlockTalentAction"/> — spending the action slot — and only THEN calls
-/// <c>ShowTalentsLesson</c>, whose copy tells the player "banking the slot ... is a real choice" one
-/// press after the slot they might have banked is already gone. Counting "10 of 25 actions have a
-/// first-touch decision" answers "was a decision recorded here," which is what this file is built to
-/// check; it is not evidence that any player was ever LED to a verb before choosing it, because
-/// nothing that fires after a press can cause the discovery that press already represents. Read every
-/// count in this file as coverage, never as proof of discovery.</para>
+/// wired in this repo today fires reactively: AFTER the player has already pressed a button it
+/// explains, never before a first press of any kind. Counting "10 of 25 actions have a first-touch
+/// decision" answers "was a decision recorded here," which is what this file is built to check; it is
+/// not evidence that any player was ever LED to a verb before touching it, because nothing that fires
+/// after a press can cause the discovery that press already represents. Read every count in this file
+/// as coverage, never as proof of discovery.
+///
+/// <para><b>#736 correction:</b> the example this paragraph used to cite —
+/// <c>ForgePanel.OnUnlockPressed</c> queuing <see cref="UnlockTalentAction"/> and only THEN calling
+/// <c>ShowTalentsLesson</c>, so the "banking the slot ... is a real choice" copy could only ever
+/// arrive after the slot it named was already gone — is fixed: a REFUSED Unlock press
+/// (<c>ForgePanel.OnUnlockRefused</c>) now reaches the same lesson too, so a player who is blocked
+/// (missing prerequisite, Forge Tier, or slots) sees it at the wall, before spending anything. The
+/// general point above still holds elsewhere in this file's count — this was one instance of it, not
+/// the whole pattern.</para>
 /// </summary>
 [TestSuite]
 [RequireGodotRuntime]

@@ -53,6 +53,23 @@ public partial class ForgePanel : SimPanel
     private const float RecipeInfoColumnMinWidth = 180f;
 
     /// <summary>
+    /// #736 fix, found by rendering a frame and looking (never caught by <c>ForgeMentorLessonsTests</c>,
+    /// which only asserts on text content): <see cref="_mentorLabel"/> sits under a
+    /// <see cref="CenterContainer"/> with <see cref="Label.AutowrapMode"/> set but no width floor —
+    /// the SAME overflow class <see cref="MentorBanner"/>'s own <c>CardBodyWidth</c> doc already
+    /// names ("an unconstrained Label under a CenterContainer sizes to its own UNWRAPPED natural
+    /// width before AutowrapMode ever gets a width to wrap against"), just never ported to THIS
+    /// panel's own private banner clone (<see cref="BuildMentorBanner"/>'s own doc: routed through
+    /// its own <see cref="_mentorBanner"/>, never the shared <c>MainUi.Mentor</c>). A live capture
+    /// of the talent lesson rendered one word per line, off the visible card entirely. Narrower than
+    /// <see cref="MentorBanner.CardBodyWidth"/> (600) because THIS banner is bounded by the Forge
+    /// drawer's own content width (<see cref="DrawerHost.DrawerWidth"/> = 600, minus the drawer's own
+    /// margins and this card's padding) rather than the full 1152px window the shared banner docks
+    /// against.
+    /// </summary>
+    private const float MentorBannerWrapWidth = 480f;
+
+    /// <summary>
     /// Register #160 (U-T2-4): "Open the Docket" from right inside the craft section — the third
     /// of the three ways in, and the only one this panel owns. Bare event, same shape as <see
     /// cref="RaidForecastBoard.ForgeOneRequested"/>/<see cref="CampPanel.OpenForgeRequested"/>:
@@ -1110,7 +1127,7 @@ public partial class ForgePanel : SimPanel
                             ? $"Requires Forge Tier {requiredTierIndex + 1} or higher (workshop is Tier {tierIndex + 1})."
                             : $"No action slots left today (0/{ActionBudget.SlotsPerDay}) — 'next' to advance.";
                     AddButton(row, $"Unlock_{node.NodeId}", "Unlock", new Verdict(unlockLegal, unlockWhyNot),
-                        () => OnUnlockPressed(node.NodeId, professionId), onRefused: SetFeedback);
+                        () => OnUnlockPressed(node.NodeId, professionId), onRefused: OnUnlockRefused);
                 }
             }
         }
@@ -1755,9 +1772,31 @@ public partial class ForgePanel : SimPanel
     }
 
     /// <summary>
+    /// #736 (the door #735 found and booked rather than built): a refused Unlock press reports its
+    /// own reason via <see cref="SetFeedback"/> exactly as before — this only ADDS
+    /// <see cref="ShowTalentsLesson"/> on the same press, so the one lesson that names the Forge
+    /// Tier requirement can reach the player at the moment the wall stops them, not only after
+    /// they've already cleared it via <see cref="OnUnlockPressed"/>. No new copy: <see
+    /// cref="TutorialFlow.ConsumeFirstTouch"/>'s once-ever contract (see <see
+    /// cref="ShowMentorFirstTouch"/>'s own doc) means whichever of the two call sites — this one or
+    /// <see cref="OnUnlockPressed"/>'s — reaches the id FIRST is the only one that ever shows it;
+    /// the other becomes a no-op forever after. A player who presses a refused Unlock many times in
+    /// a row still sees it once, same as every other first-touch lesson in this file.
+    /// </summary>
+    private void OnUnlockRefused(string reason)
+    {
+        SetFeedback(reason);
+        ShowTalentsLesson();
+    }
+
+    /// <summary>
     /// U-T2 Wave E (§11.14.4, "talents and the second profession", the long tail): fires the first
-    /// time the player EVER unlocks a talent node — before that unit, nothing explained what a
-    /// talent unlock costs or how the tree connects.
+    /// time the player EVER presses Unlock on a talent node — either a refused press (<see
+    /// cref="OnUnlockRefused"/>) or the one that actually unlocks it (<see
+    /// cref="OnUnlockPressed"/>), whichever comes first. Before U-T2 Wave E, nothing explained what
+    /// a talent unlock costs or how the tree connects; before #736, this fired only on the SUCCESS
+    /// press, which meant the one copy naming the Forge-Tier requirement could only ever arrive
+    /// after the player had already satisfied it.
     ///
     /// <para><b>This copy told the player the unlock was free, and it had stopped being true.</b> The
     /// old line — "Unlocking one costs you nothing but the choice of which path you follow" — was
@@ -2297,13 +2336,14 @@ public partial class ForgePanel : SimPanel
         var card = Card("ForgeMentorCard");
         center.AddChild(card);
 
-        var body = new VBoxContainer { Name = "ForgeMentorBody" };
+        var body = new VBoxContainer { Name = "ForgeMentorBody", CustomMinimumSize = new Vector2(MentorBannerWrapWidth, 0) };
         card.AddChild(body);
 
         _mentorLabel = AddLabel(body, string.Empty);
         _mentorLabel.Name = "ForgeMentorText";
         _mentorLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
         _mentorLabel.HorizontalAlignment = HorizontalAlignment.Center;
+        _mentorLabel.CustomMinimumSize = new Vector2(MentorBannerWrapWidth, 0);
 
         var dismiss = AddButton(body, "ForgeMentorDismiss", "Got it", Verdict.Ok, DismissMentorBanner);
         dismiss.SizeFlagsHorizontal = SizeFlags.ShrinkCenter;

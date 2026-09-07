@@ -259,5 +259,52 @@ public class ForgeMentorLessonsTests
             Unmount(ui);
         }
     }
+
+    /// <summary>
+    /// #736 (found by rendering a frame and looking, never by a property-only test):
+    /// <c>ForgeMentorText</c> sits under a <see cref="CenterContainer"/> with autowrap set but no
+    /// width floor of its own — the SAME collapse class <c>LayoutTests</c>' own R7 canary hunts
+    /// (an unconstrained autowrap Label reports its UNWRAPPED single-line width as its minimum,
+    /// which a <see cref="CenterContainer"/> can shrink to ~1px) — but <c>LayoutTests.
+    /// ForgeBody_Labels_RenderAtReadableWidth</c> only ever scans CraftScroll/VendorSection/
+    /// FoundrySection, never this banner (added directly under the panel, exactly like the hidden
+    /// minigame overlays that test's own doc says would false-flag), so this collapse shipped with
+    /// zero coverage until a live capture caught it. <see cref="ForgePanel.MentorBannerWrapWidth"/>
+    /// (a private const, so this checks the SETTLED pixel width instead of the constant) is the
+    /// fix; 100px mirrors <c>LayoutTests</c>' own <c>MinReadableWidth</c> floor for the identical
+    /// defect shape.
+    /// </summary>
+    [TestCase]
+    public async Task RefusedTalentLesson_RendersAtReadableWidth_NotOneCharacterPerLine()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            // A closed drawer panel is never laid out (LayoutTests.ForgeBody_Labels_RenderAtReadableWidth's
+            // own precedent) -- surface it first, or every Size read below is a stale zero, not a
+            // real collapse measurement.
+            ui.OpenPanel("Forge");
+
+            // tier-2-smithing has no prerequisite but DOES need Forge Tier 2 -- refused on a fresh
+            // campaign (workshop starts at Tier 1) for the Forge-Tier reason, same fixture #736's
+            // own WaveELessonsTests use.
+            Press(ui.Forge, "Unlock_tier-2-smithing");
+            await SettleLayout(ui);
+
+            AssertThat(Find<PanelContainer>(ui.Forge, "ForgeMentorBanner").Visible)
+                .OverrideFailureMessage("Setup check: the refused press should show the talent lesson.")
+                .IsTrue();
+            var label = Find<Label>(ui.Forge, "ForgeMentorText");
+            AssertThat(label.Size.X)
+                .OverrideFailureMessage(
+                    $"ForgeMentorText rendered {label.Size.X}px wide -- the one-character-per-line "
+                    + "collapse a CenterContainer produces on an unconstrained autowrap Label.")
+                .IsGreater(100f);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
 }
 #endif
