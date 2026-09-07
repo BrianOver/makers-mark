@@ -370,6 +370,101 @@ public class ObjectiveAdvisorTests
     }
 
     /// <summary>
+    /// The rung below the unlock. <c>QualityStall_TopSuggestion_UnlocksTierGate_WhenLocked</c> above
+    /// can only reach its own line by patching a Forge-Tier-BOOSTED projection over the real state
+    /// (its own comment says so: "the unlock is then legal and can win top suggestion below"), which
+    /// is the gap this test pins from the other side — at the baseline Forge I that every real
+    /// campaign starts on, <see cref="TalentTree.ForgeTierRequirement"/> makes every blacksmith tier
+    /// gate illegal, so the advisor used to answer a quality stall with silence and named the ladder
+    /// only after the purchase that opens it had already been made.
+    ///
+    /// <para>ONE real quality stall, two projections, and neither invents a purchase: the
+    /// PURSE-boosted state (the gold and ore <see cref="ForgeTierHandlers"/> itself asks for, which
+    /// the 200-seed arc sweep says a stalled player is sitting on) must be answered with the forge
+    /// upgrade, naming the recipe it leads to; the FORGE-boosted state must still be answered with
+    /// the unlock, unchanged. Same stall, two different blocking rungs, two different answers.</para>
+    /// </summary>
+    [Fact]
+    public void QualityStall_TopSuggestion_RaisesTheForge_WhenTheGateIsForgeTierLocked()
+    {
+        var kernel = GameComposition.BuildKernel();
+        var state = GameComposition.NewCampaign(1);
+        GameState? purseBoosted = null;
+
+        for (var tick = 0; tick < 20 * 5 && purseBoosted is null; tick++)
+        {
+            var top = DemandBoard.Snapshot(state).DepthStalls.FirstOrDefault();
+            var tierIndex = ForgeTierHandlers.CurrentTierIndex(state.Player);
+            if (state.Phase == DayPhase.Morning
+                && top is not null && top.BlockingSlot is null
+                && top.RequiredQuality is { } req && top.CarriedQuality is { } car && req > car)
+            {
+                // Gold and the floor's ore, at exactly the handler's own asking price — never the
+                // forge-tier counter itself, so the upgrade stays unbought and its own suggestion
+                // stays the thing under test.
+                var oreKey = ForgeTierHandlers.OreKey[tierIndex];
+                var oreHave = state.Player.Materials.TryGetValue(oreKey, out var ore) ? ore : 0;
+                var candidate = state with
+                {
+                    Player = state.Player with
+                    {
+                        Gold = state.Player.Gold + ForgeTierHandlers.GoldCost[tierIndex],
+                        Materials = state.Player.Materials.SetItem(
+                            oreKey, oreHave + ForgeTierHandlers.OreQuantity),
+                    },
+                };
+
+                if (ObjectiveAdvisor.Suggest(candidate).Any(s => s.Action is UpgradeForgeAction))
+                {
+                    purseBoosted = candidate;
+                    break;
+                }
+            }
+
+            state = kernel.Tick(state, BaselinePlayer.ActionsFor(state)).NewState;
+        }
+
+        Assert.NotNull(purseBoosted);
+        var boosted = purseBoosted!;
+        Assert.Equal(0, ForgeTierHandlers.CurrentTierIndex(boosted.Player)); // still Forge I — nothing bought
+
+        // The stall's own answer, wherever it ranks. UpgradeForgeAction is Morning-only, and an open
+        // commission legitimately outranks it in the Morning (Suggest's own "different-horizon
+        // goals" note) — the same slot the unlock line already occupies, and not this unit's call to
+        // reorder.
+        var top1 = Assert.Single(
+            ObjectiveAdvisor.Suggest(boosted), s => s.Action is UpgradeForgeAction);
+        Assert.True(ActionLegality.IsLegal(boosted, top1.Action!, boosted.Phase));
+
+        // The line has to carry the ladder, not just the price: the recipe the purchase leads to,
+        // the gate node that actually opens it, and the hero it is for.
+        var gateName = ProfessionRegistry.Blacksmith.TalentNodes[TalentTree.Tier2Smithing].Name;
+        Assert.Contains(gateName, top1.Reason, StringComparison.Ordinal);
+        Assert.Contains($"{ForgeTierHandlers.GoldCost[0]}g", top1.Reason, StringComparison.Ordinal);
+        var stall = DemandBoard.Snapshot(boosted).DepthStalls.First(s => s.BlockingSlot is null);
+        Assert.Contains(stall.HeroName, top1.Reason, StringComparison.Ordinal);
+        Assert.Contains(
+            ProfessionRegistry.Blacksmith.Recipes.Values
+                .Where(r => r.Tier == 2)
+                .Select(r => r.Name),
+            name => top1.Reason.Contains(name, StringComparison.Ordinal));
+
+        // Same real stall, the OTHER rung: with the forge already raised, the unlock is the answer
+        // again — this branch is an addition to that one, never a replacement for it.
+        var forgeBoosted = boosted with
+        {
+            Player = boosted.Player with
+            {
+                Materials = boosted.Player.Materials.SetItem(
+                    ForgeTierHandlers.ForgeTierKey, ForgeTierHandlers.MaxUpgradeIndex),
+            },
+        };
+        var advice = ObjectiveAdvisor.Suggest(forgeBoosted);
+        Assert.Contains(advice, s => s.Action is UnlockTalentAction);
+        Assert.DoesNotContain(advice, s => s.Action is UpgradeForgeAction);
+    }
+
+    /// <summary>
     /// U11 (plan 2026-07-25-001, Slice 3 addendum): a shelved item that already answers the top open
     /// commission (right slot, quality at or above the bar) must be named, not left for the player to
     /// notice on their own.
