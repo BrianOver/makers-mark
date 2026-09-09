@@ -4830,6 +4830,31 @@ down here rather than in bodies because the citation is the whole argument.
   > validator it is parity-tested against — is a genuine finding and is **not** fixed here; it is the
   > kind of gap `ActionLegality`'s own kernel-parity test cannot see, because parity is asserted on
   > what is offered, never on what is withheld.
+  >
+  > > **The mirror half of that gap is now closed, and one clause of the entry above is too narrow.**
+  > > `ActionLegalityTests.RecipeMaterialVerbs_MirrorTheKernel_AcrossEveryPooledMaterial` sweeps all
+  > > FOUR verbs carrying a `(recipeId, materialKey)` pair — `CraftAction`, `ReforgeHeirloomAction`,
+  > > `MasterworkAttemptAction`, `CommissionLegendaryWorkAction`, each with the same
+  > > any-key-in-`MaterialGrades` check — against every one of the 19 pooled keys, and pins two
+  > > properties: mirror-vs-handler exactness per triple (so tightening either side alone is red and
+  > > names the triple), and "a pairing legal on the recipe's own baseline key is legal on all 19"
+  > > (so tightening BOTH sides at once, which would hold the mirror exact while deleting the
+  > > mechanic, is red too). Both directions were proven to bite by planting the tightening. The
+  > > ENUMERATOR half stays exactly as recorded above: unfixed, and deliberately not converted into
+  > > an "everything legal is offered" assertion, because `LegalActions` is documented as one
+  > > canonical instance per opportunity rather than every legal parameterization — that property is
+  > > false by design across the whole verb surface, so asserting it would be the defect.
+  > >
+  > > The too-narrow clause is "no policy driven off the advisor's door can use it". True, but the
+  > > PLAYER is not driven off that door: `godot/scripts/panels/ForgePanel.cs`'s material dropdown
+  > > (`SelectedMaterialOr`) submits substituted pairings for Craft, Masterwork and Legendary alike
+  > > and gates all three buttons on `ActionLegality.IsLegal`, and the client teaches the mechanic by
+  > > name ("the material you choose sets a hard ceiling"). Substitution is therefore **shipped and
+  > > live for the player**, and dark only to the balance corpus — a corpus-coverage gap, not a dead
+  > > mechanic, which also means enforcing the pairing would have been a client regression rather
+  > > than the cleanup it looks like. Two of the four verbs, `MasterworkAttemptAction` and
+  > > `CommissionLegendaryWorkAction`, are never emitted by `LegalActions` at all, so the FORWARD
+  > > parity direction reached them on no key whatsoever until this sweep.
 - **`P2-HONEST-14`** — the CLI's own printed prose is in nobody's scope. `P2-HONEST-06`'s
   generators ban CLI **verbs** from *client* copy, and the family-B tripwires text-scan
   `godot/scripts/`, so `sim/GameSim.Cli/`'s own player-visible strings are scanned by nothing —
