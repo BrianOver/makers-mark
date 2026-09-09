@@ -3,6 +3,8 @@ using System.Reflection;
 using GameSim;
 using GameSim.Advisor;
 using GameSim.Contracts;
+using GameSim.Crafting;
+using GameSim.Economy;
 using GameSim.Harness;
 using GameSim.Professions;
 using GameSim.Venues;
@@ -424,6 +426,208 @@ public class ActionLegalityTests
         var action = new CraftAction(recipe.RecipeId, "not-a-real-material");
 
         Assert.False(ActionLegality.IsLegal(state, action, state.Phase));
+    }
+
+    /// <summary>
+    /// The four <c>(recipeId, materialKey)</c> verbs mirrored across their WHOLE material domain —
+    /// the half of their legality neither direction of <see cref="RunParityCheck"/> can reach.
+    ///
+    /// <para><b>Why the existing parity checks cannot see this.</b> FORWARD is driven by
+    /// <see cref="ActionLegality.LegalActions"/>, which emits one craft candidate per recipe always
+    /// paired with <c>recipe.MaterialKey</c> (and one reforge candidate the same way, and
+    /// <see cref="MasterworkAttemptAction"/>/<see cref="CommissionLegendaryWorkAction"/> not at
+    /// all) — so of the 19 keys in <c>RecipeTable.MaterialGrades</c> it exercises exactly one per
+    /// recipe. REVERSE is driven by what a policy submits, and no policy in <c>Harness/</c> or
+    /// <c>Advisor/</c> ever builds a substituted pairing either. The enumerator being narrower than
+    /// the validator is a real, separate finding recorded in §11's <c>P2-HONEST-19</c> entry; this
+    /// test does not fix it, it closes the hole it leaves in the MIRROR.</para>
+    ///
+    /// <para><b>Why the hole is load-bearing rather than theoretical.</b> Substitution is a shipped,
+    /// player-facing decision, not a latent parameterization: <c>RecipeTable</c>'s own doc calls
+    /// <c>Recipe.MaterialKey</c> a <em>baseline</em> the player may substitute,
+    /// <c>QualityRoller</c> prices the deviation at 8 per grade, the client teaches it by name
+    /// ("the material you choose sets a hard ceiling"), and
+    /// <c>godot/scripts/panels/ForgePanel.cs</c> gates its Craft, Masterwork and Legendary buttons
+    /// by asking <see cref="ActionLegality.IsLegal"/> about the pairing the player's own material
+    /// dropdown produced. A mirror that drifts from its handler on a substituted key is therefore a
+    /// live client defect — a button lit over a craft the kernel will refuse, or greyed over one it
+    /// would allow — in exactly the region nothing asserted.</para>
+    ///
+    /// <para><b>What it pins, in both directions.</b> (1) Mirror exactness over every
+    /// (verb, recipe, pooled key) triple, so tightening either side alone is a red build naming the
+    /// triple. (2) Material never NARROWS the domain: any pairing accepted on the recipe's own
+    /// baseline key is accepted on all 19, so tightening both sides at once — which would keep the
+    /// mirror exact while deleting the substitution decision — is also red.</para>
+    ///
+    /// <para><b>What it deliberately does not assert.</b> Not the converse of enumeration
+    /// ("everything legal is offered"). <see cref="ActionLegality.LegalActions"/> is documented as
+    /// one canonical instance per opportunity, NOT every legal parameterization — one price per
+    /// stockable item, one quantity per ore offer, the first legal recipe per heirloom. That
+    /// property is false by design across the whole verb surface, so a test asserting it would be
+    /// the defect rather than the guard.</para>
+    /// </summary>
+    [Fact]
+    public void RecipeMaterialVerbs_MirrorTheKernel_AcrossEveryPooledMaterial()
+    {
+        var kernel = GameComposition.BuildKernel();
+        var state = GameComposition.NewCampaign(Seed);
+
+        // Open every door EXCEPT the material one, so whatever still rejects rejects for a reason
+        // this property is not about. Derived from the registries, never hand-listed.
+        var selected = state.Player.SelectedProfessions;
+        var talents = state.Player.Talents;
+        foreach (var profession in ProfessionRegistry.All.Values)
+        {
+            selected = selected.Add(profession.Id);
+            var granted = state.Player.TalentsFor(profession.Id);
+            foreach (var gate in profession.TierGate.Values)
+            {
+                granted = granted.Add(gate);
+            }
+
+            talents = talents.SetItem(profession.Id, granted);
+        }
+
+        // Stock every pooled key past the hungriest demand (legendary takes MaterialQuantity x2 with
+        // no efficiency discount). Only the 19 pool keys are touched by the loop: Materials also
+        // carries the reserved forge-tier and commissions-used counters, which are NOT pooled
+        // materials and must not be clobbered — they are set deliberately below.
+        var materials = state.Player.Materials;
+        foreach (var key in RecipeTable.MaterialGrades.Keys)
+        {
+            materials = materials.SetItem(key, 1_000);
+        }
+
+        materials = materials
+            .SetItem(ForgeTierHandlers.ForgeTierKey, ForgeTierHandlers.MaxUpgradeIndex)
+            .SetItem(ForgeSupplyHandlers.Coal, 1_000)
+            .SetItem(ForgeSupplyHandlers.Flux, 1_000);
+
+        // Reforge needs provenance the other three do not: an item that a HeroDied event says was
+        // worn by a hero who fell, never yet reforged. Same fixture shape as
+        // HeirloomHandlersTests.FallenHeroWorld, on ids the live campaign does not already use.
+        var heirloomId = new ItemId(state.Items.Keys.DefaultIfEmpty(0).Max() + 1_000);
+        var fallenId = new HeroId(state.Heroes.Keys.DefaultIfEmpty(0).Max() + 1_000);
+        Assert.False(state.Items.ContainsKey(heirloomId.Value), "fixture id collision: pick a fresh item id");
+        Assert.False(state.Heroes.ContainsKey(fallenId.Value), "fixture id collision: pick a fresh hero id");
+
+        var wornGear = new GearSet(heirloomId, null, null);
+        var heirloom = new Item(
+            heirloomId, "dagger", "Dagger", ItemSlot.Weapon, QualityGrade.Common,
+            new ItemStats(8, 0, 2), new MakersMark("You", 1), ImmutableList<ItemHistoryEntry>.Empty);
+        var fallen = new Hero(
+            fallenId, "Sera", "vanguard", Level: 4, MaxHp: 40, Gold: 0,
+            wornGear, ImmutableList<ItemMemory>.Empty, Alive: false, DeepestFloorReached: 3, DiedOnDay: 1);
+        var died = new HeroDied(fallenId, 3, "slain by a Tunnel Spider", wornGear)
+        {
+            Id = new EventId(state.EventLog.Count + 1_000),
+            Day = state.Day,
+        };
+
+        state = state with
+        {
+            Heroes = state.Heroes.SetItem(fallenId.Value, fallen),
+            Items = state.Items.SetItem(heirloomId.Value, heirloom),
+            EventLog = state.EventLog.Add(died),
+            Player = state.Player with
+            {
+                Gold = 1_000_000,
+                SelectedProfessions = selected,
+                Talents = talents,
+                Materials = materials,
+            },
+        };
+
+        var phase = state.Phase;
+        var pool = RecipeTable.MaterialGrades.Keys.ToImmutableList();
+        Assert.True(pool.Count > 1, "The material pool holds one key or none — substitution cannot be swept.");
+        Assert.True(state.ActionSlotsRemaining > 0, "The fixture starts with no action slots; every verb would reject.");
+
+        var verbs = new (string Name, Func<string, string, PlayerAction> Build)[]
+        {
+            ("CraftAction", (recipeId, material) => new CraftAction(recipeId, material)),
+            ("ReforgeHeirloomAction", (recipeId, material) => new ReforgeHeirloomAction(heirloomId, recipeId, material)),
+            ("MasterworkAttemptAction", (recipeId, material) => new MasterworkAttemptAction(recipeId, material)),
+            ("CommissionLegendaryWorkAction", (recipeId, material) => new CommissionLegendaryWorkAction(recipeId, material)),
+        };
+
+        foreach (var (verb, build) in verbs)
+        {
+            // recipeId -> the pooled keys the kernel accepted for it under this verb.
+            var accepted = new Dictionary<string, List<string>>();
+            var pairs = 0;
+
+            foreach (var recipe in ProfessionRegistry.AllRecipes.Values)
+            {
+                foreach (var material in pool)
+                {
+                    pairs++;
+                    var action = build(recipe.RecipeId, material);
+
+                    // ApplyNow, not Tick: rejection can only come from the single handler call, and
+                    // the returned state is DISCARDED — so the action budget never decrements, no
+                    // RNG advance escapes, and every triple is probed against the identical state
+                    // (the same reasoning RunParityCheck records at length above).
+                    var kernelAccepts = kernel.ApplyNow(state, action).Rejected.IsEmpty;
+                    var mirrorSaysLegal = ActionLegality.IsLegal(state, action, phase);
+
+                    Assert.True(
+                        mirrorSaysLegal == kernelAccepts,
+                        $"Mirror drift on {verb}({recipe.RecipeId}, {material}): ActionLegality.IsLegal said "
+                        + $"{mirrorSaysLegal} but the kernel {(kernelAccepts ? "accepted" : "rejected")} it. The "
+                        + "legality mirror must track its handler over EVERY pooled material key, not only the "
+                        + $"recipe's own baseline '{recipe.MaterialKey}' — that one key is all LegalActions ever "
+                        + "offers, so this file's other parity checks cannot reach this pairing, and ForgePanel "
+                        + "lights this verb's button off exactly this call.");
+
+                    if (!kernelAccepts)
+                    {
+                        continue;
+                    }
+
+                    if (!accepted.TryGetValue(recipe.RecipeId, out var keys))
+                    {
+                        keys = [];
+                        accepted[recipe.RecipeId] = keys;
+                    }
+
+                    keys.Add(material);
+                }
+            }
+
+            // Non-vacuity, per verb: the sweep must actually reach the ACCEPTING side of the mirror.
+            // An unmet precondition would make every triple agree on "rejected" and the property
+            // above would pass while proving nothing at all.
+            Assert.True(
+                accepted.Count > 0,
+                $"{verb}: not one of the {pairs} (recipe, material) pairs was accepted, so the mirror agreed "
+                + "only on rejections and this sweep proves nothing for this verb. Fix the fixture's "
+                + "preconditions (forge tier, supplies, gold, provenance, action budget) rather than trusting "
+                + "a green run here.");
+
+            // Material shifts the quality roll; it never gates the recipe. So any pairing accepted on
+            // the recipe's own baseline key is accepted on ALL of them. This is the direction that
+            // goes red if a future change enforces the recipe/material pairing on BOTH sides at once,
+            // which would hold the mirror exact while silently deleting the substitution decision.
+            foreach (var (recipeId, keys) in accepted)
+            {
+                var baseline = ProfessionRegistry.AllRecipes[recipeId].MaterialKey;
+                if (!keys.Contains(baseline))
+                {
+                    continue; // rejected on its own baseline too — not a material-domain narrowing
+                }
+
+                var missing = pool.Except(keys).ToImmutableList();
+                Assert.True(
+                    missing.IsEmpty,
+                    $"{verb}({recipeId}, ...) accepts its own baseline material '{baseline}' but REJECTS "
+                    + $"{missing.Count} of the {pool.Count} pooled keys ({string.Join(", ", missing)}). Material "
+                    + "must shift the quality roll, never gate the recipe (RecipeTable: the recipe's key is a "
+                    + "baseline the player may substitute, and the client teaches that substitution by name). If "
+                    + "the pairing is now enforced deliberately, that deletes a shipped decision and is a design "
+                    + "change to rule on, not a test to relax.");
+            }
+        }
     }
 
     [Fact]
