@@ -74,6 +74,9 @@ public partial class LessonsPanel : SimPanel
         ["tanning-frame"] = "Working the tanning frame",
         ["first-talent-unlock"] = "Unlocking a talent",
         ["foundry-four-verbs"] = "The Foundry's four verbs",
+        // Owner ruling 2026-09-08: the moment a forge-tier-gated talent lands and the recipe
+        // list grows (ForgePanel.LadderOpenedBeatId).
+        ["forge-ladder-opened"] = "The rung the forge bought",
         ["the-tariff-fork"] = "Whose ore you buy",
         // P2-SCREEN-07: the three lessons split back out of BuyMaterial's own bolted-on TeachNote
         // paragraph — see TutorialFlow's own SlotBudgetLessonId/StationPressLessonId/
