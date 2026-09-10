@@ -1763,12 +1763,23 @@ public partial class ForgePanel : SimPanel
         return _town;
     }
 
+    /// <summary>
+    /// The success path. <see cref="ShowLadderOpenedBeat"/> is tried FIRST and
+    /// <see cref="ShowTalentsLesson"/> only if it declined — the explicit short-circuit
+    /// <see cref="ShowMentorFirstTouch"/>'s own doc requires of "every call site that can reach two
+    /// first-touch lessons off the SAME player action", since <c>_mentorBanner</c> is one slot and
+    /// not a queue. See <see cref="ShowLadderOpenedBeat"/>'s own doc for which of the two yields in
+    /// which circumstance, and why that order.
+    /// </summary>
     private void OnUnlockPressed(string nodeId, string professionId)
     {
         var action = new UnlockTalentAction(nodeId, professionId);
         Adapter?.Queue(action);
         SetFeedback(Confirm(action, $"Unlocked {nodeId}"));
-        ShowTalentsLesson();
+        if (!ShowLadderOpenedBeat(nodeId, professionId))
+        {
+            ShowTalentsLesson();
+        }
     }
 
     /// <summary>
@@ -1815,7 +1826,7 @@ public partial class ForgePanel : SimPanel
     /// tell the player which side to take (law: influence never orders), and it still restates no
     /// number, so <c>ActionBudget.SlotsPerDay</c> can change without making this prose false.</para>
     /// </summary>
-    private void ShowTalentsLesson() =>
+    private bool ShowTalentsLesson() =>
         ShowMentorFirstTouch(
             "first-talent-unlock",
             "Talent nodes build on each other — a later one needs its own prerequisite unlocked "
@@ -1823,6 +1834,99 @@ public partial class ForgePanel : SimPanel
             + "would have taken, and the deeper smithing nodes want the workshop at a matching "
             + "Forge Tier as well. Nothing on the tree expires, so banking the slot for today's "
             + "work and unlocking tomorrow is a real choice, not a delay.");
+
+    /// <summary>The once-ever id <see cref="ShowLadderOpenedBeat"/> fires under — a
+    /// <c>const</c> rather than an inline literal so the discoverability censuses that source-scan
+    /// this file (<c>LessonsPanelTests.EveryLiveFirstTouchId_HasANonSlugTitleInTheCatalog</c>,
+    /// <c>TeachingCoverageCensusTests.FirstTouchIdIsWiredInSource</c>) resolve it the same way they
+    /// already resolve <see cref="MarkReadLessonId"/>.</summary>
+    private const string LadderOpenedBeatId = "forge-ladder-opened";
+
+    /// <summary>
+    /// Owner ruling, 2026-09-08 ("add a beat for the moment the forge ladder opens, and accept that
+    /// it competes"): the instant a forge-tier-gated talent actually lands, the recipe list grows
+    /// and — until this beat — nothing said so. #735 made the advisor name the purchase ("Raise the
+    /// forge to Tier 2 (400g, 25 copper) — the way to 'Longsword'"); #736/#737 moved the talent
+    /// lesson onto the REFUSED press so the requirement arrives at the wall. What stayed unmarked
+    /// was the door: the player spends the gold and the floor's ore on
+    /// <see cref="GameSim.Contracts.UpgradeForgeAction"/>, then a day slot on the gate node, and the
+    /// locked rows silently become cards. Link 1's promise is "you can make a better thing now";
+    /// this is the instant it becomes true, and this beat is the only thing that says so.
+    ///
+    /// <para><b>Recorded facts only (law 4), and no pointer.</b> The node's own <c>Name</c>, the
+    /// COUNT of recipes this specific gate node ungates (derived from
+    /// <see cref="GameSim.Professions.ProfessionDefinition.TierGate"/> — the same map the locked-row
+    /// branch in <see cref="Refresh"/> reads, so the number can never disagree with the rows the
+    /// player is looking at), and the forge tier that had to be bought first
+    /// (<see cref="GameSim.Crafting.TalentTree.ForgeTierRequirement"/>). It never tells the player to
+    /// go craft anything (law 1: influence never orders), and it restates no cost figure that could
+    /// drift out of step with the sim.</para>
+    ///
+    /// <para><b>Fires only when the unlock LANDED.</b> Gated on the post-<c>Queue</c> state actually
+    /// containing the node — <see cref="GameSim.Contracts.UnlockTalentAction"/> resolves immediately
+    /// (<c>ActionTiming.ResolvesImmediately</c>), so by this point <see cref="Adapter"/>'s state is
+    /// the post-unlock world and the read is honest. A press the kernel rejected leaves the node
+    /// absent and this declines, so a rejected press stays silent; a REFUSED press reaches
+    /// <see cref="OnUnlockRefused"/> and never this method at all. Nothing in <see cref="Refresh"/>
+    /// calls this, so re-entering the panel cannot fire it either — and
+    /// <see cref="TutorialFlow.ConsumeFirstTouch"/>'s existing once-ever contract, reused rather than
+    /// duplicated, is the only anti-repeat rule involved.</para>
+    ///
+    /// <para><b>What it displaces, and when.</b> <c>_mentorBanner</c> is ONE slot (see
+    /// <see cref="ShowMentorFirstTouch"/>), so this beat competes with
+    /// <see cref="ShowTalentsLesson"/>'s <c>first-talent-unlock</c> for the same press rather than
+    /// appending to it. On the ruling's own path — the player blocked at a rung — it displaces
+    /// NOTHING: #737 already fired <c>first-talent-unlock</c> at the refused press, so that id is
+    /// spent by the time the successful unlock lands and <see cref="ShowTalentsLesson"/> was already
+    /// a no-op on this press. The one circumstance where it does displace is a player whose
+    /// FIRST-EVER Unlock press is a successful unlock of a forge-tier-gated node (they bought the
+    /// forge tier before ever pressing a talent): this beat takes that press,
+    /// <see cref="ShowTalentsLesson"/> is not called, so its id stays UNCONSUMED and fires on their
+    /// next Unlock press of any node — the blacksmith tree has seven other nodes, and a refused
+    /// press counts too (#737). Delayed by one press, never deleted. That order is deliberate: the
+    /// talent lesson teaches a mechanic that stays true forever and has many later chances, while
+    /// this beat has exactly one moment and its only later chance is the tier-III gate, four times
+    /// the gold away and often never reached.</para>
+    ///
+    /// <para>Not subject to U29's <c>ActVoiceBudgetPerNight</c> — that budget resolves NIGHT
+    /// act-voices (<see cref="TutorialFlow.ActVoiceKind"/>). This is a press-time first-touch on this
+    /// panel's own banner and never enters that resolution; the contended resource is the one banner
+    /// slot named above.</para>
+    /// </summary>
+    private bool ShowLadderOpenedBeat(string nodeId, string professionId)
+    {
+        // Only the rungs the FORGE bought. A gate node with no ForgeTierRequirement (every
+        // non-blacksmith tier gate today) opens recipes with no forge purchase behind it, and this
+        // copy's closing clause would not be true of it. Keyed off the sim's own map rather than a
+        // hand-listed pair of node ids, so a future forge-gated node is covered the day it ships
+        // (this repo's own "hand-listed fixtures go green" lesson).
+        if (!TalentTree.ForgeTierRequirement.ContainsKey(nodeId))
+        {
+            return false;
+        }
+
+        if (Adapter?.CurrentState is not { } state
+            || !state.Player.TalentsFor(professionId).Contains(nodeId)
+            || !ProfessionRegistry.TryGet(professionId, out var profession)
+            || !profession!.TalentNodes.TryGetValue(nodeId, out var node))
+        {
+            return false;
+        }
+
+        var opened = profession.Recipes.Values.Count(
+            r => profession.TierGate.TryGetValue(r.Tier, out var gate) && gate == nodeId);
+        if (opened == 0)
+        {
+            // A gate node that ungates nothing is not a moment — and never consumes the id.
+            return false;
+        }
+
+        var grew = opened == 1
+            ? "one recipe stopped reading Locked. The forge you raised is what holds it."
+            : $"{opened} recipes stopped reading Locked. The forge you raised is what holds them.";
+
+        return ShowMentorFirstTouch(LadderOpenedBeatId, $"'{node.Name}' is on your tree, and {grew}");
+    }
 
     /// <summary>Queues a vendor buy (Morning-only in the sim; the U6 gate disables the row
     /// off-Morning, and a rejection that still surfaces becomes MainUi's toast). Fixed to
