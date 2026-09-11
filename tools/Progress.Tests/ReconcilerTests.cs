@@ -427,6 +427,94 @@ public class ReconcilerTests
         Assert.Empty(result.FalseReceipts);
     }
 
+    [Fact]
+    public void ADeletionUnitsPathBeingGone_IsNotAFalseReceipt()
+    {
+        // The permanent false alarm this marker exists to end. P2-MEMORY-14's whole deliverable is
+        // that ChronicleScroll.cs stops existing; before the marker, the receipt check asked only
+        // "does every cited path exist?", so the unit was reported as a false receipt on every run
+        // forever for having done exactly what it promised. A finding that can never be cleared is
+        // indistinguishable from a real one, and a section that cries wolf permanently stops being
+        // read at all -- which would have cost us the REAL findings section 8 exists to surface.
+        var units = new[]
+        {
+            Row(UnitTable.P2, "P2-MEMORY-14", files: new[]
+            {
+                new FileRef("godot/scripts/panels/LegendsWall.cs", IsNew: false),
+                new FileRef("godot/scripts/panels/ChronicleScroll.cs", IsNew: false, IsDeleted: true),
+            }),
+        };
+        var receipts = new[] { Receipt(700, ServesKind.Unit, "P2-MEMORY-14") };
+
+        var result = Reconciler.Reconcile(Plan(units), new Dictionary<string, LandedUnit>(), new Dictionary<string, OpenUnit>(),
+            new HashSet<string> { "godot/scripts/panels/LegendsWall.cs" }, mergedReceipts: receipts);
+
+        Assert.Empty(result.FalseReceipts);
+    }
+
+    [Fact]
+    public void ADeletionUnitsPathSurviving_IsTheFalseReceipt()
+    {
+        // The point of the marker is that it INVERTS the question rather than silencing it. A
+        // receipt claiming the deletion landed, with the file still on origin/main, is the exact
+        // lie rule 12 names -- and before this it was unreportable, because the only shape section
+        // 8 could express was "path missing".
+        var units = new[]
+        {
+            Row(UnitTable.P2, "P2-MEMORY-14", files: new[]
+            {
+                new FileRef("godot/scripts/panels/ChronicleScroll.cs", IsNew: false, IsDeleted: true),
+            }),
+        };
+        var receipts = new[] { Receipt(700, ServesKind.Unit, "P2-MEMORY-14") };
+
+        var result = Reconciler.Reconcile(Plan(units), new Dictionary<string, LandedUnit>(), new Dictionary<string, OpenUnit>(),
+            new HashSet<string> { "godot/scripts/panels/ChronicleScroll.cs" }, mergedReceipts: receipts);
+
+        var finding = Assert.Single(result.FalseReceipts);
+        Assert.Equal("P2-MEMORY-14", finding.UnitId);
+        Assert.Equal("godot/scripts/panels/ChronicleScroll.cs", finding.Path);
+        Assert.True(finding.PathWasToBeDeleted);
+    }
+
+    [Fact]
+    public void AnOrdinaryMissingPath_StillReportsAsTheOrdinaryDirection()
+    {
+        // The negative control for the flag itself: the pre-existing shape must keep reporting, and
+        // must keep reporting as the direction it always was, because the two render as opposite
+        // English sentences and a reader who has to invert one in their head will misread it.
+        var units = new[]
+        {
+            Row(UnitTable.P2, "P2-PROOF-03", files: new[] { new FileRef("godot/scripts/panels/TellingPanel.cs", IsNew: true) }),
+        };
+        var receipts = new[] { Receipt(687, ServesKind.Unit, "P2-PROOF-03") };
+
+        var result = Reconciler.Reconcile(Plan(units), new Dictionary<string, LandedUnit>(), new Dictionary<string, OpenUnit>(),
+            new HashSet<string>(), mergedReceipts: receipts);
+
+        Assert.False(Assert.Single(result.FalseReceipts).PathWasToBeDeleted);
+    }
+
+    [Fact]
+    public void ADeletionPathAbsentWithNoReceiptYet_IsNotAMissingFileEither()
+    {
+        // Section 2 has no receipt in hand, so it cannot tell "deleted as promised" from "cited the
+        // wrong path". Section 8 can, and does. Reporting it in both places would surface one event
+        // twice under two names, which is how a reader learns to discount both.
+        var units = new[]
+        {
+            Row(UnitTable.P2, "P2-MEMORY-14", files: new[]
+            {
+                new FileRef("godot/scripts/panels/ChronicleScroll.cs", IsNew: false, IsDeleted: true),
+            }),
+        };
+
+        var result = Reconciler.Reconcile(Plan(units), new Dictionary<string, LandedUnit>(), new Dictionary<string, OpenUnit>(),
+            new HashSet<string>());
+
+        Assert.Empty(result.MissingFiles);
+    }
+
     private static Dictionary<string, IReadOnlyList<string>> Sites(params (string Id, string Path)[] hits)
     {
         var map = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);

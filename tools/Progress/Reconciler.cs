@@ -154,9 +154,16 @@ public static class Reconciler
                     // Unlike FindMissingFiles, a "new"-marked path gets NO exemption here: this
                     // receipt asserts the unit is done, so every one of its cited paths — new or
                     // not — should exist by now. That is precisely the check section 2 doesn't do.
-                    if (!PathExists(file.Path, trackedFiles))
+                    //
+                    // A "(deleted)"-marked path inverts the question instead of escaping it. The
+                    // receipt asserts the unit is done and the unit promised this path would be
+                    // gone, so the finding is the path still being here. Without the inversion this
+                    // branch fires on every run forever for a unit that did exactly what it said,
+                    // and a section that cries wolf permanently is a section nobody reads.
+                    var exists = PathExists(file.Path, trackedFiles);
+                    if (file.IsDeleted ? exists : !exists)
                     {
-                        findings.Add(new FalseReceipt(unitId, pr.Number, file.Path));
+                        findings.Add(new FalseReceipt(unitId, pr.Number, file.Path, file.IsDeleted));
                     }
                 }
             }
@@ -200,6 +207,15 @@ public static class Reconciler
             foreach (var file in unit.Files)
             {
                 if (file.IsNew || declaredNew.Contains(file.Path))
+                {
+                    continue;
+                }
+
+                // A path the unit promised to delete is absent for the best possible reason once
+                // that unit lands, and section 8 owns the question of whether it actually did --
+                // with the receipt in hand, which this section does not have. Flagging it here too
+                // would report one event twice under two different names.
+                if (file.IsDeleted)
                 {
                     continue;
                 }

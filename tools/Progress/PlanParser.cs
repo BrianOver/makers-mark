@@ -162,7 +162,14 @@ public static class PlanParser
 
             var before = cell[..m.Index];
             var isNew = Regex.IsMatch(before, @"(?:^|\W)new\s*$", RegexOptions.IgnoreCase);
-            refs.Add(new FileRef(path, isNew));
+
+            // The deletion marker trails its span where the creation marker leads it, because that
+            // is how the doc already reads out loud: "new `Foo.cs`" and "`Foo.cs` (deleted)".
+            // Only the immediately-following parenthetical counts -- a sentence elsewhere in the
+            // cell mentioning deletion says nothing about WHICH path goes away.
+            var after = cell[(m.Index + m.Length)..];
+            var isDeleted = Regex.IsMatch(after, @"^\s*\(deleted\)", RegexOptions.IgnoreCase);
+            refs.Add(new FileRef(path, isNew, isDeleted));
         }
 
         return refs;

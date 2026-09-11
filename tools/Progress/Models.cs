@@ -10,11 +10,21 @@ public enum UnitTable
     T10,
 }
 
-/// <summary>One file/dir path cited in a unit's "Key files" column. <see cref="IsNew"/> is true
-/// when the cell text marks it as a file the unit will create (the doc's own convention: a bare
-/// "new " immediately before the backtick span), in which case it not existing yet on origin/main
-/// is expected, not a defect.</summary>
-public sealed record FileRef(string Path, bool IsNew);
+/// <summary>One file/dir path cited in a unit's "Key files" column.
+///
+/// <para><see cref="IsNew"/> is true when the cell text marks it as a file the unit will create
+/// (the doc's own convention: a bare "new " immediately before the backtick span), in which case
+/// it not existing yet on origin/main is expected, not a defect.</para>
+///
+/// <para><see cref="IsDeleted"/> is the mirror, and it exists because the absence of it was a
+/// permanent false alarm. A unit whose whole deliverable is a deletion cites the path it removes;
+/// once that unit lands, the path is gone, and a receipt check that only asks "does every cited
+/// path exist?" reports the unit as a false receipt every single run, forever, for having done
+/// exactly what it promised. Worse, the finding is indistinguishable from a real one, so the whole
+/// section learns to be ignored. Marking the path flips the question rather than silencing it:
+/// after the receipt lands, the finding becomes the path STILL EXISTING. The doc's convention is a
+/// "(deleted)" marker following the backtick span.</para></summary>
+public sealed record FileRef(string Path, bool IsNew, bool IsDeleted = false);
 
 /// <summary>One successfully parsed unit-index row.</summary>
 public sealed record UnitRow(
@@ -127,10 +137,16 @@ public sealed record ReceiptDispatchTrap(string UnitId, int PrNumber, string PrT
 /// `Serves:` line at all, or one whose value matches none of rule 12's four literal forms.</summary>
 public sealed record MissingOrMalformedReceipt(int PrNumber, string PrTitle, ServesKind Kind, string? RawValue);
 
-/// <summary>A `Serves:` receipt naming a specific tracked unit whose own cited path is not on
-/// origin/main — the receipt asserts the unit is done; the tree disagrees. "The receipt can lie;
-/// the census cannot" (CLAUDE.md rule 12).</summary>
-public sealed record FalseReceipt(string UnitId, int PrNumber, string Path);
+/// <summary>A `Serves:` receipt naming a specific tracked unit whose own cited path disagrees with
+/// origin/main — the receipt asserts the unit is done; the tree says otherwise. "The receipt can
+/// lie; the census cannot" (CLAUDE.md rule 12).
+///
+/// <para><see cref="PathWasToBeDeleted"/> says which direction the disagreement runs, because the
+/// two read as opposite sentences and a finding the reader has to invert in their head is a finding
+/// they will misread. False for the ordinary case (the unit promised this path and it is not there);
+/// true for a deletion unit (the unit promised this path would be gone and it is still there).</para>
+/// </summary>
+public sealed record FalseReceipt(string UnitId, int PrNumber, string Path, bool PathWasToBeDeleted = false);
 
 /// <summary>
 /// A unit this run reports UNBUILT whose exact id is nevertheless written into tracked source on
