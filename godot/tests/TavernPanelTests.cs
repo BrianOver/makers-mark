@@ -2,6 +2,7 @@
 using System.Collections.Immutable;
 using GameSim.Classes;
 using GameSim.Contracts;
+using GameSim.Economy;
 using GameSim.Kernel;
 using GdUnit4;
 using Godot;
@@ -232,6 +233,109 @@ public class TavernPanelTests
         {
             Heroes = ImmutableSortedDictionary<int, Hero>.Empty.Add(hero.Id.Value, hero),
             EventLog = ImmutableList.Create<GameEvent>(record, gossip),
+        };
+    }
+
+    // ── P2-LONG-15: the Confidence gradient's two interior thresholds get a face ─────────────
+
+    [TestCase]
+    public void ConfidenceBand_RendersItsOwnRoomLine_ForEveryBandInTheGradient()
+    {
+        // The guard: iterates TavernPanel.ConfidenceGradient.Bands itself — production's own list
+        // — rather than one hand-copied literal assertion per band. A band added to that list
+        // later is exercised by this same loop with no test-file edit; ConfidenceGradient's own
+        // class doc explains why its generic render path is what keeps a new band from going
+        // silently unrendered.
+        foreach (var band in TavernPanel.ConfidenceGradient.Bands)
+        {
+            var sample = band.UpperBoundExclusive == int.MaxValue ? 1000 : band.UpperBoundExclusive - 1;
+            var ui = MountMainUi(new SimAdapter(WorldAtConfidence(sample)));
+            try
+            {
+                var tavernText = RenderedText(ui.Tavern);
+                if (band.RoomLine.Length == 0)
+                {
+                    // Steady: none of the OTHER bands' lines leak through either.
+                    foreach (var other in TavernPanel.ConfidenceGradient.Bands)
+                    {
+                        if (other.RoomLine.Length > 0)
+                        {
+                            AssertThat(tavernText).NotContains(other.RoomLine);
+                        }
+                    }
+                }
+                else
+                {
+                    AssertThat(tavernText).Contains(band.RoomLine);
+                }
+            }
+            finally
+            {
+                Unmount(ui);
+            }
+        }
+    }
+
+    [TestCase]
+    public void HeroBelowLeavingThreshold_WithRecordedEvent_GetsAFaceInTheCommonRoom()
+    {
+        // Confidence alone is not enough to earn the flavor line (no guessed pick) — only a hero
+        // the sim itself named via HeroConsideringLeaving gets it, and only the named one.
+        var ui = MountMainUi(new SimAdapter(ConsideringLeavingWorld()));
+        try
+        {
+            var restlessCard = Find<PanelContainer>(ui.Tavern, "Patron_1");
+            var quietCard = Find<PanelContainer>(ui.Tavern, "Patron_2");
+
+            AssertThat(RenderedText(restlessCard)).Contains("roads out of here");
+            AssertThat(RenderedText(quietCard)).NotContains("roads out of here");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void ConfidenceBelowLeavingThreshold_WithNoRecordedEvent_InventsNoFace()
+    {
+        // Low Confidence with NO HeroConsideringLeaving event on the log (e.g. the crossing
+        // happened before any hero existed to name, or the fixture just never emitted one) must
+        // never fabricate a "someone is leaving" line — the law this whole unit exists to respect.
+        var ui = MountMainUi(new SimAdapter(WorldAtConfidence(GuildAssessmentSystem.HeroLeavingThreshold - 1)));
+        try
+        {
+            AssertThat(RenderedText(ui.Tavern)).NotContains("roads out of here");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    private static GameState WorldAtConfidence(int confidencePermille)
+    {
+        var baseState = GameFactory.NewGame(6710);
+        return baseState with { Rent = baseState.Rent with { ConfidencePermille = confidencePermille } };
+    }
+
+    private static GameState ConsideringLeavingWorld()
+    {
+        var restless = new Hero(
+            new HeroId(1), "Restless", ClassRegistry.VanguardId, Level: 2, MaxHp: 30, Gold: 10,
+            GearSet.Empty, ImmutableList<ItemMemory>.Empty, Alive: true, DeepestFloorReached: 0, DiedOnDay: null);
+        var quiet = new Hero(
+            new HeroId(2), "Quiet", ClassRegistry.StrikerId, Level: 1, MaxHp: 25, Gold: 20,
+            GearSet.Empty, ImmutableList<ItemMemory>.Empty, Alive: true, DeepestFloorReached: 0, DiedOnDay: null);
+
+        var leaving = new HeroConsideringLeaving(restless.Id, ConfidencePermille: 150) { Id = new EventId(1), Day = 4 };
+
+        var baseState = GameFactory.NewGame(6711);
+        return baseState with
+        {
+            Heroes = ImmutableSortedDictionary<int, Hero>.Empty.Add(restless.Id.Value, restless).Add(quiet.Id.Value, quiet),
+            EventLog = ImmutableList.Create<GameEvent>(leaving),
+            Rent = baseState.Rent with { ConfidencePermille = GuildAssessmentSystem.HeroLeavingThreshold - 1 },
         };
     }
 
