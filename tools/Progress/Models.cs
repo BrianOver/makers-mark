@@ -25,7 +25,16 @@ public sealed record UnitRow(
     IReadOnlyList<string> DependsOn,
     string DependsOnRaw,
     IReadOnlyList<string> Flags,
-    int LineNumber);
+    int LineNumber,
+    IReadOnlyList<string>? UnparsedDependsOn = null)
+{
+    /// <summary>Tokens the Depends-on cell carried that are not unit rows this tool tracks — a
+    /// critical-path item (<c>P4</c>), an open ruling (<c>P2-OQ1</c>), a section cite. Empty for
+    /// almost every row. A human reading the report can see the raw cell beside it and needs no
+    /// help; <c>--frontier</c> cannot, so it refuses any row with an entry here rather than
+    /// reporting an owner-gated unit as runnable.</summary>
+    public IReadOnlyList<string> UnparsedDependsOn { get; init; } = UnparsedDependsOn ?? Array.Empty<string>();
+}
 
 /// <summary>A table row that looked like a unit-index row (its first cell parsed as a unit id)
 /// but did not fit the shape expected for that id family. Reported, never silently dropped —

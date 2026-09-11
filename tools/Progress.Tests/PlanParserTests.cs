@@ -188,6 +188,53 @@ public class PlanParserTests
         Assert.Empty(Assert.Single(result.Units).DependsOn);
     }
 
+    /// <summary>Omitted from DependsOn, yes — but NOT discarded. A human reads the raw cell beside
+    /// the report and needs no help; anything computing a frontier has only this list, and a unit
+    /// gated on the owner's own evening must never come back runnable.</summary>
+    [Fact]
+    public void ANonUnitDependencyGateIsReportedAsUnparsedRatherThanDropped()
+    {
+        var text = "| P2-LONG-02 | title | `sim/GameSim/Contracts/` | P4 | [S][C] |";
+
+        var unit = Assert.Single(PlanParser.Parse(text).Units);
+
+        Assert.Empty(unit.DependsOn);
+        Assert.Equal(new[] { "P4" }, unit.UnparsedDependsOn);
+    }
+
+    [Fact]
+    public void AResolvedDependencyLeavesNothingUnparsedBehindIt()
+    {
+        var text = "| P2-HONEST-06 | title | `sim/GameSim.Tests/` | P2-HONEST-04, P2-HONEST-05 | [S] |";
+
+        var unit = Assert.Single(PlanParser.Parse(text).Units);
+
+        Assert.Equal(new[] { "P2-HONEST-04", "P2-HONEST-05" }, unit.DependsOn);
+        Assert.Empty(unit.UnparsedDependsOn);
+    }
+
+    [Fact]
+    public void AnEmDashMeaningNoDependencyIsNotAnUnparsedToken()
+    {
+        var text = "| P2-MEMORY-05 | title | `godot/scripts/panels/ForgePanel.cs` | — | [G] |";
+
+        var unit = Assert.Single(PlanParser.Parse(text).Units);
+
+        Assert.Empty(unit.DependsOn);
+        Assert.Empty(unit.UnparsedDependsOn);
+    }
+
+    [Fact]
+    public void AProseGateBesideARealIdStillReportsTheGate()
+    {
+        var text = "| P2-LONG-13 | title | `sim/GameSim/` | P2-MEMORY-13 and P2-OQ3 | [S] |";
+
+        var unit = Assert.Single(PlanParser.Parse(text).Units);
+
+        Assert.Contains("P2-MEMORY-13", unit.DependsOn);
+        Assert.Contains("P2-OQ3", unit.UnparsedDependsOn);
+    }
+
     [Fact]
     public void FindsDocMdReferencesAnywhereIncludingProse()
     {

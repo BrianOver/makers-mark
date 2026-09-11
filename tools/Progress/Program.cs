@@ -10,8 +10,15 @@ using Progress;
 //   (`git rev-parse --show-toplevel`). Always reconciles against `origin/main`, never the
 //   working tree or the current branch — that is the whole point.
 
+// --frontier prints only Frontier's own render: which units an unattended run may take right
+// now and, for every other unbuilt unit, the one sentence saying why not. Same reconciliation,
+// a different reader -- a model picking tonight's work rather than a human auditing the plan.
+// The exit code is unchanged and still describes the PLAN's health, never the frontier's size:
+// an empty frontier is a legitimate answer (everything left is owner-gated), not a defect.
 var repoRoot = GitShell.FindRepoRoot(Directory.GetCurrentDirectory());
-var planPath = args.Length > 0 ? args[0] : "docs/design/MAKERS-MARK.md";
+var frontierOnly = args.Contains("--frontier");
+var planArgs = args.Where(a => !a.StartsWith("--", StringComparison.Ordinal)).ToArray();
+var planPath = planArgs.Length > 0 ? planArgs[0] : "docs/design/MAKERS-MARK.md";
 
 GitShell.TryFetchOriginMain(repoRoot);
 
@@ -47,7 +54,18 @@ var result = Reconciler.Reconcile(
     plan, landed, open, trackedFiles, mergedReceipts, fileOrigins, receiptRuleSince, sourceTagSites);
 
 var headSha = log.Count > 0 ? log[^1].Sha[..9] : "unknown";
-Console.WriteLine(Report.Build(result, $"{planPath} vs origin/main@{headSha}"));
+Console.WriteLine(frontierOnly
+    ? Frontier.Render(Frontier.Compute(result), GitShell.Degradations)
+    : Report.Build(result, $"{planPath} vs origin/main@{headSha}"));
+
+// A degraded read is fatal to the frontier and only advisory to the report, so the exit code
+// splits the same way the render does. The human report stays exit-0-on-degradation because a
+// 95%-right report beside a stderr warning still beats no report; the frontier does not, because
+// its consumer cannot see stderr and would build off the guess.
+if (frontierOnly && GitShell.Degradations.Count > 0)
+{
+    return 2;
+}
 
 // Missing/malformed Serves: lines (section 7) are reported but deliberately excluded here: it is
 // a backlog against every PR merged since the receipt rule took effect, not a defect in the

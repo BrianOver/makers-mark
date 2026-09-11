@@ -12,6 +12,34 @@ public sealed record GitLogEntry(string Sha, string Subject);
 /// This tool never writes anything back into the repo — it only reads.</summary>
 public static class GitShell
 {
+    /// <summary>
+    /// Every place this run fell back to incomplete data instead of failing. Empty on a healthy
+    /// run.
+    ///
+    /// <para><b>Why a list rather than a throw.</b> Two reads here are deliberately tolerant: a
+    /// `git fetch` that fails leaves the tool reconciling against whatever `origin/main` this
+    /// checkout already knows, and a `gh pr list` that fails leaves it with no open-PR index. For a
+    /// HUMAN reading the report that is the right call -- a warning on stderr beside a report that
+    /// is 95% right beats no report at all in a sandbox with no network.</para>
+    ///
+    /// <para><b>And why it is the wrong call for a machine.</b> Both degradations move units in the
+    /// same direction: a stale ref makes a unit that landed an hour ago read Unbuilt, and an empty
+    /// PR index makes every Open unit read Unbuilt. So the failure mode of a silent fallback is a
+    /// frontier FULL of work that is already done or already in flight -- an unattended run would
+    /// rebuild it, and every census downstream would report None for want of data while the exit
+    /// code still said zero. That is the exact shape of the green-over-a-real-defect failure this
+    /// whole tool exists to catch, so `--frontier` reads this list and refuses outright.</para>
+    /// </summary>
+    public static IReadOnlyList<string> Degradations => DegradationLog;
+
+    private static readonly List<string> DegradationLog = new();
+
+    private static void Degraded(string what)
+    {
+        DegradationLog.Add(what);
+        Console.Error.WriteLine($"warning: {what}");
+    }
+
     // Unit-separator byte: cannot appear in a sha or a commit subject, unlike ':' or '|' which
     // subjects use freely. git's own format-string escape (%x1f) emits the raw 0x1F byte; the C#
     // side splits on the same byte via its \x1f escape — no literal control character sits in
@@ -29,15 +57,17 @@ public static class GitShell
         return stdout.Trim().Replace('\\', '/');
     }
 
-    /// <summary>Best-effort: keeps the local `origin/main` ref current. A network-unavailable
-    /// sandbox should not hard-fail the tool — it just reconciles against whatever `origin/main`
-    /// this checkout already knows about, and says so on stderr.</summary>
+    /// <summary>Best-effort for a human reader, recorded as a degradation for a machine one: a
+    /// network-unavailable sandbox should not hard-fail the report, but a frontier computed
+    /// against a stale `origin/main` would hand back units that landed since the last successful
+    /// fetch. See <see cref="Degradations"/>.</summary>
     public static void TryFetchOriginMain(string repoRoot)
     {
         var (code, _, stderr) = Run(repoRoot, "git", "fetch", "origin", "main", "--quiet");
         if (code != 0)
         {
-            Console.Error.WriteLine($"warning: git fetch origin main failed, using existing local ref ({stderr.Trim()})");
+            Degraded($"git fetch origin main failed, so every landedness call below is against a "
+                + $"possibly stale local ref ({stderr.Trim()})");
         }
     }
 
@@ -197,7 +227,8 @@ public static class GitShell
             "--repo", ownerRepo, "--state", state, "--json", "number,title,body,mergedAt", "--limit", "2000");
         if (code != 0)
         {
-            Console.Error.WriteLine($"warning: gh pr list --state {state} failed, treating as empty ({stderr.Trim()})");
+            Degraded($"gh pr list --state {state} failed, so the {state}-PR index is EMPTY rather "
+                + $"than absent -- every unit it would have marked reads as unbuilt ({stderr.Trim()})");
             return Array.Empty<PrRecord>();
         }
 
