@@ -54,6 +54,26 @@ body.
    being written, which is how the system this design borrowed from lost 67 PRs' worth of ledger
    without noticing.
 
+## How many at once
+
+**Five builders, and then hold.** Measured on the first night (2026-09-11, 16 units merged):
+`balance-sim` is ~30 minutes and `engine-tests` ~10 on every PR, so past roughly six open PRs the
+queue, not the builders, is what the night is waiting on. Dispatching a seventh buys nothing and
+costs a worktree.
+
+Two things that are NOT the constraint, both checked rather than assumed:
+
+- **PR runs do not serialize.** `ci.yml`'s concurrency group serializes pushes to `main` only. Two
+  PRs' checks run side by side.
+- **There is no merge cascade.** The `main-protection` ruleset has
+  `strict_required_status_checks_policy: false`, so a PR never has to be up to date with `main` to
+  merge. Nothing needs rebasing as other units land.
+
+**The builder agents must not watch CI.** Their charter says so, and it is load-bearing: a worker
+blocking on `gh pr checks --watch` wakes every thirty seconds to report that nothing changed, and
+each wake spends the orchestrator's context. The builder opens the PR, arms auto-merge, and
+returns; the orchestrator confirms with `gh pr view <n> --json state`.
+
 ## The four terminal states
 
 | State | Means | What happens next |
