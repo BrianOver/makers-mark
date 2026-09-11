@@ -39,6 +39,15 @@ public class RejectionUxTests
         });
     }
 
+    /// <summary>
+    /// The one line <c>LastResort</c> emits when it has no action at all to name (its <c>null</c>
+    /// branch) — the true "nothing to say" fallback. Pulled from production rather than retyped
+    /// as a literal, so a rewrite of that copy moves both guards below with it instead of leaving
+    /// them pinned to wording production no longer produces (P2-HONEST-10).
+    /// </summary>
+    private static string GenericFallback =>
+        MainUi.FriendlyRejection("zzz-no-mapping-will-ever-match-this-reason", action: null);
+
     // ── 1. Craft button mirrors material sufficiency (craft is legal ALL phases) ─────────
 
     [TestCase]
@@ -178,9 +187,22 @@ public class RejectionUxTests
             ui.Adapter.AdvancePhase();
             AssertThat(ui.Adapter.LastRejections.Count).IsEqual(2);
 
+            // The expected toast lines come from MainUi's OWN mapper, not literals retyped here
+            // (P2-HONEST-10) — a copy rewrite moves this expectation with it instead of leaving
+            // the guard pinned to wording production no longer says.
+            var expectedLines = ui.Adapter.LastRejections
+                .Select(r => MainUi.FriendlyRejection(r.Reason, r.Action))
+                .Distinct()
+                .ToList();
+            AssertThat(expectedLines.Count)
+                .OverrideFailureMessage("The two doomed actions were expected to map to two DIFFERENT player-phrased lines.")
+                .IsEqual(2);
+
             var rendered = RenderedText(ui);
-            AssertThat(rendered).Contains("You can't afford that yet.");
-            AssertThat(rendered).Contains("Can't do that right now.");
+            foreach (var line in expectedLines)
+            {
+                AssertThat(rendered).Contains(line);
+            }
             AssertThat(rendered.Contains("REJECTED:")).IsFalse();
             foreach (var rejected in ui.Adapter.LastRejections)
             {
@@ -191,8 +213,10 @@ public class RejectionUxTests
             // The toast is transient: driving _Process past its wall-clock timeout clears it.
             ui._Process(MainUi.RejectionToastSeconds + 0.1);
             var after = RenderedText(ui);
-            AssertThat(after.Contains("You can't afford that yet.")).IsFalse();
-            AssertThat(after.Contains("Can't do that right now.")).IsFalse();
+            foreach (var line in expectedLines)
+            {
+                AssertThat(after.Contains(line)).IsFalse();
+            }
         }
         finally
         {
@@ -221,7 +245,7 @@ public class RejectionUxTests
     public void AnUnmappedReason_StillNamesWhatWasRefused_NeverJustAShrug()
     {
         const string unmatchable = "zzz-no-mapping-will-ever-match-this-reason";
-        const string shrug = "That didn't work out.";
+        var shrug = GenericFallback;
 
         PlayerAction[] actions =
         [
@@ -285,7 +309,7 @@ public class RejectionUxTests
     [TestCase]
     public void ProfessionRefusals_AreMapped_UsingTheKernelsOwnWording_NeverAShrug()
     {
-        const string shrug = "That didn't work out.";
+        var shrug = GenericFallback;
         var registered = ProfessionRegistry.All.Keys.ToList();
 
         // Zero selected, over the cap, and an unregistered id — the three guards
@@ -337,11 +361,16 @@ public class RejectionUxTests
         {
             ui.Adapter.Queue(new BuyOreAction(new HeroId(1), ScriptedSession.CraftMaterial, 1));
             ui.Adapter.AdvancePhase(); // Morning tick: rejected → toast up
-            AssertThat(RenderedText(ui)).Contains("Can't do that right now.");
+
+            // Read the expected line off the actual rejection rather than retyping its copy
+            // (P2-HONEST-10) — MainUi.FriendlyRejection is the single source of that wording.
+            var rejected = ui.Adapter.LastRejections.Single();
+            var expectedLine = MainUi.FriendlyRejection(rejected.Reason, rejected.Action);
+            AssertThat(RenderedText(ui)).Contains(expectedLine);
 
             ui.Adapter.AdvancePhase(); // clean Expedition tick: toast clears without waiting
             AssertThat(ui.Adapter.LastRejections.Count).IsEqual(0);
-            AssertThat(RenderedText(ui).Contains("Can't do that right now.")).IsFalse();
+            AssertThat(RenderedText(ui).Contains(expectedLine)).IsFalse();
         }
         finally
         {

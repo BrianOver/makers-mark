@@ -589,7 +589,11 @@ public class ForgeCraftTests
             AssertThat(ui.Adapter.LastRejections.Count).IsEqual(1);
             AssertThat(ui.Adapter.CurrentState.Player.Gold).IsEqual(0);
             AssertThat(ui.Adapter.CurrentState.Player.Materials.ContainsKey(ForgeSupplyHandlers.Coal)).IsFalse();
-            AssertThat(RenderedText(ui)).Contains("You can't afford that yet.");
+
+            // Expected wording comes from MainUi's own mapper, not a literal retyped here
+            // (P2-HONEST-10) — it moves with the mapper's copy instead of going stale against it.
+            var rejected = ui.Adapter.LastRejections.Single();
+            AssertThat(RenderedText(ui)).Contains(MainUi.FriendlyRejection(rejected.Reason, rejected.Action));
         }
         finally { Unmount(ui); }
     }
