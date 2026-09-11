@@ -1,5 +1,8 @@
+using Analytics;
 using GameSim.Chronicle;
 using GameSim.Cli;
+using GameSim.Contracts;
+using GameSim.Harness;
 
 namespace GameSim.Tests.Cli;
 
@@ -51,7 +54,9 @@ public class BatchRunnerTests : IDisposable
         Assert.NotNull(args);
 
         Assert.Equal(0, BatchRunner.Run(args!, TextWriter.Null, TextWriter.Null));
-        var path = Directory.GetFiles(_dir).Single();
+        // Scoped to the chronicle specifically: a run now also writes a *.decisions.jsonl sidecar
+        // (P2-HONEST-13), so the dir legitimately holds two files per seed.
+        var path = Directory.GetFiles(_dir, "*.json", SearchOption.TopDirectoryOnly).Single();
         var first = File.ReadAllText(path);
 
         Assert.Equal(0, BatchRunner.Run(args!, TextWriter.Null, TextWriter.Null));
@@ -181,6 +186,93 @@ public class BatchRunnerTests : IDisposable
         Assert.Equal(0, BatchRunner.Run(sweep!, TextWriter.Null, TextWriter.Null));
         Assert.False(File.Exists(stale));
         Assert.True(File.Exists(export));
+    }
+
+    // ---- P2-HONEST-13 (register #164): TickResult.Traces reaches a sibling *.decisions.jsonl,
+    // in the exact shape tools/Analytics.DecisionLog already reads ---------------------------------
+
+    [Fact]
+    public void Batch_DecisionsSidecar_IsExactlyWhatTheKernelDrained()
+    {
+        // Independently re-drive the SAME seed/policy through the raw kernel (KTD5: determinism
+        // guarantees this is byte-identical to what BatchRunner.Run does internally) to get the
+        // traces the kernel ACTUALLY produced, then assert the sidecar file — read back through
+        // Analytics's own DecisionLog, the real reader — carries exactly those, in order. This is
+        // the property the unit is about: never one hand-picked trace string, whatever the kernel
+        // drained this run.
+        const ulong seed = 42;
+        const int days = 5;
+        var kernel = GameComposition.BuildKernel();
+        var state = GameComposition.NewCampaign(seed);
+        var expected = new List<DecisionTrace>();
+        while (state.Day <= days)
+        {
+            var result = kernel.Tick(state, BaselinePlayer.ActionsFor(state));
+            state = result.NewState;
+            expected.AddRange(result.Traces);
+        }
+
+        Assert.NotEmpty(expected); // sanity: a 5-day baseline campaign really does trace something
+
+        var args = BatchRunner.Parse(["--seeds", "1", "--seed", seed.ToString(), "--days", days.ToString(), "--out", _dir], TextWriter.Null);
+        Assert.Equal(0, BatchRunner.Run(args!, TextWriter.Null, TextWriter.Null));
+
+        var file = Assert.Single(Directory.GetFiles(_dir, "batch-seed*-days5-baseline.decisions.jsonl"));
+        var rows = DecisionLog.ParseFile(file);
+
+        Assert.Equal(expected.Count, rows.Count);
+        for (var i = 0; i < expected.Count; i++)
+        {
+            Assert.Equal(expected[i].What, rows[i].What);
+            Assert.Equal(expected[i].Chosen, rows[i].Chose);
+            Assert.Equal(BatchRunner.DecisionWhy(expected[i]), rows[i].Why);
+            Assert.Equal(-1, rows[i].Candidates); // DecisionTrace carries no candidate count
+        }
+    }
+
+    [Fact]
+    public void WriteDecisionLog_NoTraces_WritesNoFile()
+    {
+        // A tick sequence that traces nothing has nothing to explain — no sidecar, not an empty
+        // one, so a corpus sweep can tell "never played with logging" apart from "played, traced
+        // nothing" (DecisionLog.Report's own empty-input contract distinguishes the same two shapes
+        // on the reading side). Exercised directly (not via a hoped-for untraced campaign day) so
+        // the property under test — empty in, no file out — never depends on which seed happens to
+        // avoid every haggle/craft/reforge path this run.
+        var path = Path.Combine(_dir, "empty.decisions.jsonl");
+        Directory.CreateDirectory(_dir);
+
+        BatchRunner.WriteDecisionLog(path, []);
+
+        Assert.False(File.Exists(path));
+    }
+
+    [Fact]
+    public void WriteDecisionLog_WritesEveryTrace_ThatDecisionLogParsesBackIdentically_InOrder()
+    {
+        // Synthetic traces, deliberately covering both Detail shapes (empty and non-empty) and
+        // repeated `What` slugs — the property is "whatever the kernel drained", not one hand-picked
+        // trace string, so this must hold for an arbitrary trace list, not just a real campaign's.
+        var traces = new List<DecisionTrace>
+        {
+            new("quality-roll", "Superior", "auto-craft ceiling", "isAutoCraft=True"),
+            new("haggle-band", "round 1 opened", "no detail this time"), // Detail defaults to ""
+            new("quality-roll", "Common", "performance-driven roll", "performanceGrade=200"),
+        };
+        var path = Path.Combine(_dir, "synthetic.decisions.jsonl");
+        Directory.CreateDirectory(_dir);
+
+        BatchRunner.WriteDecisionLog(path, traces);
+        var rows = DecisionLog.ParseFile(path);
+
+        Assert.Equal(traces.Count, rows.Count);
+        for (var i = 0; i < traces.Count; i++)
+        {
+            Assert.Equal(traces[i].What, rows[i].What);
+            Assert.Equal(traces[i].Chosen, rows[i].Chose);
+            Assert.Equal(BatchRunner.DecisionWhy(traces[i]), rows[i].Why);
+            Assert.Equal(-1, rows[i].Candidates);
+        }
     }
 
     [Fact]
