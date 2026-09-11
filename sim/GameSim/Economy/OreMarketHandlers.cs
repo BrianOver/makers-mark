@@ -2,6 +2,7 @@ using GameSim.Contracts;
 using GameSim.Factions;
 using GameSim.Heroes;
 using GameSim.Kernel;
+using GameSim.Materials;
 
 namespace GameSim.Economy;
 
@@ -73,7 +74,8 @@ public sealed class OreMarketHandlers : IActionHandler
         // 4. Cannot buy more than is offered (also bounds the cost arithmetic).
         if (buy.Quantity > offer.Quantity)
         {
-            return (state, new RejectedAction(action, $"Only {offer.Quantity} {offer.MaterialKey} offered; asked for {buy.Quantity}."));
+            return (state, new RejectedAction(action,
+                $"Only {offer.Quantity} {MaterialRegistry.Require(offer.MaterialKey).DisplayName.ToLowerInvariant()} offered; asked for {buy.Quantity}."));
         }
 
         // 5. Price the purchase (P5 U3, R7/R8/KTD3/KTD4/KTD6/KTD8). The hero ALWAYS receives the

@@ -15,6 +15,11 @@ namespace GameSim.Materials;
 /// </summary>
 /// <param name="Id">Stable string key (lowercase kebab, e.g. "copper"). Matches the registry key and
 /// every <c>VenueFloor.OreKey</c> / <c>FactionDefinition.SuppliesOreKeys</c> entry that names it.</param>
+/// <param name="DisplayName">Human-readable name (P2-HONEST-05, mirrors <c>ClassDefinition</c>'s field
+/// of the same name/purpose — the jargon rule's demand that a rendered registry key have a spelling to
+/// render instead). Title Case ("Drowned Silver", not "drowned-silver" or "DrownedSilver"); lowercased
+/// it is the word mid-sentence prose already uses ("buy 2 copper", "not enough drowned silver"). Every
+/// site that shows a material to the player reads THIS, never <see cref="Id"/>.</param>
 /// <param name="UnitPrice">Gold per unit a returning hero asks for one unit (the old
 /// <c>OrePricing.UnitPrice</c> value). Positive integer.</param>
 /// <param name="Grade">Crafting grade — feeds the quality-roll shift relative to a recipe's tier (the
@@ -27,6 +32,7 @@ namespace GameSim.Materials;
 /// material such as the Crownsguard's regalia). Read by nothing in M1.</param>
 public sealed record MaterialDefinition(
     string Id,
+    string DisplayName,
     int UnitPrice,
     int Grade,
     ImmutableArray<string> Tags,

@@ -1,6 +1,7 @@
 using GameSim.Contracts;
 using GameSim.Economy;
 using GameSim.Kernel;
+using GameSim.Materials;
 using GameSim.Professions;
 
 namespace GameSim.Crafting;
@@ -114,7 +115,8 @@ public sealed class CraftingHandlers : IActionHandler
         var have = state.Player.Materials.TryGetValue(action.MaterialKey, out var stock) ? stock : 0;
         if (have < needed)
         {
-            return (state, new RejectedAction(action, $"Not enough {action.MaterialKey}: need {needed}, have {have}."));
+            return (state, new RejectedAction(action,
+                $"Not enough {MaterialRegistry.Require(action.MaterialKey).DisplayName.ToLowerInvariant()}: need {needed}, have {have}."));
         }
 
         // 6. Dual-mode puzzle seam (Phase B / PKD1): an in-sim-scored profession submits its

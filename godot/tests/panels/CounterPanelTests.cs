@@ -50,7 +50,9 @@ public class CounterPanelTests
             var text = RenderedText(ui.Shop);
 
             AssertThat(text).Contains("Buyer1");
-            AssertThat(text).Contains(ClassRegistry.StrikerId);
+            // P2-HONEST-05: was the raw id ("striker") — CounterPanel now renders the class
+            // DisplayName like every sibling panel (HeroesPanel/TavernPanel) already does.
+            AssertThat(text).Contains(ClassRegistry.Striker.DisplayName);
             AssertThat(text).Contains("Test Blade"); // the presented item
             AssertThat(text).Contains("12g");        // the standing offer
             AssertThat(text).Contains("-40");        // Goodwill

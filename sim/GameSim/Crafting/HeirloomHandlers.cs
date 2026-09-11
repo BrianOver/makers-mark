@@ -1,5 +1,6 @@
 using GameSim.Contracts;
 using GameSim.Kernel;
+using GameSim.Materials;
 using GameSim.Professions;
 
 namespace GameSim.Crafting;
@@ -115,7 +116,8 @@ public sealed class HeirloomHandlers : IActionHandler
         var have = state.Player.Materials.TryGetValue(reforge.MaterialKey, out var stock) ? stock : 0;
         if (have < needed)
         {
-            return (state, new RejectedAction(action, $"Not enough {reforge.MaterialKey}: need {needed}, have {have}."));
+            return (state, new RejectedAction(action,
+                $"Not enough {MaterialRegistry.Require(reforge.MaterialKey).DisplayName.ToLowerInvariant()}: need {needed}, have {have}."));
         }
 
         // 9. Day action-budget gate — checked LAST, like every other real-work handler.

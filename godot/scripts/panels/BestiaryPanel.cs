@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using GameSim.Materials;
 using GameSim.Venues;
 using Godot;
 using GodotClient.Ui;
@@ -177,7 +178,7 @@ public partial class BestiaryPanel : Control
         _detailTitle.Text = $"{kind} — {venue.DisplayName} F{floor.Floor}";
         _detailBody.Text =
             $"HP {floor.MonsterHp}   Attack {floor.MonsterAttack}   Defense {floor.MonsterDefense}\n" +
-            $"Gold/kill {floor.GoldPerKill}   Drops {floor.OreKey}\n\n" +
+            $"Gold/kill {floor.GoldPerKill}   Drops {MaterialRegistry.Require(floor.OreKey).DisplayName}\n\n" +
             (portrait is not null
                 ? "A hero who has faced this one can tell you its shape."
                 : "No likeness has made it back to the tavern wall yet — only stories.");

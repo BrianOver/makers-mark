@@ -1,5 +1,6 @@
 using GameSim.Contracts;
 using GameSim.Crafting;
+using GameSim.Materials;
 using GameSim.Professions;
 
 namespace GameSim.Economy;
@@ -91,7 +92,8 @@ public sealed class LegendaryCommissionHandlers : IActionHandler
         var materialHave = state.Player.Materials.TryGetValue(commission.MaterialKey, out var matStock) ? matStock : 0;
         if (materialHave < neededMaterial)
         {
-            return (state, new RejectedAction(action, $"Not enough {commission.MaterialKey}: need {neededMaterial}, have {materialHave}."));
+            return (state, new RejectedAction(action,
+                $"Not enough {MaterialRegistry.Require(commission.MaterialKey).DisplayName.ToLowerInvariant()}: need {neededMaterial}, have {materialHave}."));
         }
 
         // 7. Gold, power-matched to forge-tier progress.

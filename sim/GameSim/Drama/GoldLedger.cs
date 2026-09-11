@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using GameSim.Contracts;
+using GameSim.Materials;
 
 namespace GameSim.Drama;
 
@@ -73,7 +74,14 @@ public static class GoldLedger
                     rows.Add(new GoldLedgerEntry("counter sale", sale.Price, $"sold {sale.Item} to {sale.Hero} at the counter"));
                     break;
                 case MaterialPurchased material:
-                    rows.Add(new GoldLedgerEntry("material", -material.Cost, $"{material.Quantity}x {material.MaterialKey} from the Morning vendor"));
+                    // P2-HONEST-05: this event is shared with ForgeSupplyHandlers (coal/flux), which are
+                    // NOT MaterialRegistry entries (see that handler's class doc) — TryGet, not Require,
+                    // so a supply buy still reconstructs instead of throwing; coal/flux keep their raw
+                    // (already player-ordinary) spelling since they have no registry DisplayName to read.
+                    var materialLabel = MaterialRegistry.TryGet(material.MaterialKey, out var materialDef)
+                        ? materialDef!.DisplayName.ToLowerInvariant()
+                        : material.MaterialKey;
+                    rows.Add(new GoldLedgerEntry("material", -material.Cost, $"{material.Quantity}x {materialLabel} from the Morning vendor"));
                     break;
                 case SupplyDelivered supply:
                     rows.Add(new GoldLedgerEntry("runner fee", -supply.Fee, $"delivery to {supply.To}"));
