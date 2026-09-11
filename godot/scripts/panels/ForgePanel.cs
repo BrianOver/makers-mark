@@ -898,6 +898,16 @@ public partial class ForgePanel : SimPanel
                     outputRow.AddChild(StatChip("Def", $"{recipe.BaseStats.Defense}"));
                 }
 
+                // P2-HONEST-16: a consumable recipe's heal amount (SuggestedPrice and
+                // ExpeditionResolver both key real math off this same Magnitude) had no reader
+                // anywhere in godot/scripts -- the player crafting Field Salve saw "Atk 0, Def 0"
+                // and nothing else. ItemForge scales this base number by quality at craft time
+                // exactly like BaseStats.Attack above; this shows the same pre-quality base.
+                if (recipe.Effect is { } effect)
+                {
+                    outputRow.AddChild(StatChip("Heals", $"{effect.Magnitude}"));
+                }
+
                 outputRow.AddChild(StatChip("Wt", $"{recipe.BaseStats.Weight}"));
 
                 // Affordability lighting (KTD5) is a VISUAL MIRROR ONLY, read off the same

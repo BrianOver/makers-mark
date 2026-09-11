@@ -464,6 +464,14 @@ public partial class ShopPanel : SimPanel
                 chipRow.AddChild(StatChip("Def", $"{item.Stats.Defense}"));
             }
 
+            // P2-HONEST-16: SuggestedPrice.For(item) a few lines below prices this consumable
+            // off the SAME Magnitude ExpeditionResolver spends healing a hero mid-run -- the
+            // player setting a price for it could not see the number their own price depended on.
+            if (item.Effect is { } effect)
+            {
+                chipRow.AddChild(StatChip("Heals", $"{effect.Magnitude}"));
+            }
+
             // UI-5: Stock is this row's one gate-checked action — the exact soldConsumable gate
             // below (U6, mirroring ShopHandlers.ApplyStock check 3b: existence/provenance/equipped
             // are already filtered by UnshelvedPlayerCrafts, and the SpinBox floor of 1 keeps

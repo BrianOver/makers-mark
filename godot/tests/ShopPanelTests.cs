@@ -895,5 +895,64 @@ public class ShopPanelTests
             }
         }
     }
+
+    // ── P2-HONEST-16: ConsumableEffect.Magnitude gets a client reader ──────────────────────────
+    // SuggestedPrice.For(item), a few lines below the chip row, already prices this consumable
+    // off Magnitude, and ExpeditionResolver spends it healing a hero mid-run — but no
+    // godot/scripts file read it before this, so the player pricing a potion could not see the
+    // number their own price depended on. Driven off the fixture's OWN Magnitude constant (never
+    // a hardcoded literal), so retuning the fixture moves this assertion's target with it.
+
+    private static readonly ItemId ConsumableTestItemId = new(9601);
+    private const int ConsumableTestMagnitude = 17;
+
+    private static GameState UnshelvedConsumableState()
+    {
+        var baseState = GameFactory.NewGame(9601);
+        var item = new Item(
+            ConsumableTestItemId, "test-consumable", "Test Salve", ItemSlot.Consumable,
+            QualityGrade.Common, new ItemStats(Attack: 0, Defense: 0, Weight: 0),
+            new MakersMark("You", 1), ImmutableList<ItemHistoryEntry>.Empty,
+            new ConsumableEffect(ConsumableKind.Heal, Magnitude: ConsumableTestMagnitude));
+
+        return baseState with { Items = baseState.Items.Add(item.Id.Value, item) };
+    }
+
+    [TestCase]
+    public void UnshelvedConsumableCraft_ShowsItsRealHealAmount_ReadFromTheItemsOwnMagnitude()
+    {
+        var ui = MountMainUi(new SimAdapter(UnshelvedConsumableState()));
+        try
+        {
+            var card = Find<Control>(ui.Shop, $"UnshelvedCard_{ConsumableTestItemId.Value}");
+            var cardText = RenderedText(card);
+            AssertThat(cardText).Contains("Heals");
+            AssertThat(cardText).Contains(ConsumableTestMagnitude.ToString());
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>The negative half: a gear craft (no <see cref="Item.Effect"/> at all) must render
+    /// no heal amount — proves the reader is gated on real data, not always-on copy that would
+    /// still read green if the magnitude silently stopped rendering for consumables.</summary>
+    [TestCase]
+    public void UnshelvedGearCraft_WithNoConsumableEffect_RendersNoHealAmount()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            var itemId = CraftDagger(ui);
+            AssertThat(ui.Adapter.CurrentState.Items[itemId.Value].Effect).IsNull(); // fixture assumption
+            var card = Find<Control>(ui.Shop, $"UnshelvedCard_{itemId.Value}");
+            AssertThat(RenderedText(card)).NotContains("Heals");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
 }
 #endif
