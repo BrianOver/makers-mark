@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using System.Linq;
 using GameSim.Contracts;
+using GameSim.Venues;
 
 namespace GodotClient;
 
@@ -292,11 +293,11 @@ public static class JourneyStream
 
                 if (combat.MonsterKilled)
                 {
-                    result.Add(new JourneyBeat(floor.Floor, $"{heroName} fells the {combat.MonsterKind}.", false));
+                    result.Add(new JourneyBeat(floor.Floor, $"{heroName} fells {MonsterName.Definite(combat.MonsterKind)}.", false));
                 }
                 else if (combat.DamageTaken > 0)
                 {
-                    result.Add(new JourneyBeat(floor.Floor, $"{heroName} takes {combat.DamageTaken} from the {combat.MonsterKind}.", false));
+                    result.Add(new JourneyBeat(floor.Floor, $"{heroName} takes {combat.DamageTaken} from {MonsterName.Definite(combat.MonsterKind)}.", false));
                 }
             }
 

@@ -1,5 +1,6 @@
 using GameSim.Contracts;
 using GameSim.Heroes;
+using GameSim.Venues;
 
 namespace GameSim.Drama;
 
@@ -92,9 +93,9 @@ public static class FallenQuery
     /// is left unsaid today is exactly the case worth saying: the player's hand did NOT land the last
     /// blow, and the record says so out loud.</para>
     ///
-    /// <para>The article mirrors <c>ExpeditionRevealSystem.DeathReport</c>'s own rule — a
-    /// <see cref="CombatEvent.MonsterKind"/> already beginning "The " (a named boss) takes no
-    /// article.</para>
+    /// <para>The article comes from <see cref="GameSim.Venues.MonsterName.Definite"/>, the one
+    /// place that rule lives (P2-PROOF-12) — a <see cref="CombatEvent.MonsterKind"/> already
+    /// beginning "The " is a named boss and takes no second article.</para>
     /// </summary>
     public static string LastBlowLine(GameState state, HeroId hero)
     {
@@ -127,8 +128,7 @@ public static class FallenQuery
             return string.Empty;
         }
 
-        var article = felled.MonsterKind.StartsWith("The ", StringComparison.Ordinal) ? string.Empty : "the ";
-        return $"{fallen.Name}'s last blow felled {article}{felled.MonsterKind}. "
+        return $"{fallen.Name}'s last blow felled {MonsterName.Definite(felled.MonsterKind)}. "
             + $"The blade was not yours. The arm was {fallen.Name}'s.";
     }
 
