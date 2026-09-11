@@ -4,8 +4,7 @@ using GameSim.Contracts;
 namespace GodotClient;
 
 /// <summary>
-/// Living day clock (U15/KTD3 — "flows-but-waits"): auto-advance is ON by default for a
-/// new campaign — <see cref="SimAdapter.AdvancePhase"/> fires when the current phase's
+/// Living day clock (U15/KTD3 — "flows-but-waits"): <see cref="SimAdapter.AdvancePhase"/> fires when the current phase's
 /// wall-clock time elapses, with play/pause plus a fast-forward multiplier as
 /// sub-controls, and an explicit skip (<see cref="AdvanceNow"/>) always available (player
 /// intent wins over the timer, engaged or not). The <see cref="Engaged"/> latch (AE1) is
