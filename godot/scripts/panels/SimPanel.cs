@@ -270,10 +270,37 @@ public abstract partial class SimPanel : Control
     /// change, a Guild commission): the world has to act before the click means anything, so it
     /// is right to say so.</para>
     /// </summary>
-    protected string Confirm(PlayerAction action, string whatHappened) =>
-        ActionTiming.ResolvesImmediately(action)
-            ? $"{whatHappened}."
-            : $"{whatHappened}. Queued — resolves when {Adapter?.CurrentState.Phase} ticks. Press Advance or wait.";
+    protected string Confirm(PlayerAction action, string whatHappened)
+    {
+        if (ActionTiming.ResolvesImmediately(action))
+        {
+            return $"{whatHappened}.";
+        }
+
+        // P2-HONEST-04: the deferred promise survives (the world really does have to act first);
+        // three pieces of it did not survive review, and all three were the same defect — a fact
+        // written down by hand here instead of read from the place that owns it.
+        //
+        // 1. "ticks" is the kernel's word for its own loop. `ArcSceneFlow` already bans it,
+        //    "tick" and "queued" from arc-scene copy; the panels never got the same rule.
+        // 2. The phase hole interpolated the adapter's live DayPhase directly, so it printed the
+        //    RAW ENUM — "Morning", "Evening" — while the HUD three inches away printed "Dawn" and
+        //    "Night" off `PhaseVocab`, the one table
+        //    whose whole reason for existing is that three surfaces once each decided
+        //    independently what to call the same sim moment. This was the fourth surface.
+        // 3. "Press Advance" named a control that does not exist. `MainUi`'s advance button reads
+        //    "Skip" when the clock is engaged and `PhaseVocab.BellVerb(state)` otherwise — never
+        //    "Advance" (that is only its NODE name, which no player can see). So the one sentence
+        //    in the game that tells a player what to do next told them to press something that
+        //    isn't on screen.
+        //
+        // What replaces it says the same two true things in the player's own vocabulary: it has
+        // not happened yet, and here is the moment it will. It names no control at all — the
+        // button is on screen and legible; the copy's job was never to spell it.
+        return Adapter?.CurrentState is { } state
+            ? $"{whatHappened} — but not until {PhaseVocab.Display(state)} ends."
+            : $"{whatHappened} — but not until the day moves on.";
+    }
 
     /// <summary>
     /// Report the space this panel's content actually needs, so a panel nested inside a

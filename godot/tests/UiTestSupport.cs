@@ -1,9 +1,11 @@
 #if GDUNIT_TESTS
 using System;
+using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
 using GameSim.Contracts;
 using Godot;
+using GodotClient.Panels;
 using GodotClient.Ui;
 
 namespace GodotClient.Tests;
@@ -168,6 +170,39 @@ public static class UiTestSupport
     /// <para>Walking the tree instead of naming one field means the next viewport anybody adds is
     /// covered on the day it is added, with no test to remember to update.</para>
     /// </summary>
+    /// <summary>
+    /// P2-HONEST-04: whatever <c>SimPanel.Confirm</c> appends for a genuinely DEFERRED action —
+    /// the promise clause, read off the live panel rather than hardcoded.
+    ///
+    /// <para>Three suites used to pin that clause as literal 2026-08 words ("resolves when",
+    /// "Press Advance"). When the copy was rewritten — it named the advance control by its NODE
+    /// name, a string no player ever sees, and printed the raw <c>DayPhase</c> enum beside a HUD
+    /// printing <c>PhaseVocab</c>'s word — every one of those guards went green while asserting the
+    /// absence of a sentence the game had stopped saying. This is the family-C fix: the guard asks
+    /// the production code what its own promise clause IS, so no copy rewrite can make it
+    /// tautological.</para>
+    ///
+    /// <para><see cref="GameSim.Contracts.UpgradeForgeAction"/> is one of the three real bell-riders
+    /// (<c>ActionTiming.ResolvesImmediately</c> is false for it). If that ever changes, the caller's
+    /// own premise assertion is what should fail, not this helper silently.</para>
+    /// </summary>
+    public static string DeferredPromiseClauseOf(SimPanel panel)
+    {
+        const string probe = "PROBE-WHAT-HAPPENED";
+        var method = typeof(SimPanel).GetMethod("Confirm", BindingFlags.NonPublic | BindingFlags.Instance)
+            ?? throw new InvalidOperationException(
+                "SimPanel.Confirm not found by reflection — was it renamed? Update this helper alongside it.");
+        var deferred = (string)method.Invoke(panel, new object[] { new UpgradeForgeAction(), probe })!;
+        if (!deferred.StartsWith(probe, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"SimPanel.Confirm returned '{deferred}' for a deferred action, which does not begin with "
+                + "the caller's own text — this helper can no longer isolate the promise clause.");
+        }
+
+        return deferred[probe.Length..];
+    }
+
     public static int DisableAllRendering(Node root)
     {
         var stopped = 0;
