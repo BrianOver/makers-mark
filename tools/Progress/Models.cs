@@ -123,6 +123,27 @@ public sealed record MissingOrMalformedReceipt(int PrNumber, string PrTitle, Ser
 /// the census cannot" (CLAUDE.md rule 12).</summary>
 public sealed record FalseReceipt(string UnitId, int PrNumber, string Path);
 
+/// <summary>
+/// A unit this run reports UNBUILT whose exact id is nevertheless written into tracked source on
+/// origin/main — the shape that made a session re-derive four already-shipped units by hand before
+/// noticing.
+///
+/// <para><b>Deliberately a warning, never a status.</b> The two existing Landed evidence classes
+/// (a commit/PR title carrying the tag, and a row's own "new "-marked file existing) are both
+/// unambiguous. A unit id inside a source comment is not: it is equally the mark a shipping PR
+/// leaves behind AND the mark a comment leaves when it defers work
+/// (<c>"…is P2-ONBOARD-09's own remaining scope, not this unit's"</c> is a real line on main).
+/// Promoting that to Landed would manufacture exactly the false green this whole tool exists to
+/// catch, so it stays a separate section that says "verify before building" and changes no
+/// count and no exit code.</para>
+///
+/// <para>It earns its place anyway because the miss it covers is real and expensive: a PR landing
+/// five units under one <c>Serves: link4</c> receipt (#687 did) leaves four of them reported
+/// unbuilt indefinitely — the commit subject carries no per-unit tag, and their rows name files
+/// that already existed, so neither existing evidence class can see them.</para>
+/// </summary>
+public sealed record SourceTaggedUnbuilt(string UnitId, IReadOnlyList<string> Paths);
+
 public sealed record ReconciliationResult(
     IReadOnlyList<DomainStatus> Domains,
     IReadOnlyList<MissingFileFinding> MissingFiles,
@@ -132,4 +153,5 @@ public sealed record ReconciliationResult(
     IReadOnlyList<UnparseableRow> Unparseable,
     IReadOnlyList<ReceiptDispatchTrap> ReceiptDispatchTraps,
     IReadOnlyList<MissingOrMalformedReceipt> MissingOrMalformedReceipts,
-    IReadOnlyList<FalseReceipt> FalseReceipts);
+    IReadOnlyList<FalseReceipt> FalseReceipts,
+    IReadOnlyList<SourceTaggedUnbuilt> SourceTaggedUnbuilts);

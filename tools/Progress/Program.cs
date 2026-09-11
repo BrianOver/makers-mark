@@ -36,7 +36,15 @@ var mergedReceipts = mergedPrs
     .Select(pr => new MergedPrReceipt(pr.Number, pr.Title, pr.MergedAt!.Value, ServesReceipts.Parse(pr.Body)))
     .ToList();
 
-var result = Reconciler.Reconcile(plan, landed, open, trackedFiles, mergedReceipts, fileOrigins, receiptRuleSince);
+// The section-9 warning's own input: which unit ids are written into tracked SOURCE on
+// origin/main. One git grep for the whole id set (docs excluded on purpose — the plan names every
+// id by definition, so grepping it would match all of them and say nothing).
+var sourceTagSites = GitShell
+    .ListSourceTagSites(repoRoot, "origin/main", plan.Units.Select(u => u.Id))
+    .ToDictionary(kv => kv.Key, kv => (IReadOnlyList<string>)kv.Value, StringComparer.Ordinal);
+
+var result = Reconciler.Reconcile(
+    plan, landed, open, trackedFiles, mergedReceipts, fileOrigins, receiptRuleSince, sourceTagSites);
 
 var headSha = log.Count > 0 ? log[^1].Sha[..9] : "unknown";
 Console.WriteLine(Report.Build(result, $"{planPath} vs origin/main@{headSha}"));

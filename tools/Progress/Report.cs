@@ -23,6 +23,7 @@ public static class Report
         AppendReceiptDispatchTraps(sb, result.ReceiptDispatchTraps);
         AppendMissingOrMalformedReceipts(sb, result.MissingOrMalformedReceipts);
         AppendFalseReceipts(sb, result.FalseReceipts);
+        AppendSourceTaggedUnbuilts(sb, result.SourceTaggedUnbuilts);
         AppendUnparseable(sb, result.Unparseable);
         AppendSummary(sb, result);
 
@@ -215,6 +216,32 @@ public static class Report
         sb.AppendLine();
     }
 
+    private static void AppendSourceTaggedUnbuilts(StringBuilder sb, IReadOnlyList<SourceTaggedUnbuilt> findings)
+    {
+        sb.AppendLine("## 9. Unbuilt units whose id is already written into tracked source (VERIFY BEFORE BUILDING)");
+        sb.AppendLine();
+
+        if (findings.Count == 0)
+        {
+            sb.AppendLine("None.");
+        }
+        else
+        {
+            sb.AppendLine("Neither evidence class this tool trusts can see a unit that shipped inside a PR whose");
+            sb.AppendLine("subject carried no per-unit tag and whose row names files that already existed. These rows");
+            sb.AppendLine("are the residue such a unit leaves in source. Read the cited file before dispatching the");
+            sb.AppendLine("unit -- a hit is equally a shipped unit and a comment DEFERRING one, which is exactly why");
+            sb.AppendLine("this is a warning and not a status. Changes no count and no exit code.");
+            sb.AppendLine();
+            foreach (var f in findings)
+            {
+                sb.AppendLine($"- {f.UnitId} — reported unbuilt, but named in: {string.Join(", ", f.Paths.Select(p => $"`{p}`"))}");
+            }
+        }
+
+        sb.AppendLine();
+    }
+
     private static void AppendUnparseable(StringBuilder sb, IReadOnlyList<UnparseableRow> unparseable)
     {
         sb.AppendLine("## Unparseable rows (id-shaped but malformed — not a failure, but reported, never dropped)");
@@ -254,6 +281,7 @@ public static class Report
         sb.AppendLine($"- Redundant-dispatch traps (Serves: claims a unit still reported not-landed): {result.ReceiptDispatchTraps.Count}");
         sb.AppendLine($"- Merged PRs missing/malformed Serves: line (reported, does not gate exit code — see below): {result.MissingOrMalformedReceipts.Count}");
         sb.AppendLine($"- False receipts (Serves: names a unit whose path is missing): {result.FalseReceipts.Count}");
+        sb.AppendLine($"- Unbuilt units already named in tracked source (verify before building): {result.SourceTaggedUnbuilts.Count}");
 
         var failing = result.MissingFiles.Count > 0 || result.OrderingViolations.Count > 0 || result.Collisions.Count > 0
             || result.ReceiptDispatchTraps.Count > 0 || result.FalseReceipts.Count > 0;

@@ -41,6 +41,82 @@ public static class GitShell
         }
     }
 
+    /// <summary>
+    /// Every tracked SOURCE file on <paramref name="gitRef"/> that writes one of
+    /// <paramref name="unitIds"/> into its text, keyed by unit id — the input for the
+    /// <see cref="SourceTaggedUnbuilt"/> warning.
+    ///
+    /// <para>Source only, never <c>docs/</c>: the plan itself names every id by definition, so
+    /// including it would match all of them and say nothing. One `git grep` process for the whole
+    /// id set rather than one per unit; a no-match run exits 1, which is the empty answer and not a
+    /// failure, so only a code above 1 throws.</para>
+    /// </summary>
+    public static Dictionary<string, List<string>> ListSourceTagSites(
+        string repoRoot, string gitRef, IEnumerable<string> unitIds)
+    {
+        var ids = unitIds.Distinct(StringComparer.Ordinal).ToList();
+        var sites = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        if (ids.Count == 0)
+        {
+            return sites;
+        }
+
+        var args = new List<string> { "grep", "--only-matching", "--fixed-strings" };
+        foreach (var id in ids)
+        {
+            args.Add("-e");
+            args.Add(id);
+        }
+
+        args.Add(gitRef);
+        args.Add("--");
+        args.AddRange(["*.cs", "*.gd", "*.ps1", "*.py", "*.yml"]);
+
+        // This tool's own tree is excluded, and the exclusion is load-bearing rather than tidy: its
+        // fixtures name real unit ids as test data (`P2-PROOF-04`, `U41`, `P2-PEOPLE-08`), and a
+        // fixture is evidence of nothing about whether that unit shipped. Without this the tool
+        // reports warnings caused by itself — measured on the first run, three of eleven.
+        args.AddRange([":(exclude)tools/Progress/*", ":(exclude)tools/Progress.Tests/*"]);
+
+        var (code, stdout, stderr) = Run(repoRoot, "git", args.ToArray());
+        if (code > 1)
+        {
+            throw new InvalidOperationException($"git grep over {ids.Count} unit ids failed: {stderr}");
+        }
+
+        // `<rev>:<path>:<match>` — the path can itself contain no ':' in this repo, but splitting
+        // from the END is correct regardless: the match is the last field and the rev is the first.
+        foreach (var line in stdout.Replace("\r\n", "\n").Split('\n'))
+        {
+            var lastColon = line.LastIndexOf(':');
+            var firstColon = line.IndexOf(':');
+            if (lastColon <= firstColon || firstColon < 0)
+            {
+                continue;
+            }
+
+            var id = line[(lastColon + 1)..];
+            var path = line[(firstColon + 1)..lastColon];
+            if (id.Length == 0 || path.Length == 0)
+            {
+                continue;
+            }
+
+            if (!sites.TryGetValue(id, out var paths))
+            {
+                paths = [];
+                sites[id] = paths;
+            }
+
+            if (!paths.Contains(path, StringComparer.Ordinal))
+            {
+                paths.Add(path);
+            }
+        }
+
+        return sites;
+    }
+
     public static HashSet<string> ListTrackedFiles(string repoRoot, string gitRef)
     {
         var (code, stdout, stderr) = Run(repoRoot, "git", "ls-tree", "-r", "--name-only", gitRef);
