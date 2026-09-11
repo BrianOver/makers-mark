@@ -97,9 +97,10 @@ public static class PlanParser
             var flags = table == UnitTable.P2 ? ExtractFlags(cells[4]) : Array.Empty<string>();
 
             var files = ExtractFileRefs(filesCell);
-            var deps = ExtractDependsOn(depsCell);
+            var (deps, unparsedDeps) = ExtractDependsOn(depsCell);
 
-            units.Add(new UnitRow(table, idCell, title, files, deps, depsCell.Trim(), flags, lineNumber));
+            units.Add(new UnitRow(
+                table, idCell, title, files, deps, depsCell.Trim(), flags, lineNumber, unparsedDeps));
         }
 
         return new PlanParseResult(units, unparseable, docRefs);
@@ -167,18 +168,38 @@ public static class PlanParser
         return refs;
     }
 
-    /// <summary>Extracts unit-id tokens from a "Depends on" cell. Handles the plan's observed
-    /// shorthands: an em dash / bare dash for "none", comma lists, and same-domain slash ranges
-    /// ("P2-SCREEN-02..10", "P2-SCREEN-07/08"). Text that isn't a recognizable unit id (a ruling
-    /// reference like "P2-OQ1", a critical-path item like "P4", a section cite like "§11.5") is
-    /// left out of the parsed list — it's not a dependency this tool can check, not a parse
-    /// failure of the row itself.</summary>
-    private static IReadOnlyList<string> ExtractDependsOn(string cell)
+    /// <summary>Connectives and "no dependency" markers that carry no gate of their own. Anything
+    /// left in a Depends-on cell after the parsed ids and these are stripped is a real token this
+    /// tool could not resolve, and is reported rather than dropped.</summary>
+    private static readonly HashSet<string> DependencyNoise = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "and", "or", "then", "after", "before", "plus", "via", "with", "the", "for", "of", "on",
+        "none", "see", "per", "its", "own", "gate", "ruling", "owner", "in", "at", "to",
+    };
+
+    private static readonly Regex DependencyToken = new(@"[A-Za-z0-9§][A-Za-z0-9§./-]*", RegexOptions.Compiled);
+
+    /// <summary>
+    /// Extracts unit-id tokens from a "Depends on" cell, AND the tokens it could not resolve.
+    /// Handles the plan's observed shorthands: an em dash / bare dash for "none", comma lists, and
+    /// same-domain ranges ("P2-SCREEN-02..10", "P2-SCREEN-07/08").
+    ///
+    /// <para><b>The unresolved half is the load-bearing addition.</b> A cell can name a gate that is
+    /// not a unit row at all — a critical-path item (<c>P4</c>, the owner's own evening), an open
+    /// ruling (<c>P2-OQ1</c>), a section cite. Dropping those silently is correct for a human reading
+    /// the report, who can see the raw cell beside it. It is NOT correct for anything computing a
+    /// frontier: a unit gated on the owner's evening would come back as runnable, which is the same
+    /// class of defect as the source system's <c>type: HITL</c> field that gated nothing. So the
+    /// tokens come back separately and <c>--frontier</c> refuses any row that has one.</para>
+    /// </summary>
+    private static (IReadOnlyList<string> Ids, IReadOnlyList<string> Unparsed) ExtractDependsOn(string cell)
     {
         var ids = new List<string>();
+        var matchedSpans = new List<(int Start, int Length)>();
 
         foreach (Match range in DepP2Range.Matches(cell))
         {
+            matchedSpans.Add((range.Index, range.Length));
             var domain = range.Groups[1].Value;
             var startText = range.Groups[2].Value;
             var endText = range.Groups[3].Value;
@@ -195,17 +216,20 @@ public static class PlanParser
         foreach (Match m in DepP2Id.Matches(cell))
         {
             ids.Add(m.Value);
+            matchedSpans.Add((m.Index, m.Length));
         }
 
         foreach (Match m in DepT10Id.Matches(cell))
         {
             ids.Add(m.Value);
+            matchedSpans.Add((m.Index, m.Length));
         }
 
         // Slash-combo shorthand within a P2 id run, e.g. "P2-SCREEN-07/08" — the base regex above
         // already captured "P2-SCREEN-07"; pick up the "/08" continuation(s) here.
         foreach (Match m in Regex.Matches(cell, @"\bP2-[A-Z][A-Z0-9]*-\d+((?:/\d+[a-zA-Z]?)+)\b"))
         {
+            matchedSpans.Add((m.Index, m.Length));
             var anchor = m.Value[..(m.Value.IndexOf('/'))];
             var domain = anchor[..anchor.LastIndexOf('-')];
             foreach (Match part in Regex.Matches(m.Groups[1].Value, @"\d+[a-zA-Z]?"))
@@ -224,6 +248,36 @@ public static class PlanParser
             }
         }
 
-        return result;
+        return (result, UnresolvedTokens(cell, matchedSpans));
+    }
+
+    /// <summary>Whatever a Depends-on cell still says once every id this tool matched is blanked
+    /// out and connectives are dropped. Order-preserving and deduplicated, so the frontier's own
+    /// refusal can quote the exact token that caused it.</summary>
+    private static IReadOnlyList<string> UnresolvedTokens(string cell, List<(int Start, int Length)> matchedSpans)
+    {
+        var remaining = cell.ToCharArray();
+        foreach (var (start, length) in matchedSpans)
+        {
+            for (var i = start; i < start + length && i < remaining.Length; i++)
+            {
+                remaining[i] = ' ';
+            }
+        }
+
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var unresolved = new List<string>();
+        foreach (Match m in DependencyToken.Matches(new string(remaining)))
+        {
+            var token = m.Value.Trim('.', '-', '/');
+            if (token.Length == 0 || DependencyNoise.Contains(token) || !seen.Add(token))
+            {
+                continue;
+            }
+
+            unresolved.Add(token);
+        }
+
+        return unresolved;
     }
 }
