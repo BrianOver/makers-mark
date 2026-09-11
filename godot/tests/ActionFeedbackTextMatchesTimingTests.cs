@@ -6,14 +6,15 @@ using GameSim.Kernel;
 using GdUnit4;
 using Godot;
 using GodotClient.Panels;
+using GodotClient.Ui;
 using static GdUnit4.Assertions;
 using static GodotClient.Tests.UiTestSupport;
 
 namespace GodotClient.Tests;
 
 /// <summary>
-/// Pressing a button whose action resolves IMMEDIATELY must say so happened — never "Queued —
-/// resolves when ... ticks. Press Advance or wait." about a change that has already landed.
+/// Pressing a button whose action resolves IMMEDIATELY must say so happened — never a future
+/// promise about a change that has already landed.
 ///
 /// <para><b>Why this exists.</b> Brian's playtest, 2026-08-02: "Open counter does nothing -
 /// tutorial stuck at 6", "opening the counter queues", "you have a TON of past 'queued' actions
@@ -36,8 +37,25 @@ namespace GodotClient.Tests;
 [RequireGodotRuntime]
 public class ActionFeedbackTextMatchesTimingTests
 {
-    private const string FuturePromise = "resolves when";
-    private const string AdvanceInstruction = "Press Advance";
+    /// <summary>P2-HONEST-04 (family C — "a guard must be phrased against the property, never the
+    /// instance"): this suite used to hardcode <c>"resolves when"</c> and <c>"Press Advance"</c>,
+    /// the literal words the deferred branch happened to use in 2026-08. Both were rewritten when
+    /// the branch stopped naming a control that does not exist ("Advance" is the advance button's
+    /// NODE name; its label reads "Skip" or a bell verb) and stopped printing the raw
+    /// <c>DayPhase</c> enum. A literal guard would have gone green on the rewrite while asserting
+    /// a sentence the game no longer says.
+    ///
+    /// <para>So the forbidden fragment is now READ FROM <see cref="SimPanel"/> at runtime: whatever
+    /// <c>Confirm</c> appends for a genuinely deferred action IS the promise clause, by definition.
+    /// The immediate-branch tests assert the immediate sentence does not carry it. That is the real
+    /// rule, and no copy rewrite can make it tautological
+    /// (<see cref="UiTestSupport.DeferredPromiseClauseOf"/>).</para>
+    ///
+    /// <para>This constant is the other half: the advance control's NODE name, which no player ever
+    /// sees — its rendered label is "Skip" (clock engaged) or <c>PhaseVocab.BellVerb</c>. Copy
+    /// naming this string would be telling the player to press something that is not on screen,
+    /// which is exactly what P2-HONEST-04 found it doing.</para></summary>
+    private const string AdvanceNodeNameNeverShown = "Advance";
 
     /// <summary>
     /// The reported bug, pinned directly on the exact button the owner complained about.
@@ -58,6 +76,7 @@ public class ActionFeedbackTextMatchesTimingTests
             ui.OpenPanel("Shop"); // CounterPanel is nested inside ShopPanel (PA7)
             PressEnabled(ui.Shop, "OpenCounter");
 
+            var counterPanel = Find<CounterPanel>(ui.Shop, "CounterPanel");
             var feedback = Find<Label>(ui.Shop, "CounterFeedback").Text;
             AssertThat(feedback)
                 .OverrideFailureMessage(
@@ -67,8 +86,8 @@ public class ActionFeedbackTextMatchesTimingTests
                     "owner-reported bug: \"opening the counter queues\", tutorial stuck waiting on " +
                     "an event that already fired.")
                 .Contains("Opened the counter");
-            AssertThat(feedback).NotContains(FuturePromise);
-            AssertThat(feedback).NotContains(AdvanceInstruction);
+            AssertThat(feedback).NotContains(DeferredPromiseClauseOf(counterPanel));
+            AssertThat(feedback).NotContains(AdvanceNodeNameNeverShown);
         }
         finally
         {
@@ -98,8 +117,8 @@ public class ActionFeedbackTextMatchesTimingTests
                     "immediately (ActionTiming) — the talent is already unlocked — so this must " +
                     "say so happened, not promise a future resolution.")
                 .Contains("Unlocked keen-eye");
-            AssertThat(feedback).NotContains(FuturePromise);
-            AssertThat(feedback).NotContains(AdvanceInstruction);
+            AssertThat(feedback).NotContains(DeferredPromiseClauseOf(ui.Forge));
+            AssertThat(feedback).NotContains(AdvanceNodeNameNeverShown);
         }
         finally
         {
@@ -136,19 +155,34 @@ public class ActionFeedbackTextMatchesTimingTests
 
             var counter = Find<CounterPanel>(ui.Shop, "CounterPanel");
 
+            // The promise must SURVIVE for a real bell-rider — a patch that strips the future
+            // tense for every action (not just the immediate ones) would pass the immediate tests
+            // above and must fail here. Phrased against the property rather than the 2026-08 words:
+            // the deferred sentence must differ from the immediate one, and must name the moment it
+            // resolves in the player's own phase vocabulary.
+            var phaseWord = PhaseVocab.Display(ui.Adapter.CurrentState);
+
             var forgeText = InvokeConfirm(ui.Forge, deferred, "Upgraded the forge");
             AssertThat(forgeText)
                 .OverrideFailureMessage(
-                    $"ForgePanel.Confirm for a DEFERRED action returned '{forgeText}' — the bell " +
-                    "promise must survive. A patch that strips \"Queued — resolves when\" for " +
-                    "every action (not just the immediate ones) would pass the immediate tests " +
-                    "above but must fail here.")
-                .Contains("Queued — resolves when");
-            AssertThat(forgeText).Contains(AdvanceInstruction);
+                    $"ForgePanel.Confirm for a DEFERRED action returned '{forgeText}' — it must not "
+                    + "read the same as an immediate confirmation; the world really does have to act "
+                    + "first, and the sentence has to say so.")
+                .IsNotEqual(InvokeConfirm(ui.Forge, new OpenCounterAction(), "Upgraded the forge"));
+            AssertThat(forgeText)
+                .OverrideFailureMessage(
+                    $"ForgePanel.Confirm for a DEFERRED action returned '{forgeText}' — it must name "
+                    + $"the moment it resolves, in the HUD's own word for it ('{phaseWord}'), never the "
+                    + "raw DayPhase enum (P2-HONEST-04; PhaseVocab is the one table).")
+                .Contains(phaseWord);
+            AssertThat(forgeText).NotContains(AdvanceNodeNameNeverShown);
 
             var counterText = InvokeConfirm(counter, deferred, "Upgraded the forge");
-            AssertThat(counterText).Contains("Queued — resolves when");
-            AssertThat(counterText).Contains(AdvanceInstruction);
+            AssertThat(counterText).Contains(phaseWord);
+            AssertThat(counterText).NotContains(AdvanceNodeNameNeverShown);
+            AssertThat(counterText)
+                .OverrideFailureMessage("Both panels must route through the SAME SimPanel.Confirm.")
+                .IsEqual(forgeText);
         }
         finally
         {

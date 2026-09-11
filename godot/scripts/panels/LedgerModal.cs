@@ -748,7 +748,13 @@ public partial class LedgerModal : SimPanel
                 AddButton(row, $"BuyOre_{ore.From.Value}_{ore.MaterialKey}", "Buy", new Verdict(buyLegal, whyNot), () =>
                 {
                     Adapter!.Queue(new BuyOreAction(offer.From, offer.MaterialKey, offer.Quantity));
-                    _feedback!.Text = $"queued: buy {offer.Quantity}x {offer.MaterialKey} from {card.HeroName} (applies when the Evening ticks)";
+                    // P2-HONEST-04: was "queued: buy 3x copper from Thistle (applies when the
+                    // Evening ticks)" — the kernel's own loop word, the raw enum, and a lowercase
+                    // status prefix no other line in this panel uses. Same replacement shape as
+                    // SimPanel.Confirm's deferred branch, reading the phase off PhaseVocab.
+                    _feedback!.Text =
+                        $"Buying {offer.Quantity} {offer.MaterialKey} from {card.HeroName} — but not until "
+                        + $"{PhaseVocab.Display(Adapter!.CurrentState)} ends.";
                 });
 
                 // U6 (campaign finding: this row read as LIVE outside Evening even though

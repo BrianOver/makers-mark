@@ -194,8 +194,14 @@ public class MainUiTests
             Press(ui.Forge, $"BuyMat_{key}");
             var text = RenderedText(ui.Forge);
             AssertThat(text).Contains($"Bought 1 {key}");
-            AssertThat(text).NotContains("resolves when");
-            AssertThat(text).NotContains("Press Advance");
+            // P2-HONEST-04 (family C): these two used to name the 2026-08 literals "resolves when"
+            // and "Press Advance". Both were rewritten out of SimPanel.Confirm, so the pair went
+            // tautologically green — asserting the absence of words nothing in the game says. The
+            // honest form asserts the absence of whatever Confirm actually appends for a deferred
+            // action today, read off SimPanel at runtime, plus the phase word the HUD would print:
+            // an immediate confirmation must name no future moment at all.
+            AssertThat(text).NotContains(DeferredPromiseClauseOf(ui.Forge));
+            AssertThat(text).NotContains(PhaseVocab.Display(ui.Adapter.CurrentState));
         }
         finally
         {

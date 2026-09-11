@@ -76,7 +76,7 @@ public class BuyUpdatesTheCountImmediatelyTests
     /// not the action budget, even though its own comment claimed to mirror
     /// <c>MaterialVendorHandlers</c> — which does enforce it. So in Morning, with gold in hand and
     /// zero slots, the button stayed enabled, the click "succeeded", and the feedback line said
-    /// "Queued — resolves when Morning ticks" about an action that was already dead. A dead click
+    /// the old deferred wording about an action that was already dead. A dead click
     /// that confirms itself is worse than a disabled one, and <c>BountyPanel</c> already got this
     /// right — this pins that the forge vendor matches it.</para>
     ///
@@ -118,7 +118,7 @@ public class BuyUpdatesTheCountImmediatelyTests
             AssertThat(row.Disabled)
                 .OverrideFailureMessage(
                     "The vendor Buy button is still enabled with 0 action slots left. A player can click "
-                    + "it, get told \"Queued — resolves when Morning ticks\", and have the action silently "
+                    + "it, get told a future-tense promise, and have the action silently "
                     + "rejected. ForgePanel's vendor-row `legal` must include ActionSlotsRemaining > 0, the "
                     + "way BountyPanel's post gate already does.")
                 .IsTrue();
