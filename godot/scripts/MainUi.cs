@@ -1904,7 +1904,7 @@ public partial class MainUi : Control
             if (_gatedTrayButtons.TryGetValue(gate.SurfaceId, out var entry))
             {
                 entry.Button.Disabled = !open;
-                entry.Button.TooltipText = open ? entry.OpenTooltip : gate.Reason;
+                entry.Button.TooltipText = open ? entry.OpenTooltip : gate.ClosedReason;
             }
 
             // A live rejection always wins the strip — OnPhaseCompleted's own rule (rejection >
@@ -1918,7 +1918,7 @@ public partial class MainUi : Control
             if (open && _openSurfaceIds.Add(gate.SurfaceId) && _surfaceUnlocksSeeded
                 && Adapter.LastRejections.IsEmpty)
             {
-                ShowBellToast($"{gate.SurfaceId}'s open now — {gate.Reason}");
+                ShowBellToast($"{gate.SurfaceId}'s open now — {gate.OpenedReason}");
             }
         }
 
@@ -1947,7 +1947,7 @@ public partial class MainUi : Control
         var state = Adapter.CurrentState;
         if (!SurfaceEffectivelyOpen(state, surfaceId))
         {
-            ShowBellToast(SurfaceUnlocks.GateFor(surfaceId)?.Reason ?? $"{surfaceId} is not open yet.");
+            ShowBellToast(SurfaceUnlocks.GateFor(surfaceId)?.ClosedReason ?? $"{surfaceId} is not open yet.");
             return;
         }
 
@@ -4026,7 +4026,7 @@ public partial class MainUi : Control
         // (SurfaceUnlocks.GateFor returns null for them), so this is a no-op for the common case.
         if (SurfaceUnlocks.GateFor(id) is { } gate && !SurfaceEffectivelyOpen(Adapter.CurrentState, id))
         {
-            ShowBellToast(gate.Reason);
+            ShowBellToast(gate.ClosedReason);
             return;
         }
 
