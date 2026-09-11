@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Text.Json;
 using GameSim;
 using GameSim.Chronicle;
 using GameSim.Contracts;
@@ -16,6 +17,18 @@ namespace GameSim.Cli;
 ///
 /// Arg surface is forward-fit for later axes (player-policy personas, tuning A/B) — new flags
 /// slot in without breaking `batch --seeds N --days M [--seed S] [--out DIR]` callers.
+///
+/// P2-HONEST-13 (register #164): alongside the chronicle JSON, each seed also writes a sibling
+/// <c>*.decisions.jsonl</c> — every <see cref="TickResult.Traces"/> the kernel drained across the
+/// whole campaign, one JSON object per line. This is deliberately the SAME on-disk shape
+/// <c>godot/scripts/PlaytestLog.cs</c>'s <c>Decision</c> channel already writes
+/// (<c>{"kind":"decision","what":...,"chose":...,"why":...,"candidates":...}</c>), so
+/// <c>tools/Analytics</c>'s existing <c>DecisionLog</c> reader — built for that channel and until
+/// now fed by nothing but a human playtest with <c>MM_PLAYTEST_LOG</c> set — picks these up with
+/// zero changes to Analytics itself. <see cref="TickResult.Traces"/> stays exactly where
+/// <c>DecisionTraceTests</c> pins it (the kernel's return value, never <see cref="GameState"/>):
+/// this reads the return value on every tick and writes it out here at the edge, the same way the
+/// chronicle write below does for state.
 /// </summary>
 public static class BatchRunner
 {
@@ -269,6 +282,15 @@ public static class BatchRunner
                 {
                     File.Delete(stale);
                 }
+
+                // Named as its own explicit glob rather than folded into "batch-*.json" above: an
+                // extension-suffix pattern (".json" vs ".jsonl") is exactly the shape where Windows'
+                // legacy 8.3-short-name matching can silently make one glob catch both, or neither,
+                // depending on volume settings nobody here controls. Spelled out, it is correct either way.
+                foreach (var stale in Directory.EnumerateFiles(batch.OutDir, "batch-*.decisions.jsonl", SearchOption.TopDirectoryOnly))
+                {
+                    File.Delete(stale);
+                }
             }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
@@ -287,9 +309,12 @@ public static class BatchRunner
             var state = startingProfession is null
                 ? GameComposition.NewCampaign(seed)
                 : GameComposition.NewCampaign(seed, startingProfession);
+            var traces = ImmutableList.CreateBuilder<DecisionTrace>();
             while (state.Day <= batch.Days)
             {
-                state = kernel.Tick(state, policyFn(state)).NewState;
+                var result = kernel.Tick(state, policyFn(state));
+                state = result.NewState;
+                traces.AddRange(result.Traces);
             }
 
             var path = Path.Combine(batch.OutDir, $"batch-seed{seed}-days{batch.Days}-{policyTag}.json");
@@ -303,10 +328,56 @@ public static class BatchRunner
                 return 1; // fail loudly, never a partial silent success
             }
 
-            output.WriteLine($"  seed {seed}: {batch.Days} days, {state.EventLog.Count} events -> {path}");
+            var decisionsPath = Path.Combine(batch.OutDir, $"batch-seed{seed}-days{batch.Days}-{policyTag}.decisions.jsonl");
+            try
+            {
+                WriteDecisionLog(decisionsPath, traces);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                error.WriteLine($"batch: decisions write failed for '{decisionsPath}': {ex.Message}");
+                return 1; // same fail-loudly contract as the chronicle write above
+            }
+
+            output.WriteLine($"  seed {seed}: {batch.Days} days, {state.EventLog.Count} events, {traces.Count} decision trace(s) -> {path}");
         }
 
         output.WriteLine($"batch complete: {batch.SeedCount} chronicle(s) in {batch.OutDir}");
         return 0;
     }
+
+    /// <summary>
+    /// Writes <paramref name="traces"/> as one <c>kind:"decision"</c> JSON object per line, in the
+    /// SAME shape <c>PlaytestLog.Decision</c> writes it (see this class's doc comment) so
+    /// <c>tools/Analytics</c>'s <c>DecisionLog</c> reads it unmodified. <see cref="DecisionTrace"/>
+    /// carries no candidate count (it is a "what and why" record, not a "what and how many options"
+    /// one — that's <c>PlaytestLog.Decision</c>'s own, richer shape), so <c>candidates</c> is always
+    /// -1 here, exactly <c>DecisionLog.DecisionRow</c>'s documented "the caller could not say".
+    /// <see cref="DecisionTrace.Detail"/> folds into <c>why</c> when non-empty rather than being
+    /// dropped, since it is the numbers behind the reason and this format has no field of its own
+    /// for it. Writes nothing (not even an empty file) when <paramref name="traces"/> is empty — a
+    /// run that traced no decisions leaves no sibling file to confuse "no traces" with "no file yet".
+    /// Internal (not private) so the round-trip tests can drive it directly with a synthetic trace
+    /// list, rather than only through a real campaign that may or may not trace anything this run.
+    /// </summary>
+    internal static void WriteDecisionLog(string path, IReadOnlyList<DecisionTrace> traces)
+    {
+        if (traces.Count == 0)
+        {
+            return;
+        }
+
+        using var writer = new StreamWriter(path, append: false);
+        foreach (var trace in traces)
+        {
+            var row = new { kind = "decision", what = trace.What, chose = trace.Chosen, why = DecisionWhy(trace), candidates = -1 };
+            writer.WriteLine(JsonSerializer.Serialize(row));
+        }
+    }
+
+    /// <summary>The <c>why</c> field's fold of <see cref="DecisionTrace.Reason"/> and
+    /// <see cref="DecisionTrace.Detail"/> — internal (not private) so the round-trip test can predict
+    /// it without duplicating the fold rule by hand.</summary>
+    internal static string DecisionWhy(DecisionTrace trace) =>
+        trace.Detail.Length == 0 ? trace.Reason : $"{trace.Reason} ({trace.Detail})";
 }
