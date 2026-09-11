@@ -38,6 +38,13 @@ namespace GameSim.Flavor.Packs;
 ///
 /// <para><b>Conformance floor:</b> every (baseKey, voice) key carries at least 4 variants —
 /// no fallback-only keys. <c>TavernPackTests</c> enforces all of the above structurally.</para>
+///
+/// <para><b>The <c>{cause}</c> grammar contract (P2-MEMORY-08).</b> <c>ExpeditionRevealSystem</c>
+/// mints <c>{cause}</c> as a lowercase predicate completing the sentence frame "[hero] was …" (e.g.
+/// "slain by a Tunnel Spider", "lost to the Mine"). Every <see cref="HeroDied"/> variant may place it
+/// only where that frame stays grammatical — mid-clause, after a dash, comma, or colon — never as the
+/// first word of a sentence, since a bare predicate cannot open one. <c>TavernPackTests</c> sweeps
+/// every heroDied variant, in every voice, for that one concrete violation.</para>
 /// </summary>
 public static class TavernPack
 {
@@ -98,26 +105,26 @@ public static class TavernPack
         {
             // ------------------------------------------------------------- heroDied
             [$"{HeroDied}/gruff"] = ImmutableList.Create(
-                "Raise one for {hero}. {cause} on floor {floor}. That's the trade.",
+                "Raise one for {hero} — {cause} on floor {floor}. That's the trade.",
                 "{hero}'s pick won't ring again — {cause} on floor {floor}.",
-                "Floor {floor} took {hero}. {cause}. The Mine doesn't apologize.",
+                "Floor {floor} took {hero} — {cause}. The Mine doesn't apologize.",
                 "Dig a hole, say a word. {hero} — {cause} on floor {floor}.",
-                "{hero}'s done. {cause} on floor {floor}. Pour it out.",
+                "{hero}'s done — {cause} on floor {floor}. Pour it out.",
                 "Floor {floor} kept {hero} — {cause}. Cold, but that's the deep.",
-                "{cause}, floor {floor}. {hero} won't be back to argue it.",
-                "Mark {hero} off the roster. {cause} on floor {floor}.",
+                "{hero} won't be back to argue it — {cause}, floor {floor}.",
+                "Mark {hero} off the roster — {cause} on floor {floor}.",
                 "{hero} went down to {cause} on floor {floor}. The Mine gives nothing back.",
                 "One more name for the stone: {hero}, {cause}, floor {floor}.",
                 "{hero} paid floor {floor} in full — {cause}. That's the wage.",
-                "{cause} took {hero} on floor {floor}. Bank it and move on.",
-                "{hero} dug straight and paid their round. {cause} on floor {floor}. Raise one, and mean it."),
+                "{hero} went down on floor {floor} — {cause}. Bank it and move on.",
+                "{hero} dug straight and paid their round — {cause} on floor {floor}. Raise one, and mean it."),
             [$"{HeroDied}/dramatic"] = ImmutableList.Create(
                 "Gone! {hero}, {cause} on floor {floor} — the dark has a new name to whisper.",
                 "Weep, tavern, weep — {hero} lies on floor {floor}, {cause}.",
                 "Floor {floor} demanded a price, and {hero} paid it — {cause}.",
-                "Let the bells toll for {hero}! {cause}, down on floor {floor}.",
+                "Let the bells toll for {hero} — {cause}, down on floor {floor}!",
                 "Toll the bell! {hero} has fallen to {cause} on floor {floor}!",
-                "O cruel floor {floor}! {cause}, and {hero} is no more!",
+                "O cruel floor {floor} — {cause}, and {hero} is no more!",
                 "The dark of floor {floor} swallowed {hero} — {cause}, and the tavern grieves!",
                 "Lament, all who drink here — {hero}, {cause}, lost on floor {floor}!",
                 "Brave {hero}, undone in the belly of floor {floor} — {cause}!",
@@ -127,30 +134,30 @@ public static class TavernPack
                 "Stand for {hero}, lost to {cause} on floor {floor} — we are the poorer, and the prouder for having known them."),
             [$"{HeroDied}/wry"] = ImmutableList.Create(
                 "{hero} found the one thing on floor {floor} you can't walk off — {cause}.",
-                "Turns out floor {floor} bites. {hero}, {cause}. Who's next?",
+                "Floor {floor} is quieter tonight — {hero}, {cause}. So is this room.",
                 "{hero} won't be settling their tab — {cause} on floor {floor}.",
                 "Note for the board: floor {floor}, {cause}. Signed, what's left of {hero}.",
                 "Floor {floor} finally found something {hero} couldn't shrug off — {cause}.",
-                "{hero}: undefeated until floor {floor}. {cause}. Details, details.",
+                "{hero} kept a seat warm at this bar. Floor {floor} took it back — {cause}.",
                 "Bad news for {hero}'s bar tab — {cause} on floor {floor}.",
-                "Turns out {cause} is fatal. {hero} confirmed it on floor {floor}.",
-                "{hero} had one job on floor {floor}: not that. {cause}.",
-                "Floor {floor}, {cause}, and {hero}'s flawless record of being alive. Was.",
+                "{hero} won't be finishing that story — {cause}, floor {floor}.",
+                "{hero} owed nobody here a thing — {cause} on floor {floor}. Settle your own tabs tonight.",
+                "Floor {floor}, {cause} — {hero}'s stool is empty tonight.",
                 "Somebody tell floor {floor} that {cause} was excessive. {hero} would agree, if they could.",
-                "{hero} met {cause} on floor {floor}. Bold plan. Poor finish.",
-                "Floor {floor}. {cause}. {hero} would have called it 'a Tuesday.' Raise a quiet one."),
+                "{hero} met {cause} on floor {floor}. Nobody's laughing tonight.",
+                "Floor {floor} — {cause}. {hero} would have called it 'a Tuesday.' Raise a quiet one."),
             [$"{HeroDied}/omen"] = ImmutableList.Create(
                 "The candles guttered when {hero} fell — {cause} on floor {floor}. The Mine marked them days ago.",
                 "I read it in the dregs: {hero}, {cause}, floor {floor}. The leaves never lie.",
                 "Floor {floor} whispered {hero}'s name, and now — {cause}. Salt your doorstep.",
-                "A crow sat the sill all morning. {hero}. {cause}. Floor {floor} keeps its tithe.",
+                "A crow sat the sill all morning. {hero} — {cause}. Floor {floor} keeps its tithe.",
                 "The crows knew {hero}'s name before floor {floor} did — {cause}. So it was written.",
                 "Salt spilled at dawn, and by dusk {hero} was gone — {cause}, floor {floor}.",
-                "The Mine called {hero} home to floor {floor}. {cause}. It always collects.",
+                "The Mine called {hero} home to floor {floor} — {cause}. It always collects.",
                 "I dreamt of an empty stool. {hero}, {cause}, floor {floor}. The dream never lies.",
-                "{cause} on floor {floor}. The coals hissed {hero}'s name and went dark.",
+                "The coals hissed {hero}'s name and went dark on floor {floor} — {cause}.",
                 "Floor {floor} kept its tithe — {hero}, {cause}. Ward your door tonight.",
-                "The candle by {hero}'s bed guttered out. {cause}, floor {floor}. The deep marks its own.",
+                "The candle by {hero}'s bed guttered out — {cause}, floor {floor}. The deep marks its own.",
                 "{hero}'s shadow left before the body did — {cause} on floor {floor}. Omens don't grieve.",
                 "The deep keeps its own, and it kept a good one — {hero}, {cause}, floor {floor}. Remember them kindly, and ward the door."),
 
