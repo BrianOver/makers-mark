@@ -8,7 +8,7 @@ namespace GodotClient.Tests;
 
 /// <summary>
 /// Living clock rules (U15/KTD3 — "flows-but-waits" — over the U11 timer/U2 gate): a
-/// fresh clock auto-advances by default, an explicit skip is always available (player
+/// fresh clock is OFF by default (player-decided pacing), an explicit skip is always available (player
 /// intent wins), and the AE1 <see cref="PhaseClock.Engaged"/> latch defers an expired
 /// timer's tick until disengage without ever dropping a queued action. Pure C#, no
 /// Godot runtime.
