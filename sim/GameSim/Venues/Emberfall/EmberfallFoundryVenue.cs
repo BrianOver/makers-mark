@@ -16,10 +16,16 @@ namespace GameSim.Venues.Emberfall;
 ///
 /// <para><b>Five floors, Mine-peer gates 0/15/35/60/73.</b> A deliberate peer of the Mine's gate
 /// curve — same structural difficulty ladder — so the monster stats mirror the Mine's peer formulas
-/// (HP 12+10f, attack 5+6f, defense 2+2f, gold 5+3f); the venues differ in NAMES, ORES, and
-/// atmosphere, not difficulty. The boss gate (floor 5) is the one MEASURED value — see
-/// <see cref="Build"/>'s own comment — and the venue is LIVE (forward-ladder plan 2026-08-10-003
-/// L4, in <see cref="VenueRegistry.LiveRotation"/>) now that its art wave has landed.</para>
+/// (HP 12+10f, attack 5+6f, defense 2+2f, gold 5+3f) on floors 1-4; the venues differ in NAMES,
+/// ORES, and atmosphere, not difficulty there. Floor 5 is the one exception, and it is NOT what it
+/// looks like: Mine's own boss (and Sunken Crypt's) is dialed DOWN off that formula to HP 50/Attack
+/// 26 (2026-08-10-003 L3, #451) after the straight formula value measured too deadly for a fair
+/// fight, but this file predates #451 (#77, 2026-07-18) and was never carried forward when the venue
+/// went live (#453) — Emberfall's floor 5 still runs the un-dialed formula (HP 62/Attack 35), a
+/// known divergence flagged by P2-HONEST-08, not yet balance-characterized. The boss GATE (floor 5,
+/// value 73) is the one MEASURED value — see <see cref="Build"/>'s own comment — and the venue is
+/// LIVE (forward-ladder plan 2026-08-10-003 L4, in <see cref="VenueRegistry.LiveRotation"/>) now
+/// that its art wave has landed.</para>
 ///
 /// <para><b>Ore ladder (den palette family).</b> firebrick → slagiron → quench-salt → emberglass →
 /// heartcoal, one per floor, unique within the venue (the <c>OreFloor</c> inversion guards
@@ -106,7 +112,15 @@ public static class EmberfallFoundryVenue
                     5 => "The Undying Forge-Heart",
                     _ => throw new ArgumentOutOfRangeException(nameof(floor)),
                 },
-                MonsterHp: 12 + 10 * floor,     // Mine-peer difficulty curve (same gate ladder)
+                // Mine-peer difficulty curve on floors 1-4 (HP 12+10f, attack 5+6f, defense 2+2f,
+                // gold 5+3f). Floor 5 does NOT get Mine's own dial-down: BuildMine overrides its
+                // floor 5 to HP 50/Attack 26 (VenueRegistry.cs, 2026-08-10-003 L3, #451) because the
+                // straight formula value measured too deadly; SunkenCryptVenue.cs carries that same
+                // override, added in the same PR, but this file predates it and was never updated —
+                // Emberfall's floor 5 boss still runs HP 62/Attack 35, harder than Mine's or Sunken
+                // Crypt's own boss. Flagged (P2-HONEST-08), not fixed here — a balance change needs
+                // its own characterization pass.
+                MonsterHp: 12 + 10 * floor,
                 MonsterAttack: 5 + 6 * floor,
                 MonsterDefense: 2 + 2 * floor,
                 GoldPerKill: 5 + 3 * floor,
