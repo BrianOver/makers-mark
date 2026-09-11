@@ -47,6 +47,16 @@ namespace GodotClient.Panels;
 /// reason strings are written here, never extracted from the sim), live-recomputed whenever
 /// either picker changes so the SAME button always gates the CURRENTLY chosen combination, not
 /// just whatever combination happened to be on screen when the row was built.</para>
+///
+/// <para>P2-MEMORY-10 (book shell): refit, not rebuilt, into the campaign's one book — browsable by
+/// actor. <see cref="ShowWall"/> now always opens on the index (<see cref="RenderActorBook"/>: one
+/// row per hero the town has a durable fact about, fallen or depth-recorded or both), and choosing
+/// a row opens that hero's own page (<see cref="ShowActorPage"/>), which is where the Honor button
+/// and Reforge rows now live — moved off the flat wall, not changed. The item-level sections
+/// (<see cref="RenderLegendItems"/>/<see cref="RenderStoriedItems"/>) are untouched by this unit and
+/// still render on the index; <see cref="ProvenanceCard"/> becoming the book's own item-page
+/// renderer, and richer per-actor page content, are later units' work
+/// (<c>docs/design/MAKERS-MARK.md</c> §11, P2-MEMORY-11/-12/-14).</para>
 /// </summary>
 public partial class LegendsWall : Control
 {
@@ -98,11 +108,13 @@ public partial class LegendsWall : Control
         _caption.Visible = true;
     }
 
-    /// <summary>Populate from <paramref name="state"/> and open the overlay.</summary>
+    /// <summary>Populate from <paramref name="state"/> and open the overlay — always to the book's
+    /// own index (<see cref="ShowIndex(GameState, List{Item}, List{StoriedGearInfo})"/>), the same
+    /// "open to the front" contract a real book keeps regardless of which page was open when it was
+    /// last closed.</summary>
     public void ShowWall(GameState state)
     {
         EnsureBuilt();
-        Clear(_body!);
 
         // U32 (§11.14.14): the Memory act's own "did the player look" ratchet — mirrors
         // TutorialFlow.NotifyLedgerOpened's identical funnel for the Proof act one link earlier.
@@ -124,6 +136,7 @@ public partial class LegendsWall : Control
 
         if (ShowedEmptyState)
         {
+            Clear(_body!);
             AddLabel(_body!, "No legends yet — the Mine hasn't claimed anyone; your work is about to change that.");
             Visible = true;
             return;
@@ -138,12 +151,26 @@ public partial class LegendsWall : Control
         // spending the once-ever firing there would mean the real wall is never introduced.
         ShowWallLesson();
 
-        RenderMemorials(state);
-        RenderDepthsRecords(state);
-        RenderLegendItems(state, legendItems);
-        RenderStoriedItems(state, storiedItems);
+        ShowIndex(state, legendItems, storiedItems);
 
         Visible = true;
+    }
+
+    /// <summary>P2-MEMORY-10 (book shell): the book's own front matter — browsable by actor (<see
+    /// cref="RenderActorBook"/>), plus the item-level records this unit does not touch
+    /// (<see cref="RenderLegendItems"/>/<see cref="RenderStoriedItems"/>, unchanged since Wave 4/M2b).
+    /// The zero-arg overload recomputes both lists — cheap, pure projections of <paramref
+    /// name="state"/> — so <see cref="ShowActorPage"/>'s Back button can return here without
+    /// <see cref="ShowWall"/>'s own once-ever side effects (<see cref="Tutorial"/> notify, the empty-
+    /// state re-check) firing a second time.</summary>
+    private void ShowIndex(GameState state) => ShowIndex(state, LegendItems(state), StoriedItems(state));
+
+    private void ShowIndex(GameState state, List<Item> legendItems, List<StoriedGearInfo> storiedItems)
+    {
+        Clear(_body!);
+        RenderActorBook(state);
+        RenderLegendItems(state, legendItems);
+        RenderStoriedItems(state, storiedItems);
     }
 
     public void Close() => Visible = false;
@@ -216,52 +243,97 @@ public partial class LegendsWall : Control
     /// once.</summary>
     public override void _Input(InputEvent @event) => ModalEscape.TryClose(@event, GetViewport(), Visible, Close);
 
-    private void RenderMemorials(GameState state)
+    /// <summary>P2-MEMORY-10 (book shell): the book's own navigation spine — browsable by actor.
+    /// Every hero the town has a durable fact about (a <see cref="Memorial"/>, a <see
+    /// cref="DramaState.DepthsBoard"/> entry, or both) gets exactly one row here; choosing it opens
+    /// <see cref="ShowActorPage"/>. Replaces the old flat "THE FALLEN" + "DEPTHS RECORDS" sections,
+    /// which rendered every memorial's own Honor/Reforge controls directly on this screen — those
+    /// verbs now live on the chosen actor's own page (nothing else about them changed: same
+    /// legality mirror, same lesson, same audio cue).</summary>
+    private void RenderActorBook(GameState state)
     {
-        AddHeader(_body!, "THE FALLEN");
+        AddHeader(_body!, "WHO THE TOWN REMEMBERS");
 
-        // U8 (§11.14.14, container/section tutorial anchors): the fallen list gets its own named
-        // container — before this unit every row here (and every Reforge row
-        // RenderReforgeOptions adds beneath it) was a direct, anonymous child of the wall's ONE
-        // shared _body, indistinguishable by Name from the Depths Records or Legendary Gear rows
-        // sitting elsewhere in the same scroll. A tutorial step meaning "the fallen section" (<see
-        // cref="Ui.TutorialAnchorKind.PanelSection"/>) needs a stable Control to resolve, and none
-        // existed to find. This container is that stable target — present, with its own Name,
-        // whether the wall shows zero fallen heroes (the empty-state label below) or many.
-        var fallenSection = new VBoxContainer { Name = "FallenSection" };
-        _body!.AddChild(fallenSection);
+        // U8's "FallenSection" precedent, renamed and widened: this container now holds every
+        // remembered actor, fallen or not, so a TutorialAnchorKind.PanelSection row can still name
+        // a stable target whether the book holds zero rows (the empty-state label below) or many.
+        var actorSection = new VBoxContainer { Name = "ActorIndexSection" };
+        _body!.AddChild(actorSection);
 
-        if (state.Drama.Memorials.IsEmpty)
+        // Recent first among the fallen (the newest loss is the one the player is most likely here
+        // to see), then everyone else the depths board remembers, deepest first.
+        var fallenIds = state.Drama.Memorials.Select(m => m.Hero).ToHashSet();
+        var fallenOrdered = state.Drama.Memorials.OrderByDescending(m => m.Day).Select(m => m.Hero);
+        var depthOnlyOrdered = state.Drama.DepthsBoard.Keys
+            .Select(v => new HeroId(v))
+            .Where(id => !fallenIds.Contains(id))
+            .OrderByDescending(id => state.Drama.DepthsBoard[id.Value])
+            .ThenBy(id => HeroName(state, id), StringComparer.Ordinal);
+        var actors = fallenOrdered.Concat(depthOnlyOrdered).ToList();
+
+        if (actors.Count == 0)
         {
-            AddLabel(fallenSection, "  Nobody has fallen yet.");
+            AddLabel(actorSection, "  No names on this page yet — the Mine hasn't given the town anyone to remember.");
             return;
         }
 
-        var reforgedSourceIds = state.EventLog.OfType<HeirloomReforged>()
-            .Select(e => e.SourceItem.Value)
-            .ToHashSet();
-
-        // Recent first — the newest loss is the one the player is most likely here to see.
-        foreach (var memorial in state.Drama.Memorials.OrderByDescending(m => m.Day))
+        foreach (var hero in actors)
         {
-            var row = AddRow(fallenSection);
-            var text = $"  Day {memorial.Day} — {memorial.HeroName}, carrying {memorial.GearNamed}"
+            var name = HeroName(state, hero);
+            var tags = new List<string>();
+            if (fallenIds.Contains(hero))
+            {
+                tags.Add("fallen");
+            }
+
+            if (state.Drama.DepthsBoard.TryGetValue(hero.Value, out var floor))
+            {
+                tags.Add($"floor {floor}");
+            }
+
+            AddButton(actorSection, $"Actor_{hero.Value}", $"{name} — {string.Join(", ", tags)}", () => ShowActorPage(state, hero));
+        }
+    }
+
+    /// <summary>P2-MEMORY-10 (book shell): one actor's page — the destination every
+    /// <see cref="RenderActorBook"/> row opens. Hosts exactly what the flat wall used to render for
+    /// this one hero: their memorial line and Honor button (if unhonored), their Reforge rows (if
+    /// any worn gear is still eligible), and their depths record. A later unit (P2-MEMORY-11) is
+    /// free to enrich what a page shows; this one only moves the pre-existing verbs onto it,
+    /// unchanged.</summary>
+    private void ShowActorPage(GameState state, HeroId hero)
+    {
+        Clear(_body!);
+
+        AddButton(_body!, "LegendsWallBack", "‹ Back to the book", () => ShowIndex(state));
+
+        var name = HeroName(state, hero);
+        AddHeader(_body!, name);
+
+        var pageSection = new VBoxContainer { Name = "ActorPageSection" };
+        _body!.AddChild(pageSection);
+
+        var memorial = state.Drama.Memorials.FirstOrDefault(m => m.Hero == hero);
+        if (memorial is not null)
+        {
+            var reforgedSourceIds = state.EventLog.OfType<HeirloomReforged>()
+                .Select(e => e.SourceItem.Value)
+                .ToHashSet();
+
+            var row = AddRow(pageSection);
+            var text = $"  Day {memorial.Day} — carrying {memorial.GearNamed}"
                 + (memorial.Honored ? " — honored" : string.Empty);
             var label = AddLabel(row, text);
             label.SizeFlagsHorizontal = SizeFlags.ExpandFill;
 
             if (!memorial.Honored)
             {
-                var hero = memorial.Hero;
-
-                // Phase-legality parity (U5, campaign finding: LegendsWall.cs:130 disabled ONLY on
-                // Adapter-null, so the rite rendered live outside Evening and the kernel silently
-                // rejected the click — see GameSim.Drama.FarewellHandlers.CanHandle,
-                // Drama/FarewellHandlers.cs:20-21). ActionLegality.IsLegal already mirrors that exact
-                // phase + memorial-exists guard for HonorMemorialAction, and ShowWall already
-                // receives the full live GameState, so this consults that shared mirror directly
-                // (the same "state.Phase" the class doc for ReforgeGate deliberately does NOT need,
-                // since HonorMemorial — unlike Reforge — really is phase-gated at the handler).
+                // Phase-legality parity (U5, campaign finding: LegendsWall.cs used to disable this
+                // ONLY on Adapter-null, so the rite rendered live outside Evening and the kernel
+                // silently rejected the click — see GameSim.Drama.FarewellHandlers.CanHandle,
+                // Drama/FarewellHandlers.cs:20-21). ActionLegality.IsLegal mirrors that exact phase +
+                // memorial-exists guard for HonorMemorialAction, and this page already has the full
+                // live GameState, so this consults that shared mirror directly.
                 var honorAction = new HonorMemorialAction(hero);
                 var honorLegal = ActionLegality.IsLegal(state, honorAction, state.Phase);
                 var honor = new Button { Name = $"Honor_{hero.Value}", Text = "Honor" };
@@ -283,7 +355,14 @@ public partial class LegendsWall : Control
                 row.AddChild(honor);
             }
 
-            RenderReforgeOptions(fallenSection, state, memorial.Hero, reforgedSourceIds);
+            RenderReforgeOptions(pageSection, state, hero, reforgedSourceIds);
+        }
+
+        if (state.Drama.DepthsBoard.TryGetValue(hero.Value, out var floor))
+        {
+            // P2-PEOPLE-01: the same durable-fact caption the Mine's own standings carry — one rule
+            // (ArcScenes.FloorCaption), so the two copies of this board cannot drift apart.
+            AddLabel(pageSection, $"  floor {floor}{GodotClient.Ui.ArcScenes.FloorCaption(name, floor)}");
         }
     }
 
@@ -293,10 +372,10 @@ public partial class LegendsWall : Control
     /// gear — e.g. no shield/trinket) simply produces no row for that slot; nothing here can
     /// throw on a missing slot, only skip it (the existing guard chain below, unchanged).
     ///
-    /// <para>U8 (§11.14.14): <paramref name="parent"/> is now passed in rather than hardcoding
-    /// <c>_body!</c> — <see cref="RenderMemorials"/>'s own new "FallenSection" container, so a
-    /// hero's Reforge row stays nested under the SAME stable section as her Honor row rather than
-    /// becoming a sibling of it one level up.</para></summary>
+    /// <para>U8 (§11.14.14) / P2-MEMORY-10: <paramref name="parent"/> is passed in rather than
+    /// hardcoding <c>_body!</c> — <see cref="ShowActorPage"/>'s own page section, so a hero's
+    /// Reforge row stays nested under the SAME container as her Honor row rather than becoming a
+    /// sibling of it one level up.</para></summary>
     private void RenderReforgeOptions(Node parent, GameState state, HeroId hero, HashSet<int> reforgedSourceIds)
     {
         var died = state.EventLog.OfType<HeroDied>().FirstOrDefault(d => d.Hero == hero);
@@ -508,27 +587,6 @@ public partial class LegendsWall : Control
         }
 
         return (true, string.Empty);
-    }
-
-    private void RenderDepthsRecords(GameState state)
-    {
-        AddHeader(_body!, "DEPTHS RECORDS");
-        if (state.Drama.DepthsBoard.IsEmpty)
-        {
-            AddLabel(_body!, "  No depth records yet — the Mine awaits.");
-            return;
-        }
-
-        var standings = state.Drama.DepthsBoard
-            .OrderByDescending(entry => entry.Value)
-            .ThenBy(entry => entry.Key);
-        foreach (var (heroValue, floor) in standings)
-        {
-            // P2-PEOPLE-01: the same durable-fact caption the Mine's own standings carry — one rule
-            // (ArcScenes.FloorCaption), so the two copies of this board cannot drift apart.
-            var name = HeroName(state, new HeroId(heroValue));
-            AddLabel(_body!, $"  floor {floor} — {name}{GodotClient.Ui.ArcScenes.FloorCaption(name, floor)}");
-        }
     }
 
     private void RenderLegendItems(GameState state, System.Collections.Generic.List<Item> legendItems)
