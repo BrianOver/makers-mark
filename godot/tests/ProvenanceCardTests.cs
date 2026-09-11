@@ -80,6 +80,73 @@ public class ProvenanceCardTests
     }
 
     [TestCase]
+    public void SaleEvents_InterleaveWithRecordedHistory_ByDay_NotAsATwoStackedLists()
+    {
+        // P2-MEMORY-06: a counter sale (day 0, before any recorded entry) and a commission (day
+        // 3, after every recorded entry) both derive from the event log, not Item.History — this
+        // proves they land in the SAME day-ascending list as the recorded kill/save entries, at
+        // their own day, rather than appended as a separate block.
+        var ui = MountMainUi(new SimAdapter(ShelfWorldWithSaleEvents()));
+        try
+        {
+            PressEnabled(ui.Shop, $"Provenance_{HistoryItemId.Value}");
+
+            var text = RenderedText(Find<ProvenanceCard>(ui.Shop, "ProvenanceCard"));
+            var day0Sale = text.IndexOf("Day 0 — sold: Haggled off your counter.");
+            var day1Kill = text.IndexOf("Day 1 — kill: cave rat");
+            var day3Commission = text.IndexOf("Day 3 — commissioned: Delivered on commission.");
+
+            AssertThat(day0Sale).IsGreaterEqual(0);
+            AssertThat(day1Kill).IsGreater(day0Sale);
+            AssertThat(day3Commission).IsGreater(day1Kill);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void ItemWithNoRecordedHistory_ButSold_RendersTheSaleLine_NotTheFreshMessage()
+    {
+        // FreshItemId carries an empty Item.History — without a derived line it would render
+        // "Fresh off the forge", which would be a lie the moment the item has actually been sold.
+        var ui = MountMainUi(new SimAdapter(ShelfWorldWithSaleEvents()));
+        try
+        {
+            PressEnabled(ui.Shop, $"Provenance_{FreshItemId.Value}");
+
+            var text = RenderedText(Find<ProvenanceCard>(ui.Shop, "ProvenanceCard"));
+            AssertThat(text).Contains("Day 5 — sold: Left your shelf — bought sight-unseen.");
+            AssertThat(text).NotContains("Fresh off the forge");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void ItemNeverSoldAndNoRecordedHistory_StillRendersTheHonestFreshMessage()
+    {
+        // ScoredItemId has empty Item.History and no channel event anywhere in this fixture's
+        // log — the honest-empty-state contract must still hold once a sibling item's sale is on
+        // the log (AllChannels filters by item id, so ScoredItemId's card must stay untouched).
+        var ui = MountMainUi(new SimAdapter(ShelfWorldWithSaleEvents()));
+        try
+        {
+            PressEnabled(ui.Shop, $"Provenance_{ScoredItemId.Value}");
+
+            var text = RenderedText(Find<ProvenanceCard>(ui.Shop, "ProvenanceCard"));
+            AssertThat(text).Contains("Fresh off the forge — no history yet.");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
     public void MakersMarkAndThreeSubScores_Display()
     {
         var ui = MountMainUi(new SimAdapter(ShelfWorld()));
@@ -233,6 +300,24 @@ public class ProvenanceCardTests
             Player = baseState.Player with { Shelf = shelf },
         };
     }
+
+    /// <summary>
+    /// P2-MEMORY-06 fixture: <see cref="ShelfWorld"/> plus an event log naming two of its items —
+    /// a pre-history counter sale and a post-history commission for <see cref="HistoryItemId"/>,
+    /// and a shelf sale for the otherwise-history-empty <see cref="FreshItemId"/>. <see
+    /// cref="ScoredItemId"/> is deliberately left unnamed by any event, proving the honest-empty
+    /// state survives a log that is non-empty for a SIBLING item.
+    /// </summary>
+    private static GameState ShelfWorldWithSaleEvents() => ShelfWorld() with
+    {
+        EventLog = ImmutableList.Create<GameEvent>(
+            new CounterSaleClosed(new HeroId(1), HistoryItemId, Price: 10, Pinned: false)
+                with { Id = new EventId(1), Day = 0 },
+            new CommissionFulfilled(new HeroId(2), HistoryItemId, Premium: 5)
+                with { Id = new EventId(2), Day = 3 },
+            new ItemSold(FreshItemId, new HeroId(3), Price: 8, FromPlayerShop: true)
+                with { Id = new EventId(3), Day = 5 }),
+    };
 
     private static GameState GearedHeroWorld()
     {
