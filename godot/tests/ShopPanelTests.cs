@@ -9,6 +9,7 @@ using GameSim.Drama;
 using GameSim.Kernel;
 using GdUnit4;
 using Godot;
+using GodotClient.Panels;
 using GodotClient.Ui;
 using static GdUnit4.Assertions;
 using static GodotClient.Tests.UiTestSupport;
@@ -952,6 +953,75 @@ public class ShopPanelTests
         finally
         {
             Unmount(ui);
+        }
+    }
+
+    // ── P2-HONEST-17: GameState.RivalMarketSharePermille gets a client reader on the Rival Shelf ──
+    // Before this unit the idle-day cost the rival collects (MarketShareSystem, Evening) and spends
+    // discounting its own next-morning stock (RivalRestockSystem) had no godot/scripts reader at
+    // all — an idle day's price was invisible. ShopPanel.RivalEdgeGradient bands it into a phrase;
+    // these guards drive that production list generically (TavernPanelTests' own
+    // ConfidenceBand_RendersItsOwnRoomLine_ForEveryBandInTheGradient shape), plus the explicit
+    // regression this unit exists to prevent: the raw permille never reaching the screen.
+
+    private static GameState WorldAtRivalShare(int permille) =>
+        GameComposition.NewCampaign(9701) with { RivalMarketSharePermille = permille };
+
+    [TestCase]
+    public void RivalEdgeChip_RendersItsOwnPhrase_ForEveryBandInTheGradient()
+    {
+        // The guard: iterates ShopPanel.RivalEdgeGradient.Bands itself — production's own list —
+        // rather than one hand-copied literal assertion per band. A band added to that list later
+        // is exercised by this same loop with no test-file edit.
+        foreach (var band in ShopPanel.RivalEdgeGradient.Bands)
+        {
+            var sample = band.UpperBoundExclusive == int.MaxValue ? 1000 : band.UpperBoundExclusive - 1;
+            var ui = MountMainUi(new SimAdapter(WorldAtRivalShare(sample)));
+            try
+            {
+                ui.OpenPanel("Shop");
+                var shopText = RenderedText(ui.Shop);
+                AssertThat(shopText).Contains(band.Phrase);
+
+                foreach (var other in ShopPanel.RivalEdgeGradient.Bands)
+                {
+                    if (other.Kind != band.Kind)
+                    {
+                        AssertThat(shopText).NotContains(other.Phrase);
+                    }
+                }
+            }
+            finally
+            {
+                Unmount(ui);
+            }
+        }
+    }
+
+    [TestCase]
+    public void RivalEdgeChip_NeverRendersTheRawPermilleNumber()
+    {
+        // The exact regression this unit guards against: a permille (or the formula that produces
+        // it) leaking onto the player's screen instead of the band phrase it maps to. Scoped to the
+        // Rival Shelf section's own chip (not the whole panel) — the panel's other numbers (gold
+        // prices, item ids) are real and unrelated; only THIS chip's text is under test.
+        foreach (var permille in new[] { 0, 1, 150, 249, 250, 400, 599, 600, 749, 750, 913, 1000 })
+        {
+            var ui = MountMainUi(new SimAdapter(WorldAtRivalShare(permille)));
+            try
+            {
+                ui.OpenPanel("Shop");
+                var rivalSection = Find<Control>(ui.Shop, UiKit.SectionName("Rival Shelf"));
+                var chip = Find<Control>(rivalSection, "StatChip"); // ours: added before the per-item loop
+                var chipText = RenderedText(chip);
+                AssertThat(chipText)
+                    .OverrideFailureMessage($"Rival Edge chip rendered the raw permille ({permille}) instead of a band phrase.")
+                    .NotContains(permille.ToString());
+            }
+            finally
+            {
+                Unmount(ui);
+            }
         }
     }
 }
