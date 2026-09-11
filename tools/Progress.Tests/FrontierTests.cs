@@ -157,6 +157,35 @@ public class FrontierTests
     }
 
     [Fact]
+    public void ADegradedRead_RefusesTheWholeFrontierRatherThanShrinkingIt()
+    {
+        // The tool's two tolerant reads -- a failed `git fetch` and a failed `gh pr list` -- both push
+        // units the SAME way, toward looking unbuilt. So a degraded frontier is not merely incomplete,
+        // it is systematically OVER-full of work that is already done or already in flight, and an
+        // unattended run would rebuild it. A warning on stderr is enough for a human reading the
+        // report; the frontier's consumer cannot see stderr.
+        var result = Reconcile(Plan(Row("P2-MEMORY-05"), Row("P2-MEMORY-06")));
+
+        var text = Frontier.Render(Frontier.Compute(result), new[] { "gh pr list --state open failed" });
+
+        Assert.Contains("Frontier REFUSED", text);
+        Assert.Contains("RUNNABLE none", text);
+        Assert.Contains("gh pr list --state open failed", text);
+        Assert.DoesNotContain("RUNNABLE  P2-MEMORY-05", text);
+    }
+
+    [Fact]
+    public void NoDegradation_RendersNormally()
+    {
+        var result = Reconcile(Plan(Row("P2-MEMORY-05")));
+
+        var text = Frontier.Render(Frontier.Compute(result), Array.Empty<string>());
+
+        Assert.DoesNotContain("REFUSED --", text);
+        Assert.Contains("RUNNABLE  P2-MEMORY-05", text);
+    }
+
+    [Fact]
     public void AnEmptyFrontier_SaysSoRatherThanRenderingNothing()
     {
         // "Everything left is owner-gated" is a legitimate answer and the loop's own stop signal.

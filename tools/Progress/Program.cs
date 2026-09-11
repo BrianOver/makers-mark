@@ -55,8 +55,17 @@ var result = Reconciler.Reconcile(
 
 var headSha = log.Count > 0 ? log[^1].Sha[..9] : "unknown";
 Console.WriteLine(frontierOnly
-    ? Frontier.Render(Frontier.Compute(result))
+    ? Frontier.Render(Frontier.Compute(result), GitShell.Degradations)
     : Report.Build(result, $"{planPath} vs origin/main@{headSha}"));
+
+// A degraded read is fatal to the frontier and only advisory to the report, so the exit code
+// splits the same way the render does. The human report stays exit-0-on-degradation because a
+// 95%-right report beside a stderr warning still beats no report; the frontier does not, because
+// its consumer cannot see stderr and would build off the guess.
+if (frontierOnly && GitShell.Degradations.Count > 0)
+{
+    return 2;
+}
 
 // Missing/malformed Serves: lines (section 7) are reported but deliberately excluded here: it is
 // a backlog against every PR merged since the receipt rule took effect, not a defect in the

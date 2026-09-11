@@ -116,9 +116,28 @@ public static class Frontier
     /// <summary>Plain-text render. Deliberately grep-shaped rather than JSON: the consumer is a
     /// model reading a terminal, and a line it can quote back verbatim in a PR body is worth more
     /// than a structure it has to summarise.</summary>
-    public static string Render(IReadOnlyList<FrontierRow> rows)
+    public static string Render(IReadOnlyList<FrontierRow> rows, IReadOnlyList<string>? degradations = null)
     {
         var sb = new StringBuilder();
+
+        // Fail closed, and say why in the first line so a caller that reads nothing else still
+        // stops. Both degradations this can carry push units the SAME way -- toward looking
+        // unbuilt -- so a degraded frontier is not merely incomplete, it is systematically
+        // over-full of work that is already done or already in flight.
+        if (degradations is { Count: > 0 })
+        {
+            sb.AppendLine("# Frontier REFUSED -- this run read incomplete data, so every row below would be a guess.");
+            sb.AppendLine();
+            foreach (var degradation in degradations)
+            {
+                sb.AppendLine($"DEGRADED  {degradation}");
+            }
+
+            sb.AppendLine();
+            sb.AppendLine("RUNNABLE none -- fix the read and re-run. Never build off a degraded frontier.");
+            return sb.ToString();
+        }
+
         var runnable = rows.Where(r => r.RefusalReason is null).ToList();
         var refused = rows.Where(r => r.RefusalReason is not null).ToList();
 
