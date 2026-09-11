@@ -4,6 +4,7 @@ using System.Linq;
 using GameSim.Classes;
 using GameSim.Contracts;
 using GameSim.Drama;
+using GameSim.Economy;
 using GameSim.Factions;
 using GameSim.Heroes;
 using GameSim.Kernel;
@@ -86,6 +87,59 @@ namespace GodotClient.Panels;
 public partial class TavernPanel : SimPanel
 {
     public const int ScrollbackLines = 50;
+
+    /// <summary>
+    /// P2-LONG-15: the town Confidence gauge's two interior thresholds, given a face a player can
+    /// see rather than left invisible between the endpoints the rest of the client already speaks
+    /// (<c>MainUi</c>'s <see cref="TownConfidenceCollapsed"/> toast at 0, the HUD chip's plain
+    /// silence while everything's fine). <see cref="Bands"/>' threshold VALUES are never
+    /// re-derived or guessed here — they ARE <see cref="GuildAssessmentSystem.HeroLeavingThreshold"/>
+    /// and <see cref="GuildAssessmentSystem.RivalExpansionThreshold"/>, the exact constants the sim
+    /// already gates its own <see cref="RivalExpansionTriggered"/>/<see cref="HeroConsideringLeaving"/>
+    /// events on (CLAUDE.md law 12: "show only what the sim decided").
+    ///
+    /// <para><see cref="For"/> is the only place that reads <see cref="Bands"/>, and
+    /// <see cref="BuildBarSection"/> renders whatever <see cref="BandInfo.RoomLine"/> comes back
+    /// GENERICALLY — never a switch over <see cref="Band"/> by name. A guard test
+    /// (<c>ConfidenceGradientTests</c>) iterates <see cref="Bands"/> itself, so a third interior
+    /// threshold added here later is exercised by that same test with no test-file edit.</para>
+    /// </summary>
+    public static class ConfidenceGradient
+    {
+        public enum Band
+        {
+            /// <summary>Below <see cref="GuildAssessmentSystem.HeroLeavingThreshold"/>.</summary>
+            Thinning,
+
+            /// <summary>Below <see cref="GuildAssessmentSystem.RivalExpansionThreshold"/> but not
+            /// yet <see cref="Thinning"/>.</summary>
+            Slipping,
+
+            /// <summary>At or above <see cref="GuildAssessmentSystem.RivalExpansionThreshold"/> —
+            /// nothing to say; the room reads as normal.</summary>
+            Steady,
+        }
+
+        /// <summary>An empty <see cref="RoomLine"/> means "render nothing" — <see cref="Band.Steady"/>'s
+        /// own way of needing no comment, matching every other empty-state convention this file
+        /// already uses (e.g. <see cref="BuildAwaySection"/>).</summary>
+        public readonly record struct BandInfo(Band Kind, int UpperBoundExclusive, string RoomLine);
+
+        /// <summary>Ascending by <see cref="BandInfo.UpperBoundExclusive"/> so <see cref="For"/>'s
+        /// first match is always the tightest (most severe) band the gauge still qualifies for.</summary>
+        public static readonly IReadOnlyList<BandInfo> Bands = new[]
+        {
+            new BandInfo(
+                Band.Thinning, GuildAssessmentSystem.HeroLeavingThreshold,
+                "The room's thinner than it should be tonight — more empty stools than usual."),
+            new BandInfo(
+                Band.Slipping, GuildAssessmentSystem.RivalExpansionThreshold,
+                "Talk in here has an edge tonight — more of it drifts toward the rival's stall than it used to."),
+            new BandInfo(Band.Steady, int.MaxValue, string.Empty),
+        };
+
+        public static BandInfo For(int confidencePermille) => Bands.First(b => confidencePermille < b.UpperBoundExclusive);
+    }
 
     /// <summary>Which kind of live thread a patron's "Pursue" row named — the Handshake section
     /// resolves the SAME hero+kind pair fresh off current state every render (never cached data),
@@ -240,6 +294,16 @@ public partial class TavernPanel : SimPanel
         var section = Section("WORK THE ROOM — IN THE COMMON ROOM");
         _content!.AddChild(section.Root);
 
+        // P2-LONG-15: the Confidence gradient's room-wide read — see ConfidenceGradient's class
+        // doc. Generic over the band list, so a Steady room prints nothing (this section's own
+        // "no forced empty text" convention, same as the patron-count check just below).
+        var band = ConfidenceGradient.For(state.Rent.ConfidencePermille);
+        if (band.RoomLine.Length > 0)
+        {
+            var moodLine = AddLabel(section.Body, $"  {band.RoomLine}");
+            moodLine.AddThemeColorOverride("font_color", GameTheme.WarnColor);
+        }
+
         var patrons = state.Heroes.Values.Where(h => h.Alive && !awaySet.Contains(h.Id.Value)).ToList();
         if (patrons.Count == 0)
         {
@@ -288,6 +352,19 @@ public partial class TavernPanel : SimPanel
         {
             var backLabel = AddLabel(infoCol, "  fresh up from the Mine tonight");
             backLabel.AddThemeColorOverride("font_color", GameTheme.GoodColor);
+        }
+
+        // P2-LONG-15: the sim's own HeroConsideringLeaving record (GuildAssessmentSystem,
+        // edge-triggered the day Confidence first crossed below HeroLeavingThreshold) gets a face
+        // on the actual hero it named, for as long as Confidence is STILL below that same
+        // threshold — never a guessed pick, never a threshold this file invents; both the event
+        // and the live comparison read straight off state.
+        if (state.Rent.ConfidencePermille < GuildAssessmentSystem.HeroLeavingThreshold
+            && state.EventLog.OfType<HeroConsideringLeaving>().Any(e => e.Hero == hero.Id))
+        {
+            var leavingLabel = AddLabel(
+                infoCol, "  \"I keep thinking about the roads out of here, smith. That's all. Thinking.\"");
+            leavingLabel.AddThemeColorOverride("font_color", GameTheme.WarnColor);
         }
 
         AddLabel(body, $"  {Topic(state, hero, gossipTopics, needsByHero)}");
