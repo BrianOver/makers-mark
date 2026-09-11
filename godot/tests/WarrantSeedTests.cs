@@ -60,6 +60,17 @@ public class WarrantSeedTests
                 .Contains("The Warrant");
             AssertThat(seedLabel.Text).NotContains("999999");
 
+            // P2-ONBOARD-10: the Warrant door never offers the enterable seed field at all — not
+            // merely disabled, hidden — so there is nothing on screen inviting a player to type
+            // over the pin.
+            var seedField = Find<LineEdit>(screen, "SeedField");
+            AssertThat(seedField.Visible).IsFalse();
+            AssertThat(seedField.Editable).IsFalse();
+
+            // Even a direct poke at the hidden field's Text (what a bypassing caller — or a
+            // regression — might do) must not defeat the pin: OnBeginPressed ignores the field
+            // outright for this door, by an explicit branch, not because the field is empty.
+            seedField.Text = "42";
             Press(screen, "Begin");
 
             var built = MainUi.AdapterOverride!.CurrentState;
@@ -89,8 +100,9 @@ public class WarrantSeedTests
             Press(screen, "Pick_alchemy");
 
             // No pin outside blacksmith (ApprenticePlayer's one gear recipe, "dagger", is a
-            // blacksmith recipe — see WarrantSeed's own doc) — the ordinary seed display stands.
-            AssertThat(Find<Label>(screen, "SeedLabel").Text).IsEqual("Seed: 424242");
+            // blacksmith recipe — see WarrantSeed's own doc) — the ordinary seed display stands,
+            // now as the enterable SeedField (P2-ONBOARD-10) rather than a read-only label.
+            AssertThat(Find<LineEdit>(screen, "SeedField").Text).IsEqual("424242");
 
             Press(screen, "Begin");
 
@@ -122,9 +134,9 @@ public class WarrantSeedTests
             Press(screen, "Pick_blacksmith");
 
             AssertThat(Find<VBoxContainer>(screen, "ReturningSmithChoice").Visible).IsTrue();
-            AssertThat(Find<Label>(screen, "SeedLabel").Text)
+            AssertThat(Find<LineEdit>(screen, "SeedField").Text)
                 .OverrideFailureMessage("A returning smith's pick must never be pinned to the Warrant seed.")
-                .IsEqual("Seed: 777777");
+                .IsEqual("777777");
 
             // "Run the course" stays the default (never pressed SkipCourse) — the pin is gated on
             // HasPriorProgress alone, independent of which returning-smith choice gets made.

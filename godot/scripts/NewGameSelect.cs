@@ -41,6 +41,15 @@ namespace GodotClient;
 /// which uses the pinned <see cref="WarrantSeed"/> instead (P2-ONBOARD-05, §11.15's "The
 /// Warrant") and prints its name in place of the raw number; see <see cref="WarrantSeed"/>'s own
 /// doc for exactly which picks qualify.</para>
+///
+/// <para>P2-ONBOARD-10 (§11.15, plan line ~4640): that drawn number is now ENTERABLE, not just
+/// displayed — <c>SeedField</c>, built in <see cref="BuildPrimer"/>. <see cref="OnBeginPressed"/>
+/// reads it at Begin time: a blank field keeps the wall-clock draw exactly as above, a valid
+/// number overrides it, and anything else refuses to Begin rather than silently starting on a
+/// seed the player never typed. The Warrant door is untouched by any of this — the field is
+/// hidden for it, and <see cref="OnBeginPressed"/> never even reads it when
+/// <c>_pendingSeedIsWarrant</c> is true, so the pin's precedence is explicit code, not emergent
+/// behavior a stray Text value could defeat.</para>
 /// </summary>
 public partial class NewGameSelect : Control
 {
@@ -82,6 +91,11 @@ public partial class NewGameSelect : Control
     /// diverges from the script that found this seed; <see cref="WarrantFictionName"/> and every
     /// other string this unit authors state only the mechanical guarantee
     /// (<c>ApprenticeWarrant.Covers</c>, true for ANY script) — never a specific day-N event.</para>
+    ///
+    /// <para><b>P2-ONBOARD-10's seed field never gets a vote here.</b> The field <see cref="_seedField"/>
+    /// is hidden outright for this door (<see cref="OnProfessionPicked"/>), and <see
+    /// cref="OnBeginPressed"/> never reads it when <c>_pendingSeedIsWarrant</c> is true — the pin
+    /// wins by an explicit branch, not by the field happening to be empty or disabled.</para>
     /// </summary>
     public const ulong WarrantSeed = 1;
 
@@ -93,6 +107,26 @@ public partial class NewGameSelect : Control
     /// (§11.13's canonical wording, <c>THE-GAME.md</c> §3.3) — never a script-dependent beat.
     /// </summary>
     public const string WarrantFictionName = "The Warrant — through day three, the Mine keeps no one.";
+
+    /// <summary>
+    /// P2-ONBOARD-10 (§11.15, plan line ~4640): <c>SeedField</c>'s own caption — the honest promise
+    /// and nothing past it. P2-ONBOARD-03's measurement (#670) is why this is safe to offer at
+    /// all: 20 of 20 seeds diverge from day 1 under different play, so re-entering one buys
+    /// "same town, different week," never a replay of a specific fight — the copy says exactly
+    /// that, never "replay" or "redo."
+    /// </summary>
+    private const string SeedFieldHint =
+        "Enter a seed below to visit the same town again — same town, different week, never the same day twice.";
+
+    /// <summary>
+    /// P2-ONBOARD-10: what a malformed <see cref="_seedField"/> entry says instead of silently
+    /// starting a random town while the player believes they typed theirs — the silent-fallback
+    /// failure this repo has shipped before. Numbers only, named in the player's own words (no
+    /// "ulong", no "RNG"). Public (mirrors <see cref="WarrantFictionName"/>/<see cref="SkipCourseNote"/>)
+    /// so <c>SeedFieldTests</c> can assert the exact copy, not just a guessed substring.
+    /// </summary>
+    public const string SeedFieldErrorText =
+        "Seeds are numbers only — fix it above, or clear the box to get a new town instead.";
 
     /// <summary>
     /// Scene-change hook: null = real <c>GetTree().ChangeSceneToFile</c>. Tests stub this
@@ -166,12 +200,21 @@ public partial class NewGameSelect : Control
     private VBoxContainer _primer = null!;
     private SettingsPanel _settings = null!;
     private Label _seedLabel = null!;
+    private LineEdit _seedField = null!;
+    private Label _seedError = null!;
 
     /// <summary>The profession a pick chose, held while the primer is up; null in the picker
     /// state (nothing committed) and cleared again by Back — the "never leak a campaign on
     /// back-out" invariant.</summary>
     private string? _pendingProfessionId;
     private ulong _pendingSeed;
+
+    /// <summary>
+    /// P2-ONBOARD-10: set alongside <see cref="_pendingSeed"/> by <see cref="OnProfessionPicked"/>,
+    /// re-read by <see cref="OnBeginPressed"/> so the Warrant's precedence over <see cref="_seedField"/>
+    /// is one explicit boolean rather than something inferred from the field's own state.
+    /// </summary>
+    private bool _pendingSeedIsWarrant;
 
     // U17 (§11.14.14 defect): the returning-smith choice — see Ui.TutorialFlow.ResetForReturningSmith's
     // own doc for the defect this closes. Only ever shown when Ui.TutorialFlow.HasPriorProgress says
@@ -616,9 +659,26 @@ public partial class NewGameSelect : Control
         clockNote.AddThemeColorOverride("font_color", GameTheme.TextDim);
         primer.AddChild(clockNote);
 
-        _seedLabel = new Label { Name = "SeedLabel", Text = "Seed: —" };
+        _seedLabel = new Label { Name = "SeedLabel", Text = "Seed: —", AutowrapMode = TextServer.AutowrapMode.WordSmart };
         _seedLabel.AddThemeColorOverride("font_color", GameTheme.TextDim);
         primer.AddChild(_seedLabel);
+
+        // P2-ONBOARD-10: the enterable seed itself. Visible/Editable and Text are all driven by
+        // OnProfessionPicked (Warrant door: hidden and empty; every other door: shown, editable,
+        // pre-filled with the seed already drawn) — never left at these construction-time
+        // defaults once a pick has happened.
+        _seedField = new LineEdit { Name = "SeedField", CustomMinimumSize = new Vector2(0, PickButtonHeight) };
+        _seedField.TextChanged += _ => HideSeedError();
+        primer.AddChild(_seedField);
+
+        _seedError = new Label
+        {
+            Name = "SeedError",
+            Visible = false,
+            AutowrapMode = TextServer.AutowrapMode.WordSmart,
+        };
+        _seedError.AddThemeColorOverride("font_color", GameTheme.DangerColor);
+        primer.AddChild(_seedError);
 
         // U17 (§11.14.14 defect): the returning-smith choice. Built once, hidden until
         // OnProfessionPicked re-checks Ui.TutorialFlow.HasPriorProgress against the live save.
@@ -733,6 +793,14 @@ public partial class NewGameSelect : Control
         _returningSmithNote.Text = skip ? SkipCourseNote : RunCourseNote;
     }
 
+    /// <summary>P2-ONBOARD-10: clears a stale "not a number" complaint the moment the player
+    /// starts fixing it — an error left showing after the field it describes has changed reads
+    /// as the game not noticing the correction.</summary>
+    private void HideSeedError()
+    {
+        _seedError.Visible = false;
+    }
+
     private void OnProfessionPicked(string professionId)
     {
         _pendingProfessionId = professionId;
@@ -741,10 +809,20 @@ public partial class NewGameSelect : Control
         // profile's first BLACKSMITH Begin (see WarrantSeed's own doc for why both conditions are
         // required). Every other pick — a different profession, or any pick once
         // HasPriorProgress reads true — draws SeedSource() exactly as before this unit, still
-        // drawn once here and reused by Begin (display == what ships).
-        var isWarrant = !Ui.TutorialFlow.HasPriorProgress && professionId == ProfessionRegistry.BlacksmithId;
-        _pendingSeed = isWarrant ? WarrantSeed : SeedSource();
-        _seedLabel.Text = isWarrant ? WarrantFictionName : $"Seed: {_pendingSeed}";
+        // drawn once here and reused by Begin (display == what ships) unless P2-ONBOARD-10's
+        // field carries a player-typed override at Begin time (see OnBeginPressed).
+        _pendingSeedIsWarrant = !Ui.TutorialFlow.HasPriorProgress && professionId == ProfessionRegistry.BlacksmithId;
+        _pendingSeed = _pendingSeedIsWarrant ? WarrantSeed : SeedSource();
+        _seedLabel.Text = _pendingSeedIsWarrant ? WarrantFictionName : SeedFieldHint;
+
+        // P2-ONBOARD-10: the Warrant door keeps its pin entirely out of player hands — the field
+        // is hidden, not merely non-editable, so nothing on screen invites typing over a value
+        // OnBeginPressed ignores outright for this door. Every other door shows it pre-filled
+        // with the seed just drawn above, editable before Begin.
+        _seedField.Visible = !_pendingSeedIsWarrant;
+        _seedField.Editable = !_pendingSeedIsWarrant;
+        _seedField.Text = _pendingSeedIsWarrant ? string.Empty : _pendingSeed.ToString(CultureInfo.InvariantCulture);
+        HideSeedError();
 
         // U17: re-armed every time the primer mounts fresh — HasPriorProgress is re-checked against
         // the LIVE save (never cached from a previous pick), and the choice itself always resets to
@@ -774,6 +852,31 @@ public partial class NewGameSelect : Control
         if (_pendingProfessionId is null)
         {
             return; // defensive: Begin is only reachable after a pick (Primer stays hidden otherwise)
+        }
+
+        // P2-ONBOARD-10 (§11.15, plan line ~4640): the one validated input on this screen.
+        // PRECEDENCE, explicit and never emergent — the Warrant's pin always wins: when
+        // _pendingSeedIsWarrant is true the field is hidden (OnProfessionPicked) and its content
+        // is never even read here, so nothing typed into it — not even a test poking the Text
+        // property directly — can defeat the pin. Every other door reads the field: blank keeps
+        // the wall-clock draw already sitting in _pendingSeed ("surprise me," unchanged from
+        // before this unit); a valid whole number overrides it; anything else refuses to Begin
+        // rather than silently starting on a seed the player never typed — RETURN here leaves the
+        // primer up with SeedError explaining why, exactly as promised on screen.
+        if (!_pendingSeedIsWarrant)
+        {
+            var typed = _seedField.Text.Trim();
+            if (typed.Length > 0)
+            {
+                if (!ulong.TryParse(typed, out var parsedSeed))
+                {
+                    _seedError.Text = SeedFieldErrorText;
+                    _seedError.Visible = true;
+                    return;
+                }
+
+                _pendingSeed = parsedSeed;
+            }
         }
 
         GD.Print($"[NewGameSelect] new campaign: profession {_pendingProfessionId}, seed {_pendingSeed}");
