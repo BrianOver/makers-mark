@@ -162,17 +162,43 @@ public class SurfaceUnlocksTests
             .IsTrue();
     }
 
-    /// <summary>Every gate names a real, non-empty reason — the tooltip/toast text a closed
-    /// surface's button shows, and the string <see cref="ActionReachabilityCensusTests"/>' own
-    /// gated Surfaces entries quote from (its own doc: "each gated entry must carry its gate in
-    /// the surface string").</summary>
+    /// <summary>
+    /// P2-HONEST-02: the defect this unit exists to fix. A single <c>Gate.Reason</c> string used to
+    /// serve both the closed tray button's tooltip AND the one-line arrival toast fired the instant
+    /// the gate opens — one string trying to be honest about two different moments. Every gate's
+    /// <c>ClosedReason</c> names an absence ("nothing's come home yet", "an empty board teaches
+    /// nothing"), which the reused string then asserted was STILL true inside a toast announcing
+    /// that exact absence had just ended. This census walks every row (never a spot check on one)
+    /// and pins the property the split exists to guarantee: <c>ClosedReason</c> and
+    /// <c>OpenedReason</c> are both real sentences, they are DISTINCT strings, and
+    /// <c>OpenedReason</c> is never phrased in <c>ClosedReason</c>'s own conditional voice
+    /// ("Opens once...") — the exact phrasing that made the old single string lie the instant it
+    /// fired as a toast.
+    /// </summary>
     [TestCase]
-    public void EveryGate_NamesANonEmptyReason()
+    public void EveryGate_NamesDistinctNonEmptyClosedAndOpenedReasons()
     {
         foreach (var gate in SurfaceUnlocks.Gates)
         {
-            AssertThat(string.IsNullOrWhiteSpace(gate.Reason))
-                .OverrideFailureMessage($"{gate.SurfaceId}'s gate carries no reason — a closed tray button would grey out with a blank tooltip.")
+            AssertThat(string.IsNullOrWhiteSpace(gate.ClosedReason))
+                .OverrideFailureMessage($"{gate.SurfaceId}'s gate carries no closed reason — a closed tray button would grey out with a blank tooltip.")
+                .IsFalse();
+
+            AssertThat(string.IsNullOrWhiteSpace(gate.OpenedReason))
+                .OverrideFailureMessage($"{gate.SurfaceId}'s gate carries no opened reason — the arrival toast would fire blank.")
+                .IsFalse();
+
+            AssertThat(gate.ClosedReason)
+                .OverrideFailureMessage(
+                    $"{gate.SurfaceId}'s ClosedReason and OpenedReason are the same string — one " +
+                    "Reason is still doing both jobs, the exact defect this split exists to fix.")
+                .IsNotEqual(gate.OpenedReason);
+
+            AssertThat(gate.OpenedReason.StartsWith("Opens once"))
+                .OverrideFailureMessage(
+                    $"{gate.SurfaceId}'s OpenedReason still opens with the closed-tooltip's own " +
+                    "conditional voice (\"Opens once...\") — the arrival toast fires AFTER the gate " +
+                    "opened and must say so, not restate the condition as still pending.")
                 .IsFalse();
         }
     }
