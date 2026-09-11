@@ -4104,53 +4104,60 @@ public partial class MainUi : Control
     /// <summary>
     /// The tick's one sound, chosen by what actually happened. Deliberately ONE cue per tick and not a
     /// cue per event: a busy Evening can carry a dozen sales and a death, and firing a sound for each
-    /// turns the most dramatic moment of the day into a burst of noise. Priority order is "worst news
-    /// first" — a refusal is the thing the player most needs to notice, then the day's own bell.
+    /// turns the most dramatic moment of the day into a burst of noise.
+    ///
+    /// <para><b>P2-SCREEN-16: cue SELECTION belongs to <see cref="TickCuePriority.Resolve"/> now, not
+    /// a hand-written cascade here.</b> This method's only job is deciding which <see
+    /// cref="TickOutcomeKind"/>s are true of THIS tick and handing the set over; "worst news first" (a
+    /// refusal beats a departure beats the plain day bell) lives in <see
+    /// cref="TickCuePriority.Declarations"/>, where a ceremony staged later adds its own rank instead
+    /// of another branch inserted into this method (P2-KTD11).</para>
     /// </summary>
     private void SoundTheTick(DayPhase completedPhase, GameState state)
     {
-        if (!Adapter.LastRejections.IsEmpty)
-        {
-            Audio.Play(Cue.Rejected);
-            return;
-        }
-
-        // Morning ending is the send-off: the party is actually leaving, which deserves its own cue
-        // rather than the generic bell.
-        //
         // `completedPhase == state.Phase` catches the OTHER caller of this event: SimAdapter.Queue's
         // immediate-action branch (buy/craft/stock/reprice — the 2026-07-30 fix) raises StateChanged
         // with the CURRENT, un-advanced phase, because nothing actually completed — see Queue's own
-        // doc. Without this guard every accepted craft/buy during Morning read as "the party just
-        // departed": the wrong cue today, and — once this unit wired Drawer.Close() below to
-        // `departing` — the Forge/Shop drawer slamming shut under the player's own click, which would
-        // have been a far worse regression than the bug this method exists to fix. `state` is already
-        // the POST-event CurrentState (fetched by the caller, OnPhaseCompleted), so the comparison
-        // costs nothing extra.
-        // Nothing completed — an immediate action just reported itself. Say nothing.
+        // doc. `state` is already the POST-event CurrentState (fetched by the caller,
+        // OnPhaseCompleted), so the comparison costs nothing extra. A refusal is real regardless of
+        // this guard — an immediate action can still be rejected — so it is gathered unconditionally
+        // below; Departure/DayBell only belong to a phase that actually completed, never to "still
+        // Morning, an action just landed."
         //
-        // The guard below correctly stopped an immediate action from firing PartyDepart, but then fell
-        // straight through to `Cue.Bell` for it: a 1.6s bronze bell on EVERY accepted craft, buy,
-        // shelve and reprice. Owner's playtest, two complaints with this one cause — "doing anything in
-        // the forge changes the music" (a long tonal bell over a -22 dB bed reads as the music
-        // changing) and "shop stock sound was changed... it's now a scary bell instead of the
-        // shop/register noise" (Shelve's own cue, then the bell on top of it). Starting a fresh
+        // Losing this guard previously meant every accepted craft/buy during Morning rang the day's
+        // 1.6s bronze bell over a -22 dB music bed: "doing anything in the forge changes the music" and
+        // "shop stock sound was changed... it's now a scary bell instead of the shop/register noise"
+        // (Shelve's own cue, then the bell on top of it) were both this one gap. Starting a fresh
         // campaign fires a burst of immediate actions, which is the "restarting had a lot of strange
         // noises" report too.
-        //
-        // The bell belongs to the day advancing. This method's own doc says "the tick's one sound" —
-        // an immediate action is not a tick.
-        if (completedPhase == state.Phase)
+        var tickActuallyAdvanced = completedPhase != state.Phase;
+
+        var candidates = new System.Collections.Generic.List<TickOutcomeKind>();
+        if (!Adapter.LastRejections.IsEmpty)
         {
-            return;
+            candidates.Add(TickOutcomeKind.Refusal);
         }
 
-        // Morning ending is the send-off: the party is actually leaving, which deserves its own cue
-        // rather than the generic bell.
-        var departing = completedPhase == DayPhase.Morning;
-        Audio.Play(departing ? Cue.PartyDepart : Cue.Bell);
+        if (tickActuallyAdvanced)
+        {
+            // Morning ending is the send-off: the party is actually leaving, which deserves its own
+            // cue rather than the generic bell.
+            if (completedPhase == DayPhase.Morning)
+            {
+                candidates.Add(TickOutcomeKind.Departure);
+            }
 
-        if (!departing)
+            candidates.Add(TickOutcomeKind.DayBell);
+        }
+
+        if (TickCuePriority.Resolve(candidates) is not { } winner)
+        {
+            return; // Nothing completed and nothing was refused — say nothing (P2-SCREEN-16).
+        }
+
+        Audio.Play(winner.CueId, why: winner.Kind.ToString());
+
+        if (winner.Kind != TickOutcomeKind.Departure)
         {
             return;
         }
