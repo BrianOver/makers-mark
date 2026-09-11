@@ -28,6 +28,43 @@ public class PlanParserTests
     }
 
     [Fact]
+    public void ReadsTheDeletionMarkerOffTheCell()
+    {
+        // The doc's convention, and the reason it trails rather than leads: the creation marker
+        // reads "new `Foo.cs`" and the deletion marker reads "`Foo.cs` (deleted)", which is how
+        // both already say themselves out loud. The real row this was built for is P2-MEMORY-14.
+        var text = """
+            | Unit | Title | Key files | Depends on | Flags |
+            |---|---|---|---|---|
+            | P2-MEMORY-14 | The bind and the export | `godot/scripts/panels/LegendsWall.cs`, `godot/scripts/panels/ChronicleScroll.cs` (deleted) | P2-MEMORY-11 | [G] |
+            """;
+
+        var unit = Assert.Single(PlanParser.Parse(text).Units);
+
+        Assert.Equal(2, unit.Files.Count);
+        Assert.False(unit.Files[0].IsDeleted);
+        Assert.True(unit.Files[1].IsDeleted);
+    }
+
+    [Fact]
+    public void ProseAboutDeletionElsewhereInTheCell_MarksNothing()
+    {
+        // A cell can talk about deletion without saying WHICH path goes away -- P2-MEMORY-12's
+        // real row is exactly this shape ("the marquee dies", but AdventureTicker.cs survives
+        // because its FormatLine switch is reused). Marking a surviving file as deleted would
+        // invert its check and hide a genuinely missing file, so only the adjacent marker counts.
+        var text = """
+            | Unit | Title | Key files | Depends on | Flags |
+            |---|---|---|---|---|
+            | P2-MEMORY-12 | The marquee dies | the deleted form lived in `godot/scripts/ui/AdventureTicker.cs` | — | [G] |
+            """;
+
+        var unit = Assert.Single(PlanParser.Parse(text).Units);
+
+        Assert.False(Assert.Single(unit.Files).IsDeleted);
+    }
+
+    [Fact]
     public void ParsesWellFormedT10Row()
     {
         var text = """

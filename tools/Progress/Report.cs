@@ -198,7 +198,7 @@ public static class Report
 
     private static void AppendFalseReceipts(StringBuilder sb, IReadOnlyList<FalseReceipt> findings)
     {
-        sb.AppendLine("## 8. False receipts (Serves: names a unit whose own path is not on origin/main)");
+        sb.AppendLine("## 8. False receipts (Serves: names a unit whose own cited path disagrees with origin/main)");
         sb.AppendLine();
 
         if (findings.Count == 0)
@@ -209,7 +209,10 @@ public static class Report
         {
             foreach (var f in findings)
             {
-                sb.AppendLine($"- PR #{f.PrNumber} claims `Serves: {f.UnitId}`, but `{f.Path}` is not on origin/main. The receipt can lie; the census cannot (rule 12).");
+                var disagreement = f.PathWasToBeDeleted
+                    ? $"but `{f.Path}` — which that unit promised to DELETE — is still on origin/main"
+                    : $"but `{f.Path}` is not on origin/main";
+                sb.AppendLine($"- PR #{f.PrNumber} claims `Serves: {f.UnitId}`, {disagreement}. The receipt can lie; the census cannot (rule 12).");
             }
         }
 
@@ -280,7 +283,7 @@ public static class Report
         sb.AppendLine($"- Unit-id collisions: {result.Collisions.Count}");
         sb.AppendLine($"- Redundant-dispatch traps (Serves: claims a unit still reported not-landed): {result.ReceiptDispatchTraps.Count}");
         sb.AppendLine($"- Merged PRs missing/malformed Serves: line (reported, does not gate exit code — see below): {result.MissingOrMalformedReceipts.Count}");
-        sb.AppendLine($"- False receipts (Serves: names a unit whose path is missing): {result.FalseReceipts.Count}");
+        sb.AppendLine($"- False receipts (Serves: names a unit whose cited path disagrees with the tree): {result.FalseReceipts.Count}");
         sb.AppendLine($"- Unbuilt units already named in tracked source (verify before building): {result.SourceTaggedUnbuilts.Count}");
 
         var failing = result.MissingFiles.Count > 0 || result.OrderingViolations.Count > 0 || result.Collisions.Count > 0
