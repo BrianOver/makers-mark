@@ -12,9 +12,10 @@ namespace GameSim.Tests.Harness;
 /// 2026-09-03 owner ruling: <see cref="HandForgePlayer"/> is the first harness policy that ever
 /// constructs a <see cref="ForgeTraceInput"/> — closing the blind spot #686 found (every other
 /// policy either auto-crafts or stamps a raw <c>PerformanceGrade</c>, never a real hand-forge).
-/// Anti-fork coverage mirrors <c>SkilledSmithPlayerTests</c> exactly: every non-craft action, and
-/// the recipe/material choice itself, must be byte-identical to what <see cref="BaselinePlayer"/>
-/// already decided — nothing here may re-derive that choice. The hand-forge tests below are the
+/// Anti-fork coverage checks the same shape every Harness/ policy's test suite pins: every
+/// non-craft action, and the recipe/material choice itself, must be byte-identical to what
+/// <see cref="BaselinePlayer"/> already decided — nothing here may re-derive that choice. The
+/// hand-forge tests below are the
 /// grep-level/assertion-level proof this policy genuinely submits a <see cref="ForgeTraceInput"/>
 /// (never merely assumed) and that it is genuinely scored by <see cref="ForgeScorer"/> end-to-end.
 /// </summary>
@@ -26,8 +27,7 @@ public class HandForgePlayerTests
 
     private static GameState ExpeditionStateWithMaterials(int day, int nextItemId, int copper = 20, int slots = 5)
     {
-        // Same fixture shape as SkilledSmithPlayerTests.ExpeditionStateWithMaterials: one ungeared,
-        // alive hero gives BaselinePlayer's HasBuyer check a real gap to craft into.
+        // One ungeared, alive hero gives BaselinePlayer's HasBuyer check a real gap to craft into.
         var hero = new Hero(
             new HeroId(1), "Test Hero", ClassRegistry.VanguardId, Level: 1, MaxHp: 20, Gold: 500,
             GearSet.Empty, ImmutableList<ItemMemory>.Empty, Alive: true, DeepestFloorReached: 0, DiedOnDay: null);

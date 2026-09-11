@@ -325,8 +325,9 @@ public class AtomicEquivalenceTests
     // ForgeTraceInput — CraftingHandlers.cs's own BatchEcho comment, and the Wave 5 U23e entry
     // above, both say so). Grepping every Harness/ policy confirms none ever constructs one:
     // BaselinePlayer (this trace's own driver), MasterworkSeekingPlayer, ApprenticePlayer, and
-    // SkilledSmithPlayer all auto-craft or stamp a bare PerformanceGrade — only the Godot minigame
-    // and this file's sibling BatchEchoTests.cs ever submit a ForgeTraceInput. So
+    // SkilledSmithPlayer (deleted since, P2-HONEST-09) all auto-craft or stamp a bare
+    // PerformanceGrade — only the Godot minigame and this file's sibling BatchEchoTests.cs ever
+    // submit a ForgeTraceInput. So
     // GameState.Player.BatchEcho stays null the entire 30-day idle run exactly as before; raising
     // the floor moves nothing this trace could ever reach. Same class as the L2 cohort-formation
     // NO-OP above. Confirmed directly: the fast lane (which runs this exact test) is 1785/1785
@@ -342,8 +343,9 @@ public class AtomicEquivalenceTests
     // exactly the BatchEchoFloor entry's argument directly above: ForgeScorer is reached only from
     // CraftingHandlers' hand-forge branch — a CraftAction whose Puzzle is a ForgeTraceInput — and
     // this trace's driver, BaselinePlayer, never constructs one (nor do MasterworkSeekingPlayer,
-    // ApprenticePlayer, or SkilledSmithPlayer; only HandForgePlayer/LateMasteryPlayer and the Godot
-    // minigame do). The changed code is never executed on this trace at all. (2) ARITHMETIC
+    // ApprenticePlayer, or SkilledSmithPlayer — deleted since, P2-HONEST-09; only
+    // HandForgePlayer/LateMasteryPlayer and the Godot minigame do). The changed code is never
+    // executed on this trace at all. (2) ARITHMETIC
     // IDENTITY, which is the stronger guarantee and the reason this change is far narrower than
     // "grades move" suggests: the new rule is penalty = dev * retained * DevScale / 1000 where
     // retained = 1000 - min(forgiveness * ForgivenessGain, MaxForgivenessPermille). At zero
