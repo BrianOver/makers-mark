@@ -323,7 +323,7 @@ public sealed class AgentPlaytestBridge
 
     /// <summary>"town", "interior:&lt;venueKey&gt;", "panel:&lt;id&gt;", or "overlay:&lt;name&gt;" —
     /// whichever thing is actually covering the screen right now wins. An overlay (Ledger/Camp/
-    /// Mirror/Forecast/Bestiary/Commissions/Legends/the system menu) outranks a drawer panel because
+    /// Mirror/Forecast/Commissions/Legends/the system menu) outranks a drawer panel because
     /// <c>MainUi</c>'s own tray buttons can open one (e.g. "OpenLedger") without first closing
     /// whatever drawer panel happened to be open, and these overlays draw ABOVE the drawer by design
     /// (<c>MainUi.cs</c>'s own "FullRect overlays above the drawer" comments) — so an overlay open at

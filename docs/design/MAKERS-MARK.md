@@ -1785,7 +1785,7 @@ There are exactly 25 `PlayerAction` types (`sim/GameSim/Contracts/Actions.cs`, o
 
 **Reachability verdict.** **All 25 actions have a recorded Godot surface.** The four Phase-D gold sinks (#21-24) were surfaced in the reachability wave; the table above records where each now lives. This is no longer checked by reading — `godot/tests/ActionReachabilityCensusTests.cs` reflection-enumerates every concrete `PlayerAction` and fails BY NAME on any that has neither a named surface nor a pinned exclusion with a reason. Its exclusions map is currently empty. Note the census is a *decision* census: it proves a surfacing decision was recorded for every action, not that any given button is clickable — that proof lives in the `PressEnabled` tests in `ForgeCraftTests`, `LegendsWallTests` and `LedgerModalTests`.
 
-No Godot panel is orphaned. Roughly half of the panels are pure read-only displays by design (HeroesPanel, TavernPanel, DepthsPanel, DemandPanel, HeroCards, ProgressionPanel, MineWatch, RaidForecastBoard, BestiaryPanel, ChronicleScroll, ScryingMirror, DelveStage, ProvenanceCard) — they submit nothing and exist to make the sim legible. The CLI (`sim/GameSim.Cli/Program.cs`) is a strict superset of the Godot client's action reach.
+No Godot panel is orphaned. Roughly half of the panels are pure read-only displays by design (HeroesPanel, TavernPanel, DepthsPanel, DemandPanel, HeroCards, ProgressionPanel, MineWatch, RaidForecastBoard, ChronicleScroll, ScryingMirror, DelveStage, ProvenanceCard) — they submit nothing and exist to make the sim legible. The CLI (`sim/GameSim.Cli/Program.cs`) is a strict superset of the Godot client's action reach.
 
 **Timing model.** 22 of 25 actions resolve instantly via `ApplyNow` (`GameKernel.cs:59-103`), which applies the one action, persists RNG + action log, and does NOT advance the phase or reset budgets. Exactly three ride the bell as deliberate ceremony: `UpgradeForgeAction`, `SetProfessionsAction`, `CommissionLegendaryWorkAction` (`ActionTiming.cs:121-128`). The list is deny-by-default: any future action type queues until someone opts it in (`ActionTiming.cs:60-62`).
 
@@ -3276,14 +3276,15 @@ the goodwill". It is on the multi-agent deny list, so no session may edit it —
 you change it by hand, the repo's most-read file contradicts §3.5, and rule 8 says a doc git contradicts is
 an instruction the next session obeys.
 
-OQ6. **The Bestiary is unreachable, and a comment in shipped code says otherwise.** Found while
-building U9's surface roster. `BestiaryPanel` is constructed and mounted, `MainUi`'s hotspot router
-handles `"Bestiary"` live, and `MainUi`'s own doc comment says the panel is "opened from the Tavern's
-'Bestiary' hotspot" — but `InteriorLayout2D` declares no station carrying that action, and has not
-since the 2.5D pivot. A player cannot open it by any means. Two honest doors: give the Tavern the
-station its comment already claims, or delete the panel. Until then the roster declares its way in as
-an honest `null`, pinned to an exact four-item list so a fifth unreachable surface fails the build.
-*Deferred — a design call, not a tutorial defect, but the lying comment should die either way.*
+OQ6. **The Bestiary is unreachable, and a comment in shipped code says otherwise — ruled
+`P2-SCREEN-14`: delete the panel.** Its own content duplicated what a live raid already renders
+(monster kind, HP, and portrait via `DelveStage`/`MineWatch`'s `AssetCatalog.MonsterPortrait`,
+for whichever venue a party is actually delving — Emberfall/Gloomwood/Sunken Crypt are all in
+`VenueRegistry.LiveRotation` today, so there was no dormant content left for a gallery to preview
+either); its remaining rows (Attack/Defense/Gold-per-kill/ore drop) were stat-sheet trivia no
+player verb ever reads. `BestiaryPanel`, its tests, and every lying "opened from the Tavern's
+Bestiary hotspot" comment are gone; the roster's "no live way in yet" list drops to three
+(Heroes/Chronicle/Pip).
 
 OQ5. **The plan slots are empty, so this question is closed.** This program landed inline because rule 6
 caps `docs/plans/` at two and both slots were held. Both docs are now deleted as abandoned under rule 7,
@@ -4330,7 +4331,7 @@ the brush is named here rather than discovered later.
 | §11.14.14 OQ1 (ruled 2026-08-24) | Decision #5 is "buy the ore, or buy the faction's favour"; building the gift was declined | **Brush, named:** the ideation proposed cutting the faction layer — that is a re-litigation, not a proposal. What ships without a ruling is `P2-MEMORY-09`, because the layer's own copy lies about its mechanism (72 `cooled` variants advertise a surcharge the sim cannot charge). The cut question waits for P2-OQ5, framed against *fixed* copy rather than lying copy |
 | §11.14.14 OQ2 / OQ3 | Bryn gets her own body; the timing-skill gate is deliberate and stated | `P2-ONBOARD` builds on both. The Heartpiece's purchased-route legality (`P2-LONG-12`) is OQ3's ruling applied — gating the ending's best outcome on minigame skill would quietly contradict it |
 | §11.14.14 OQ4 | `CLAUDE.md`'s six-decision line still reads "buy the ore or buy the goodwill" — deny-listed, owner-only | Carried forward as an owner action. No session edits it, including this one |
-| §11.14.14 OQ6 | The Bestiary is unreachable and a shipped comment says otherwise | `P2-SCREEN-14` holds the fork: wire the one data row or delete the panel; the three lying comments die either way (`P2-HONEST-08`) |
+| §11.14.14 OQ6 (ruled via `P2-SCREEN-14`) | The Bestiary is unreachable and a shipped comment says otherwise | Deleted — its content duplicated the live raid's own monster kind/HP/portrait, and the rest was unread stat trivia; every lying "opened from the Tavern's Bestiary hotspot" comment died with it |
 
 ## Requirements
 
@@ -4632,7 +4633,7 @@ name (§11.6 rule 4).
 | P2-SCREEN-11 | The strip decodes — delete, relabel, reclaim the height | `godot/scripts/MainUi.cs` | — | [G] |
 | P2-SCREEN-12 | The Books tray becomes a shelf with gate reasons as text | `godot/scripts/MainUi.cs`, `godot/scripts/ui/SurfaceUnlocks.cs` | P2-SCREEN-11 | [G] |
 | P2-SCREEN-13 | Hygiene — the stamp gated, the orphans deleted, `HANDOFF.md` dies | `godot/scripts/MainUi.cs`, `godot/assets/art/`, repo root | — | [G] |
-| P2-SCREEN-14 | The Bestiary gets its door, or the panel dies (OQ6) | `godot/scripts/town2d/InteriorLayout2D.cs`, `godot/scripts/panels/BestiaryPanel.cs` | — | [G] |
+| P2-SCREEN-14 | The Bestiary's door never came — the panel dies instead (OQ6) | `godot/scripts/town2d/InteriorLayout2D.cs`, `godot/scripts/MainUi.cs`, `godot/scripts/ui/TutorialSurfaceRegistry.cs` | — | [G] |
 | P2-SCREEN-15 | The three split lessons speak on screen, not only in the book | `godot/scripts/MainUi.cs`, `godot/scripts/ui/MentorVoice.cs`, `godot/scripts/ui/TutorialFlow.cs` | — | [G] |
 | ⚑ P2-SCREEN-16 | The audio column gets an owner — every ceremony names its cues (P2-KTD11) | `godot/scripts/MainUi.cs` (`SoundTheTick`), `godot/scripts/audio/SfxLibrary.cs` (read-only), `godot/tests/` | — | [G] |
 | P2-SCREEN-17 | The save-replace press names the day it destroys | `godot/scripts/NewGameSelect.cs` | — | [G] |

@@ -245,7 +245,7 @@ public class StateFieldReachCensusTests
         ["CombatEvent.Hero"] = new(FieldKind.Rendered, "godot/scripts/panels/DelveStage.cs (per-beat hero combat motion)"),
         ["CombatEvent.ModifierHpDelta"] = new(FieldKind.Rendered, "godot/scripts/panels/TellingPanel.cs:343-346 (\"modifier\" stat chip, tone by sign) + DelveBeats.cs:409 HP replay"),
         ["CombatEvent.MonsterKilled"] = new(FieldKind.Rendered, "godot/scripts/panels/DelveStage.cs (kill poof)"),
-        ["CombatEvent.MonsterKind"] = new(FieldKind.Rendered, "godot/scripts/panels/DelveStage.cs (monster portrait/name) + BestiaryPanel.cs"),
+        ["CombatEvent.MonsterKind"] = new(FieldKind.Rendered, "godot/scripts/panels/DelveStage.cs (monster portrait/name)"),
         ["CombatEvent.Uses"] = new(FieldKind.Rendered, "godot/scripts/DelveBeats.cs (quaff replay folds ConsumableUse into the HP timeline)"),
 
         // ---- Commission: CommissionBoard ----

@@ -14,8 +14,8 @@ namespace GodotClient.Tests;
 /// U9 (§11.14.14): <see cref="TutorialSurfaceRegistry"/> is the one roster that replaced two
 /// hardcoded lists which quietly disagreed with the live game — <c>MainUi.PanelFor</c>'s own
 /// ten-arm switch (a duplicate of <see cref="DrawerHost"/>'s real registrations) and
-/// <c>MainUi.ModalContent</c>'s five-arm switch, which MISSED five real MainUi-mounted surfaces
-/// (the Scrying Mirror, the Bestiary, the Chronicle, the PiP dock, the Companion Docket). This suite
+/// <c>MainUi.ModalContent</c>'s five-arm switch, which MISSED four real MainUi-mounted surfaces
+/// (the Scrying Mirror, the Chronicle, the PiP dock, the Companion Docket). This suite
 /// pins the roster's own contract: every surface resolves its content root; every surface either
 /// names a reachable way in or is on the class doc's own named "no live way in yet" list; an id the
 /// roster does not know throws with its own name in the message; and the Mirror's non-conforming way
@@ -29,7 +29,7 @@ public class TutorialSurfaceRegistryTests
     /// live door in today's build — see <see cref="TutorialSurfaceRegistry"/>'s class doc for why
     /// each one is honestly null rather than a manufactured anchor. A surface landing here that is
     /// NOT in this array (or vice versa) is exactly the drift this test exists to catch.</summary>
-    private static readonly string[] SurfacesWithNoWayInYet = ["Heroes", "Bestiary", "Chronicle", "Pip"];
+    private static readonly string[] SurfacesWithNoWayInYet = ["Heroes", "Chronicle", "Pip"];
 
     [TestCase]
     public void EverySurface_ResolvesItsContentRoot()

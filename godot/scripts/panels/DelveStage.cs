@@ -50,8 +50,8 @@ namespace GodotClient.Panels;
 /// client-authored fixed ⅓ per Exchange beat — a drawn quantity no sim rule produced, a breach of
 /// "show only what the sim decided" that stood live under a green build because the law tripwire
 /// only scans for RNG/clock tokens. The claim that no honest number existed was false:
-/// <see cref="VenueDefinition.MonsterHp"/> is public, is the resolver's own seed for the floor's
-/// fight, and <c>BestiaryPanel</c> already renders it. <see cref="Venue"/> (kept in sync with the
+/// <see cref="VenueDefinition.MonsterHp"/> is public and is the resolver's own seed for the floor's
+/// fight. <see cref="Venue"/> (kept in sync with the
 /// raided venue by <c>MineWatch.RefreshDelveBeats</c>) supplies that number at <see
 /// cref="DelveBeatKind.Engage"/>, and the bar depletes by the SAME <see cref="DelveBeat.DamageDealt"/>
 /// the Exchange beat already carries — a real running remainder against a real starting total, never

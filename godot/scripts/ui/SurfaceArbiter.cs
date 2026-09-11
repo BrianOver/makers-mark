@@ -13,16 +13,16 @@ namespace GodotClient.Ui;
 /// <para><b>P2-SCREEN-04 adds <paramref name="OwnsScreen"/>, required — no default.</b> The defect
 /// this unit fixes was a hand-written array silently missing a row (<c>Chronicle</c>); a claim that
 /// could omit its own answer would let the SAME defect recur one field over. Every claimant states
-/// plainly whether it covers the screen the way a full-rect modal does (true for all nine today) or
+/// plainly whether it covers the screen the way a full-rect modal does (true for all eight today) or
 /// deliberately does not (<c>CompanionDock</c>'s own class doc explains why it answers false) — a
-/// tenth surface joining the group cannot silently skip the question the way the array let Chronicle
+/// ninth surface joining the group cannot silently skip the question the way the array let Chronicle
 /// skip the list.</para>
 /// </summary>
 public readonly record struct SurfaceClaim(string Id, string Region, int Precedence, bool OwnsScreen);
 
 /// <summary>
 /// Named regions a <see cref="SurfaceClaim"/> can declare — P2-KTD2's "registration is a property of
-/// the region, never a hand-registered class." <see cref="FullScreenModal"/> is the nine full-rect
+/// the region, never a hand-registered class." <see cref="FullScreenModal"/> is the eight full-rect
 /// modals <see cref="SurfaceArbiter"/> was first wired to (P2-SCREEN-03); <see cref="ChildModal"/>
 /// and <see cref="HudDock"/> join in P2-SCREEN-04, below. Later screen units (P2-SCREEN-05/10/11)
 /// name the interact-prompt, pointer, and toast-strip regions the plan's screen dossier already
@@ -65,14 +65,14 @@ public static class SurfaceRegion
 /// is why its pass condition is a byte-identical before/after screenshot set rather than a behaviour
 /// test.</para>
 ///
-/// <para><b>Precedence, as measured, not invented (P2-KTD3).</b> The nine full-rect modal surfaces
+/// <para><b>Precedence, as measured, not invented (P2-KTD3).</b> The eight full-rect modal surfaces
 /// <c>MainUi.BuildUi</c> constructs are mutually exclusive in practice — each opens through a path
 /// that closes whatever else is open (see <c>MainUi._Input</c>'s Escape ladder for the system menu's
 /// own guard, and the Mirror construction comment: "Camp/Ledger/Mirror never show at once in
 /// practice, but nothing here assumes it"). So today's real "who wins if two were somehow visible at
 /// once" answer is nothing more exotic than sibling paint order: later <c>AddChild</c> draws on top.
 /// The precedence values <c>MainUi.BuildUi</c> passes to <see cref="Claim"/> are exactly that call
-/// order, read off the file as of this unit: Ledger, Forecast, Bestiary, Chronicle, Commissions,
+/// order, read off the file as of this unit: Ledger, Forecast, Chronicle, Commissions,
 /// Legends, Camp, the system menu, then Mirror last — Mirror wins if this ever stops being
 /// hypothetical.</para>
 /// </summary>

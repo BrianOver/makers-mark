@@ -20,7 +20,7 @@ namespace GodotClient.Panels;
 /// entries — items with <see cref="LegendQuery.FamousBeatThreshold"/>+ proven
 /// <see cref="AttributionBeatEvent"/>s OR a Wave-4a Signed Work (<see cref="Item.IsSigned"/>) —
 /// each opening that item's <see cref="ProvenanceCard"/>. Same code-built-modal idiom as
-/// <see cref="RaidForecastBoard"/>/<see cref="BestiaryPanel"/>: dim backdrop, centered themed
+/// <see cref="RaidForecastBoard"/>: dim backdrop, centered themed
 /// card, a Close button. Property-only/headless-test safe: no frame pump, no render scheduled by
 /// building or showing it.
 ///

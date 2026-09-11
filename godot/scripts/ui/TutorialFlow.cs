@@ -954,7 +954,7 @@ public sealed partial class TutorialFlow : PanelContainer
             // button at all — see TutorialSurfaceRegistry's class doc), so the way in is now DECLARED
             // per surface in TutorialSurfaceRegistry.Surfaces instead of guessed here. A surface with
             // no roster row at all throws (a caller bug); one that genuinely has no live way in yet
-            // (Heroes/Bestiary/Chronicle/Pip) throws too, rather than silently pointing at a button
+            // (Heroes/Chronicle/Pip) throws too, rather than silently pointing at a button
             // that does not exist — the exact "point at nothing" failure this rule exists to prevent.
             case TutorialAnchorKind.PanelControl or TutorialAnchorKind.PanelSection when openPanelId != anchor.Key:
                 return TutorialSurfaceRegistry.WayInFor(anchor.Key!)

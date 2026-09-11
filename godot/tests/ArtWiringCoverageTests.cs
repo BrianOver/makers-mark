@@ -267,8 +267,8 @@ public class ArtWiringCoverageTests
     public void AllFiveEmberfallMonsters_ResolveWithNormal()
     {
         // The exact five monsters EmberfallFoundryVenue.Build() spawns (task #80's PR body has
-        // the full roster trace) -- BestiaryPanel iterates VenueRegistry.All (not just
-        // LiveRotation), so a dormant venue's monsters are already reachable there today.
+        // the full roster trace) -- their portraits must resolve regardless of live-rotation
+        // status, since DelveStage/MineWatch render whatever venue a party is actually raiding.
         foreach (var kind in EmberfallMonsterKinds)
         {
             AssertMonsterResolvesWithNormal(kind, "emberfall");

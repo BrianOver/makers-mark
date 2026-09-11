@@ -496,9 +496,8 @@ public sealed partial class TellingPanel : SimPanel
         _ => "gear",
     };
 
-    /// <summary>Mirrors <see cref="BestiaryPanel"/>'s own private helper verbatim: the Mine's
-    /// monster art carries no venue prefix (the legacy unprefixed set), every other venue's art is
-    /// keyed by <see cref="AssetCatalog.VenueArtId"/>.</summary>
+    /// <summary>The Mine's monster art carries no venue prefix (the legacy unprefixed set), every
+    /// other venue's art is keyed by <see cref="AssetCatalog.VenueArtId"/>.</summary>
     private static string? VenueArtPrefix(string venueId) =>
         venueId == VenueRegistry.MineId ? null : AssetCatalog.VenueArtId(venueId);
 

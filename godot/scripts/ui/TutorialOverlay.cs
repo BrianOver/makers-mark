@@ -515,7 +515,7 @@ public sealed partial class TutorialOverlay : Control
                 // distinct Kind rather than a bare PanelControl alias).
                 // U9 (§11.14.14): the drawer-then-modal OR-chain that used to live here was itself two
                 // hardcoded lists (DrawerHost's own registrations, MainUi.ModalContent's five-arm
-                // switch) that missed five real MainUi-mounted surfaces (Mirror/Bestiary/Chronicle/
+                // switch) that missed four real MainUi-mounted surfaces (Mirror/Chronicle/
                 // Pip/Docket). TutorialSurfaceRegistry is now the ONE roster both lists were replaced
                 // with — see its own class doc.
                 var panelRoot = TutorialSurfaceRegistry.ContentRootFor(anchor.Key!, drawer, hudRoot as GodotClient.MainUi);
@@ -840,8 +840,8 @@ public sealed partial class TutorialOverlay : Control
     /// U15 (§11.14.14): the drawn half of the off-camera marker — a small solid triangle, tip along
     /// local +X, that <see cref="UpdateOffCameraMarker"/> positions/rotates/scales/recolors every
     /// tick (mirrors the <c>node.PivotOffset</c>/<c>node.Scale</c>/<c>node.Modulate</c> idiom already
-    /// used for a breathing icon elsewhere in this codebase, e.g. <c>DelveStage</c>'s sparkle FX and
-    /// <c>BestiaryPanel</c>'s portrait breathe). Deliberately a SHAPE, not another warm-gold hue —
+    /// used for a breathing icon elsewhere in this codebase, e.g. <c>DelveStage</c>'s sparkle FX).
+    /// Deliberately a SHAPE, not another warm-gold hue —
     /// see class doc's U15 bullet and <see cref="Building2D.TutorialPulseScale"/>'s own doc for why
     /// a shape/motion signature is the accessible answer here (§11.14.14 OQ3).
     ///

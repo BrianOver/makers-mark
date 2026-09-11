@@ -116,7 +116,7 @@ public class SurfaceClaimDiscoveryCensusTests
         var mainUiCode = File.ReadAllText(mainUiPath);
 
         var fields = MainUiSurfaceFields(mainUiCode, claimableTypes);
-        Assert.True(fields.Count >= 8,
+        Assert.True(fields.Count >= 7,
             $"Only {fields.Count} MainUi surface fields matched a claimable type — too few to "
             + "trust a green run.");
 

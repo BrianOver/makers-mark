@@ -28,7 +28,7 @@ namespace GodotClient.Town2d;
 /// change. Do not rename them.</para>
 ///
 /// <para><b>Action strings</b> (KTD-3) reuse the EXACT vocabulary <c>MainUi.OnInteriorHotspotActivated</c>
-/// already routes ("Forge"/"Shop"/"Tavern"/"Bounties"/"Bestiary"/"Legends" → <c>OpenPanel</c> or a
+/// already routes ("Forge"/"Shop"/"Tavern"/"Bounties"/"Legends" → <c>OpenPanel</c> or a
 /// code-built modal) — never a new routing concept. <c>InteriorRoomTests
 /// .EveryStationAction_IsARecognizedMainUiRoute_NeverADeadClick</c> fails loudly if a row here ever
 /// names an action nothing knows how to open (this repo's recurring "dead click" failure class).</para>

@@ -20,8 +20,8 @@ namespace GodotClient.Ui;
 /// <c>Refresh()</c> dispatch needs. It now casts <see cref="DrawerHost.PanelContent"/>'s own answer
 /// instead of re-declaring the list a second time.</item>
 /// <item><c>MainUi.ModalContent</c>'s five-arm switch (Ledger/Commissions/Legends/Camp/Forecast)
-/// MISSED five real surfaces mounted the identical way, directly on <c>MainUi</c>: the Scrying
-/// Mirror, the Bestiary, the Chronicle, the PiP dock, and the Companion Docket. A <see
+/// MISSED four real surfaces mounted the identical way, directly on <c>MainUi</c>: the Scrying
+/// Mirror, the Chronicle, the PiP dock, and the Companion Docket. A <see
 /// cref="TutorialAnchorKind.PanelControl"/>/<see cref="TutorialAnchorKind.PanelSection"/> anchor
 /// naming any of those five threw — not because the surface was unreachable, but because nobody had
 /// told the lookup it existed.</item>
@@ -45,11 +45,6 @@ namespace GodotClient.Ui;
 /// gap rather than a manufactured anchor pointing at a button that does not exist:
 /// <list type="bullet">
 /// <item><b>Heroes</b> — see above; a roaming NPC click, not a stable control or building.</item>
-/// <item><b>Bestiary</b> — <c>MainUi.OnInteriorHotspotActivated</c>'s <c>"Bestiary"</c> route is
-/// live and correct, but no <see cref="Town2d.InteriorLayout2D"/> station currently names that
-/// action — the Tavern room's own stations (hearth/bar/storywall/two tables) all route elsewhere.
-/// <c>BestiaryPanelTests</c>' own history note says this plainly: the hotspot has been unreachable
-/// since the pre-2.5D pivot, waiting on a Tavern station slice 2 never added back.</item>
 /// <item><b>Chronicle</b> — fires exactly once, automatically, <c>MainUi.StateChanged</c>'s own
 /// reaction to a <c>CampaignEnded</c> event. The player never opens it; there is no door to point
 /// at.</item>
@@ -57,7 +52,7 @@ namespace GodotClient.Ui;
 /// cref="PipDock"/>'s class doc), not player-toggled; clicking its body opens the Mirror, but the
 /// dock itself is never "closed" in the sense a way-in implies.</item>
 /// </list>
-/// A registry-conformance test enumerates exactly these four ids by name — a fifth row landing with
+/// A registry-conformance test enumerates exactly these three ids by name — a fourth row landing with
 /// a null <see cref="SurfaceDef.WayIn"/> and no matching update to that allowlist is a red build,
 /// never a silent gap growing unnoticed.</para>
 ///
@@ -82,7 +77,7 @@ public static class TutorialSurfaceRegistry
 
     /// <summary>
     /// Every addressable surface, drawer panels and MainUi-mounted overlays alike. Order is
-    /// registration order (the drawer's own ten, then the five original modals, then the five this
+    /// registration order (the drawer's own ten, then the five original modals, then the four this
     /// unit adds) — arbitrary for lookup purposes, kept stable only so a future diff reads as a plain
     /// addition.
     /// </summary>
@@ -113,7 +108,6 @@ public static class TutorialSurfaceRegistry
         // Mirror: the non-conforming case this unit exists to fix. Its tray affordance is named for
         // WATCHING, never "OpenMirror" — the Open{id} convention's one real, live counterexample.
         new("Mirror", (_, ui) => ui?.Mirror, TutorialAnchor.ForHud("WatchButton")),
-        new("Bestiary", (_, ui) => ui?.Bestiary, null),
         new("Chronicle", (_, ui) => ui?.Chronicle, null),
         new("Pip", (_, ui) => ui?.Pip, null),
         // Docket's own way in is nested one level deep — a button INSIDE the Forge panel's own

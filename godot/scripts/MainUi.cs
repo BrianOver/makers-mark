@@ -272,9 +272,6 @@ public partial class MainUi : Control
     /// cref="OverlaySurfaces"/>), so it can sit open beside a running craft without owning the
     /// screen the way <see cref="Forecast"/>'s modal does.</summary>
     public CompanionDock Docket { get; private set; } = null!;
-    /// <summary>Gate-b flag 3: the Bestiary gallery (all venues' monsters, a 2D portrait where one
-    /// exists), opened from the Tavern's "Bestiary" hotspot.</summary>
-    public BestiaryPanel Bestiary { get; private set; } = null!;
     /// <summary>The campaign's ending screen — the reader for <see cref="CampaignEnded"/>, which
     /// carried its own chronicle tallies for exactly this purpose and had no reader until now.
     /// Opens itself on the ending tick; never halts the kernel (the town stays playable after).</summary>
@@ -417,17 +414,14 @@ public partial class MainUi : Control
     /// manual HUD-button open) so its VisibilityChanged handler keeps the inherited resume intent
     /// instead of overwriting it with the (paused) clock state.</summary>
     private bool _forecastChaining;
-    /// <summary>Gate-b flag 3: resume-play-on-close intent for the Bestiary modal (same pattern as
-    /// the Ledger/Forecast).</summary>
-    private bool _resumePlayOnBestiaryClose;
-    /// <summary>Wave 3 (U15): mirror of the Bestiary/Forecast latch for the commission board.</summary>
+    /// <summary>Wave 3 (U15): mirror of the Forecast latch for the commission board.</summary>
     private bool _resumePlayOnCommissionsClose;
-    /// <summary>Wave 4 (U21): mirror of the Bestiary/Forecast latch for the Legends Wall.</summary>
+    /// <summary>Wave 4 (U21): mirror of the Forecast latch for the Legends Wall.</summary>
     private bool _resumePlayOnLegendsClose;
-    /// <summary>U4 (shell-and-audio plan): mirror of the Bestiary/Forecast latch for the in-game
+    /// <summary>U4 (shell-and-audio plan): mirror of the Forecast latch for the in-game
     /// system menu — pause while it owns the screen, resume on close when play was running.</summary>
     private bool _resumePlayOnSystemMenuClose;
-    /// <summary>P2-SCREEN-04: mirror of the Bestiary/Forecast latch for the campaign's ending
+    /// <summary>P2-SCREEN-04: mirror of the Forecast latch for the campaign's ending
     /// ceremony. Chronicle had NO <c>VisibilityChanged</c> wiring at all before this unit — the
     /// exact defect this unit exists to fix, one layer under the array omission: even a projection
     /// that lists Chronicle changes nothing at runtime unless something re-derives <see
@@ -462,7 +456,7 @@ public partial class MainUi : Control
 
     /// <summary>
     /// U1 (playtest-three plan, KTD-A move 2): armed by <see cref="SoundTheTick"/> when the
-    /// departure tick lands while a genuine modal (Ledger/Camp/Mirror/Forecast/Bestiary/
+    /// departure tick lands while a genuine modal (Ledger/Camp/Mirror/Forecast/
     /// Commissions/Legends, or the walkable interior room) still owns the screen — the drawer is ALWAYS
     /// closed on departure (move 1), but a modal is a deliberate player choice mid-Morning and
     /// yanking the camera behind it would still be invisible, one layer deeper than the reported
@@ -1781,7 +1775,7 @@ public partial class MainUi : Control
     /// U-T9-6: the modal-ish surfaces a tutorial <c>PanelControl</c>/<c>PanelSection</c> anchor may
     /// point into — mounted directly on this node rather than registered with the drawer. Originally
     /// a five-arm switch (Ledger/Commissions/Legends/Camp/Forecast); U9 (§11.14.14) found it MISSED
-    /// five more real surfaces mounted the same way (Mirror/Bestiary/Chronicle/Pip/Docket), so it now
+    /// four more real surfaces mounted the same way (Mirror/Chronicle/Pip/Docket), so it now
     /// delegates to <see cref="TutorialSurfaceRegistry"/> — the one roster both this switch and
     /// <see cref="PanelFor"/>'s own duplicate list were replaced with (see that class's own doc).
     /// Returns null for an unknown id so <c>TutorialOverlay</c> keeps throwing rather than silently
@@ -1812,7 +1806,7 @@ public partial class MainUi : Control
 
     /// <summary>The subset of <see cref="ModalContent"/>'s now-wider answer set that counts as "the
     /// player's current location" for the tutorial's own "you're at X" acknowledgement — narrower on
-    /// purpose (Mirror/Bestiary/Chronicle/Pip/Docket are not locations in that narrative sense), so
+    /// purpose (Mirror/Chronicle/Pip/Docket are not locations in that narrative sense), so
     /// this stays its own short, hand-picked list rather than every id <see cref="ModalContent"/> can
     /// now resolve.</summary>
     private static readonly string[] ModalAnchorSurfaces = ["Ledger", "Commissions", "Legends", "Camp", "Forecast"];
@@ -2948,12 +2942,11 @@ public partial class MainUi : Control
     }
 
     /// <summary>U-T2 Wave E ("the read-only surfaces", the long tail), widened in Wave F: HeroCards,
-    /// Depths, Heroes, and Bestiary carry no player-submitted action anywhere on them — every field
+    /// Depths, and Heroes carry no player-submitted action anywhere on them — every field
     /// on every one of them is a pure projection of what the sim already decided (law: show only
-    /// what the sim decided). One shared first-touch id fired from whichever of the four the player
-    /// reaches first (<see cref="OpenPanel"/> for HeroCards/Depths/Heroes, <see
-    /// cref="OnBestiaryVisibilityChanged"/> for Bestiary) — the other three become no-ops by <see
-    /// cref="TutorialFlow.ConsumeFirstTouch"/>'s own once-ever contract.
+    /// what the sim decided). One shared first-touch id fired from whichever of the three the player
+    /// reaches first (<see cref="OpenPanel"/> for HeroCards/Depths/Heroes) — the other two become
+    /// no-ops by <see cref="TutorialFlow.ConsumeFirstTouch"/>'s own once-ever contract.
     ///
     /// <para>P2-ONBOARD-02 (§11.15): no longer a <see cref="MentorBanner"/> popup — a rendered pass
     /// found Bryn's banner covering nearly every first-opened panel, and a text census then found
@@ -2972,7 +2965,7 @@ public partial class MainUi : Control
                 "read-only-surfaces",
                 MentorVoice.Speak(
                     "Nothing on this board is something to press — it only shows you what has already "
-                    + "happened. Heroes, depths, and the bestiary are the town's own record, not a place "
+                    + "happened. Heroes and depths are the town's own record, not a place "
                     + "to act."))
             is { } caption)
         {
@@ -3504,7 +3497,7 @@ public partial class MainUi : Control
         trayRow.AddChild(CapTrayIcon(commissionsButton));
         RegisterGatedTrayButton("Commissions", commissionsButton);
 
-        // Wave 4 (U21): open the Legends Wall on demand — same tray as Forecast/Bestiary/Commissions.
+        // Wave 4 (U21): open the Legends Wall on demand — same tray as Forecast/Commissions.
         // Reads live state so it always reflects the current memorials/records/gear.
         var legendsButton = TrayButton(
             "OpenLegends", IconRegistry.Glyph("rune"),
@@ -3619,7 +3612,7 @@ public partial class MainUi : Control
         Bounties = InstantiatePanel<BountyPanel>("res://scenes/panels/bounty_panel.tscn");
         Demand = InstantiatePanel<DemandPanel>("res://scenes/panels/demand_panel.tscn");
         HeroCards = InstantiatePanel<HeroPanel>("res://scenes/panels/hero_panel.tscn");
-        Progress = new ProgressionPanel(); // U-D4: code-built (no scene deps), like BestiaryPanel
+        Progress = new ProgressionPanel(); // U-D4: code-built (no scene deps), like RaidForecastBoard
         Lessons = new LessonsPanel(); // U2 (tutorial-revamp plan): code-built, same idiom as Progress
 
         // U17 (KTD13): the single bottom-edge HUD line — mounted last in the layout so it sits
@@ -3735,13 +3728,6 @@ public partial class MainUi : Control
         // own comment, this file, StartCampaign).
         Forecast.ForgeOneRequested += () => OpenPanel("Forge");
 
-        // --- Bestiary (gate-b flag 3): code-built modal sibling, opened from the Tavern hotspot.
-        Bestiary = new BestiaryPanel();
-        AddChild(Bestiary);
-        SurfaceArbiter.Claim(Bestiary, new SurfaceClaim("Bestiary", SurfaceRegion.FullScreenModal, 3, OwnsScreen: true));
-        Bestiary.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-        Bestiary.VisibilityChanged += OnBestiaryVisibilityChanged;
-
         // --- the ending chronicle: code-built modal sibling on the RaidForecastBoard precedent
         //     (no scene, no import churn). Draws above the Ledger it arrives alongside (mounted
         //     after it), though several more overlays mount after Chronicle in turn — see
@@ -3751,7 +3737,7 @@ public partial class MainUi : Control
         SurfaceArbiter.Claim(Chronicle, new SurfaceClaim("Chronicle", SurfaceRegion.FullScreenModal, 4, OwnsScreen: true));
         Chronicle.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         // P2-SCREEN-04: the missing wire. Every sibling modal gets this same line (see Ledger/
-        // Forecast/Bestiary above) — Chronicle never did, so opening it never held the clock,
+        // Forecast above) — Chronicle never did, so opening it never held the clock,
         // never blocked world input, and never suppressed PiP. See OnChronicleVisibilityChanged.
         Chronicle.VisibilityChanged += OnChronicleVisibilityChanged;
 
@@ -4067,12 +4053,10 @@ public partial class MainUi : Control
 
             // U-T2 Wave E ("the read-only surfaces", the long tail); widened in Wave F's coverage
             // census, which caught the gap: HeroCards, Depths, and Heroes carry no player-submitted
-            // action anywhere on them (Bestiary shares the same lesson from its own VisibilityChanged
-            // hook, OnBestiaryVisibilityChanged, below — it never routes through this method). The
-            // lesson's own copy already named "Heroes" among the three read-only boards; this id
-            // check just never matched the panel that copy meant (HeroesPanel's own drawer id is
-            // "Heroes", distinct from "HeroCards"/HeroPanel) — one shared id, whichever of the four
-            // the player opens first teaches it.
+            // action anywhere on them. The lesson's own copy already named "Heroes" among the three
+            // read-only boards; this id check just never matched the panel that copy meant
+            // (HeroesPanel's own drawer id is "Heroes", distinct from "HeroCards"/HeroPanel) — one
+            // shared id, whichever of the three the player opens first teaches it.
             if (id == "HeroCards")
             {
                 ShowReadOnlySurfaceLesson(HeroCards.ShowHeaderCaption);
@@ -4200,7 +4184,7 @@ public partial class MainUi : Control
 
         Drawer.Close();
 
-        // (2) a genuine MODAL (Ledger/Camp/Mirror/Forecast/Bestiary/Commissions/Legends, or the
+        // (2) a genuine MODAL (Ledger/Camp/Mirror/Forecast/Commissions/Legends, or the
         // walkable interior room) is a different case from a drawer: the player opened it on purpose
         // mid-Morning, and it is not this method's place to close it out from under them. Defer the
         // beat instead of dropping it — whichever modal-close path finds the screen clear next fires
@@ -4257,7 +4241,7 @@ public partial class MainUi : Control
     }
 
     /// <summary>
-    /// True while a modal overlay (Ledger/Camp/Mirror/Forecast/Bestiary/Commissions/Legends) or the
+    /// True while a modal overlay (Ledger/Camp/Mirror/Forecast/Commissions/Legends) or the
     /// walkable interior room covers the middle of the screen — the "not a drawer" half of <see
     /// cref="UpdateEngaged"/>'s engaged latch, pulled into its own method so U1's departure-focus
     /// pending beat (above) reads the EXACT same predicate instead of a second hand-copied clause
@@ -4331,10 +4315,10 @@ public partial class MainUi : Control
     /// <summary>The name of whichever <see cref="OverlaySurfaces"/> entry currently owns the screen,
     /// or null if none does. Resolved by <see cref="SurfaceArbiter.Resolve"/>'s own precedence rule
     /// rather than array order, so this stays correct even on a tick where discovery finds more than
-    /// one visible claim (in practice the nine full-rect modals stay mutually exclusive — see
+    /// one visible claim (in practice the eight full-rect modals stay mutually exclusive — see
     /// <see cref="SurfaceArbiter"/>'s own class doc). <c>internal</c> so <c>AgentPlaytest.cs</c>'s
     /// <c>Location()</c> (same assembly, GodotClient.Tools) can report an open Ledger/Camp/Mirror/
-    /// Forecast/Bestiary/Commissions/Legends/Chronicle/system-menu as a distinct, trackable location
+    /// Forecast/Commissions/Legends/Chronicle/system-menu as a distinct, trackable location
     /// instead of it silently reading as "town" — see <see cref="OverlaySurfaces"/>'s own doc for why
     /// this reuses that projection rather than re-deriving the answer.</summary>
     internal string? ActiveOverlayName()
@@ -4751,16 +4735,8 @@ public partial class MainUi : Control
     /// </summary>
     private void OnInteriorHotspotActivated(string action)
     {
-        // Gate-b flag 3: the Tavern "Bestiary" hotspot opens the code-built modal, not a drawer —
-        // route it before OpenPanel (which only knows the drawer ids and would throw).
-        if (action == "Bestiary")
-        {
-            Bestiary.ShowAll();
-            return;
-        }
-
         // Wave 4 (U21): the Tavern "Legends" hotspot opens the code-built Legends Wall modal —
-        // same routing shape as Bestiary above.
+        // route it before OpenPanel (which only knows the drawer ids and would throw).
         if (action == "Legends")
         {
             Legends.ShowWall(Adapter.CurrentState);
@@ -4768,7 +4744,7 @@ public partial class MainUi : Control
         }
 
         // U1 (world-and-interiors plan): the gatehouse's "overlook" station — the ONE new action
-        // string this unit adds. Same routing shape as Bestiary/Legends above: a code-built modal,
+        // string this unit adds. Same routing shape as Legends above: a code-built modal,
         // not a drawer id, so it must be caught here before OpenPanel (which only knows drawer ids
         // and would throw ArgumentOutOfRangeException for "Watch"). During non-live phases the
         // Mirror already renders its own honest "nobody below" empty state — no extra plumbing
@@ -4964,27 +4940,7 @@ public partial class MainUi : Control
         TryFireDeferredMineGateFocus(); // U1: fires the deferred departure pan if the screen is now clear
     }
 
-    /// <summary>Gate-b flag 3: mirror of the Forecast/Ledger latch for the Bestiary modal — pause
-    /// while it owns the screen, resume on close when play was running.</summary>
-    private void OnBestiaryVisibilityChanged()
-    {
-        if (Bestiary.Visible)
-        {
-            _resumePlayOnBestiaryClose = Clock.Playing;
-            Clock.Pause();
-            ShowReadOnlySurfaceLesson(Bestiary.ShowHeaderCaption);
-        }
-        else if (_resumePlayOnBestiaryClose)
-        {
-            Clock.Play();
-        }
-
-        UpdateEngaged();
-        UpdateClockLabel();
-        TryFireDeferredMineGateFocus(); // U1: fires the deferred departure pan if the screen is now clear
-    }
-
-    /// <summary>P2-SCREEN-04: mirror of the Bestiary/Forecast latch for the campaign's ending
+    /// <summary>P2-SCREEN-04: mirror of the Forecast latch for the campaign's ending
     /// ceremony — pause while it owns the screen, resume on close when play was running. Chronicle
     /// never halts the kernel (its own class doc, "Hades-style"), so resuming here is safe even
     /// though the campaign has already concluded — the town keeps working after Close.</summary>
@@ -5005,7 +4961,7 @@ public partial class MainUi : Control
         TryFireDeferredMineGateFocus(); // U1: fires the deferred departure pan if the screen is now clear
     }
 
-    /// <summary>Wave 3 (U15): mirror of the Bestiary/Forecast latch for the commission board — pause
+    /// <summary>Wave 3 (U15): mirror of the Forecast latch for the commission board — pause
     /// while it owns the screen, resume on close when play was running.</summary>
     private void OnCommissionsVisibilityChanged()
     {
@@ -5024,7 +4980,7 @@ public partial class MainUi : Control
         TryFireDeferredMineGateFocus(); // U1: fires the deferred departure pan if the screen is now clear
     }
 
-    /// <summary>Wave 4 (U21): mirror of the Bestiary/Forecast latch for the Legends Wall — pause
+    /// <summary>Wave 4 (U21): mirror of the Forecast latch for the Legends Wall — pause
     /// while it owns the screen, resume on close when play was running.</summary>
     private void OnLegendsVisibilityChanged()
     {

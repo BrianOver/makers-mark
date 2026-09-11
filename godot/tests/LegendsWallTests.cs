@@ -16,7 +16,7 @@ namespace GodotClient.Tests;
 /// <summary>
 /// Wave 4 (U21): <see cref="LegendsWall"/> is a pure projection of <see cref="DramaState"/> +
 /// <see cref="GameState.Items"/>/<see cref="GameState.EventLog"/> — zero sim change. Mirrors the
-/// <see cref="RaidForecastBoard"/>/<see cref="BestiaryPanel"/> idiom: hand-built <see
+/// <see cref="RaidForecastBoard"/> idiom: hand-built <see
 /// cref="GameState"/> fixtures driven directly through <see cref="LegendsWall.ShowWall"/>, plus
 /// the HUD button and Tavern hotspot routes that open it.
 /// </summary>
@@ -157,7 +157,7 @@ public class LegendsWallTests
         {
             ui.Clock.Play();
             ui.Legends.ShowWall(GameFactory.NewGame(6003));
-            AssertThat(ui.Clock.Playing).IsFalse(); // opening pauses, same as Ledger/Camp/Bestiary
+            AssertThat(ui.Clock.Playing).IsFalse(); // opening pauses, same as Ledger/Camp
 
             ui.Legends.Close();
 

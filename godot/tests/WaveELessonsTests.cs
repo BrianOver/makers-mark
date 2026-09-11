@@ -13,7 +13,7 @@ namespace GodotClient.Tests;
 
 /// <summary>
 /// U-T2 Wave E (§11.14.4, the long tail): talents and the second profession, the Foundry's four
-/// gold-for-certainty verbs, and the read-only surfaces (HeroCards/Depths/Bestiary) — each gets a
+/// gold-for-certainty verbs, and the read-only surfaces (HeroCards/Depths/Heroes) — each gets a
 /// first-touch lesson through the shared <see cref="MentorBanner"/>/<see
 /// cref="TutorialFlow.ConsumeFirstTouch"/> mechanism, same contract every earlier wave used.
 /// Reforge (<see cref="GodotClient.Panels.LegendsWall"/>) and quick-travel-unlocked (<see
@@ -322,20 +322,20 @@ public class WaveELessonsTests
         }
     }
 
-    /// <summary>Same lesson, other door: opening Bestiary first must ALSO teach it, and opening
+    /// <summary>Same lesson, other door: opening HeroCards first must ALSO teach it, and opening
     /// Depths right after must NOT show it a second time (<see
     /// cref="TutorialFlow.ConsumeFirstTouch"/>'s once-ever contract, shared across both open
     /// paths) — now checked on each panel's OWN caption rather than a shared banner, since P2-
-    /// ONBOARD-02 gives every one of the four read-only surfaces its own stable caption label.</summary>
+    /// ONBOARD-02 gives every one of the three read-only surfaces its own stable caption label.</summary>
     [TestCase]
-    public void OpeningBestiaryFirst_TeachesTheSameLesson_AndDepthsAfterDoesNotRepeatIt()
+    public void OpeningHeroCardsFirst_TeachesTheSameLesson_AndDepthsAfterDoesNotRepeatIt()
     {
         var ui = MountMainUi();
         try
         {
-            ui.Bestiary.ShowAll();
-            AssertThat(Find<Label>(ui.Bestiary, "OnceEverCaption").Visible)
-                .OverrideFailureMessage("The read-only-surface lesson never showed on Bestiary's first-ever open.")
+            ui.OpenPanel("HeroCards");
+            AssertThat(Find<Label>(ui.HeroCards, "OnceEverCaption").Visible)
+                .OverrideFailureMessage("The read-only-surface lesson never showed on HeroCards' first-ever open.")
                 .IsTrue();
 
             ui.OpenPanel("Depths");

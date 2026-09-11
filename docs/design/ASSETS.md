@@ -32,7 +32,7 @@ drawn. Item-icon and town-body rows re-counted 2026-08-14; the rest still predat
 | Family | Count | Wired by | Origin |
 |---|---|---|---|
 | Hero portraits | 6 + 6 normals | `AssetCatalog.HeroPortrait` → Heroes/Counter/Ledger/Tavern panels | SDXL |
-| Monster portraits (4 venues) | 38 | `AssetCatalog.MonsterPortrait` → Bestiary, MineWatch, DelveStage | SDXL |
+| Monster portraits (4 venues) | 38 | `AssetCatalog.MonsterPortrait` → MineWatch, DelveStage | SDXL |
 | Venue backdrops + entrances | 6 | `AssetCatalog.VenueBackdrop` / `VenueEntrance` | SDXL |
 | Item icons | 49 (46 recipes + 3 rival category) | `ForgePanel`, shop surfaces | SDXL |
 | Town2D hero + townsfolk bodies | 160 (8 characters x 5 variants x 4 frames) | `TownAssets2D.ForHero`, `HeroActor2D` | Hand-pixel Python |
@@ -69,8 +69,6 @@ to 5,755 distinct opaque colours each, at sizes from 60×41 to 84×99, which is 
 downscaled rather than authored pixel art. They are now genuinely procedural and that credit is
 honest. Their pick keys on **floor + kind**, never kind alone (`DelveStage.MonsterBodyId`) — kind is
 a catalogue key, so keying on it would draw every cave rat in the campaign identically.
-`BestiaryPanel` keeps the base id on purpose: it is a reference catalogue, where one canonical
-picture per kind is the right answer.
 
 ## 2. Animation
 
@@ -83,10 +81,10 @@ the invariants the six base bodies always had — it was written because the fir
 `.import` sidecars Godot had defaulted to `fix_alpha_border=true`, and a full green engine run said
 nothing, since the older guard iterates six hand-listed class ids.
 
-**Twenty-two procedural animators, all wired, zero orphans** — the wave added the monster
+**Twenty-one procedural animators, all wired, zero orphans** — the wave added the monster
 idle-breathe (`DelveStage`, U6) and the forge ember glow (`ForgeEmberGlow2D`, U7). `SpriteMotion`, `TreeSway`,
 `AmbientLife2D`, `MarketLife2D`, `TavernLife2D`, `DayPhaseTint`, `MineWatch`, `DelveStage`,
-`TabFade`, `DrawerHost`, `PipDock`, `ObjectiveTracker`, `Building2D`, `BestiaryPanel`,
+`TabFade`, `DrawerHost`, `PipDock`, `ObjectiveTracker`, `Building2D`,
 `ChronicleScroll`, `AdventureTicker`, `AudioDirector` crossfade, the gold-chip pop, the UiKit hover
 swap, and the ForgePanel focus flash.
 

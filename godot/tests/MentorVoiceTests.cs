@@ -131,7 +131,7 @@ public class MentorVoiceTests
         + "forged can ever earn a beat like that — nothing else a hero happens to be carrying "
         + "counts.",
         "Nothing on this board is something to press — it only shows you what has already "
-        + "happened. Heroes, depths, and the bestiary are the town's own record, not a place "
+        + "happened. Heroes and depths are the town's own record, not a place "
         + "to act.",
         "That is tomorrow's counter, read from what the town has already decided — who is "
         + "coming, and what they will be asking for. It stays open while you work, so keep "
