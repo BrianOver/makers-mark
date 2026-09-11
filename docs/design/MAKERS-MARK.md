@@ -4945,6 +4945,108 @@ matters within the playable horizon. Recommendation is advisory-only for now, ru
 periodic/nightly job rather than a new per-PR gate — `.github/` is out of this session's reach
 regardless, so this is a recommendation, not a change.
 
+### The beat-volume sweep, 2026-09-11
+
+Measured before proposing anything, over the standard corpus — `batch --seeds 20 --days 100`
+under `BaselinePlayer`, 45,105 `attributionBeat` events across 9,628 beat-bearing hero-cards:
+
+| Fact | Value |
+|---|---|
+| Beat-type share | **KillingBlow 43,999 (97.5%)** · BreakpointClear 676 · LethalSave 391 · Provisioned 30 · PotionLifesave 9 |
+| Beats per night, whole party | median **30**, p90 30, max 37 |
+| Beats per hero-card | median **5**, max 12 — 81.8% of cards carry exactly five |
+| Cards where ONE item earns more than one beat | 9,290 of 9,628 = **96.5%** |
+
+One real card, verbatim, seed 1:
+
+```
+Greataxe landed the killing blow on the Cave Rat
+Greataxe landed the killing blow on the Tunnel Spider
+Greataxe landed the killing blow on the Deep Ghoul
+Greataxe landed the killing blow on the Ore Golem
+Greataxe landed the killing blow on the The Forgeworm
+Greataxe carried the party past the floor 5 gate
+```
+
+Two findings. The first is a defect and is booked as a unit; the second is a design ruling and is
+deliberately **not**.
+
+**The article is hand-written in three places and wrong in two of them.**
+`ExpeditionRevealSystem.DeathReport` knows the rule — a `MonsterKind` already beginning "The " is a
+proper name and takes no article. `AttributionEngine` does not, at both of its sites: the killing-blow
+line renders "on the **The Forgeworm**" and the lethal-save line renders "turned a lethal **The
+Forgeworm** hit". Every venue's bottom floor is a named boss, so this lands on the deepest, most
+dramatic beat the game can produce, in the exact sentence `CLAUDE.md`'s epigraph is written from.
+Pure P2-HONEST family D — one rule, copied by hand into a second place, and only the first copy
+maintained.
+
+**The proof's volume contradicts link 4's own sentence, and that is the owner's call.**
+`CLAUDE.md`: *"Only player-crafted items earn beats. There is no participation credit."* Measured, a
+player-crafted weapon earns a beat on **every kill it lands** — 30 a night, five on the median hero
+card, the same item repeating on 96.5% of them. `LedgerModal` renders `card.Beats` uncapped (the
+*tale* is capped at eight lines; the beat rows are not), and since #687 each beat row also carries
+its own **"Ask how it happened."** button — so the game's flagship verb appears five times on the
+median card and up to twelve on the worst. Sharpening it: KillingBlow is precisely the shape
+`TellingQuery` **cannot** give a counterfactual second pass (#687's own finding 3 — it gets the
+honest "there the record ends" epilogue instead). The beat that fires 97.5% of the time is the beat
+that proves the least.
+
+Four ways to rule it, so the decision is a choice and not an essay:
+
+1. **Cap the card, leave the sim alone.** Render the best N beat rows and collapse the rest into a
+   count, exactly as `CollapsedTale` already does at eight lines. Cheapest, reversible, no
+   re-baseline, no golden re-record — and it does not touch what the sim decided, only what the
+   screen shows, which is the KTD2 side of the line this fix belongs on.
+2. **One beat per item per night**, naming its deepest kill, the rest folded into that row's own
+   count. Keeps every fact, moves the aggregation into the sim where the event log can carry it.
+   Changes the event stream: `[GOLD]` re-record.
+3. **KillingBlow earns a beat only where the kill was load-bearing** — a floor boss, or the first of
+   its kind. Smallest beat count, closest to "no participation credit" read literally, and the
+   biggest behavioural change: `[S][GOLD][BAL]`.
+4. **Nothing.** Thirty a night is the intended texture and the sentence in `CLAUDE.md` means only
+   "a rival's sword never earns one", which is already true.
+
+Recommendation if one is wanted: **1 now, 2 or 3 only if the feel-test at P4 says the card still
+reads as wallpaper** — because 1 is the only one of the four that costs nothing to undo, and the
+question it answers ("does the card read as a moment?") is a felt question P4's evening is already
+booked to answer.
+
+| Unit | Title | Key files | Depends on | Flags |
+|---|---|---|---|---|
+| P2-PROOF-12 | One monster-name rule, read from one place — the boss beat stops reading "the The Forgeworm" | `sim/GameSim/Venues/`, `sim/GameSim/Expedition/AttributionEngine.cs`, `sim/GameSim/Drama/`, `sim/GameSim.Tests/` | — | [S] |
+
+### The AFK-loop port, gathered 2026-09-11 (owner ruling: gather only)
+
+`fornida-dev/dash-v2` runs an **AFK superset loop** (ADR-0013, amended 2026-07-06 / 07-10 / 08-21;
+ADR-0017 friction; ADR-0020 permissions) that drives a whole issue set unattended. Gathered on the
+owner's instruction and recorded here rather than ported, on his ruling: *gather only, build nothing
+yet.* The org's own rule — use what Fornida already built, do not reinvent — is why this is written
+down at all instead of being rediscovered.
+
+What it is, in one line each: **Recipe 6** (`docs/agents/goals.md`) walks a DAG frontier with one
+built-in `/goal` command, running a slice per node and verifying each merge against `gh` rather than
+against the sub-skill's own self-report, stopping only when it has stated DONE / HALTED / BLOCKED;
+**Recipe 7** is its planning-side sibling; `tools/afk-ci-watch.sh` blocks on `gh pr checks --watch`
+rather than a shell poll; a `HALT` sentinel file is the kill switch; `.claude/agents/afk-*.md` pin
+each worker's tier (sonnet·high to build, haiku·low to gate and to bookkeep) with caveman-ultra in
+each body because output styles do not inherit to subagents; `tools/afk-settings.json` is a
+`dontAsk` permission profile with explicit denies.
+
+Three of its pillars **must not** be ported, and the reasons are this repo's own standing rules:
+
+- **The `agent-main` integration branch** contradicts rule 11 — review happens on `main` and
+  `git revert` is the undo. Porting it would need an owner ruling that reverses that, not a PR.
+- **The DAG file's per-node `status`** contradicts rule 8 — it is a hand-flipped second copy of a
+  fact git already owns, and `tools/Progress` already derives the same frontier from `origin/main`
+  in a way that cannot go stale.
+- **`run-ledger.md` and the `PROGRESS.md` run-state block**, same rule: the ledger here is the merged
+  PR list plus its `Serves:` census, which `tools/Progress` already reads.
+
+What is worth taking, when it is taken: the `/goal` kickoff itself (it replaces a human typing
+"continue" between units), `afk-ci-watch.sh`'s blocking gate (this repo polls `gh pr checks` by hand
+today), the `HALT` sentinel, and tier-pinned `.claude/agents/*` definitions — this repo has none, and
+its worker prompts are re-authored ad hoc every session.
+
 ## Unit bodies — the critical path, the cheap fixes, and each domain's first unit
 
 Twenty-four bodies: the ten screen units that must land before the onboarding rework starts, the
