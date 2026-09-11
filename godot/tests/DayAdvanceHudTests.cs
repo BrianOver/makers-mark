@@ -170,15 +170,19 @@ public class DayAdvanceHudTests
             PressEnabled(ui, "AdvancePhase");
 
             AssertThat(ui.Adapter.LastRejections.Count).IsEqual(1);
+            // The expected banner text comes from MainUi's own mapper, not a literal retyped
+            // here (P2-HONEST-10) — it moves with the mapper's wording instead of going stale.
+            var rejected = ui.Adapter.LastRejections.Single();
+            var expectedLine = MainUi.FriendlyRejection(rejected.Reason, rejected.Action);
             var rendered = RenderedText(ui);
-            AssertThat(rendered).Contains("Can't do that right now.");
+            AssertThat(rendered).Contains(expectedLine);
             AssertThat(rendered.Contains("REJECTED:")).IsFalse();
 
             // The next clean advance — same Advance button — clears the banner early,
             // without waiting out the wall-clock toast timeout.
             PressEnabled(ui, "AdvancePhase");
             AssertThat(ui.Adapter.LastRejections.Count).IsEqual(0);
-            AssertThat(RenderedText(ui).Contains("Can't do that right now.")).IsFalse();
+            AssertThat(RenderedText(ui).Contains(expectedLine)).IsFalse();
         }
         finally
         {

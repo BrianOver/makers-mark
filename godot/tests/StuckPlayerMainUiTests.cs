@@ -231,7 +231,10 @@ public class StuckPlayerMainUiTests
         try
         {
             ui.Adapter.Queue(new BuyMaterialAction(ScriptedSession.CraftMaterial, ScriptedSession.UnaffordablePrice));
-            AssertThat(RenderedText(ui)).Contains("You can't afford that yet.");
+            // Expected wording comes from MainUi's own mapper, not a literal retyped here
+            // (P2-HONEST-10) — same pattern the promotion test above already uses.
+            var rejected = ui.Adapter.LastRejections[^1];
+            AssertThat(RenderedText(ui)).Contains(MainUi.FriendlyRejection(rejected.Reason, rejected.Action));
             AssertThat(ui.Mentor.Visible).IsFalse();
         }
         finally
