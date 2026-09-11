@@ -1,0 +1,52 @@
+{
+  "$comment": [
+    "Permission overlay for the overnight loop. Launch with:",
+    "  claude --settings tools/loop/settings.json",
+    "",
+    "DENY-ONLY, on purpose. An allow-list here would be a third copy of what the repo already",
+    "decides twice -- once in CLAUDE.md's deny-list and once in the branch ruleset -- and the one",
+    "that silently stops covering its family the moment a tool is added. Deny entries only ever",
+    "subtract, so a stale one costs a prompt, never a breach.",
+    "",
+    "The source system's own unattended profile is the cautionary tale: it denied every",
+    "`gh pr merge`, which is the exact command its loop's merge step runs, and its test suite",
+    "pinned that behaviour. Nothing here may deny a command the loop itself must issue -- so",
+    "`gh pr merge --auto` is deliberately NOT denied. The gate that stops a bad merge is the branch",
+    "ruleset, server-side, which no client setting can talk its way past."
+  ],
+  "permissions": {
+    "deny": [
+      "Edit(./CLAUDE.md)",
+      "Write(./CLAUDE.md)",
+      "Edit(./Game.sln)",
+      "Write(./Game.sln)",
+      "Edit(./global.json)",
+      "Write(./global.json)",
+      "Edit(./Directory.Build.props)",
+      "Write(./Directory.Build.props)",
+      "Edit(./.godot-version)",
+      "Write(./.godot-version)",
+      "Edit(./godot/project.godot)",
+      "Write(./godot/project.godot)",
+      "Edit(./.github/**)",
+      "Write(./.github/**)",
+      "Edit(./sim/GameSim/Contracts/**)",
+      "Write(./sim/GameSim/Contracts/**)",
+      "Edit(./tools/loop/**)",
+      "Write(./tools/loop/**)",
+      "Edit(./.claude/agents/**)",
+      "Write(./.claude/agents/**)",
+      "Read(./**/.env)",
+      "Read(./**/.env.*)",
+      "Edit(./**/.env)",
+      "Write(./**/.env)",
+      "Bash(git push * main*)",
+      "Bash(git push origin main*)",
+      "Bash(git push --force*)",
+      "Bash(git reset --hard*)",
+      "Bash(git clean -fd*)",
+      "Bash(rm -rf*)",
+      "Bash(rm -r *)"
+    ]
+  }
+}
