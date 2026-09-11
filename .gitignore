@@ -80,3 +80,7 @@ __pycache__/
 # dirty is a receipt that lies (CLAUDE.md rule 12). BuildStamp.cs already falls back to
 # "dev (unstamped)" when the file is absent, so a fresh clone is fine.
 godot/assets/build_info.txt
+
+# The overnight loop kill switch (tools/loop/README.md). A sentinel the owner can create from
+# anywhere to stop the loop at its next between-units checkpoint; it must never travel in a commit.
+tools/loop/HALT
