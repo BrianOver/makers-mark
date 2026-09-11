@@ -49,7 +49,7 @@ body.
    only against the checks the branch ruleset actually requires, read live.
 6. **Confirm the merge against the repo**, never against the builder's own report: `gh pr view <n>
    --json state` must say `MERGED`. A self-reported success is not evidence.
-7. **Say which of the four states is true**, in words, because that sentence is what `/goal`'s
+7. **End the turn with its `@@LOOP` line**, because that line is the whole of what `/goal`'s
    evaluator reads. There is no separate status file to keep in sync — and therefore none to stop
    being written, which is how the system this design borrowed from lost 67 PRs' worth of ledger
    without noticing.
