@@ -981,5 +981,45 @@ public class ForgeCraftTests
         }
         finally { Unmount(ui); }
     }
+
+    // ── P2-HONEST-16: ConsumableEffect.Magnitude gets a client reader ──────────────────────────
+    // SuggestedPrice and ExpeditionResolver both key real math off Magnitude (a potion's heal
+    // AMOUNT), but no godot/scripts file read it before this — the recipe card printed "Atk 0,
+    // Def 0" for Field Salve and said nothing else. Driven off the recipe's OWN Magnitude (never
+    // a hardcoded "6"), so a future retune of Field Salve's heal amount moves this assertion's
+    // target with it, not just the production copy.
+
+    [TestCase]
+    public void ConsumableRecipeCard_ShowsItsRealHealAmount_ReadFromTheRecipesOwnMagnitude()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            var recipe = RecipeTable.All["field-salve"];
+            var magnitude = recipe.Effect!.Magnitude;
+
+            var card = Find<PanelContainer>(ui.Forge, $"RecipeCard_{recipe.RecipeId}");
+            var cardText = RenderedText(card);
+            AssertThat(cardText).Contains("Heals");
+            AssertThat(cardText).Contains(magnitude.ToString());
+        }
+        finally { Unmount(ui); }
+    }
+
+    /// <summary>The negative half: a gear recipe (no <see cref="Recipe.Effect"/> at all) must
+    /// render no heal amount — proves the reader is gated on real data, not always-on copy that
+    /// would still read green if the magnitude silently stopped rendering for consumables.</summary>
+    [TestCase]
+    public void GearRecipeCard_WithNoConsumableEffect_RendersNoHealAmount()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            AssertThat(RecipeTable.All[ScriptedSession.CraftRecipeId].Effect).IsNull(); // fixture assumption
+            var card = Find<PanelContainer>(ui.Forge, $"RecipeCard_{ScriptedSession.CraftRecipeId}");
+            AssertThat(RenderedText(card)).NotContains("Heals");
+        }
+        finally { Unmount(ui); }
+    }
 }
 #endif
