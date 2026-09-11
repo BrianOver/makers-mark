@@ -1273,5 +1273,136 @@ public class LedgerModalTests
             Unmount(ui);
         }
     }
+
+    /// <summary>P2-MEMORY-02: <see cref="DrivenDay"/>'s death night, plus the two things that night
+    /// recorded and nothing ever read — what Borin carried down and never opened, and the blade that
+    /// landed his last kill. The retained night (<see cref="GameState.LastNightExpeditions"/>) is
+    /// what makes the second readable at all.</summary>
+    private static GameState FallenNight(bool salveInPack, int? killingItem)
+    {
+        var state = DrivenDay();
+        var salve = new Item(
+            new ItemId(600), "field-salve", "Field Salve", ItemSlot.Consumable, QualityGrade.Fine,
+            new ItemStats(0, 0, 1), new MakersMark("You", 1), ImmutableList<ItemHistoryEntry>.Empty,
+            new ConsumableEffect(ConsumableKind.Heal, 8));
+        var rustedAxe = new Item(
+            new ItemId(601), "rival-axe", "Rusted Axe", ItemSlot.Weapon, QualityGrade.Common,
+            new ItemStats(4, 0, 3), Mark: null, ImmutableList<ItemHistoryEntry>.Empty);
+
+        var fallen = state.Heroes[FallenId.Value];
+        var night = new ExpeditionResult(
+            ImmutableList.Create(SurvivorId, FallenId),
+            TargetFloor: 3,
+            DeepestFloorCleared: 2,
+            ImmutableList.Create(new FloorOutcome(
+                2, Cleared: true,
+                ImmutableList.Create(new CombatEvent(
+                    2, FallenId, "Cave Rat", ImmutableList.Create(5, 2), DamageDealt: 9, DamageTaken: 3,
+                    MonsterKilled: true, killingItem is { } k ? new ItemId(k) : null)))),
+            ImmutableList.Create(SurvivorId),
+            ImmutableList.Create(FallenId),
+            ImmutableList<AttributionBeat>.Empty,
+            ImmutableList<OreLoot>.Empty,
+            ImmutableSortedDictionary<int, int>.Empty);
+
+        return state with
+        {
+            Items = state.Items.SetItem(salve.Id.Value, salve).SetItem(rustedAxe.Id.Value, rustedAxe),
+            Heroes = state.Heroes.SetItem(
+                FallenId.Value,
+                fallen with
+                {
+                    Pack = salveInPack ? ImmutableList.Create(salve.Id) : ImmutableList<ItemId>.Empty,
+                }),
+            LastNightExpeditions = ImmutableList.Create(night),
+        };
+    }
+
+    [TestCase]
+    public void DeathCard_RendersThePackLineAndTheLastBlowLine_FromTheRecordAlone()
+    {
+        var ui = MountMainUi(new SimAdapter(FallenNight(salveInPack: true, killingItem: 601)));
+        try
+        {
+            ui.Ledger.ShowFor(1);
+
+            var pack = ui.Ledger.FindChild("FallenPackLine", recursive: true, owned: false) as Label;
+            AssertThat(pack)
+                .OverrideFailureMessage("an unopened player-crafted salve on a dead hero must be said out loud")
+                .IsNotNull();
+            AssertThat(pack!.Text).IsEqual("The Field Salve you sent was still in Borin's pack, unopened.");
+
+            var lastBlow = ui.Ledger.FindChild("FallenLastBlowLine", recursive: true, owned: false) as Label;
+            AssertThat(lastBlow).IsNotNull();
+            AssertThat(lastBlow!.Text).Contains("Borin's last blow felled the Cave Rat.");
+            AssertThat(lastBlow.Text).Contains("The blade was not yours.");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void DeathCard_WithNothingOfYoursInThePackAndNoRecordedBlade_RendersNeitherLine()
+    {
+        // The honest-empty-state half: FallenQuery returns an empty string wherever the record
+        // cannot prove the sentence, and an empty string must draw NO node at all — never a
+        // placeholder row, never a vaguer line standing in for the one that could not be said.
+        var ui = MountMainUi(new SimAdapter(FallenNight(salveInPack: false, killingItem: null)));
+        try
+        {
+            ui.Ledger.ShowFor(1);
+
+            AssertThat(ui.Ledger.FindChild("FallenPackLine", recursive: true, owned: false)).IsNull();
+            AssertThat(ui.Ledger.FindChild("FallenLastBlowLine", recursive: true, owned: false)).IsNull();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void DeathCard_WhenYourOwnWorkLandedTheLastBlow_LeavesThatToTheBeatRows()
+    {
+        // No second sentence claiming a kill the attribution rows already own — the whole point of
+        // the last-blow line is the case where the player's hand did NOT land it.
+        var ui = MountMainUi(new SimAdapter(FallenNight(salveInPack: false, killingItem: BeatItemId.Value)));
+        try
+        {
+            ui.Ledger.ShowFor(1);
+
+            AssertThat(ui.Ledger.FindChild("FallenLastBlowLine", recursive: true, owned: false))
+                .OverrideFailureMessage("a player-marked killing item must not earn a second, uncredited line")
+                .IsNull();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void SurvivorCard_NeverRendersTheFallenLines()
+    {
+        var ui = MountMainUi(new SimAdapter(FallenNight(salveInPack: true, killingItem: 601)));
+        try
+        {
+            ui.Ledger.ShowFor(1);
+
+            var survivorCardIndex = LedgerQuery
+                .ReturnCards(ui.Adapter.CurrentState, 1)
+                .FindIndex(c => c.Hero == SurvivorId);
+            var survivorCard = Find<Control>(ui.Ledger, $"LedgerCard_{survivorCardIndex}");
+
+            AssertThat(survivorCard.FindChild("FallenPackLine", recursive: true, owned: false)).IsNull();
+            AssertThat(survivorCard.FindChild("FallenLastBlowLine", recursive: true, owned: false)).IsNull();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
 }
 #endif
