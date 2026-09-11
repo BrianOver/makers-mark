@@ -9,10 +9,11 @@ namespace GodotClient.Panels;
 
 /// <summary>
 /// U5 (world-rework plan, "your craft writes the legends" made touchable): a small READ-ONLY
-/// popup card showing one item's whole life story — <see cref="Item.History"/> rendered as
-/// ordered prose (Day-ascending), the <see cref="Item.Mark"/> maker's mark, and the three
-/// forge-beat sub-scores (<see cref="Item.CraftSubScores"/>) when the item carries them. Zero sim
-/// change — a pure projection of existing <c>Contracts</c> data (KTD2).
+/// popup card showing one item's whole life story — <see cref="Item.History"/> merged with every
+/// sale/commission/delivery <see cref="ProvenanceQuery.AllChannels"/> derives from the event log
+/// (P2-MEMORY-06), rendered as one ordered prose timeline (Day-ascending), the <see cref="Item.Mark"/>
+/// maker's mark, and the three forge-beat sub-scores (<see cref="Item.CraftSubScores"/>) when the
+/// item carries them. Zero sim change — a pure projection of existing <c>Contracts</c> data (KTD2).
 ///
 /// <para>Self-contained by design (this unit's scope guard keeps <c>MainUi</c> untouched): every
 /// surface that lists a crafted item (<c>ShopPanel</c>'s shelf/unshelved sections,
@@ -136,20 +137,57 @@ public partial class ProvenanceCard : Control
         }
 
         AddHeader(_body!, "HISTORY:");
-        if (item.History.IsEmpty)
+        var timeline = HistoryTimeline(state, item);
+        if (timeline.Length == 0)
         {
             AddLabel(_body!, "Fresh off the forge — no history yet.");
         }
         else
         {
-            // Day-ascending prose, one line per entry (OrderBy is a stable sort — same-day
-            // entries keep their originally-appended relative order).
-            foreach (var entry in item.History.OrderBy(h => h.Day))
+            foreach (var line in timeline)
             {
-                AddLabel(_body!, $"Day {entry.Day} — {entry.Kind}: {entry.Detail}");
+                AddLabel(_body!, line);
             }
         }
     }
+
+    /// <summary>
+    /// P2-MEMORY-06: the item's whole life story in one Day-ascending list — the recorded <see
+    /// cref="Item.History"/> entries (forged, kills, saves) interleaved with every sale/commission/
+    /// delivery <see cref="ProvenanceQuery.AllChannels"/> derives from the event log, so a sale
+    /// reads as part of the story instead of a gap in it. Derived lines are never written into
+    /// <see cref="Item.History"/> (no sim mutation, no new <see cref="ItemHistoryEntry"/>) — they
+    /// are formatted here, in the same "Day {n} — {kind}: {detail}" shape as a recorded entry so
+    /// the two read as one list, but with their own short kind word ("sold"/"commissioned"/"sent")
+    /// rather than pretending to be one. OrderBy is a stable sort, so same-day ties keep recorded
+    /// entries before derived ones. Empty only when both sources are empty — the honest-empty-state
+    /// contract <see cref="ProvenanceQuery"/> already keeps: an auto-crafted or rival item that
+    /// never passed through one of the four channels adds nothing here.
+    /// </summary>
+    private static string[] HistoryTimeline(GameState state, Item item) => item.History
+        .OrderBy(h => h.Day)
+        .Select(h => (h.Day, Line: $"Day {h.Day} — {h.Kind}: {h.Detail}"))
+        .Concat(ProvenanceQuery.AllChannels(state, item.Id).Select(c =>
+        {
+            var (kind, detail) = ChannelHistoryDetail(c.Channel);
+            return (c.Day, Line: $"Day {c.Day} — {kind}: {detail}");
+        }))
+        .OrderBy(entry => entry.Day)
+        .Select(entry => entry.Line)
+        .ToArray();
+
+    /// <summary>The short kind word + detail sentence for one derived sale/commission/delivery
+    /// line — phrased for a fixed-day history entry (no "X days ago" gap; that phrasing belongs to
+    /// <see cref="ProvenanceQuery.Clause"/>'s live-day summary line above, not a dated list row).</summary>
+    private static (string Kind, string Detail) ChannelHistoryDetail(ItemChannel channel) => channel switch
+    {
+        ItemChannel.Shelf => ("sold", "Left your shelf — bought sight-unseen."),
+        ItemChannel.Counter => ("sold", "Haggled off your counter."),
+        ItemChannel.CounterPinned => ("sold", "Sold at the price you named, and it was paid."),
+        ItemChannel.Commission => ("commissioned", "Delivered on commission."),
+        ItemChannel.Runner => ("sent", "Put in the runner's hands at the vigil."),
+        _ => ("sold", string.Empty),
+    };
 
     private static Control ItemIcon(Item item)
     {

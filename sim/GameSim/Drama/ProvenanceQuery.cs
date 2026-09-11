@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using GameSim.Contracts;
 using GameSim.Venues;
 
@@ -15,8 +16,9 @@ public enum ItemChannel
     Runner,
 }
 
-/// <summary>How an item reached the hand that held it (link 2), and when — the most recent
-/// qualifying event naming the item (P2-MEMORY-03).</summary>
+/// <summary>One event naming an item as it reached the hand that held it (link 2): which channel,
+/// on what day, to which hero (P2-MEMORY-03). One instance is one sale/commission/delivery — an
+/// item can carry several over its lifetime (P2-MEMORY-06's <see cref="ProvenanceQuery.AllChannels"/>).</summary>
 public sealed record ItemChannelInfo(ItemChannel Channel, int Day, HeroId Hero);
 
 /// <summary>
@@ -26,7 +28,10 @@ public sealed record ItemChannelInfo(ItemChannel Channel, int Day, HeroId Hero);
 /// beat says a craft mattered but not how it got there — this closes that gap without a new event
 /// or a Contracts edit: <see cref="CounterSaleClosed"/> already carries hero/item/price/Pinned,
 /// <see cref="ItemSold"/> already flags <c>FromPlayerShop</c>, and <see cref="CommissionFulfilled"/>/
-/// <see cref="SupplyDelivered"/> already name the item.
+/// <see cref="SupplyDelivered"/> already name the item. P2-MEMORY-06 derives an item's whole sale
+/// history (<see cref="AllChannels"/>) the same way, from the same already-logged events — never a
+/// write into <see cref="Item.History"/>, which stays owned by <c>CraftingHandlers</c>/<see
+/// cref="ExpeditionRevealSystem"/>.
 /// </summary>
 public static class ProvenanceQuery
 {
@@ -34,34 +39,49 @@ public static class ProvenanceQuery
     /// The channel that delivered <paramref name="item"/> to a hero, or null when no qualifying
     /// event exists yet (an auto-crafted/rival item that was never sold through the player's own
     /// four channels, or one still sitting unshelved) — an honest empty state; callers render
-    /// nothing for a null result, never a generic fallback line. The log is stamped in
-    /// nondecreasing <see cref="GameEvent.Day"/> order (<see cref="DayLog"/>'s own invariant), so
-    /// a single forward walk that keeps overwriting on every match lands on the most recent one.
+    /// nothing for a null result, never a generic fallback line. The last entry of <see
+    /// cref="AllChannels"/> — the log is stamped in nondecreasing <see cref="GameEvent.Day"/> order
+    /// (<see cref="DayLog"/>'s own invariant), so the most recent qualifying event is always last.
     /// </summary>
     public static ItemChannelInfo? Channel(GameState state, ItemId item)
     {
-        ItemChannelInfo? found = null;
+        var channels = AllChannels(state, item);
+        return channels.IsEmpty ? null : channels[^1];
+    }
+
+    /// <summary>
+    /// Every channel event that ever named <paramref name="item"/> (P2-MEMORY-06), oldest first —
+    /// the item's whole sale history, not just the most recent hand it passed through. <see
+    /// cref="Channel"/> answers "how did this reach the hand that held it tonight" (the Evening
+    /// Ledger's beat row); this answers "every hand it has passed through" (the provenance card's
+    /// life story). Empty — never a fallback entry — when the item was never sold, commissioned, or
+    /// delivered through the player's own four channels: the same honest-empty-state contract this
+    /// file keeps everywhere else.
+    /// </summary>
+    public static ImmutableList<ItemChannelInfo> AllChannels(GameState state, ItemId item)
+    {
+        var found = ImmutableList.CreateBuilder<ItemChannelInfo>();
         foreach (var gameEvent in state.EventLog)
         {
             switch (gameEvent)
             {
                 case CounterSaleClosed sale when sale.Item == item:
-                    found = new ItemChannelInfo(
-                        sale.Pinned ? ItemChannel.CounterPinned : ItemChannel.Counter, gameEvent.Day, sale.Hero);
+                    found.Add(new ItemChannelInfo(
+                        sale.Pinned ? ItemChannel.CounterPinned : ItemChannel.Counter, gameEvent.Day, sale.Hero));
                     break;
                 case ItemSold sold when sold.Item == item && sold.FromPlayerShop:
-                    found = new ItemChannelInfo(ItemChannel.Shelf, gameEvent.Day, sold.Buyer);
+                    found.Add(new ItemChannelInfo(ItemChannel.Shelf, gameEvent.Day, sold.Buyer));
                     break;
                 case CommissionFulfilled commission when commission.Item == item:
-                    found = new ItemChannelInfo(ItemChannel.Commission, gameEvent.Day, commission.Hero);
+                    found.Add(new ItemChannelInfo(ItemChannel.Commission, gameEvent.Day, commission.Hero));
                     break;
                 case SupplyDelivered supply when supply.Item == item:
-                    found = new ItemChannelInfo(ItemChannel.Runner, gameEvent.Day, supply.To);
+                    found.Add(new ItemChannelInfo(ItemChannel.Runner, gameEvent.Day, supply.To));
                     break;
             }
         }
 
-        return found;
+        return found.ToImmutable();
     }
 
     /// <summary>

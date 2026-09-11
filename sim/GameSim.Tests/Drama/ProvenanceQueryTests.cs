@@ -135,6 +135,71 @@ public class ProvenanceQueryTests
     }
 
     [Fact]
+    public void AllChannels_EmptyLog_IsEmpty_TheSameHonestEmptyStateAsChannel()
+    {
+        var state = WithLog();
+
+        Assert.Empty(ProvenanceQuery.AllChannels(state, new ItemId(10)));
+    }
+
+    [Fact]
+    public void AllChannels_ReturnsEveryQualifyingEvent_OldestFirst_NotJustTheLatest()
+    {
+        // Same item resold twice — Channel() collapses this to the most recent hand alone;
+        // AllChannels must keep both, in log order, since a life story wants every hand, not the
+        // last one.
+        var state = WithLog(
+            new CounterSaleClosed(new HeroId(1), new ItemId(14), Price: 10, Pinned: false) with { Id = new EventId(1), Day = 1 },
+            new ItemSold(new ItemId(14), new HeroId(2), Price: 12, FromPlayerShop: true) with { Id = new EventId(2), Day = 5 });
+
+        var channels = ProvenanceQuery.AllChannels(state, new ItemId(14));
+
+        Assert.Equal(2, channels.Count);
+        Assert.Equal(new ItemChannelInfo(ItemChannel.Counter, 1, new HeroId(1)), channels[0]);
+        Assert.Equal(new ItemChannelInfo(ItemChannel.Shelf, 5, new HeroId(2)), channels[1]);
+    }
+
+    [Fact]
+    public void AllChannels_FiltersByItemId_IgnoringOtherItemsInTheLog()
+    {
+        var state = WithLog(
+            new CounterSaleClosed(new HeroId(1), new ItemId(20), Price: 10, Pinned: false) with { Id = new EventId(1), Day = 1 },
+            new CommissionFulfilled(new HeroId(2), new ItemId(21), Premium: 8) with { Id = new EventId(2), Day = 2 });
+
+        Assert.Single(ProvenanceQuery.AllChannels(state, new ItemId(20)));
+        Assert.Single(ProvenanceQuery.AllChannels(state, new ItemId(21)));
+        Assert.Empty(ProvenanceQuery.AllChannels(state, new ItemId(999)));
+    }
+
+    [Fact]
+    public void AllChannels_IgnoresVendorStock_ItemSoldNotFromPlayerShop()
+    {
+        // A rival-vendor sale is not one of the four honest channels — same rule AllChannels
+        // must honor as Channel() does, since it walks the same event set.
+        var state = WithLog(
+            new ItemSold(new ItemId(10), new HeroId(1), Price: 20, FromPlayerShop: false) with { Id = new EventId(1), Day = 3 });
+
+        Assert.Empty(ProvenanceQuery.AllChannels(state, new ItemId(10)));
+    }
+
+    [Fact]
+    public void Channel_AgreesWithTheLastEntryOfAllChannels_ForEveryChannelKind()
+    {
+        // Channel() and AllChannels() must never disagree — Channel() is defined in terms of
+        // AllChannels(), so any qualifying event set proves this by construction, not by coincidence.
+        var state = WithLog(
+            new SupplyDelivered(new HeroId(4), new ItemId(13), Fee: 5) with { Id = new EventId(1), Day = 1 },
+            new CommissionFulfilled(new HeroId(3), new ItemId(13), Premium: 15) with { Id = new EventId(2), Day = 2 },
+            new CounterSaleClosed(new HeroId(2), new ItemId(13), Price: 40, Pinned: true) with { Id = new EventId(3), Day = 4 });
+
+        var all = ProvenanceQuery.AllChannels(state, new ItemId(13));
+        var latest = ProvenanceQuery.Channel(state, new ItemId(13));
+
+        Assert.Equal(3, all.Count);
+        Assert.Equal(all[^1], latest);
+    }
+
+    [Fact]
     public void HeirloomClause_ReadsTheStampedLineageAsASentence()
     {
         var item = PlayerItem(30, "Iron Blade", ItemSlot.Weapon, 5, 0) with
