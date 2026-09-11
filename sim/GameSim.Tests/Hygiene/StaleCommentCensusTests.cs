@@ -208,6 +208,35 @@ public class StaleCommentCensusTests
         Assert.True(found, "The detector would not have caught the actual QualityRoller drift.");
     }
 
+    /// <summary>Negative control (P2-HONEST-08): an ACCURATE comment restating a const's real
+    /// value — QualityRoller.cs's own current, correct <c>AutoCraftGrade = 800</c> line — must
+    /// never be flagged. A scanner with no negative control could be flagging everything or
+    /// nothing; this proves it discriminates true from false rather than just matching the shape.</summary>
+    [Fact]
+    public void RegressionProof_DoesNotFlagAnAccurateConstRestatement()
+    {
+        const string accurateFile = """
+            private const int AutoCraftGrade = 800;
+
+            /// effective = clamp(performanceGrade ?? AutoCraftGrade, 0, 1000) + jitter   // AutoCraftGrade = 800
+            public static int RollActive(int? performanceGrade)
+            {
+                var grade = performanceGrade ?? AutoCraftGrade;
+                return grade;
+            }
+            """;
+
+        var (code, comments) = SplitCommentsFromCode(accurateFile);
+        var consts = ConstIntsOf(code);
+
+        var flaggedAsNamedNumber = NamedNumber.Matches(comments).Cast<Match>()
+            .Any(m => consts.TryGetValue(m.Groups[1].Value, out var actual)
+                      && actual != int.Parse(m.Groups[2].Value));
+
+        Assert.False(flaggedAsNamedNumber,
+            "An accurate comment (AutoCraftGrade = 800, matching the real const) was flagged.");
+    }
+
     private static readonly Regex NullCoalesceIdent = new(@"\b(\w+)\s*\?\?\s*(\w+)\b");
     private static readonly Regex NullCoalesceNumber = new(@"\b(\w+)\s*\?\?\s*(-?\d+)\b");
     // Negative lookbehind excludes a const name that is really the tail of a FORMULA (e.g.
