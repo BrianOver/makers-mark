@@ -447,8 +447,20 @@ public class AtomicEquivalenceTests
     // beginners. The Contracts half lands first, deliberately, so a renderer has an honest number to
     // read instead of recomputing a gate threshold client-side — the exact defect this repo has
     // already paid for twice. See MAKERS-MARK.md 11.8.1.
+    //
+    // RE-BASELINED (2026-09-11, P2-MEMORY-08): the heroDied pool in TavernPack.cs was rewritten in
+    // place — six joking death lines replaced with absence-noticing prose, and every {cause}
+    // placement pack-wide moved off sentence-openers (the new grammar contract). Confirmed directly,
+    // not argued: this idle trace still submits ZERO counter actions (the PA3 invariant this test
+    // protects is untouched), but expeditions still run and heroes still die by the sim's own combat
+    // roll — a probe run of this exact seed/tick count logged 10 HeroDied events and 43 gossip lines,
+    // several rendered straight through the edited heroDied variants (e.g. "Elowen went down on floor
+    // 2 — slain by a Bog-Wight. Bank it and move on."). That prose is serialized state (R3/KTD2), so
+    // changing it moves this hash by construction — the same class of legitimate move as every prior
+    // re-baseline above, just triggered by a content rewrite instead of a new system. No RNG stream
+    // and no mechanic changed: same seed, same rolls, same deaths, same floors — only the words.
     private const string ExpectedPreCounterSha256 =
-        "1D21E32EC1624F3897ABB9905A7181747EDA62967EB3F045475B4B513EE088BF";
+        "B6A40A15646B6EDFCC851DCC80DC257BDADFC3D3B617F9AD537FD3A3DE0822E1";
 
     [Fact]
     public void ThirtyDayRun_NoCounterActions_IsByteIdenticalToPrePa3Kernel()

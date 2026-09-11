@@ -82,6 +82,39 @@ public class TavernPackTests
     }
 
     [Fact]
+    public void HeroDied_NoDeathVariant_StartsASentenceWithCause()
+    {
+        // P2-MEMORY-08 grammar contract: {cause} is minted (ExpeditionRevealSystem) as a lowercase
+        // predicate completing "[hero] was …", so a template may only place it mid-sentence — never
+        // as the word that opens one, since a bare predicate cannot stand as its own sentence-opener.
+        // Scope comes from the pool itself (every heroDied variant, every voice), not a hand-listed
+        // array — the whole point is that the family stays covered as it grows.
+        foreach (var (key, variants) in TavernPack.Pack.Variants)
+        {
+            if (FlavorEngine.BaseKey(key) != TavernPack.HeroDied)
+            {
+                continue;
+            }
+
+            foreach (var variant in variants)
+            {
+                foreach (var sentence in SplitSentences(variant))
+                {
+                    Assert.False(
+                        sentence.StartsWith("{cause}", StringComparison.Ordinal),
+                        $"'{key}' variant starts a sentence with {{cause}}: \"{variant}\"");
+                }
+            }
+        }
+    }
+
+    /// <summary>Splits on sentence-ending punctuation followed by a space (this corpus has no
+    /// abbreviations or ellipses to worry about), trimming so callers can check each piece's
+    /// leading token.</summary>
+    private static IEnumerable<string> SplitSentences(string variant) =>
+        variant.Split([". ", "! ", "? "], StringSplitOptions.None).Select(s => s.TrimStart());
+
+    [Fact]
     public void Pack_EveryBaseKey_HasAFallback_ThatPassesValidation()
     {
         Assert.Equal(TavernPack.SlotNames.Keys, TavernPack.Pack.Fallbacks.Keys);
