@@ -140,6 +140,63 @@ public class CampPanelTests
         }
     }
 
+    // ── 1c. P2-HONEST-18: InFlightExpedition.Gold (mid-raid haul so far) gets a real reader ────
+    //
+    // Recall banks exactly this figure right now; "Send them deeper" risks it on a death — so the
+    // running total is a decision fact for THIS stop, distinct from the Evening ledger's finalized
+    // "Earned" chip (LedgerModal). Values are set on the fixture and read back off the same
+    // InFlightExpedition the panel renders, so changing the fixture changes what this looks for.
+
+    [TestCase]
+    public void CampSlate_RendersEachHerosMidRaidGoldSoFar_DrivenByInFlightGold()
+    {
+        var ui = MountAtCampWith(state => state with
+        {
+            InFlight = ImmutableList.Create(state.InFlight[0] with
+            {
+                Gold = ImmutableSortedDictionary<int, int>.Empty.Add(1, 17).Add(2, 42),
+            }),
+        });
+        try
+        {
+            var party = ui.Adapter.CurrentState.InFlight.Single();
+            var text = RenderedText(ui.Camp);
+
+            foreach (var member in party.Party)
+            {
+                var gold = party.Gold[member.Value];
+                AssertThat(text)
+                    .OverrideFailureMessage($"InFlightExpedition.Gold[{member.Value}] = {gold}g was not rendered anywhere on the camp slate.")
+                    .Contains($"{gold}g so far");
+            }
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void NoCampedParty_RendersNoGoldSoFarLine()
+    {
+        // SyncCampModal keeps the slate closed while InFlight is empty (MainUi.cs:1658) — force the
+        // "no party camped" render path directly to pin that it carries no gold line either.
+        var ui = MountMainUi(new SimAdapter(ExpeditionWorld()));
+        try
+        {
+            AssertThat(ui.Adapter.CurrentState.InFlight.IsEmpty).IsTrue();
+            ui.Camp.ShowModal();
+
+            var text = RenderedText(ui.Camp);
+            AssertThat(text).Contains("No party is camped below the checkpoint.");
+            AssertThat(text).NotContains("g so far");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
     // ── 1b. U23 (§11.14.14, "the shelf is a public place"): a shelved-only player is told why ──
 
     /// <summary>The SAME fixture as <see cref="ExpeditionWorld"/>, except the one player-crafted

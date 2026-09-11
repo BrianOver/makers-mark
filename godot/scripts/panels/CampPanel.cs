@@ -12,8 +12,9 @@ namespace GodotClient.Panels;
 /// The winch-house slate (V7a staged resolution): a modal overlay MainUi auto-opens when a
 /// party parks at <see cref="DayPhase.Camp"/> with a non-empty <see cref="GameState.InFlight"/>.
 /// It renders the decision facts straight off the live <see cref="InFlightExpedition"/> — who is
-/// camped below the checkpoint, each hero's hp and heals-left (Heal consumables still in the
-/// working pack), the target floor — and offers exactly THREE verbs (U1, plan 2026-08-03-001,
+/// camped below the checkpoint, each hero's hp, heals-left (Heal consumables still in the
+/// working pack), and mid-raid gold so far (P2-HONEST-18), the target floor — and offers exactly
+/// THREE verbs (U1, plan 2026-08-03-001,
 /// KTD-A): pay the runner to Send ONE held consumable to a camped hero
 /// (<see cref="SendSupplyAction"/>), ring the Recall bell (<see cref="RecallPartyAction"/>), or
 /// Send them deeper — which both closes this slate AND raises <see cref="SendDeeperRequested"/>,
@@ -223,13 +224,22 @@ public partial class CampPanel : SimPanel
             var maxHp = state.Heroes.TryGetValue(member.Value, out var hero) ? hero.MaxHp : 0;
             var heals = HealsLeft(state, party, member);
             var yours = YoursHealsLeft(state, party, member);
+            var gold = party.Gold.TryGetValue(member.Value, out var goldSoFar) ? goldSoFar : 0;
 
             var row = AddRow(cardBody);
             // Hero-facing-day H1 §3.3 V-1: "of which yours: N" — the player's own morning (or
             // vigil-forge) provisioning, counted separately from whatever the hero bought on their
             // own. This is the "what specifically would help" half of the vigil's question: it is
             // the exact number this hero's own SendSupply delivery would add to.
-            AddLabel(row, $"{HeroName(member)} — hp {hp}/{maxHp}, {heals} heals left (of which yours: {yours})");
+            //
+            // P2-HONEST-18: "{gold}g so far" reads InFlightExpedition.Gold — the hero's own
+            // mid-raid haul, still growing, and deliberately worded apart from the Evening ledger's
+            // finalized "Earned" chip (LedgerModal's StatChip("Earned", ...)) so neither is mistaken
+            // for the other. Withholding it here would only spoil that reveal, not protect it —
+            // Recall banks exactly this figure right now, and "Send them deeper" risks it on a
+            // death, so the number changes a decision the player is making at THIS stop, not just
+            // at the one tonight.
+            AddLabel(row, $"{HeroName(member)} — hp {hp}/{maxHp}, {heals} heals left (of which yours: {yours}), {gold}g so far");
 
             var to = member;
             var send = new Button
