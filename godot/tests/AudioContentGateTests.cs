@@ -227,6 +227,7 @@ public class AudioContentGateTests
         LoopSeamLevelLurch,
         IsolatedTransient,
         ImpulseTrainNoTone,
+        HissHeavy,
     }
 
     /// <summary>
@@ -536,6 +537,68 @@ public class AudioContentGateTests
                 $"{lowFraction * 100:0.0}% of its energy sits below {LowCutoffHz:0}Hz and {highFraction * 100:0.000}% " +
                 $"above {HighCutoffHz:0}Hz (fails only if both >{LowFreqFractionFloor * 100:0}% and <{HighFreqFractionCeiling * 100:0.0}%)");
         }
+    }
+
+    // ---- Gate 6: hiss-heavy -----------------------------------------------------------------------
+
+    /// <summary>
+    /// Ceiling 6% of a track's total energy may sit above <see cref="HighCutoffHz"/> before it counts
+    /// as hiss-heavy — the one shape in the owner's register (#152, "Night music is fucked, grainy
+    /// static") that had no gate.
+    ///
+    /// <para><b>Why Gate 5 did not already cover it.</b> Gate 5 reads the same high-band fraction but
+    /// only ever fails on a track that is BOTH bottom-heavy and high-starved; a hiss-dominated bed is
+    /// the opposite shape and sails through it. The number was being computed and thrown away.</para>
+    ///
+    /// <para><b>Calibrated between two measured values on the same decode path, never a guess.</b>
+    /// Shipped today: night-still 1.989% (the worst), day-first-light 1.042%, quest-wait 0.997%,
+    /// town-dusk 0.230%. Against that, the PRE-regeneration town-dusk — literally the bytes the owner
+    /// heard and called grainy static, recovered from <c>0191144e^</c> and run through this very gate —
+    /// measures <b>13.031%</b>, which is also exactly the 13.0% Gate 5's own doc recorded for it before
+    /// U-T4-9 replaced it. So 6% sits 3.0× above the worst clean bed and 2.2× below the measured broken
+    /// one, and the regeneration that fixed #152 moved that track by a factor of 57.</para>
+    ///
+    /// <para>Deliberately NOT a claim that 2% is good and 6% is bad in the abstract. It is a claim that
+    /// the shape the owner reported is measurable, that it is 6× clear of everything now shipping, and
+    /// that no future regeneration may quietly return to it — which is the thing that was missing. A
+    /// bed that genuinely wants bright content (none of the four do; all are quiet ambient loops) would
+    /// take a pinned exemption naming the ruling, like any other gate here.</para>
+    /// </summary>
+    private const double HissFractionCeiling = 0.06;
+
+    [TestCase]
+    public void NoComposedTrack_IsHissHeavy()
+    {
+        var measured = AudioDirector.ComposedTrackIds
+            .Select(t => (t.Key, t.Value, Fraction: HighBandFraction(Decode(t.Key, t.Value))))
+            .ToList();
+        var census = string.Join(" · ", measured.Select(m => $"{m.Value} {m.Fraction * 100:0.000}%"));
+
+        foreach (var (phase, id, fraction) in measured)
+        {
+            AssertGate(phase, id, Gate.HissHeavy, fraction <= HissFractionCeiling,
+                $"{fraction * 100:0.000}% of its energy sits above {HighCutoffHz:0}Hz " +
+                $"(ceiling {HissFractionCeiling * 100:0.0}%). Whole census: {census}");
+        }
+    }
+
+    /// <summary>The fraction of a track's total energy above <see cref="HighCutoffHz"/>, via the same
+    /// two-pole cascade residual Gate 5 computes — shared rather than re-derived, so the two gates can
+    /// never disagree about what "the high band" means.</summary>
+    private static double HighBandFraction(float[] pcm)
+    {
+        var once = OnePoleLowPass(pcm, HighCutoffHz, SampleRate);
+        var twice = OnePoleLowPass(once, HighCutoffHz, SampleRate);
+
+        double total = 0, high = 0;
+        for (var i = 0; i < pcm.Length; i++)
+        {
+            total += (double)pcm[i] * pcm[i];
+            var residual = pcm[i] - twice[i];
+            high += residual * residual;
+        }
+
+        return total > 0 ? high / total : 0;
     }
 }
 #endif
