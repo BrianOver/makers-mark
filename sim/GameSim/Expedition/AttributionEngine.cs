@@ -63,7 +63,7 @@ public static class AttributionEngine
                 {
                     beats.Add(new AttributionBeat(
                         BeatType.KillingBlow, killer, hero.Id, combat.Floor,
-                        $"{items[killer.Value].Name} landed the killing blow on the {combat.MonsterKind}"));
+                        $"{items[killer.Value].Name} landed the killing blow on {MonsterName.Definite(combat.MonsterKind)}"));
                 }
 
                 // AE2 — lethal save: recompute the taken hit without each defensive player item.
@@ -90,7 +90,7 @@ public static class AttributionEngine
                         {
                             beats.Add(new AttributionBeat(
                                 BeatType.LethalSave, defId, hero.Id, combat.Floor,
-                                $"{items[defId.Value].Name} turned a lethal {combat.MonsterKind} hit"));
+                                $"{items[defId.Value].Name} turned a lethal {MonsterName.AttributiveBlow(combat.MonsterKind)}"));
                         }
                     }
                 }

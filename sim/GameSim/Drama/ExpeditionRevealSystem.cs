@@ -320,8 +320,10 @@ public sealed class ExpeditionRevealSystem : IPhaseSystem
             return (attempted, "lost to the Mine");
         }
 
-        var article = last.MonsterKind.StartsWith("The ", StringComparison.Ordinal) ? string.Empty : "a ";
-        return (last.Floor, $"slain by {article}{last.MonsterKind}");
+        // P2-PROOF-12: this method's own three-line rule became MonsterName.Indefinite. It was
+        // right here and wrong in AttributionEngine's two sites, which is what a rule living in one
+        // place stops happening again.
+        return (last.Floor, $"slain by {MonsterName.Indefinite(last.MonsterKind)}");
     }
 
     /// <summary>
