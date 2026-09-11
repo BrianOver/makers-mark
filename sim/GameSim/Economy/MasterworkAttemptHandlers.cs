@@ -1,5 +1,6 @@
 using GameSim.Contracts;
 using GameSim.Crafting;
+using GameSim.Materials;
 using GameSim.Professions;
 
 namespace GameSim.Economy;
@@ -98,7 +99,8 @@ public sealed class MasterworkAttemptHandlers : IActionHandler
         var materialHave = state.Player.Materials.TryGetValue(attempt.MaterialKey, out var matStock) ? matStock : 0;
         if (materialHave < neededMaterial)
         {
-            return (state, new RejectedAction(action, $"Not enough {attempt.MaterialKey}: need {neededMaterial}, have {materialHave}."));
+            return (state, new RejectedAction(action,
+                $"Not enough {MaterialRegistry.Require(attempt.MaterialKey).DisplayName.ToLowerInvariant()}: need {neededMaterial}, have {materialHave}."));
         }
 
         // 7. Coal.

@@ -680,7 +680,9 @@ public partial class ForgePanel : SimPanel
             buy.Pressed += () => OnBuyMaterialPressed(key, (int)qtySpin.Value);
 
             var initial = MaterialGate(key, 1);
-            _vendorRows!.AddChild(ListRow(IconRegistry.Ore(key), key, $"{initial.Quote}g", have.ToString(), buy, initial.Legal, initial.WhyNot));
+            _vendorRows!.AddChild(ListRow(
+                IconRegistry.Ore(key), MaterialRegistry.Require(key).DisplayName.ToLowerInvariant(), $"{initial.Quote}g",
+                have.ToString(), buy, initial.Legal, initial.WhyNot));
 
             // The stepper itself — a thin row right under the ListRow (ShopPanel's priceSpin
             // precedent), re-gating the SAME Buy button live against whatever quantity is dialed
@@ -736,16 +738,17 @@ public partial class ForgePanel : SimPanel
             var upgradeCost = ForgeTierHandlers.GoldCost[tierIndex];
             var oreHave = state.Player.Materials.TryGetValue(oreKey, out var oreStock) ? oreStock : 0;
 
+            var oreDisplayName = MaterialRegistry.Require(oreKey).DisplayName;
             upgradeName = $"Forge {TierRoman[tierIndex + 1]}";
             upgradeIcon = IconRegistry.Ore(oreKey);
-            upgradePrice = $"{upgradeCost}g + {ForgeTierHandlers.OreQuantity} {oreKey}";
-            upgradeOwned = $"{oreHave}/{ForgeTierHandlers.OreQuantity} {oreKey}";
+            upgradePrice = $"{upgradeCost}g + {ForgeTierHandlers.OreQuantity} {oreDisplayName.ToLowerInvariant()}";
+            upgradeOwned = $"{oreHave}/{ForgeTierHandlers.OreQuantity} {oreDisplayName.ToLowerInvariant()}";
             // P2-SCREEN-09: ActionLegality decides; the chain below only picks the reason.
             upgradeLegal = ActionLegality.IsLegal(state, new UpgradeForgeAction(), state.Phase);
             upgradeWhyNot = state.Phase != DayPhase.Morning
                 ? "The forge upgrades in the Morning."
                 : oreHave < ForgeTierHandlers.OreQuantity
-                    ? $"Not enough {oreKey} — need {ForgeTierHandlers.OreQuantity}, have {oreHave}."
+                    ? $"Not enough {oreDisplayName.ToLowerInvariant()} — need {ForgeTierHandlers.OreQuantity}, have {oreHave}."
                     : upgradeCost > state.Player.Gold
                         ? "You can't afford that yet."
                         : $"No action slots left today (0/{ActionBudget.SlotsPerDay}) — 'next' to advance.";
@@ -918,8 +921,13 @@ public partial class ForgePanel : SimPanel
                 // every gate below reads the efficiency-adjusted `needed` — with the material-
                 // efficiency talent unlocked the chip read "copper 2x (have 1)" on a craft that
                 // was perfectly legal. `needed` is the same number the buttons below gate on.
+                // P2-HONEST-05: lowercased (not Title Case) — matches every OTHER material mention on
+                // this card/panel (the vendor row, the needs row, the sim's own rejection prose) and
+                // keeps ForgeCraftTests' "renders the chosen material" checks (which read this exact
+                // chip) looking for the same lowercase word they always have.
+                var materialLabel = MaterialRegistry.Require(material).DisplayName.ToLowerInvariant();
                 controlsRow.AddChild(StatChip(
-                    material, $"{needed}x (have {have})",
+                    materialLabel, $"{needed}x (have {have})",
                     affordable ? UiKit.ChipTone.Positive : UiKit.ChipTone.Neutral));
 
                 // P2-SCREEN-09: the boolean now routes through ActionLegality (the one legality
@@ -931,7 +939,7 @@ public partial class ForgePanel : SimPanel
                 var craftAction = new CraftAction(recipe.RecipeId, material);
                 var craftLegal = ActionLegality.IsLegal(state, craftAction, state.Phase);
                 var craftWhyNot = !affordable
-                    ? $"need {needed} {material}, have {have}"
+                    ? $"need {needed} {materialLabel}, have {have}"
                     : $"No action slots left today (0/{ActionBudget.SlotsPerDay}) — 'next' to advance.";
 
                 // PA6/PKD4: an ACTIVE profession's instant Craft is the null-grade auto-craft
@@ -1032,7 +1040,7 @@ public partial class ForgePanel : SimPanel
                     : !tierTalentOk
                         ? $"This recipe is tier {recipe.Tier} — unlock its talent first."
                         : !affordable
-                        ? $"Not enough {material} — need {needed}, have {have}."
+                        ? $"Not enough {materialLabel} — need {needed}, have {have}."
                         : !mwCoalOk
                             ? $"Not enough coal — need {MasterworkAttemptHandlers.CoalCost}, have {coalHave}."
                             : !mwFluxOk
@@ -1063,7 +1071,7 @@ public partial class ForgePanel : SimPanel
                     : !tierTalentOk
                         ? $"This recipe is tier {recipe.Tier} — unlock its talent first."
                         : !legendaryMaterialOk
-                        ? $"Not enough {material} — need {legendaryNeeded}, have {have}."
+                        ? $"Not enough {materialLabel} — need {legendaryNeeded}, have {have}."
                         : !legendaryGoldOk
                             ? $"Not enough gold — need {legendaryCost}, have {state.Player.Gold}."
                             : $"No action slots left today (0/{ActionBudget.SlotsPerDay}) — 'next' to advance.";
@@ -1149,7 +1157,7 @@ public partial class ForgePanel : SimPanel
             needsBuy.Pressed += () => OnBuyMaterialPressed(needsMaterial, 1);
             _needsRows!.AddChild(ListRow(
                 IconRegistry.Ore(needsKey),
-                $"{needsKey} — {needsRecipeName} needs {needsQuantity}",
+                $"{MaterialRegistry.Require(needsKey).DisplayName.ToLowerInvariant()} — {needsRecipeName} needs {needsQuantity}",
                 $"{needsGate.Quote}g",
                 $"{needsHave}/{needsQuantity}",
                 needsBuy,
@@ -1200,7 +1208,7 @@ public partial class ForgePanel : SimPanel
         GodotClient.Audio.AudioDirector.For(this)?.Play(GodotClient.Audio.Cue.CraftDone);
         var mods = new[] { oil, rune, fitting }.Where(m => m is not null).ToArray();
         var modText = mods.Length == 0 ? string.Empty : $" + [{string.Join(", ", mods)}]";
-        SetFeedback(Confirm(action, $"Crafted {recipeId} with {material}{modText}"));
+        SetFeedback(Confirm(action, $"Crafted {recipeId} with {MaterialRegistry.Require(material).DisplayName.ToLowerInvariant()}{modText}"));
         // Wave B: one first-touch lesson per action (ShowMentorFirstTouch's own doc) — the mark can
         // only be read once material-ceiling has already had its turn on some earlier craft.
         if (!ShowMaterialCeilingLesson())
@@ -1305,7 +1313,7 @@ public partial class ForgePanel : SimPanel
         var action = new CraftAction(recipeId, materialKey, PerformanceGrade: null, Puzzle: trace);
         Adapter.Queue(action);
         GodotClient.Audio.AudioDirector.For(this)?.Play(GodotClient.Audio.Cue.CraftDone);
-        SetFeedback(Confirm(action, $"Forged another {recipeId} with {materialKey} (reusing the proven trace)"));
+        SetFeedback(Confirm(action, $"Forged another {recipeId} with {MaterialRegistry.Require(materialKey).DisplayName.ToLowerInvariant()} (reusing the proven trace)"));
         LogMinigame("repeat", "forge", recipeId, materialKey);
     }
 
@@ -1436,7 +1444,7 @@ public partial class ForgePanel : SimPanel
         Adapter?.Queue(action);
         _quench.Visible = false;
         SetFeedback(Confirm(action,
-            $"Forged {action.RecipeId} with {action.MaterialKey} " +
+            $"Forged {action.RecipeId} with {MaterialRegistry.Require(action.MaterialKey).DisplayName.ToLowerInvariant()} " +
             $"(preview grade {_quench.PreviewGradePermille}, sub-scores {string.Join("/", action.SubScores ?? ImmutableList<int>.Empty)})"));
 
         // The overlay closes immediately above, so _Process's continuous glow poll (gated on
@@ -1502,7 +1510,7 @@ public partial class ForgePanel : SimPanel
         _brewPuzzle!.Visible = false;
         var preview = action.SubScores is { Count: 3 } scores ? scores[2] : 0;
         SetFeedback(Confirm(action,
-            $"Brewed {action.RecipeId} with {action.MaterialKey} " +
+            $"Brewed {action.RecipeId} with {MaterialRegistry.Require(action.MaterialKey).DisplayName.ToLowerInvariant()} " +
             $"(brew score {preview}‰, heading {ForgeMinigame.PreviewGrade(preview)})"));
         LogMinigame("done", "brew", action.RecipeId, action.MaterialKey, PreviewDetail(action));
         ShowMarkReadLesson();
@@ -1543,7 +1551,7 @@ public partial class ForgePanel : SimPanel
         _engineeringBench!.Visible = false;
         var preview = action.SubScores is { Count: 3 } scores ? scores[2] : 0;
         SetFeedback(Confirm(action,
-            $"Assembled {action.RecipeId} with {action.MaterialKey} " +
+            $"Assembled {action.RecipeId} with {MaterialRegistry.Require(action.MaterialKey).DisplayName.ToLowerInvariant()} " +
             $"(assembly score {preview}‰, heading {ForgeMinigame.PreviewGrade(preview)})"));
         LogMinigame("done", "assemble", action.RecipeId, action.MaterialKey, PreviewDetail(action));
         ShowMarkReadLesson();
@@ -1587,7 +1595,7 @@ public partial class ForgePanel : SimPanel
         _tanningFrame!.Visible = false;
         var preview = action.SubScores is { Count: 3 } scores ? scores[2] : 0;
         SetFeedback(Confirm(action,
-            $"Scraped {action.RecipeId} with {action.MaterialKey} " +
+            $"Scraped {action.RecipeId} with {MaterialRegistry.Require(action.MaterialKey).DisplayName.ToLowerInvariant()} " +
             $"(hide score {preview}‰, heading {ForgeMinigame.PreviewGrade(preview)})"));
         LogMinigame("done", "scrape", action.RecipeId, action.MaterialKey, PreviewDetail(action));
         ShowMarkReadLesson();
@@ -1941,7 +1949,7 @@ public partial class ForgePanel : SimPanel
         Adapter?.Queue(action);
         // Sound the CLICK, not the settlement: the player pressed Buy now, so the coin lands now.
         GodotClient.Audio.AudioDirector.For(this)?.Play(GodotClient.Audio.Cue.Coin);
-        SetFeedback(Confirm(action, $"Bought {quantity} {materialKey}"));
+        SetFeedback(Confirm(action, $"Bought {quantity} {MaterialRegistry.Require(materialKey).DisplayName.ToLowerInvariant()}"));
     }
 
     /// <summary>U3: the forge-tier upgrade — always a BELL-RIDER (<see cref="GameSim.Kernel.ActionTiming"/>
@@ -1995,7 +2003,7 @@ public partial class ForgePanel : SimPanel
         var action = new MasterworkAttemptAction(recipeId, materialKey);
         Adapter?.Queue(action);
         GodotClient.Audio.AudioDirector.For(this)?.Play(GodotClient.Audio.Cue.CraftDone);
-        SetFeedback(Confirm(action, $"Masterwork attempt on {recipeId} with {materialKey} (guarantees Superior or better)"));
+        SetFeedback(Confirm(action, $"Masterwork attempt on {recipeId} with {MaterialRegistry.Require(materialKey).DisplayName.ToLowerInvariant()} (guarantees Superior or better)"));
         ShowFoundryVerbsLesson();
     }
 
@@ -2011,7 +2019,7 @@ public partial class ForgePanel : SimPanel
     {
         var action = new CommissionLegendaryWorkAction(recipeId, materialKey);
         Adapter?.Queue(action);
-        SetFeedback(Confirm(action, $"Commissioned a legendary {recipeId} from {materialKey}"));
+        SetFeedback(Confirm(action, $"Commissioned a legendary {recipeId} from {MaterialRegistry.Require(materialKey).DisplayName.ToLowerInvariant()}"));
         ShowFoundryVerbsLesson();
     }
 
@@ -2031,10 +2039,20 @@ public partial class ForgePanel : SimPanel
         _feedback.Visible = !string.IsNullOrEmpty(text);
     }
 
+    /// <summary>P2-HONEST-05: the dropdown's item TEXT is now the lowercase display spelling ("drowned
+    /// silver"), never the registry key ("drowned-silver") — so the real key comes back through the
+    /// SAME index-1-into-the-population-order mapping <see cref="SelectedModifierId"/> already uses
+    /// for its own selects, never a re-read of the rendered label.</summary>
     private string SelectedMaterialOr(string recipeDefault)
     {
         var selected = _materialSelect!.Selected;
-        return selected <= 0 ? recipeDefault : _materialSelect.GetItemText(selected);
+        if (selected <= 0)
+        {
+            return recipeDefault;
+        }
+
+        var keys = RecipeTable.MaterialGrades.Keys.ToList();
+        return selected - 1 < keys.Count ? keys[selected - 1] : recipeDefault;
     }
 
     /// <summary>Phase C U-C1 slice 2: an OptionButton listing "(none)" then every registered modifier
@@ -2234,7 +2252,10 @@ public partial class ForgePanel : SimPanel
         _materialSelect.AddItem(RecipeDefaultOption);
         foreach (var key in RecipeTable.MaterialGrades.Keys)
         {
-            _materialSelect.AddItem(key);
+            // P2-HONEST-05: the lowercase display spelling, not the raw registry key — the picker
+            // used to read "drowned-silver"/"quench-salt" verbatim; SelectedMaterialOr maps the
+            // choice back to the real key by index, never by re-reading this label.
+            _materialSelect.AddItem(MaterialRegistry.Require(key).DisplayName.ToLowerInvariant());
         }
 
         _materialSelect.ItemSelected += _ => Refresh();

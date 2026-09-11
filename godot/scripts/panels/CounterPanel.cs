@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using GameSim.Classes;
 using GameSim.Contracts;
 using GameSim.Heroes;
 using Godot;
@@ -154,7 +155,7 @@ public partial class CounterPanel : SimPanel
         customerIcon.Name = "CustomerIcon"; // test seam — the per-hero identity check (U4)
         var infoCol = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
         headerRow.AddChild(infoCol);
-        AddLabel(infoCol, $"{hero.Name} — {hero.ClassId}");
+        AddLabel(infoCol, $"{hero.Name} — {ClassRegistry.Require(hero.ClassId).DisplayName}");
 
         var moodRow = AddRow(infoCol);
         moodRow.AddChild(StatChip("Mood", MoodHint(hero.MoodPermille), MoodTone(hero.MoodPermille)));

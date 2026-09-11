@@ -149,7 +149,7 @@ public static class ObjectiveAdvisor
                     var craft = new CraftAction(recipe.RecipeId, materialKey);
                     if (ActionLegality.IsLegal(state, craft, phase))
                     {
-                        suggestions.Add(new Suggestion(craft, $"You already have enough {materialKey} to craft '{recipe.RecipeId}'."));
+                        suggestions.Add(new Suggestion(craft, $"You already have enough {MaterialRegistry.Require(materialKey).DisplayName.ToLowerInvariant()} to craft '{recipe.RecipeId}'."));
                     }
                 }
             }
@@ -161,7 +161,7 @@ public static class ObjectiveAdvisor
                 var buy = new BuyMaterialAction(materialKey, quantity);
                 if (ActionLegality.IsLegal(state, buy, phase))
                 {
-                    suggestions.Add(new Suggestion(buy, $"Buy {quantity} {materialKey} ({cost}g) — the cheapest path to your next craft."));
+                    suggestions.Add(new Suggestion(buy, $"Buy {quantity} {MaterialRegistry.Require(materialKey).DisplayName.ToLowerInvariant()} ({cost}g) — the cheapest path to your next craft."));
                 }
                 else
                 {
@@ -171,7 +171,7 @@ public static class ObjectiveAdvisor
                     // material's cost automatically before Expedition. Name it, but propose no
                     // illegal action.
                     suggestions.Add(new Suggestion(null,
-                        $"Not enough gold for {materialKey} yet ({cost}g needed) — the town's recovery stipend will cover it this morning."));
+                        $"Not enough gold for {MaterialRegistry.Require(materialKey).DisplayName.ToLowerInvariant()} yet ({cost}g needed) — the town's recovery stipend will cover it this morning."));
                 }
             }
         }
@@ -241,7 +241,7 @@ public static class ObjectiveAdvisor
             return ActionLegality.IsLegal(state, craft, phase)
                 ? new Suggestion(craft,
                     $"{stall.HeroName} is stalled at {DepthCopy.Deepest(stall.DeepestFloorReached)}, aiming for floor {stall.TargetFloor}, missing {slot} gear " +
-                    $"— craft '{recipe.Name}' now, you already have enough {recipe.MaterialKey}.")
+                    $"— craft '{recipe.Name}' now, you already have enough {MaterialRegistry.Require(recipe.MaterialKey).DisplayName.ToLowerInvariant()}.")
                 : null;
         }
 
@@ -253,7 +253,7 @@ public static class ObjectiveAdvisor
                 var cost = MaterialVendorHandlers.QuoteCost(recipe.MaterialKey, recipe.MaterialQuantity);
                 return new Suggestion(buy,
                     $"{stall.HeroName} is stalled at {DepthCopy.Deepest(stall.DeepestFloorReached)}, aiming for floor {stall.TargetFloor}, missing {slot} gear " +
-                    $"— buy {recipe.MaterialQuantity} {recipe.MaterialKey} ({cost}g) toward '{recipe.Name}'.");
+                    $"— buy {recipe.MaterialQuantity} {MaterialRegistry.Require(recipe.MaterialKey).DisplayName.ToLowerInvariant()} ({cost}g) toward '{recipe.Name}'.");
             }
         }
 
@@ -371,7 +371,7 @@ public static class ObjectiveAdvisor
                 // display convention for the tier a single upgrade lands on), never re-derived.
                 return new Suggestion(upgrade,
                     $"Raise the forge to Tier {tierIndex + 2} ({ForgeTierHandlers.GoldCost[tierIndex]}g, " +
-                    $"{ForgeTierHandlers.OreQuantity} {ForgeTierHandlers.OreKey[tierIndex]}) — the way to '{recipe.Name}'. " +
+                    $"{ForgeTierHandlers.OreQuantity} {MaterialRegistry.Require(ForgeTierHandlers.OreKey[tierIndex]).DisplayName.ToLowerInvariant()}) — the way to '{recipe.Name}'. " +
                     $"{stall.HeroName} carries {targetSlot} gear below floor {nextFloor}'s {required}+ bar " +
                     $"(currently {carried}); '{profession.TalentNodes[gate].Name}' opens that recipe once the forge can hold it.");
             }
@@ -389,7 +389,7 @@ public static class ObjectiveAdvisor
             return ActionLegality.IsLegal(state, craft, phase)
                 ? new Suggestion(craft,
                     $"{stall.HeroName} carries {targetSlot} gear below floor {nextFloor}'s {required}+ bar (currently {carried}) " +
-                    $"— craft '{best.Name}' now, you already have enough {best.MaterialKey}.")
+                    $"— craft '{best.Name}' now, you already have enough {MaterialRegistry.Require(best.MaterialKey).DisplayName.ToLowerInvariant()}.")
                 : null;
         }
 
@@ -401,7 +401,7 @@ public static class ObjectiveAdvisor
                 var cost = MaterialVendorHandlers.QuoteCost(best.MaterialKey, best.MaterialQuantity);
                 return new Suggestion(buy,
                     $"{stall.HeroName} carries {targetSlot} gear below floor {nextFloor}'s {required}+ bar (currently {carried}) " +
-                    $"— buy {best.MaterialQuantity} {best.MaterialKey} ({cost}g) toward '{best.Name}'.");
+                    $"— buy {best.MaterialQuantity} {MaterialRegistry.Require(best.MaterialKey).DisplayName.ToLowerInvariant()} ({cost}g) toward '{best.Name}'.");
             }
         }
 

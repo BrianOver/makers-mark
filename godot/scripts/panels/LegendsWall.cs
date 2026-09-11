@@ -6,6 +6,7 @@ using GameSim.Advisor;
 using GameSim.Contracts;
 using GameSim.Crafting;
 using GameSim.Drama;
+using GameSim.Materials;
 using GameSim.Professions;
 using Godot;
 using GodotClient.Ui;
@@ -345,7 +346,10 @@ public partial class LegendsWall : Control
             var materialDefaultIndex = 0;
             for (var i = 0; i < materialOptions.Count; i++)
             {
-                materialSelect.AddItem(materialOptions[i]);
+                // P2-HONEST-05: lowercase display spelling (matches every other material mention in
+                // this codebase's Godot/sim prose, and keeps existing engine-test expectations —
+                // LegendsWallTests already reads this exact picker for "copper"/"iron" — unchanged).
+                materialSelect.AddItem(MaterialRegistry.Require(materialOptions[i]).DisplayName.ToLowerInvariant());
                 if (materialOptions[i] == ownRecipe!.MaterialKey)
                 {
                     materialDefaultIndex = i;
@@ -495,7 +499,7 @@ public partial class LegendsWall : Control
         var have = state.Player.Materials.TryGetValue(materialKey, out var stock) ? stock : 0;
         if (have < needed)
         {
-            return (false, $"Not enough {materialKey}: need {needed}, have {have}.");
+            return (false, $"Not enough {MaterialRegistry.Require(materialKey).DisplayName.ToLowerInvariant()}: need {needed}, have {have}.");
         }
 
         if (state.ActionSlotsRemaining <= 0)

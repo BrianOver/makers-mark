@@ -7,6 +7,7 @@ using GameSim.Drama;
 using GameSim.Factions;
 using GameSim.Heroes;
 using GameSim.Kernel;
+using GameSim.Materials;
 using Godot;
 using GodotClient.Ui;
 
@@ -358,7 +359,7 @@ public partial class TavernPanel : SimPanel
                 ? $"Asking: {commission.MinQuality} {commission.Slot} by day {commission.DeadlineDay}, +{commission.PremiumGold}g over list{CommissionSystem.SlotHonestyNote(commission.Slot)}."
                 : null,
             PursuedThreadKind.Ore => OpenOreOfferFor(state, hero.Id) is { } offer
-                ? $"Offering: {offer.Quantity}x {offer.MaterialKey} at {offer.UnitPrice}g each."
+                ? $"Offering: {offer.Quantity}x {MaterialRegistry.Require(offer.MaterialKey).DisplayName.ToLowerInvariant()} at {offer.UnitPrice}g each."
                 : null,
             _ => null,
         };
@@ -530,7 +531,7 @@ public partial class TavernPanel : SimPanel
             return;
         }
 
-        AddLabel(parent, $"  {hero.Name} offers {offer.Quantity}x {offer.MaterialKey} at {offer.UnitPrice}g each.");
+        AddLabel(parent, $"  {hero.Name} offers {offer.Quantity}x {MaterialRegistry.Require(offer.MaterialKey).DisplayName.ToLowerInvariant()} at {offer.UnitPrice}g each.");
 
         var spin = AddSpinBox(parent, $"HandshakeQty_{hero.Id.Value}", 1, offer.Quantity, offer.Quantity);
 
@@ -540,7 +541,7 @@ public partial class TavernPanel : SimPanel
             var quantity = (int)spin.Value;
             var action = new BuyOreAction(hero.Id, offer.MaterialKey, quantity);
             Adapter!.Queue(action);
-            _feedback!.Text = Confirm(action, $"Bought {quantity}x {offer.MaterialKey} from {hero.Name}");
+            _feedback!.Text = Confirm(action, $"Bought {quantity}x {MaterialRegistry.Require(offer.MaterialKey).DisplayName.ToLowerInvariant()} from {hero.Name}");
             _pursued = null;
         });
 

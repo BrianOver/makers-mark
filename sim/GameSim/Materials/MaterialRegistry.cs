@@ -49,31 +49,31 @@ public static class MaterialRegistry
     public static readonly ImmutableSortedDictionary<string, MaterialDefinition> All = new[]
     {
         // Mine ores — byte-identical to the old OrePricing / MaterialGrades switches (floor 1 → 5).
-        new MaterialDefinition(Copper,     UnitPrice: 3,  Grade: 1, Tags: ImmutableArray<string>.Empty, SourceVenue: MineVenue),
-        new MaterialDefinition(Iron,       UnitPrice: 5,  Grade: 2, Tags: ImmutableArray<string>.Empty, SourceVenue: MineVenue),
-        new MaterialDefinition(Steel,      UnitPrice: 8,  Grade: 3, Tags: ImmutableArray<string>.Empty, SourceVenue: MineVenue),
-        new MaterialDefinition(Mithril,    UnitPrice: 12, Grade: 4, Tags: ImmutableArray<string>.Empty, SourceVenue: MineVenue),
-        new MaterialDefinition(Adamant,    UnitPrice: 18, Grade: 5, Tags: ImmutableArray<string>.Empty, SourceVenue: MineVenue),
+        new MaterialDefinition(Copper,     "Copper",     UnitPrice: 3,  Grade: 1, Tags: ImmutableArray<string>.Empty, SourceVenue: MineVenue),
+        new MaterialDefinition(Iron,       "Iron",       UnitPrice: 5,  Grade: 2, Tags: ImmutableArray<string>.Empty, SourceVenue: MineVenue),
+        new MaterialDefinition(Steel,      "Steel",      UnitPrice: 8,  Grade: 3, Tags: ImmutableArray<string>.Empty, SourceVenue: MineVenue),
+        new MaterialDefinition(Mithril,    "Mithril",    UnitPrice: 12, Grade: 4, Tags: ImmutableArray<string>.Empty, SourceVenue: MineVenue),
+        new MaterialDefinition(Adamant,    "Adamant",    UnitPrice: 18, Grade: 5, Tags: ImmutableArray<string>.Empty, SourceVenue: MineVenue),
 
         // Regal materials (Crownsguard) — inert: no live venue mints them, faction unregistered. Prices
         // and grades continue the ladder above adamant. Draw-neutral until a determinism-gated re-baseline
         // adds them to PricedPool (R4).
-        new MaterialDefinition(Electrum,   UnitPrice: 24, Grade: 6, Tags: ImmutableArray<string>.Empty, SourceVenue: ""),
-        new MaterialDefinition(Orichalcum, UnitPrice: 30, Grade: 7, Tags: ImmutableArray<string>.Empty, SourceVenue: ""),
-        new MaterialDefinition("firebrick", UnitPrice: 60, Grade: 12, Tags: ImmutableArray<string>.Empty, SourceVenue: "emberfall"),
-        new MaterialDefinition("slagiron", UnitPrice: 66, Grade: 13, Tags: ImmutableArray<string>.Empty, SourceVenue: "emberfall"),
-        new MaterialDefinition("quench-salt", UnitPrice: 72, Grade: 14, Tags: ImmutableArray<string>.Empty, SourceVenue: "emberfall"),
-        new MaterialDefinition("emberglass", UnitPrice: 78, Grade: 15, Tags: ImmutableArray<string>.Empty, SourceVenue: "emberfall"),
-        new MaterialDefinition("heartcoal", UnitPrice: 84, Grade: 16, Tags: ImmutableArray<string>.Empty, SourceVenue: "emberfall"),
-        new MaterialDefinition("greenheart", UnitPrice: 36, Grade: 8, Tags: ImmutableArray<string>.Empty, SourceVenue: "gloomwood"),
-        new MaterialDefinition("amberpitch", UnitPrice: 42, Grade: 9, Tags: ImmutableArray<string>.Empty, SourceVenue: "gloomwood"),
-        new MaterialDefinition("moonresin", UnitPrice: 48, Grade: 10, Tags: ImmutableArray<string>.Empty, SourceVenue: "gloomwood"),
-        new MaterialDefinition("heartwood", UnitPrice: 54, Grade: 11, Tags: ImmutableArray<string>.Empty, SourceVenue: "gloomwood"),
-        new MaterialDefinition("verdigris", UnitPrice: 3, Grade: 1, Tags: ImmutableArray<string>.Empty, SourceVenue: "sunken-crypt"),
-        new MaterialDefinition("saltglass", UnitPrice: 5, Grade: 2, Tags: ImmutableArray<string>.Empty, SourceVenue: "sunken-crypt"),
-        new MaterialDefinition("bonechalk", UnitPrice: 8, Grade: 3, Tags: ImmutableArray<string>.Empty, SourceVenue: "sunken-crypt"),
-        new MaterialDefinition("drowned-silver", UnitPrice: 12, Grade: 4, Tags: ImmutableArray<string>.Empty, SourceVenue: "sunken-crypt"),
-        new MaterialDefinition("abyss-pearl", UnitPrice: 18, Grade: 5, Tags: ImmutableArray<string>.Empty, SourceVenue: "sunken-crypt"),
+        new MaterialDefinition(Electrum,   "Electrum",   UnitPrice: 24, Grade: 6, Tags: ImmutableArray<string>.Empty, SourceVenue: ""),
+        new MaterialDefinition(Orichalcum, "Orichalcum", UnitPrice: 30, Grade: 7, Tags: ImmutableArray<string>.Empty, SourceVenue: ""),
+        new MaterialDefinition("firebrick", "Firebrick", UnitPrice: 60, Grade: 12, Tags: ImmutableArray<string>.Empty, SourceVenue: "emberfall"),
+        new MaterialDefinition("slagiron", "Slag Iron", UnitPrice: 66, Grade: 13, Tags: ImmutableArray<string>.Empty, SourceVenue: "emberfall"),
+        new MaterialDefinition("quench-salt", "Quench Salt", UnitPrice: 72, Grade: 14, Tags: ImmutableArray<string>.Empty, SourceVenue: "emberfall"),
+        new MaterialDefinition("emberglass", "Emberglass", UnitPrice: 78, Grade: 15, Tags: ImmutableArray<string>.Empty, SourceVenue: "emberfall"),
+        new MaterialDefinition("heartcoal", "Heartcoal", UnitPrice: 84, Grade: 16, Tags: ImmutableArray<string>.Empty, SourceVenue: "emberfall"),
+        new MaterialDefinition("greenheart", "Greenheart", UnitPrice: 36, Grade: 8, Tags: ImmutableArray<string>.Empty, SourceVenue: "gloomwood"),
+        new MaterialDefinition("amberpitch", "Amberpitch", UnitPrice: 42, Grade: 9, Tags: ImmutableArray<string>.Empty, SourceVenue: "gloomwood"),
+        new MaterialDefinition("moonresin", "Moonresin", UnitPrice: 48, Grade: 10, Tags: ImmutableArray<string>.Empty, SourceVenue: "gloomwood"),
+        new MaterialDefinition("heartwood", "Heartwood", UnitPrice: 54, Grade: 11, Tags: ImmutableArray<string>.Empty, SourceVenue: "gloomwood"),
+        new MaterialDefinition("verdigris", "Verdigris", UnitPrice: 3, Grade: 1, Tags: ImmutableArray<string>.Empty, SourceVenue: "sunken-crypt"),
+        new MaterialDefinition("saltglass", "Salt Glass", UnitPrice: 5, Grade: 2, Tags: ImmutableArray<string>.Empty, SourceVenue: "sunken-crypt"),
+        new MaterialDefinition("bonechalk", "Bone Chalk", UnitPrice: 8, Grade: 3, Tags: ImmutableArray<string>.Empty, SourceVenue: "sunken-crypt"),
+        new MaterialDefinition("drowned-silver", "Drowned Silver", UnitPrice: 12, Grade: 4, Tags: ImmutableArray<string>.Empty, SourceVenue: "sunken-crypt"),
+        new MaterialDefinition("abyss-pearl", "Abyss Pearl", UnitPrice: 18, Grade: 5, Tags: ImmutableArray<string>.Empty, SourceVenue: "sunken-crypt"),
     }.ToImmutableSortedDictionary(m => m.Id, m => m, StringComparer.Ordinal);
 
     /// <summary>

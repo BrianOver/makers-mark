@@ -5,6 +5,7 @@ using GameSim.Contracts;
 using GameSim.Crafting;
 using GameSim.Drama;
 using GameSim.Heroes;
+using GameSim.Materials;
 using GameSim.Professions;
 using Godot;
 using GodotClient.Ui;
@@ -528,7 +529,7 @@ public static class TodoSectionBuilder
             anythingShort = true;
             RaidForecastBoard.AddLabel(
                 parent,
-                $"  {owed} {key} — {forWhom[key]} item(s) below need {totals[key]}, you hold {have}.");
+                $"  {owed} {MaterialRegistry.Require(key).DisplayName.ToLowerInvariant()} — {forWhom[key]} item(s) below need {totals[key]}, you hold {have}.");
         }
 
         if (!anythingShort)
@@ -550,7 +551,7 @@ public static class TodoSectionBuilder
         {
             // Kept to one short line: this renders into the Companion Dock's narrow card, where a
             // three-line entry means two entries fill the whole thing.
-            RaidForecastBoard.AddLabel(parent, $"  {recipe.Name} ({slot}) for {heroName} — {why}; {needed} {recipe.MaterialKey}.");
+            RaidForecastBoard.AddLabel(parent, $"  {recipe.Name} ({slot}) for {heroName} — {why}; {needed} {MaterialRegistry.Require(recipe.MaterialKey).DisplayName.ToLowerInvariant()}.");
             RaidForecastBoard.AddButton(parent, $"TodoForge_{heroName}", "Forge one",
                 () => onForgeRequested?.Invoke());
         }

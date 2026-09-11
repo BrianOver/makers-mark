@@ -6,6 +6,7 @@ using GameSim.Drama;
 using GameSim.Expedition;
 using GameSim.Factions;
 using GameSim.Kernel;
+using GameSim.Materials;
 using GameSim.Narrative;
 using GameSim.Venues;
 using Godot;
@@ -782,7 +783,7 @@ public partial class LedgerModal : SimPanel
                     // status prefix no other line in this panel uses. Same replacement shape as
                     // SimPanel.Confirm's deferred branch, reading the phase off PhaseVocab.
                     _feedback!.Text =
-                        $"Buying {offer.Quantity} {offer.MaterialKey} from {card.HeroName} — but not until "
+                        $"Buying {offer.Quantity} {MaterialRegistry.Require(offer.MaterialKey).DisplayName.ToLowerInvariant()} from {card.HeroName} — but not until "
                         + $"{PhaseVocab.Display(Adapter!.CurrentState)} ends.";
                 });
 
@@ -1016,7 +1017,7 @@ public partial class LedgerModal : SimPanel
     private static string OreOfferLine(GameState state, OreOffered offer)
     {
         var (cost, adjPerMille, faction) = PricedOffer(state, offer);
-        var line = $"offers {offer.Quantity}x {offer.MaterialKey} for {cost}g total";
+        var line = $"offers {offer.Quantity}x {MaterialRegistry.Require(offer.MaterialKey).DisplayName.ToLowerInvariant()} for {cost}g total";
         if (faction is null || adjPerMille == 0)
         {
             return line;

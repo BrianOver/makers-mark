@@ -85,7 +85,7 @@ public sealed class ForgeTierHandlers : IActionHandler
         if (oreHave < OreQuantity)
         {
             return (state, new RejectedAction(action,
-                $"Not enough {oreKey} for Forge Tier {tierIndex + 2}: need {OreQuantity}, have {oreHave}."));
+                $"Not enough {MaterialRegistry.Require(oreKey).DisplayName.ToLowerInvariant()} for Forge Tier {tierIndex + 2}: need {OreQuantity}, have {oreHave}."));
         }
 
         // 3. Gold.
