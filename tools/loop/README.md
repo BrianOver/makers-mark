@@ -15,11 +15,18 @@ never remembered in the first place — every turn re-derives where things stand
 turn: run `dotnet run --project tools/Progress -- --frontier` and read it fresh — never trust what
 an earlier turn said was runnable. Take the topmost RUNNABLE unit, build it via the
 mm-unit-builder agent, gate its PR via the mm-ci-gate agent, and confirm the merge against
-`gh pr view <n> --json state` before moving on. State clearly every turn which of these is true:
-still working (name the unit), DONE (the frontier has no runnable unit left), HALTED (name the
-unit and the reason), or BLOCKED (rate limit, context budget, anything else — say which). The goal
-condition is: DONE, or HALTED, or BLOCKED has been stated in this conversation.
+`gh pr view <n> --json state` before moving on. End every turn with exactly one of these as its LAST line: `@@LOOP
+WORKING - <unit> next`, `@@LOOP DONE`, `@@LOOP HALTED: <unit>, <reason>`, or `@@LOOP BLOCKED:
+<reason>`. The goal condition is: a line beginning `@@LOOP DONE`, `@@LOOP HALTED` or `@@LOOP
+BLOCKED` has been stated, or stop after 40 turns.
 ```
+
+**The `@@LOOP` prefix is load-bearing, not decoration.** `/goal`'s evaluator reads the conversation
+transcript, and the bare words *done*, *halted* and *blocked* occur constantly in ordinary engineering
+prose — a commit message saying "done", a test named `Blocked`, a sentence explaining why some other
+thing halted. An unprefixed condition ends the night on the first one. The prefix has no other
+occurrence in this repo, so it cannot fire by accident. The trailing turn cap is cheap insurance
+against the opposite failure: an evaluator repeatedly reading a stuck turn as "still working".
 
 Set the output style to caveman ultra before pasting it. Output styles do **not** inherit to
 subagents, which is why each `.claude/agents/mm-*.md` carries its own caveman instruction in its
@@ -51,10 +58,15 @@ body.
 
 | State | Means | What happens next |
 |---|---|---|
-| **DONE** | The frontier has no RUNNABLE unit left | Stop. The morning report is the frontier's own REFUSED list — usually "the owner's evening is the gate". |
-| **HALTED** | A specific unit cannot proceed: red CI, a wrong spec, a golden or balance band that would have to move | Stop on that unit. Do not skip to another one — a loop that routes around a halt is a loop that hides it. |
-| **BLOCKED** | The session cannot continue: rate limit, context budget | Stop. A human re-issues the same kickoff; step 1 makes that safe whenever it happens. |
-| *(still working)* | A unit merged and another is runnable | Next turn. |
+| `@@LOOP DONE` | The frontier has no RUNNABLE unit left | Stop. The morning report is the frontier's own REFUSED list — usually "the owner's evening is the gate". |
+| `@@LOOP HALTED: <unit>, <reason>` | A specific unit cannot proceed: red CI, a wrong spec, a golden or balance band that would have to move | Stop on that unit. Do not skip to another one — a loop that routes around a halt is a loop that hides it. |
+| `@@LOOP BLOCKED: <reason>` | The session cannot continue: rate limit, context budget, an unreadable input | Stop. A human re-issues the same kickoff; step 1 makes that safe whenever it happens. |
+| `@@LOOP WORKING - <unit> next` | A unit merged and another is runnable | Next turn. |
+
+A **degraded frontier is `@@LOOP BLOCKED`, never a short night.** `tools/Progress -- --frontier`
+exits 2 when it read incomplete data, and refuses to render rows at all rather than handing back a
+shorter list — because both of its tolerant reads push units toward looking *unbuilt*, so a degraded
+frontier is systematically over-full of work that is already done.
 
 ## What it never does
 
