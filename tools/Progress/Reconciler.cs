@@ -16,10 +16,12 @@ public static class Reconciler
         IReadOnlySet<string> trackedFiles,
         IReadOnlyList<MergedPrReceipt>? mergedReceipts = null,
         IReadOnlyDictionary<string, FileOrigin>? fileOrigins = null,
-        DateTimeOffset? receiptRuleEffectiveSince = null)
+        DateTimeOffset? receiptRuleEffectiveSince = null,
+        IReadOnlyDictionary<string, IReadOnlyList<string>>? sourceTagSites = null)
     {
         mergedReceipts ??= Array.Empty<MergedPrReceipt>();
         fileOrigins ??= new Dictionary<string, FileOrigin>();
+        sourceTagSites ??= new Dictionary<string, IReadOnlyList<string>>();
 
         var units = plan.Units;
 
@@ -37,10 +39,38 @@ public static class Reconciler
         var dispatchTraps = FindReceiptDispatchTraps(units, applicableReceipts, statusById);
         var missingReceipts = FindMissingOrMalformedReceipts(applicableReceipts);
         var falseReceipts = FindFalseReceipts(units, applicableReceipts, trackedFiles);
+        var sourceTagged = FindSourceTaggedUnbuilts(domains, sourceTagSites);
 
         return new ReconciliationResult(
             domains, missingFiles, ordering, dangling, collisions, plan.Unparseable,
-            dispatchTraps, missingReceipts, falseReceipts);
+            dispatchTraps, missingReceipts, falseReceipts, sourceTagged);
+    }
+
+    /// <summary>
+    /// Units this run calls UNBUILT whose exact id is already written into tracked source. Reported,
+    /// never promoted: see <see cref="SourceTaggedUnbuilt"/> for why a comment mentioning an id is
+    /// ambiguous evidence and a Landed status must never be derived from it.
+    /// </summary>
+    private static List<SourceTaggedUnbuilt> FindSourceTaggedUnbuilts(
+        IReadOnlyList<DomainStatus> domains,
+        IReadOnlyDictionary<string, IReadOnlyList<string>> sourceTagSites)
+    {
+        var findings = new List<SourceTaggedUnbuilt>();
+        foreach (var row in domains.SelectMany(d => d.Rows))
+        {
+            if (row.Status != UnitStatus.Unbuilt
+                || !sourceTagSites.TryGetValue(row.Unit.Id, out var paths)
+                || paths.Count == 0)
+            {
+                continue;
+            }
+
+            findings.Add(new SourceTaggedUnbuilt(row.Unit.Id, paths));
+        }
+
+        return findings
+            .OrderBy(f => f.UnitId, StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     private static Dictionary<string, UnitStatus> BuildStatusIndex(IReadOnlyList<DomainStatus> domains)

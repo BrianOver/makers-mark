@@ -426,4 +426,81 @@ public class ReconcilerTests
 
         Assert.Empty(result.FalseReceipts);
     }
+
+    private static Dictionary<string, IReadOnlyList<string>> Sites(params (string Id, string Path)[] hits)
+    {
+        var map = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
+        foreach (var (id, path) in hits)
+        {
+            map[id] = map.TryGetValue(id, out var existing) ? existing.Append(path).ToList() : new List<string> { path };
+        }
+
+        return map;
+    }
+
+    [Fact]
+    public void WarnsWhenAnUnbuiltUnitsIdIsAlreadyWrittenIntoTrackedSource()
+    {
+        // The #687 shape: five units shipped under one `Serves: link4` receipt, so no commit tag
+        // names four of them and their rows edit files that already existed. Neither Landed
+        // evidence class can see them; this warning is the only thing that stops the next session
+        // rebuilding what is already on main.
+        var units = new[] { Row(UnitTable.P2, "P2-PROOF-04") };
+
+        var result = Reconciler.Reconcile(
+            Plan(units), new Dictionary<string, LandedUnit>(), new Dictionary<string, OpenUnit>(), new HashSet<string>(),
+            sourceTagSites: Sites(("P2-PROOF-04", "godot/scripts/panels/TellingPanel.cs")));
+
+        var finding = Assert.Single(result.SourceTaggedUnbuilts);
+        Assert.Equal("P2-PROOF-04", finding.UnitId);
+        Assert.Equal(new[] { "godot/scripts/panels/TellingPanel.cs" }, finding.Paths);
+    }
+
+    [Fact]
+    public void TheWarningNeverPromotesAUnitToLandedAndNeverFailsTheRun()
+    {
+        // The whole reason this is a section and not an evidence class: a source hit is equally the
+        // residue of a shipped unit and a comment DEFERRING one ("…is P2-ONBOARD-09's own remaining
+        // scope, not this unit's" is a real line on main). Promoting it would manufacture the false
+        // green this tool exists to catch.
+        var units = new[] { Row(UnitTable.P2, "P2-ONBOARD-09") };
+
+        var result = Reconciler.Reconcile(
+            Plan(units), new Dictionary<string, LandedUnit>(), new Dictionary<string, OpenUnit>(), new HashSet<string>(),
+            sourceTagSites: Sites(("P2-ONBOARD-09", "godot/scripts/ui/TutorialFlow.cs")));
+
+        var row = Assert.Single(result.Domains.SelectMany(d => d.Rows));
+        Assert.Equal(UnitStatus.Unbuilt, row.Status);
+        Assert.Empty(result.MissingFiles);
+        Assert.Empty(result.OrderingViolations);
+        Assert.Empty(result.Collisions);
+        Assert.Empty(result.ReceiptDispatchTraps);
+        Assert.Empty(result.FalseReceipts);
+    }
+
+    [Fact]
+    public void NeverWarnsForAUnitThatAlreadyReportsLanded()
+    {
+        // A landed unit's id sits in its own source by construction; repeating it as a "verify
+        // before building" line would be pure noise, and noise is how a real warning gets ignored.
+        var units = new[] { Row(UnitTable.P2, "P2-PROOF-03") };
+        var landed = new Dictionary<string, LandedUnit> { ["P2-PROOF-03"] = new("P2-PROOF-03", "abc123def", 687) };
+
+        var result = Reconciler.Reconcile(
+            Plan(units), landed, new Dictionary<string, OpenUnit>(), new HashSet<string>(),
+            sourceTagSites: Sites(("P2-PROOF-03", "godot/scripts/panels/TellingPanel.cs")));
+
+        Assert.Empty(result.SourceTaggedUnbuilts);
+    }
+
+    [Fact]
+    public void NoWarningWhenNothingInSourceNamesTheUnit()
+    {
+        var units = new[] { Row(UnitTable.P2, "P2-MEMORY-13") };
+
+        var result = Reconciler.Reconcile(
+            Plan(units), new Dictionary<string, LandedUnit>(), new Dictionary<string, OpenUnit>(), new HashSet<string>());
+
+        Assert.Empty(result.SourceTaggedUnbuilts);
+    }
 }
