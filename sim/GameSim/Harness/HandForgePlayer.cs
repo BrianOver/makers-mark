@@ -12,17 +12,16 @@ namespace GameSim.Harness;
 /// weeks and nothing caught it). <see cref="Crafting.CraftingHandlers"/>'s hand-forge branch only
 /// ever fires when a <see cref="CraftAction"/> carries a <see cref="ForgeTraceInput"/> — and
 /// (grepped and confirmed before writing this policy) NONE of <see cref="BaselinePlayer"/>,
-/// <see cref="MasterworkSeekingPlayer"/>, <see cref="ApprenticePlayer"/>, or
-/// <see cref="SkilledSmithPlayer"/> ever construct one: every existing policy either auto-crafts
-/// (<c>Puzzle</c> null) or stamps a raw <see cref="CraftAction.PerformanceGrade"/>
-/// (<see cref="SkilledSmithPlayer"/>), which reaches quality through a completely different branch
-/// of <c>CraftingHandlers.ApplyCraft</c> and never touches <see cref="Crafting.ForgeScorer"/>,
+/// <see cref="MasterworkSeekingPlayer"/>, or <see cref="ApprenticePlayer"/> ever construct one:
+/// every existing policy auto-crafts (<c>Puzzle</c> and <see cref="CraftAction.PerformanceGrade"/>
+/// both null), which reaches quality through a completely different branch of
+/// <c>CraftingHandlers.ApplyCraft</c> and never touches <see cref="Crafting.ForgeScorer"/>,
 /// <see cref="Crafting.ForgeMoment"/>, or the batch-echo memory at all. So the 100-day balance
 /// gate, the idle golden trace, and the determinism suite have NEVER exercised the code path a
 /// real player's Anvil-Map minigame result rides in on — this is that instrument.
 ///
-/// <para><b>Composition, not a fork (KTD1) — the <see cref="SkilledSmithPlayer"/> precedent.</b>
-/// Every action <see cref="BaselinePlayer.ActionsFor"/> would return rides through UNCHANGED. The
+/// <para><b>Composition, not a fork (KTD1).</b> Every action
+/// <see cref="BaselinePlayer.ActionsFor"/> would return rides through UNCHANGED. The
 /// only thing this policy ever adds or replaces is the single <see cref="CraftAction"/>
 /// <see cref="BaselinePlayer"/>'s Expedition branch may emit (it never emits more than one — "one
 /// craft per window keeps the policy simple and stable," that type's own comment) — this policy

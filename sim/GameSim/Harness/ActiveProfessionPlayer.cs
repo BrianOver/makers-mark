@@ -15,8 +15,8 @@ namespace GameSim.Harness;
 /// P2-OQ10 (2026-09-04 finding): closes, for Alchemy/Tanning/Engineering, the exact blind spot
 /// <see cref="HandForgePlayer"/> closed for the blacksmith. Grepped and confirmed before writing
 /// this file: EVERY existing scripted policy (<see cref="BaselinePlayer"/>, <see cref="CounterPlayer"/>,
-/// <see cref="ApprenticePlayer"/>, <see cref="MasterworkSeekingPlayer"/>, <see cref="SkilledSmithPlayer"/>,
-/// <see cref="HandForgePlayer"/>, <see cref="LateMasteryPlayer"/>) crafts EXCLUSIVELY off
+/// <see cref="ApprenticePlayer"/>, <see cref="MasterworkSeekingPlayer"/>, <see cref="HandForgePlayer"/>,
+/// <see cref="LateMasteryPlayer"/>) crafts EXCLUSIVELY off
 /// <see cref="RecipeTable.All"/> — blacksmith's own recipe table — never
 /// <see cref="ProfessionRegistry.AllRecipes"/>. So no policy has ever submitted a <see cref="CraftAction"/>
 /// for an Alchemy/Tanning/Engineering recipe AT ALL, auto-craft or otherwise: a stronger gap than the
