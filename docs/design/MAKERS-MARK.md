@@ -4703,7 +4703,6 @@ name (§11.6 rule 4).
 | P2-HONEST-10 | Guards rephrase against the property — `RejectionUxTests` literals die | `godot/tests/`, `sim/GameSim.Tests/` | — | [S] |
 | P2-HONEST-13 | `TickResult.Traces` is ingested or deleted | `sim/GameSim/Kernel/GameKernel.cs`, `tools/Analytics/` or `sim/GameSim/Contracts/` | — | [S] |
 | P2-HONEST-14 | The CLI's own printed prose enters the vocabulary census's scope | `sim/GameSim.Cli/Program.cs`, `sim/GameSim.Tests/` (`PlayerVocabularyCensusTests`) | P2-HONEST-06 | [S] |
-| P2-HONEST-15 | `PlayerState.BatchEcho` gets a client reader — the batch-echo mechanic is invisible | `godot/scripts/panels/ForgePanel.cs` | — | [G] |
 | P2-HONEST-16 | `ConsumableEffect.Magnitude` gets a client reader — a potion's heal amount becomes legible | `godot/scripts/panels/ForgePanel.cs`, `godot/scripts/panels/ShopPanel.cs` | — | [G] |
 | P2-HONEST-17 | `GameState.RivalMarketSharePermille` gets a client reader — the idle-day cost becomes legible | `godot/scripts/panels/ShopPanel.cs` | — | [G] |
 | P2-HONEST-18 | `InFlightExpedition.Gold` gets a client reader, or its withholding gets a stated reason | `godot/scripts/panels/CampPanel.cs` | — | [G] |
@@ -4882,10 +4881,6 @@ booked above; a fifth confirmed gap, `Hero.LadderRank`, already has an open fix
 field with a PR already in flight would be the numbering disease `P2-HONEST-14`'s neighbor entries
 warn about.
 
-- **`P2-HONEST-15`** — `PlayerState.BatchEcho` (U23e "batch echo": a hand-forge's grade decays
-  forward into up to 4 auto-crafted copies) is read and written entirely inside
-  `sim/GameSim/Crafting/CraftingHandlers.cs` and has zero `godot/scripts` readers. No open PR
-  addresses it as of this census.
 - **`P2-HONEST-16`** — `ConsumableEffect.Magnitude` (a consumable's heal AMOUNT) drives real math in
   `sim/GameSim/Advisor/SuggestedPrice.cs` and `sim/GameSim/Expedition/ExpeditionResolver.cs`, but no
   `godot/scripts` file reads it. `CampPanel.cs`/`ShopPanel.cs` already check `.Effect.Kind` (whether
