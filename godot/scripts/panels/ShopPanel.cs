@@ -321,7 +321,7 @@ public partial class ShopPanel : SimPanel
             var unstock = new Button { Name = $"Unstock_{itemId.Value}", Text = "Unstock" };
             unstock.Pressed += () => RemoveFromShelf(itemId.Value);
             cardBody.AddChild(ListRow(
-                IconRegistry.Slot(item.Slot), $"{itemId} {item.Name} [{item.Quality}]", $"{entry.Price}g", "1",
+                IconRegistry.Slot(item.Slot), $"{itemId} {item.Name} [{ItemVocab.Display(item.Quality)}]", $"{entry.Price}g", "1",
                 unstock, enabled: true));
 
             // U6 (auto pricing): names the price AND its provenance on the actual shelved item —
@@ -504,7 +504,7 @@ public partial class ShopPanel : SimPanel
             var soldConsumable = item.Effect is not null
                 && state.EventLog.Any(e => e is ItemSold sold && sold.Item == itemId);
             cardBody.AddChild(ListRow(
-                IconRegistry.Slot(item.Slot), $"{item.Id} {item.Name} [{item.Quality}]", "—", "1", stock,
+                IconRegistry.Slot(item.Slot), $"{item.Id} {item.Name} [{ItemVocab.Display(item.Quality)}]", "—", "1", stock,
                 enabled: !soldConsumable, whyNot: "Sold consumables don't come back."));
 
             var controlsRow = AddRow(cardBody);
@@ -625,7 +625,7 @@ public partial class ShopPanel : SimPanel
                 CustomMinimumSize = new Vector2(InfoColumnMinWidth, 0),
             };
             headerRow.AddChild(infoCol);
-            AddLabel(infoCol, $"{entry.Item} {item.Name} [{item.Quality}]");
+            AddLabel(infoCol, $"{entry.Item} {item.Name} [{ItemVocab.Display(item.Quality)}]");
             AddChip(infoCol, StatChip("Price", $"{entry.Price}g"));
         }
     }

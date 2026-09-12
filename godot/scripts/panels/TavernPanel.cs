@@ -433,7 +433,7 @@ public partial class TavernPanel : SimPanel
         var line = kind switch
         {
             PursuedThreadKind.Commission => OpenCommissionFor(state, hero.Id) is { } commission
-                ? $"Asking: {commission.MinQuality} {commission.Slot} by day {commission.DeadlineDay}, +{commission.PremiumGold}g over list{CommissionSystem.SlotHonestyNote(commission.Slot)}."
+                ? $"Asking: {ItemVocab.Display(commission.MinQuality)} {ItemVocab.Display(commission.Slot)} by day {commission.DeadlineDay}, +{commission.PremiumGold}g over list{CommissionSystem.SlotHonestyNote(commission.Slot)}."
                 : null,
             PursuedThreadKind.Ore => OpenOreOfferFor(state, hero.Id) is { } offer
                 ? $"Offering: {offer.Quantity}x {MaterialRegistry.Require(offer.MaterialKey).DisplayName.ToLowerInvariant()} at {offer.UnitPrice}g each."
@@ -569,7 +569,7 @@ public partial class TavernPanel : SimPanel
 
         AddLabel(
             parent,
-            $"  {hero.Name} wants a {commission.MinQuality} {commission.Slot} or better by day "
+            $"  {hero.Name} wants a {ItemVocab.Display(commission.MinQuality)} {ItemVocab.Display(commission.Slot)} or better by day "
             + $"{commission.DeadlineDay}, +{commission.PremiumGold}g over list{CommissionSystem.SlotHonestyNote(commission.Slot)}.");
 
         var row = AddRow(parent);
@@ -778,7 +778,7 @@ public partial class TavernPanel : SimPanel
                 IconRegistry.ItemArtId(item.RecipeId, item.Slot, id.Value), new Vector2(GearArtSize, GearArtSize),
                 IconRegistry.Slot(slot), item.Name));
             var mark = item.Mark is null ? "no maker's mark" : $"marked by {item.Mark.CrafterName}";
-            AddLabel(row, $"  {slot}: {item.Name} [{item.Quality}] — {mark}");
+            AddLabel(row, $"  {ItemVocab.Display(slot)}: {item.Name} [{ItemVocab.Display(item.Quality)}] — {mark}");
 
             var gearItemId = id;
             AddButton(row, $"TavernHistory_{hero.Id.Value}_{slot}", "History", Verdict.Ok, () => OnShowProvenance(gearItemId));

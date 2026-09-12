@@ -66,7 +66,7 @@ public partial class ProvenanceCard : Control
     private void Render(GameState state, Item item)
     {
         Clear(_body!);
-        _title!.Text = $"{item.Name} [{item.Quality}] — {item.Slot}";
+        _title!.Text = $"{item.Name} [{ItemVocab.Display(item.Quality)}] — {ItemVocab.Display(item.Slot)}";
 
         // Wave 4 (U19, "Signed Works"): a rare craft's earned legend name — the inscription IS
         // the History/sub-scores already rendered below, so this is a marker + name only, no new

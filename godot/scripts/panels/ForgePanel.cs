@@ -658,7 +658,7 @@ public partial class ForgePanel : SimPanel
                 ? "The vendor sells in the Morning."
                 : q > state.Player.Gold
                     ? "You can't afford that yet."
-                    : $"No action slots left today (0/{ActionBudget.SlotsPerDay}) — 'next' to advance.";
+                    : $"No action slots left today (0/{ActionBudget.SlotsPerDay}) — try again once {PhaseVocab.Display(state)} ends.";
             return (q, ok, reason);
         }
 
@@ -751,7 +751,7 @@ public partial class ForgePanel : SimPanel
                     ? $"Not enough {oreDisplayName.ToLowerInvariant()} — need {ForgeTierHandlers.OreQuantity}, have {oreHave}."
                     : upgradeCost > state.Player.Gold
                         ? "You can't afford that yet."
-                        : $"No action slots left today (0/{ActionBudget.SlotsPerDay}) — 'next' to advance.";
+                        : $"No action slots left today (0/{ActionBudget.SlotsPerDay}) — try again once {PhaseVocab.Display(state)} ends.";
         }
 
         var upgradeButton = new Button { Name = "UpgradeForge", Text = "Upgrade" };
@@ -773,7 +773,7 @@ public partial class ForgePanel : SimPanel
                 ? "The forge supplier sells in the Morning."
                 : unitPrice > state.Player.Gold
                     ? "You can't afford that yet."
-                    : $"No action slots left today (0/{ActionBudget.SlotsPerDay}) — 'next' to advance.";
+                    : $"No action slots left today (0/{ActionBudget.SlotsPerDay}) — try again once {PhaseVocab.Display(state)} ends.";
             _foundryRows!.AddChild(ListRow(null, supplyKey, $"{unitPrice}g", supplyHave.ToString(), buySupply, supplyLegal, supplyWhyNot));
         }
 
@@ -837,7 +837,7 @@ public partial class ForgePanel : SimPanel
                     var lockedButton = new Button { Name = $"Locked_{recipe.RecipeId}", Text = "Locked" };
                     var lockedRow = ListRow(
                         IconRegistry.Slot(recipe.Slot),
-                        $"{recipe.Name} (t{recipe.Tier} {recipe.Slot}) — requires {gateName}",
+                        $"{recipe.Name} (t{recipe.Tier} {ItemVocab.Display(recipe.Slot)}) — requires {gateName}",
                         string.Empty,
                         string.Empty,
                         lockedButton,
@@ -883,7 +883,7 @@ public partial class ForgePanel : SimPanel
                     CustomMinimumSize = new Vector2(RecipeInfoColumnMinWidth, 0),
                 };
                 headerRow.AddChild(infoCol);
-                AddLabel(infoCol, $"{recipe.Name} (t{recipe.Tier} {recipe.Slot})");
+                AddLabel(infoCol, $"{recipe.Name} (t{recipe.Tier} {ItemVocab.Display(recipe.Slot)})");
                 var outputRow = AddRow(infoCol);
                 // P2-HONEST-11 (sim half, #685): CombatMath never reads a Trinket's stats, so a
                 // trinket recipe card printing Atk/Def is the exact lie a player reads as "this
@@ -950,7 +950,7 @@ public partial class ForgePanel : SimPanel
                 var craftLegal = ActionLegality.IsLegal(state, craftAction, state.Phase);
                 var craftWhyNot = !affordable
                     ? $"need {needed} {materialLabel}, have {have}"
-                    : $"No action slots left today (0/{ActionBudget.SlotsPerDay}) — 'next' to advance.";
+                    : $"No action slots left today (0/{ActionBudget.SlotsPerDay}) — try again once {PhaseVocab.Display(state)} ends.";
 
                 // PA6/PKD4: an ACTIVE profession's instant Craft is the null-grade auto-craft
                 // path (competent, hard-capped below Masterwork) — relabeled so it reads as the
@@ -1057,7 +1057,7 @@ public partial class ForgePanel : SimPanel
                                 ? $"Not enough flux — need {MasterworkAttemptHandlers.FluxCost}, have {fluxHave}."
                                 : !mwGoldOk
                                     ? $"Not enough gold — need {mwSurcharge}, have {state.Player.Gold}."
-                                    : $"No action slots left today (0/{ActionBudget.SlotsPerDay}) — 'next' to advance.";
+                                    : $"No action slots left today (0/{ActionBudget.SlotsPerDay}) — try again once {PhaseVocab.Display(state)} ends.";
                 AddButton(controlsRow, $"Masterwork_{recipe.RecipeId}", "Masterwork Attempt (guaranteed)",
                     new Verdict(mwLegal, mwWhyNot), () => OnMasterworkPressed(recipe.RecipeId, material), onRefused: SetFeedback);
 
@@ -1084,7 +1084,7 @@ public partial class ForgePanel : SimPanel
                         ? $"Not enough {materialLabel} — need {legendaryNeeded}, have {have}."
                         : !legendaryGoldOk
                             ? $"Not enough gold — need {legendaryCost}, have {state.Player.Gold}."
-                            : $"No action slots left today (0/{ActionBudget.SlotsPerDay}) — 'next' to advance.";
+                            : $"No action slots left today (0/{ActionBudget.SlotsPerDay}) — try again once {PhaseVocab.Display(state)} ends.";
                 AddButton(controlsRow, $"Commission_{recipe.RecipeId}",
                     $"Commission Legendary ({commissionsRemaining} of {LegendaryCommissionHandlers.MaxPerCampaign} left)",
                     new Verdict(legendaryLegal, legendaryWhyNot), () => OnCommissionLegendaryPressed(recipe.RecipeId, material), onRefused: SetFeedback);
@@ -1143,7 +1143,7 @@ public partial class ForgePanel : SimPanel
                         ? $"Requires '{missingPrereq}' first."
                         : !forgeTierOk
                             ? $"Requires Forge Tier {requiredTierIndex + 1} or higher (workshop is Tier {tierIndex + 1})."
-                            : $"No action slots left today (0/{ActionBudget.SlotsPerDay}) — 'next' to advance.";
+                            : $"No action slots left today (0/{ActionBudget.SlotsPerDay}) — try again once {PhaseVocab.Display(state)} ends.";
                     AddButton(row, $"Unlock_{node.NodeId}", "Unlock", new Verdict(unlockLegal, unlockWhyNot),
                         () => OnUnlockPressed(node.NodeId, professionId), onRefused: OnUnlockRefused);
                 }

@@ -180,7 +180,7 @@ public partial class BountyPanel : SimPanel
             ? "Bounties are posted in the Morning or Evening."
             : state.Player.Gold < reward
                 ? $"Not enough gold to escrow {reward}g — you have {state.Player.Gold}g."
-                : $"No action slots left today (0/{ActionBudget.SlotsPerDay}) — 'next' to advance.";
+                : $"No action slots left today (0/{ActionBudget.SlotsPerDay}) — try again once {PhaseVocab.Display(state)} ends.";
 
         GateButton(_postButton, legal, reason);
         _gateReason.Text = legal ? string.Empty : reason;

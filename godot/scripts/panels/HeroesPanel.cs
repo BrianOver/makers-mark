@@ -280,7 +280,7 @@ public partial class HeroesPanel : SimPanel
                 CustomMinimumSize = new Vector2(GearInfoColumnMinWidth, 0),
             };
             row.AddChild(infoCol);
-            AddLabel(infoCol, $"  {slot}: {item.Name} [{item.Quality}] — {mark}");
+            AddLabel(infoCol, $"  {ItemVocab.Display(slot)}: {item.Name} [{ItemVocab.Display(item.Quality)}] — {mark}");
             var chipRow = AddRow(infoCol);
             if (slot == ItemSlot.Trinket)
             {
