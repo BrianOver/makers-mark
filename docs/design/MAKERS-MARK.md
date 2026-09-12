@@ -4693,6 +4693,7 @@ name (§11.6 rule 4).
 | P2-HONEST-18 | `InFlightExpedition.Gold` gets a client reader, or its withholding gets a stated reason | `godot/scripts/panels/CampPanel.cs` | — | [G] |
 | P2-HONEST-19 | The numeric-threshold gate family gets a satisfiability guard — `SatisfiableGateCensusTests` cannot see it | `sim/GameSim.Tests/`, `sim/GameSim/Drama/DirectorSystem.cs`, `sim/GameSim/Venues/`, `sim/GameSim/Crafting/TalentTree.cs` | P2-HONEST-07 | [S] |
 | P2-HONEST-20 | `SHOT_STATE=PhaseN` lands somewhere its own comment does not claim — the capture harness's phase map is wrong | `godot/tools/shot_harness.gd`, `tools/shoot.ps1` | — | [G] |
+| P2-HONEST-21 | One art `.import` uid regenerates on every import, dirtying a clean tree | `godot/assets/art/item-mithril-warblade.png.import` | — | [G] |
 
 The per-domain counts, the landed/unbuilt split, and which rows carry a Contracts micro-PR, a
 golden re-record or a balance re-baseline are **derived, not stated here**: run
@@ -4898,6 +4899,24 @@ next day's camp instead -- and this repo's own proven kill chain is a stale comm
 instruction (`QualityRoller`'s `AutoCraftGrade`, three generations deep). Booked rather than fixed
 in place because it is the capture tooling, not the game: it decides what a later session BELIEVES
 it photographed.
+
+**The `.import` uid that will not sit still, measured 2026-09-12 (`P2-HONEST-21`).** Every fresh
+worktree runs `--headless --import` before the engine suite, and every one of them comes back with
+`godot/assets/art/item-mithril-warblade.png.import` modified — the `uid=` line rewritten to a NEW
+value, not a timestamp (committed `uid://p04fzu2b2stv2`, regenerated `uid://khxnnebs0cu0` on one
+run). Three agents reported it in a single night, and a stash on this repo from an earlier session
+is labelled "pre-existing .import noise, unrelated to this task", so it has been ignored at least
+four times.
+
+What was ruled OUT rather than assumed: no duplicate `uid://` exists anywhere in the tree (`.import`,
+`.uid`, `.tscn`, `.tres` all searched), the PNG exists and is tracked, and the committed uid is
+referenced by nothing — `item-mithril-warblade` is named only from `art/specs/items/ItemSpecsMine.cs`,
+by path, not by uid. **The root cause is NOT known** and is deliberately not guessed at here.
+
+Harmless today precisely because nothing reads that uid, which is why four sessions have walked past
+it. The cost is that every agent's first command on a fresh worktree dirties the tree, and the
+standing risk is this repo's own documented failure: art that is committed, referenced, and silently
+invisible, with the null-tolerant loader reporting nothing.
 
 ### The anomaly-coverage sweep, 2026-09-05
 
