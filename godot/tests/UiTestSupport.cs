@@ -148,6 +148,27 @@ public static class UiTestSupport
         // later suite (or the developer's own real user:// data) to inherit.
         UiSettings.DeleteForTests();
 
+        // P2-SCREEN-17: and the campaign save itself, which is the fourth user:// file a test can
+        // leave behind and was the only one nothing cleaned up.
+        //
+        // Harmless for years, because nothing READ it at a moment a test cared about. The
+        // replace-confirm changed that: Begin now asks `CampaignSave.Peek()` whether there is a
+        // campaign to destroy, so a save written by any earlier suite makes the confirm appear in
+        // every later suite that presses Begin expecting a campaign to start. Measured cost of the
+        // gap on the day it was found: 34 failures across twelve unrelated suites — TutorialFlow,
+        // FirstMorningBeat, WarrantSeed, SurfaceArbiterDiscovery, MarketLife — none of which has
+        // anything to do with saving.
+        //
+        // The leak was always there; the feature only made it visible. Cleared here with its three
+        // siblings so the next feature to read a user:// file at a load-bearing moment does not
+        // rediscover this the same way.
+        //
+        // DeleteForTests, never Clear: Clear is production behaviour and also resets ArcSceneFlow's
+        // revealed set, which a teardown must not do — ArcScenesTests reveals a scene, unmounts,
+        // and then asserts on the caption that scene granted. Using Clear here traded 34 failures
+        // for 1, which is the shape of a fix that has not finished.
+        CampaignSave.DeleteForTests();
+
         // U16 (§11.14.14): BuildUi already consumes and clears this on every mount that actually
         // reads it true, so this is belt-and-suspenders only — a test that sets it directly (rather
         // than through NewGameSelect.OnBeginPressed) and then fails before that mount completes
