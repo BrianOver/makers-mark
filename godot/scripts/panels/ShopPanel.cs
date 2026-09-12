@@ -523,10 +523,71 @@ public partial class ShopPanel : SimPanel
         }
     }
 
+    /// <summary>
+    /// P2-HONEST-17: <see cref="GameState.RivalMarketSharePermille"/>
+    /// (<see cref="GameSim.Economy.MarketShareSystem"/>, Evening — a fully idle day raises it toward
+    /// the rival, any real-work day claws it back; <see cref="GameSim.Economy.RivalRestockSystem"/>,
+    /// Morning, spends it discounting the rival's next-minted stock) had zero <c>godot/scripts</c>
+    /// readers before this unit. Its own event, <c>MarketShareShifted</c>, is a DELIBERATE ticker
+    /// exclusion (<c>AdventureTicker.cs:256</c>, "gauge material, not news" —
+    /// <c>docs/reference/surfaces-census.md</c> §8) — this gauge is the reader that exclusion was
+    /// always waiting on, not a reason to revisit it.
+    ///
+    /// <para>Mirrors <see cref="TavernPanel.ConfidenceGradient"/>'s own shape exactly: an ascending,
+    /// iterable band list <see cref="For"/> matches against, rendered GENERICALLY by
+    /// <see cref="BuildRivalSection"/> (never a switch over <see cref="Band"/> by name) so a band
+    /// added here later needs no matching render-site edit — the same guard test shape
+    /// (<c>ConfidenceBand_RendersItsOwnRoomLine_ForEveryBandInTheGradient</c>) covers this list too.
+    /// CLAUDE.md law 12 ("show only what the sim decided") is why the boundaries are not invented
+    /// round numbers picked for their own sake: <see cref="GameSim.Economy.RivalRestockSystem.MaxDiscountPermille"/>
+    /// caps the rival's price cut at 40% and that system's own discount curve is LINEAR in the share
+    /// permille, so quartering the 0-1000 share scale quarters the real price effect in lockstep —
+    /// the words name the sim's actual economic consequence at each quarter, not a client-invented
+    /// cutoff. Never a raw permille or percent on screen (that number is the exact defect this unit
+    /// closes): a band phrase only.</para>
+    /// </summary>
+    public static class RivalEdgeGradient
+    {
+        public enum Band
+        {
+            /// <summary>Below 250‰ — recent real-work days have kept the rival's cut small.</summary>
+            InCheck,
+
+            /// <summary>Below 500‰ but not <see cref="InCheck"/>.</summary>
+            Creeping,
+
+            /// <summary>Below 750‰ but not <see cref="Creeping"/>.</summary>
+            Biting,
+
+            /// <summary>750‰ and up — within a quarter of the rival's full 40% ceiling.</summary>
+            Dominant,
+        }
+
+        public readonly record struct BandInfo(Band Kind, int UpperBoundExclusive, string Phrase, UiKit.ChipTone Tone);
+
+        /// <summary>Ascending by <see cref="BandInfo.UpperBoundExclusive"/> so <see cref="For"/>'s
+        /// first match is always the right one — same contract as
+        /// <see cref="TavernPanel.ConfidenceGradient.Bands"/>.</summary>
+        public static readonly IReadOnlyList<BandInfo> Bands = new[]
+        {
+            new BandInfo(Band.InCheck, 250, "You've pushed the rival back.", UiKit.ChipTone.Positive),
+            new BandInfo(Band.Creeping, 500, "The rival's edge is creeping up.", UiKit.ChipTone.Neutral),
+            new BandInfo(Band.Biting, 750, "The rival's prices are biting.", UiKit.ChipTone.Negative),
+            new BandInfo(Band.Dominant, int.MaxValue, "The rival is undercutting you hard.", UiKit.ChipTone.Negative),
+        };
+
+        public static BandInfo For(int rivalMarketSharePermille) =>
+            Bands.First(b => rivalMarketSharePermille < b.UpperBoundExclusive);
+    }
+
     private void BuildRivalSection(GameState state)
     {
         var section = Section("Rival Shelf");
         _content!.AddChild(section.Root);
+
+        // P2-HONEST-17: the meter, not the number — see RivalEdgeGradient's own doc.
+        var edge = RivalEdgeGradient.For(state.RivalMarketSharePermille);
+        AddChip(section.Body, StatChip("Rival Edge", edge.Phrase, edge.Tone));
 
         if (state.RivalShelf.IsEmpty)
         {
