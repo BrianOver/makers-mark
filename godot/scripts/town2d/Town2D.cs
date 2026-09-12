@@ -442,6 +442,31 @@ public partial class Town2D : Control
     /// never on an idle frame.</summary>
     private int _rivalLastEventLogCount = -1;
 
+    /// <summary>P2-LONG-17: the guild assessor's fixed identity — the name behind the number the
+    /// Guild Assessment chip used to be (see MainUi.RefreshStatus's own doc for the chip's
+    /// removal). A name and a nameplate like every other townsfolk actor, never rotated through
+    /// <see cref="TownsfolkNpc2D.FlavorNames"/>.</summary>
+    private const string AssessorName = "Voss";
+
+    /// <summary>P2-LONG-17: the assessor's spawn index — fixed and out-of-band from both the
+    /// generic villager pool and <see cref="RivalNpcIndex"/>, so his idle wander-drift phase never
+    /// coincides with either.</summary>
+    private const int AssessorNpcIndex = 96;
+
+    /// <summary>P2-LONG-17: the guild assessor — present once <see cref="Build"/> has run. Never
+    /// part of <see cref="TownsfolkRoot"/>'s generic cosmetic pool, same reasoning as <see
+    /// cref="RivalSmith"/>. Null only if the noticeboard venue was ever renamed out from under
+    /// <see cref="BuildAssessor"/> (defensive, mirrors <see cref="BuildRivalSmith"/>'s own
+    /// guard).</summary>
+    public TownsfolkNpc2D? Assessor { get; private set; }
+
+    /// <summary>P2-LONG-17: the last <see cref="GuildAssessmentState"/> reading the assessor's
+    /// caption was set from — unlike the rival's once-per-death absence line, the Guild
+    /// Assessment's own heartbeat moves every Morning, so this gates <see
+    /// cref="RefreshAssessorLine"/> to only re-set the caption Text when the recorded numbers
+    /// actually changed, never on an idle frame.</summary>
+    private (int DaysUntilAssessment, int DuesGold, int MissedAssessments) _assessorLastSeen = (-1, -1, -1);
+
     /// <summary>U6: patron seating inside the tavern room — null only if the tavern has no
     /// <see cref="InteriorLayout2D"/> row (defensive; every real build has one) or its "Patron
     /// Table" stations were renamed out from under <see cref="WireTavernLife"/>.</summary>
@@ -575,6 +600,8 @@ public partial class Town2D : Control
         BuildTownsfolk();
         BuildRivalSmith(); // P2-LONG-19: the counterfactual made visible — outside BuildTownsfolk's
                            // generic cosmetic pool so TownsfolkCount's exact-count contract holds
+        BuildAssessor(); // P2-LONG-17: the Guild Assessment's own face — same "outside the generic
+                          // pool" reasoning as the rival smith above, same reason
         WireTavernLife(); // U6: needs BuildInteriorRooms' tavern row + stations, already built above
 
         Fx = new Node2D { Name = "Fx" };
@@ -1120,6 +1147,9 @@ public partial class Town2D : Control
 
             // P2-LONG-19: the rival's one spoken line, checked the same cheap per-frame way.
             RefreshRivalAbsenceLine(Adapter.CurrentState);
+
+            // P2-LONG-17: the assessor's own line, same cheap per-frame check.
+            RefreshAssessorLine(Adapter.CurrentState);
         }
 
         // U10 (KTD-5): accumulate/reset each actor's Away timer every frame, regardless of
@@ -1924,6 +1954,90 @@ public partial class Town2D : Control
 
         RivalSmith.SetCaption(line);
         _rivalNarratedHeroIds = _rivalNarratedHeroIds.Union(pending.Select(d => d.Hero.Value));
+    }
+
+    /// <summary>
+    /// P2-LONG-17 ("Rent demoted; the assessor gets a face"): the Guild Assessment's own number
+    /// used to be a permanent HUD chip (<c>AssessmentChip</c>, removed — see
+    /// <c>MainUi.RefreshStatus</c>'s own doc); now it is a named, PERMANENT <see
+    /// cref="TownsfolkNpc2D"/> standing at the noticeboard (<see cref="TownLayout2D.Venues"/>'s
+    /// "noticeboard" door anchor — bureaucratic business belongs at the board, and the rival
+    /// already claimed the market door) — reuses the SAME extension point <see
+    /// cref="BuildRivalSmith"/> established (<see cref="TownsfolkNpc2D.Init"/>'s trailing
+    /// <c>caption</c> param) rather than a second NPC mechanism, per this unit's own instruction to
+    /// match an existing face-giving path.
+    ///
+    /// <para>Reuses the same civilian body art every anonymous villager wears, the OTHER build
+    /// (<see cref="TownsfolkNpc2D.CivilianIds"/>[1], "slight") from the rival's, so the two named
+    /// townsfolk read as different people at a glance — no dedicated assessor sprite exists in
+    /// this checkout, same disclosed gap <see cref="BuildRivalSmith"/>'s own doc names for the
+    /// rival.</para>
+    /// </summary>
+    private void BuildAssessor()
+    {
+        if (!_buildingsByKey.TryGetValue("noticeboard", out var noticeboard))
+        {
+            return; // defensive: never expected on a real build (mirrors BuildRivalSmith's own guard)
+        }
+
+        var civilianId = TownsfolkNpc2D.CivilianIds[1];
+        var body = TownsfolkNpc2D.ResolveSprite(civilianId);
+
+        // Seeded from the LIVE campaign's own Assessment reading (Adapter is set at the top of
+        // Build, before this runs) rather than GuildAssessmentState.Initial — a resumed save's
+        // assessor must never open with a fresh-campaign lie on his lips for the one frame before
+        // the next RefreshAssessorLine tick.
+        var assessment = Adapter!.CurrentState.Assessment;
+
+        Assessor = new TownsfolkNpc2D();
+        Assessor.Init(
+            AssessorNpcIndex,
+            body,
+            Colors.White,
+            noticeboard.DoorAnchorGlobal,
+            TownsfolkNpc2D.ResolveStepSprite(civilianId),
+            TownsfolkNpc2D.ResolveWalk2Sprite(civilianId),
+            TownsfolkNpc2D.ResolveWalk4Sprite(civilianId),
+            AssessorName,
+            AssessorLine(assessment));
+        // No SetErrandTargets call: he never leaves his post at the board, same "stay home"
+        // default the rival smith keeps.
+        _assessorLastSeen = (assessment.DaysUntilAssessment, assessment.DuesGold, assessment.MissedAssessments);
+        YSort.AddChild(Assessor);
+    }
+
+    /// <summary>P2-LONG-17: the assessor's own line, read straight off <see
+    /// cref="GuildAssessmentState"/>'s recorded fields — never a formula this method invents, and
+    /// never the raw permille/day-count a player can't parse on sight. Escalates in the same voice
+    /// a townsperson would actually use, the same register <see cref="RivalTagline"/> and its
+    /// absence line already established for the rival.</summary>
+    private static string AssessorLine(GuildAssessmentState assessment) =>
+        assessment.MissedAssessments > 0
+            ? $"\"{assessment.DuesGold}g overdue now, and {assessment.MissedAssessments} miss(es) on the books. The guild does not forget, smith.\""
+            : $"\"{assessment.DuesGold}g due in {assessment.DaysUntilAssessment} day(s). See that it's ready.\"";
+
+    /// <summary>
+    /// P2-LONG-17: keeps the assessor's caption current with the sim's own Guild Assessment
+    /// heartbeat. Unlike <see cref="RefreshRivalAbsenceLine"/> (an edge-triggered, once-per-death
+    /// line), this number moves on its own cadence every Morning regardless of any single event
+    /// firing, so the gate here is "did the recorded reading itself change" rather than an event-
+    /// log count — still one cheap tuple comparison on an idle frame, never a Text write.
+    /// </summary>
+    private void RefreshAssessorLine(GameState state)
+    {
+        if (Assessor is null)
+        {
+            return;
+        }
+
+        var seen = (state.Assessment.DaysUntilAssessment, state.Assessment.DuesGold, state.Assessment.MissedAssessments);
+        if (seen == _assessorLastSeen)
+        {
+            return;
+        }
+
+        _assessorLastSeen = seen;
+        Assessor.SetCaption(AssessorLine(state.Assessment));
     }
 
     /// <summary>U6: mounts <see cref="TavernLife2D"/> at the tavern room's own "Patron Table"

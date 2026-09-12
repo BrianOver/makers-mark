@@ -12,14 +12,15 @@ namespace GodotClient.Tests;
 /// <summary>
 /// Phase C/D "actually in the 3D game" coverage: the systems that shipped to the sim (Guild
 /// Assessment + Confidence, the campaign arc, the U-D4 progression spine) must be visible in the
-/// Godot client, not just the CLI. These assert the HUD chips and the progression panel render.
+/// Godot client, not just the CLI. These assert the HUD chips, the guild assessor's face, and the
+/// progression panel render.
 /// </summary>
 [TestSuite]
 [RequireGodotRuntime]
 public class PhaseDSurfacesTests
 {
     [TestCase]
-    public void Hud_Surfaces_Confidence_Assessment_And_Act_Chips()
+    public void Hud_Surfaces_Confidence_And_Act_Chips_AssessorSpeaksTheDues()
     {
         var ui = MountMainUi();
         try
@@ -27,8 +28,20 @@ public class PhaseDSurfacesTests
             AdvanceDay(ui); // force a HUD refresh tick
 
             AssertThat(Find<Control>(ui, "ConfidenceChip")).IsNotNull();
-            AssertThat(Find<Control>(ui, "AssessmentChip")).IsNotNull();
             AssertThat(Find<Control>(ui, "ActChip")).IsNotNull();
+
+            // P2-LONG-17: the Guild Assessment carries no HUD chip at all anymore — it speaks
+            // through the guild assessor's own in-world caption instead (Town2D.BuildAssessor).
+            // No real frame pump: _Process is called directly, same convention TownLifeTests uses.
+            ui.Town._Process(0.0);
+            var assessment = ui.Adapter.CurrentState.Assessment;
+            AssertThat(ui.Town.Assessor).IsNotNull();
+            AssertThat(ui.Town.Assessor!.Caption).IsNotNull();
+            AssertThat(ui.Town.Assessor!.Caption!.Text)
+                .OverrideFailureMessage(
+                    $"the assessor's caption never named the sim's own recorded dues ({assessment.DuesGold}g): " +
+                    $"\"{ui.Town.Assessor!.Caption!.Text}\"")
+                .Contains($"{assessment.DuesGold}g");
         }
         finally
         {

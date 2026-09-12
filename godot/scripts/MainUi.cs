@@ -2311,42 +2311,19 @@ public partial class MainUi : Control
         // Expanding spacer: pushes the DUES cluster flush to the wood-framed bar's right edge.
         _statChips.AddChild(new Control { Name = "StatChipsSpacer", SizeFlagsHorizontal = SizeFlags.ExpandFill });
 
-        // ── DUES cluster: the three scarcity/heartbeat gauges — icon+value only, the wordy labels
-        // ("Rent"/"Guild Assessment"/"Confidence") that ate the most width now live in TooltipText.
+        // ── DUES cluster (P2-LONG-17): Rent and the Guild Assessment no longer live here at all —
+        // both measured trivial by day 25 (plan §11, "two permanent HUD chips for numbers that stop
+        // mattering halfway through"). Rent demoted to a Morning-only line on the clock banner (see
+        // RentMorningLine/UpdateClockLabel — no pay verb; a button would be a deadline dressed as
+        // one). The Guild Assessment's automatic heartbeat is unchanged, but its number now speaks
+        // through the guild assessor's own in-world caption (Town2D.BuildAssessor) instead of a bar
+        // chip — the assessment gets a face, not a second gauge. Confidence is neither of those two
+        // measured numbers (it never goes quiet — it can still collapse the era) and stays, growing
+        // into the freed width: a full NamedStatChip with its word label back, where UI-3 had
+        // compacted it to an icon+value pill under width pressure this cluster no longer carries.
         var dues = new HBoxContainer { Name = "DuesCluster" };
         dues.AddThemeConstantOverride("separation", GameTheme.Space8);
         _statChips.AddChild(dues);
-
-        // U10 scarcity surfacing: the guild-rent countdown. Tone escalates as the deadline nears
-        // (or once a payment has been missed) so the pressure reads at a glance.
-        var rent = state.Rent;
-        var rentTone = rent.MissedPayments > 0 || rent.DaysUntilDue <= 1 ? UiKit.ChipTone.Negative
-            : rent.DaysUntilDue <= 3 ? UiKit.ChipTone.Accent
-            : UiKit.ChipTone.Neutral;
-        // Icon stand-in (see HeroesChip's note above): no dedicated "workshop rent" glyph yet —
-        // reuses "bounty" (a formal notice/scroll), the closest available fit.
-        var rentChip = NamedIconChip(
-            "RentChip", IconRegistry.Glyph("bounty"), $"{rent.DaysUntilDue}d·{rent.AmountDueGold}g", rentTone, "Rent");
-        rentChip.TooltipText = rent.MissedPayments > 0
-            ? $"Rent due in {rent.DaysUntilDue} day(s): {rent.AmountDueGold}g. {rent.MissedPayments} missed payment(s) — the guild is losing patience."
-            : $"Rent due in {rent.DaysUntilDue} day(s): {rent.AmountDueGold}g (every {RentState.CadenceDays} days).";
-        dues.AddChild(rentChip);
-
-        // U-D2: the Guild Assessment heartbeat — dues on their own cadence, escalating paid or missed.
-        var assess = state.Assessment;
-        var assessTone = assess.SoftFailed || assess.MissedAssessments > 0 || assess.DaysUntilAssessment <= 1
-                ? UiKit.ChipTone.Negative
-            : assess.DaysUntilAssessment <= 2 ? UiKit.ChipTone.Accent
-            : UiKit.ChipTone.Neutral;
-        // Icon stand-in: no dedicated "guild banner" glyph yet — reuses "gossip" (town chatter/
-        // reputation), the closest available fit.
-        var assessChip = NamedIconChip(
-            "AssessmentChip", IconRegistry.Glyph("gossip"), $"{assess.DaysUntilAssessment}d·{assess.DuesGold}g",
-            assessTone, "Guild Assessment");
-        assessChip.TooltipText = assess.MissedAssessments > 0
-            ? $"Guild Assessment due in {assess.DaysUntilAssessment} day(s): {assess.DuesGold}g. {assess.MissedAssessments} missed — dues escalate steeply."
-            : $"Guild Assessment due in {assess.DaysUntilAssessment} day(s): {assess.DuesGold}g (every {GuildAssessmentState.CadenceDays} days). Paying it lifts Confidence.";
-        dues.AddChild(assessChip);
 
         // U-D2: the town-Confidence gauge (0-1000 → %) — the soft-deadline morale the Guild
         // Assessment and rival vendor both read. Tone drops as it nears the collapse floor (0).
@@ -2354,10 +2331,7 @@ public partial class MainUi : Control
         var confidenceTone = confidence <= 200 ? UiKit.ChipTone.Negative
             : confidence <= 500 ? UiKit.ChipTone.Accent
             : UiKit.ChipTone.Positive;
-        // Icon stand-in: no dedicated "morale/heart" glyph yet — reuses "rune" (an arcane gauge),
-        // the closest available fit.
-        var confidenceChip = NamedIconChip(
-            "ConfidenceChip", IconRegistry.Glyph("rune"), $"{confidence / 10}%", confidenceTone, "Confidence");
+        var confidenceChip = NamedStatChip("ConfidenceChip", "Confidence", $"{confidence / 10}%", confidenceTone);
         confidenceChip.TooltipText =
             $"Town confidence {confidence / 10}% — lifts on a paid Guild Assessment, drops on a miss or passive decay. At 0 the era soft-fails (talents + recipes persist).";
         dues.AddChild(confidenceChip);
@@ -2917,6 +2891,14 @@ public partial class MainUi : Control
                 {
                     tailParts.Add(ready);
                 }
+
+                // P2-LONG-17: Rent demoted from its own permanent HUD chip to this one Morning-only
+                // line — the plan's own ruling is that a manual pay button would be "a deadline
+                // dressed as a verb" (law 3, no timers on decisions), so this states the sim's
+                // already-recorded charge and adds no verb at all. Gated to Morning alone (never all
+                // day) is the actual demotion: the fact is still true every day, but it now costs
+                // screen space only on the one phase where reading it is relevant.
+                tailParts.Add(RentMorningLine(state.Rent));
             }
 
             var badge = OpenItemsBadge(state);
@@ -2956,6 +2938,17 @@ public partial class MainUi : Control
             _ => $"{ready} heroes ready at the gate",
         };
     }
+
+    /// <summary>P2-LONG-17: the Morning line Rent demoted to — states the sim's own recorded
+    /// charge (<see cref="RentState.AmountDueGold"/>/<see cref="RentState.DaysUntilDue"/>/<see
+    /// cref="RentState.MissedPayments"/>) and nothing this method invents; never empty, since a
+    /// campaign's rent clock always has a next due date (see <see cref="RentState.Initial"/>).
+    /// No verb lives beside it — see <see cref="UpdateClockLabel"/>'s call site for why one never
+    /// will.</summary>
+    private static string RentMorningLine(RentState rent) =>
+        rent.MissedPayments > 0
+            ? $"rent {rent.AmountDueGold}g overdue, {rent.MissedPayments} missed"
+            : $"rent {rent.AmountDueGold}g due in {rent.DaysUntilDue}d";
 
     /// <summary>U3: a readout of what is still open this phase (per-type, not one opaque count),
     /// so the player knows what the bell will end. Empty when nothing is pending.</summary>
