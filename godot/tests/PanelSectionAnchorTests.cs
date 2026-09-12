@@ -29,7 +29,8 @@ namespace GodotClient.Tests;
 /// <see cref="Panels.ShopPanel"/>'s "Unshelved Crafts" (newly named by <see
 /// cref="UiKit.SectionName"/>), <see cref="Panels.CommissionBoard"/>'s "CommissionBody" (already
 /// stable, no production change needed), and <see cref="Panels.LegendsWall"/>'s new "FallenSection"
-/// (previously no container existed there at all).</para>
+/// (previously no container existed there at all — P2-MEMORY-10 later renamed it
+/// "ActorIndexSection" and widened it to every remembered actor, not just the fallen).</para>
 /// </summary>
 [TestSuite]
 [RequireGodotRuntime]
@@ -37,7 +38,7 @@ public class PanelSectionAnchorTests
 {
     private const string UnshelvedCraftsSectionName = "UnshelvedCraftsSection";
     private const string CommissionCardsSectionName = "CommissionBody";
-    private const string FallenSectionName = "FallenSection";
+    private const string ActorIndexSectionName = "ActorIndexSection";
 
     // ── the naming convention itself (UiKit.SectionName) ────────────────────────────────────
 
@@ -219,8 +220,10 @@ public class PanelSectionAnchorTests
         }
     }
 
-    // ── LegendsWall's "THE FALLEN" — had NO container of its own before this unit; Honor_{hero}
-    //    is the exact entity-keyed button named in this unit's own task. ─────────────────────
+    // ── LegendsWall's actor index — had NO container of its own before U8; P2-MEMORY-10 (book
+    //    shell) renamed it from "FallenSection" to "ActorIndexSection" and widened it to list
+    //    every remembered actor, not just the fallen. Actor_{hero} is the entity-keyed button
+    //    this unit's own task named. ───────────────────────────────────────────────────────────
 
     private static GameState LegendsStateWithMemorials(int count)
     {
@@ -235,14 +238,14 @@ public class PanelSectionAnchorTests
                 Memorials = memorials.ToImmutableList(),
                 // Keeps LegendsWall.ShowWall past its own "nothing at all" empty-state return
                 // regardless of how many memorials this fixture carries (that early return skips
-                // RenderMemorials entirely, which would falsely look like a missing container).
+                // RenderActorBook entirely, which would falsely look like a missing container).
                 DepthsBoard = ImmutableSortedDictionary<int, int>.Empty.Add(1, 1),
             },
         };
     }
 
     [TestCase]
-    public void FallenSection_ResolvesWithZeroOneAndManyMemorials()
+    public void ActorIndexSection_ResolvesWithZeroOneAndManyMemorials()
     {
         foreach (var count in new[] { 0, 1, 4 })
         {
@@ -251,11 +254,11 @@ public class PanelSectionAnchorTests
             {
                 ui.Legends.ShowWall(ui.Adapter.CurrentState);
                 ui.Overlay.RefreshAnchor(
-                    TutorialAnchor.ForPanelSection("Legends", FallenSectionName), ui.Town, ui.Drawer, ui);
+                    TutorialAnchor.ForPanelSection("Legends", ActorIndexSectionName), ui.Town, ui.Drawer, ui);
 
                 AssertThat(ui.Overlay.PulsingHudControlName)
-                    .OverrideFailureMessage($"The Fallen section anchor did not resolve with {count} memorial(s) recorded.")
-                    .IsEqual(FallenSectionName);
+                    .OverrideFailureMessage($"The actor index section anchor did not resolve with {count} memorial(s) recorded.")
+                    .IsEqual(ActorIndexSectionName);
             }
             finally
             {
@@ -265,15 +268,15 @@ public class PanelSectionAnchorTests
     }
 
     [TestCase]
-    public void HonorButton_RemainsReachable_ThroughTheFallenSectionContainer()
+    public void ActorButton_RemainsReachable_ThroughTheActorIndexSectionContainer()
     {
         var ui = MountMainUi(new SimAdapter(LegendsStateWithMemorials(1)));
         try
         {
             ui.Legends.ShowWall(ui.Adapter.CurrentState);
 
-            AssertThat(Find<Button>(ui.Legends, "Honor_300"))
-                .OverrideFailureMessage("Honor_300 did not resolve inside LegendsWall once the fallen list gained its own named container.")
+            AssertThat(Find<Button>(ui.Legends, "Actor_300"))
+                .OverrideFailureMessage("Actor_300 did not resolve inside LegendsWall's own actor index container.")
                 .IsNotNull();
         }
         finally
