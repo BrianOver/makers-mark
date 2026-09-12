@@ -879,6 +879,14 @@ public partial class NewGameSelect : Control
             }
         }
 
+        // The refusal is not a dead end, and clearing the complaint is the success path's own job
+        // rather than the field's. `TextChanged` fires only for a HUMAN edit, so every programmatic
+        // route to a good value -- the playtest harness, a scenario save, any future paste-a-seed
+        // control -- would otherwise reach a started campaign with "that isn't a number" still on
+        // screen underneath it. A screen contradicting what it just did is the same defect class as
+        // a stale comment: the player believes the sentence, not the state behind it.
+        HideSeedError();
+
         GD.Print($"[NewGameSelect] new campaign: profession {_pendingProfessionId}, seed {_pendingSeed}");
 
         // Honour what the Continue blurb promises: a new campaign REPLACES the save. Clearing here
