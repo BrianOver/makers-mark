@@ -129,6 +129,51 @@ namespace GameSim.Tests.Hygiene;
 /// they remain compliant (the <c>SlotHonestyNote(</c> call itself is untouched) and this unit's own
 /// enum-hole generator now covers the identical raw-interpolation risk at the same lines. Recorded
 /// here rather than silently, per this repo's own culture of disclosed heuristic limits.</para>
+///
+/// <para><b>P2-HONEST-14: the CLI's own printed prose joins the corpus.</b>
+/// <c>sim/GameSim.Cli/Program.cs</c> was in nobody's scope — <c>godot/scripts/**</c> is the client
+/// render layer, the three sim-prose files are named by name, and the CLI's own text sat between
+/// both. Its player-visible surface is derived the same "live declaration" way as every generator
+/// above, not by listing line numbers: <see cref="CliInteractiveSourceFiles"/> is the one file, and
+/// <see cref="CliSinkMarker"/> — a literal <c>Console.WriteLine(</c>/<c>Console.Write(</c> — is the
+/// sink. That marker structurally EXCLUDES <c>Console.Error.WriteLine(</c> without any special-case
+/// code: <c>"Error."</c> sits between <c>Console.</c> and <c>WriteLine(</c>, so the substring
+/// <c>"Console.WriteLine("</c> is simply never present there. This is exactly right for the corpus
+/// question: every <c>Console.Error.WriteLine(</c> call in this file is a malformed-CLI-INVOCATION
+/// diagnostic for the batch/decisions/probe/characterize/seed-search/long-wall/felt-wall/
+/// econ-trajectory/arc-stall dev-tool dispatch a few dozen lines above the interactive loop (wrong
+/// flag, bad int, etc.) — never a line the blacksmith-player reads inside a live campaign — while
+/// every <c>Console.WriteLine(</c>/<c>Console.Write(</c> call IS that player's own text-mode game.
+/// Generators 1 (enum holes) and 5 (minted identifiers) run over this corpus; generator 2 is
+/// subsumed by generator 1's alternation already. <b>Generator 3 deliberately does NOT run here</b>:
+/// it denies a CLI verb or surface id QUOTED in copy because a GUI player has no console to type it
+/// into — but Program.cs <i>is</i> that console, so its own help text quoting <c>'help'</c>,
+/// <c>'recipes'</c>, <c>'mats'</c> is the literal, honest truth for this surface, and running
+/// generator 3 here would flag every one of those as though they were leaks.</para>
+///
+/// <para><b>A disclosed gap this widening does NOT close: the <c>case "help":</c> block is a
+/// triple-quoted raw string</b> (<c>"""..."""</c>), the one player-visible block in this file the
+/// <see cref="StringLiteral"/> regex cannot see at all — it knows plain and interpolated
+/// (<c>"..."</c>/<c>$"..."</c>) literals only, a limit this class's own doc has disclosed since
+/// P2-HONEST-06. That block is known (manual read, this unit) to carry its own internal-jargon
+/// citations ("PA2", "U-D1 sink 1/3a/3b/5") the generators cannot reach any more than they can reach
+/// <c>PKD4</c>'s shape (next paragraph) — named here rather than silently passed over, and left
+/// unfixed: out of P2-HONEST-14's named scope (the two <c>PKD4</c> hints), not swept in.</para>
+///
+/// <para><b>A refuted claim, checked rather than trusted.</b> P2-HONEST-06's own class doc (this
+/// file, generator 5's list above) asserts its <see cref="PlanCitation"/> patterns
+/// (<c>P2-[A-Z]+-\d+</c>, <c>§11\.\d+</c>, <c>U\d{1,3}</c>) are "the last two closing the same shape
+/// <c>P2-HONEST-14</c> found live in the CLI's own hints." Checked directly against the actual
+/// string: <c>PKD4</c> matches NONE of the three — no <c>P2-</c> prefix, no <c>§</c>, and no bare
+/// <c>U</c> immediately before its digits (it is <c>P</c>-<c>K</c>-<c>D</c>-<c>4</c>, an unrelated
+/// "Playtest Known Defect" citation family live elsewhere in this codebase —
+/// <c>CraftQualityHint.cs</c>, <c>SeedSearch.cs</c>, <c>RecruitSystem.cs</c>, <c>GameKernel.cs</c>,
+/// the profession files — never this pattern family). The prior claim is refuted, recorded here
+/// rather than re-filed, exactly as this plan row's own parenthetical modeled for the "3D forge
+/// minigame" claim before it. This unit fixes both <c>PKD4</c> citations by hand regardless (the
+/// task's own "at minimum," not contingent on a generator catching them) and does not widen
+/// <see cref="PlanCitation"/> to the <c>PKD</c> shape — that is a rule change, and this unit's
+/// mandate is the corpus, not the rules.</para>
 /// </summary>
 public class PlayerVocabularyCensusTests
 {
@@ -151,6 +196,12 @@ public class PlayerVocabularyCensusTests
     /// positive this unit's own tuning found and fixed).</summary>
     private static readonly Regex SinkMarker = new(
         @"\.Text\s*=|TooltipText\s*=|\bAddLabel\(|\bAddHeader\(|\bAddChip\(|\bStatChip\(|\bListRow\(|\bwhyNot\s*:|\bWhyNot\s*:|\breturn\s*\(false,|\breturn\s*\(true,");
+
+    /// <summary>P2-HONEST-14's CLI player-copy sink: a literal <c>Console.WriteLine(</c> or
+    /// <c>Console.Write(</c> call. Deliberately does NOT match <c>Console.Error.WriteLine(</c> — see
+    /// the class doc's "P2-HONEST-14" paragraph for why that exclusion falls out of the literal text
+    /// rather than needing a separate negative case.</summary>
+    private static readonly Regex CliSinkMarker = new(@"\bConsole\.WriteLine\(|\bConsole\.Write\(");
 
     /// <summary>A statement ENDING in a <c>Name =</c> assignment — a control's own node identifier,
     /// never player copy, even when an earlier sink call sits in the same statement window (the
@@ -319,6 +370,34 @@ public class PlayerVocabularyCensusTests
         Assert.Contains(violations, v => v.Contains(".Quality"));
     }
 
+    // ------------------------------------------------------------------ P2-HONEST-14: the CLI corpus
+
+    /// <summary>Standalone proof the widened corpus is actually wired to generator 5, not just
+    /// declared in a doc comment: a plan-unit citation SHAPE the existing <see cref="PlanCitation"/>
+    /// regex already recognizes (unlike <c>PKD4</c> — see the class doc's "refuted claim"
+    /// paragraph), planted inside a <c>Console.WriteLine(</c> call, the CLI's own player-copy
+    /// sink.</summary>
+    [Fact]
+    public void RegressionProof_CliCorpus_WouldCatchAPlanCitationInPlayerCopy()
+    {
+        const string historicalCode = "Console.WriteLine(\"  a fixture hint, U26 style, never real copy.\");";
+
+        var violations = MintedIdentifierViolationsInSinkMarkedFile("fixture.cs", historicalCode, CliSinkMarker, wholeFile: false, includeKebabAndPascal: true).ToList();
+        Assert.Contains(violations, v => v.Contains("plan-unit citation"));
+    }
+
+    /// <summary>A <c>Console.Error.WriteLine(</c> call — a malformed-CLI-INVOCATION diagnostic for
+    /// the batch/decisions/probe/... dev-tool dispatch, never a line the blacksmith-player reads in
+    /// a live campaign — must not be flagged, proving <see cref="CliSinkMarker"/> excludes it.</summary>
+    [Fact]
+    public void NegativeControl_CliErrorDiagnosticIsNotFlaggedAsPlayerCopy()
+    {
+        const string historicalCode = "Console.Error.WriteLine(\"long-wall: bad --seeds, U26\");";
+
+        var violations = MintedIdentifierViolationsInSinkMarkedFile("fixture.cs", historicalCode, CliSinkMarker, wholeFile: false, includeKebabAndPascal: true).ToList();
+        Assert.Empty(violations);
+    }
+
     // ------------------------------------------------------------------ the main sweeps
 
     [Fact]
@@ -332,6 +411,10 @@ public class PlayerVocabularyCensusTests
         foreach (var (relative, absolute) in SimProseFiles())
         {
             violations.AddRange(EnumOrRegistryHoleViolations(relative, File.ReadAllText(absolute), isWholeFilePlayerCopy: true));
+        }
+        foreach (var (relative, absolute) in CliInteractiveSourceFiles())
+        {
+            violations.AddRange(EnumOrRegistryHoleViolations(relative, File.ReadAllText(absolute), isWholeFilePlayerCopy: false, sinkMarker: CliSinkMarker));
         }
 
         violations = violations.Where(v => !Exceptions.ContainsKey(("enum-or-registry", v))).ToList();
@@ -380,52 +463,19 @@ public class PlayerVocabularyCensusTests
         {
             var code = StripComments(File.ReadAllText(absolute));
             var wholeFile = relative.EndsWith("AdventureTicker.cs", StringComparison.Ordinal);
+            violations.AddRange(MintedIdentifierViolationsInSinkMarkedFile(relative, code, SinkMarker, wholeFile, includeKebabAndPascal: true));
+        }
 
-            // Matched PER LINE, deliberately: this codebase's real player copy is always a
-            // single-line literal (multi-line prose is `+`-joined single-line literals — see
-            // TavernPanel.cs). Matching the whole file in one pass let a stray quote INSIDE a
-            // blanked-out comment or an unrelated later literal make the regex "leak" across dozens
-            // of real statements, since a naive `"..."` match has no notion of a line boundary.
-            var lines = code.Split('\n');
-            var precedingContext = string.Empty;
-            for (var lineIndex = 0; lineIndex < lines.Length; lineIndex++)
-            {
-                var line = lines[lineIndex];
-                foreach (Match literal in StringLiteral.Matches(line))
-                {
-                    // Bounded by the nearest statement boundary, not a flat char count — an
-                    // unrelated EARLIER statement on the previous line
-                    // (`_feedback = AddLabel(root, string.Empty);`) must not leak "AddLabel(" into
-                    // THIS statement's classification (`_feedback.Name = "CounterFeedback";`, a node
-                    // identifier, never player copy) just because it sits within 150 chars.
-                    var lookBehind = TrimToLastStatementBoundary(precedingContext + line[..literal.Index]);
-
-                    // The Name= exclusion applies even in AdventureTicker.cs's whole-file mode — its
-                    // own `Name = "AdventureTickerLine"` is a node id like any other, never a ticker
-                    // line, and "the whole file is the corpus" was never meant to reach that.
-                    if (NameAssignmentEnd.IsMatch(lookBehind))
-                    {
-                        continue;
-                    }
-
-                    if (!wholeFile && !SinkMarker.IsMatch(lookBehind))
-                    {
-                        continue;
-                    }
-
-                    var content = Hole.Replace(literal.Value, m => Blank(m.Value));
-                    foreach (var (_, label) in FindMintedIdentifiers(content, includeKebabAndPascal: true))
-                    {
-                        violations.Add($"{relative}:{lineIndex + 1}  {label}: {content.Trim()}");
-                    }
-                }
-
-                precedingContext = TrimToLastStatementBoundary(precedingContext + line + "\n");
-                if (precedingContext.Length > 150)
-                {
-                    precedingContext = precedingContext[^150..];
-                }
-            }
+        // P2-HONEST-14: Program.cs's own REPL prints, sink-marked on Console.WriteLine(/Console.Write(
+        // rather than the godot markers above — see the class doc's "P2-HONEST-14" paragraph. Kebab
+        // and PascalCase-run-together stay ON here (unlike the sim-prose block below): Program.cs is
+        // dense C# control flow, not a flavor pack of string-keyed dictionaries, so it carries none of
+        // the unrendered kebab/camel CODE KEYS that made those two sub-checks noisy for the three sim
+        // files — the same reasoning ClientSourceFiles already relies on.
+        foreach (var (relative, absolute) in CliInteractiveSourceFiles())
+        {
+            var code = StripComments(File.ReadAllText(absolute));
+            violations.AddRange(MintedIdentifierViolationsInSinkMarkedFile(relative, code, CliSinkMarker, wholeFile: false, includeKebabAndPascal: true));
         }
 
         // The three sim-side prose sources: every string IS the corpus, so no sink lookup is
@@ -625,8 +675,9 @@ public class PlayerVocabularyCensusTests
 
     // ------------------------------------------------------------------ shared: enum/registry hole scan
 
-    private static IEnumerable<string> EnumOrRegistryHoleViolations(string relative, string code, bool isWholeFilePlayerCopy)
+    private static IEnumerable<string> EnumOrRegistryHoleViolations(string relative, string code, bool isWholeFilePlayerCopy, Regex? sinkMarker = null)
     {
+        var marker = sinkMarker ?? SinkMarker;
         var names = DiscoverUnambiguousEnumHoleNames().Concat(DiscoverRegistryIdHoleNames());
         var alternation = string.Join("|", names.Select(Regex.Escape));
         var hole = new Regex($@"\{{[A-Za-z_][\w.?!]*\.(?:{alternation})\b");
@@ -643,7 +694,7 @@ public class PlayerVocabularyCensusTests
 
             if (!isWholeFilePlayerCopy
                 && !relative.EndsWith("AdventureTicker.cs", StringComparison.Ordinal)
-                && !SinkMarker.IsMatch(window))
+                && !marker.IsMatch(window))
             {
                 continue;
             }
@@ -668,6 +719,61 @@ public class PlayerVocabularyCensusTests
 
             var lineNumber = stripped[..m.Index].Count(c => c == '\n') + 1;
             yield return $"{relative}:{lineNumber}  '{m.Groups[1].Value}' ({label})";
+        }
+    }
+
+    // ------------------------------------------------------------------ shared: sink-marked minted-identifier scan
+
+    /// <summary>Extracted from <c>EveryMintedIdentifier_InPlayerCopy_IsFixedOrPinnedWithAReason</c>'s
+    /// own original ClientSourceFiles loop (P2-HONEST-06) so a second sink-marked corpus
+    /// (<see cref="CliInteractiveSourceFiles"/>, P2-HONEST-14) can reuse the identical scan against
+    /// its own marker instead of a second hand-copied loop. Matched PER LINE, deliberately: this
+    /// codebase's real player copy is always a single-line literal (multi-line prose is `+`-joined
+    /// single-line literals). Matching the whole file in one pass let a stray quote INSIDE a
+    /// blanked-out comment or an unrelated later literal make the regex "leak" across dozens of real
+    /// statements, since a naive `"..."` match has no notion of a line boundary.</summary>
+    private static IEnumerable<string> MintedIdentifierViolationsInSinkMarkedFile(
+        string relative, string code, Regex sinkMarker, bool wholeFile, bool includeKebabAndPascal)
+    {
+        var lines = code.Split('\n');
+        var precedingContext = string.Empty;
+        for (var lineIndex = 0; lineIndex < lines.Length; lineIndex++)
+        {
+            var line = lines[lineIndex];
+            foreach (Match literal in StringLiteral.Matches(line))
+            {
+                // Bounded by the nearest statement boundary, not a flat char count — an
+                // unrelated EARLIER statement on the previous line
+                // (`_feedback = AddLabel(root, string.Empty);`) must not leak "AddLabel(" into
+                // THIS statement's classification (`_feedback.Name = "CounterFeedback";`, a node
+                // identifier, never player copy) just because it sits within 150 chars.
+                var lookBehind = TrimToLastStatementBoundary(precedingContext + line[..literal.Index]);
+
+                // The Name= exclusion applies even in whole-file mode — a `Name = "SomeNodeId"`
+                // assignment is a node id like any other, never player copy, and "the whole file is
+                // the corpus" was never meant to reach that.
+                if (NameAssignmentEnd.IsMatch(lookBehind))
+                {
+                    continue;
+                }
+
+                if (!wholeFile && !sinkMarker.IsMatch(lookBehind))
+                {
+                    continue;
+                }
+
+                var content = Hole.Replace(literal.Value, m => Blank(m.Value));
+                foreach (var (_, label) in FindMintedIdentifiers(content, includeKebabAndPascal))
+                {
+                    yield return $"{relative}:{lineIndex + 1}  {label}: {content.Trim()}";
+                }
+            }
+
+            precedingContext = TrimToLastStatementBoundary(precedingContext + line + "\n");
+            if (precedingContext.Length > 150)
+            {
+                precedingContext = precedingContext[^150..];
+            }
         }
     }
 
@@ -795,6 +901,19 @@ public class PlayerVocabularyCensusTests
         foreach (var path in files)
         {
             yield return (Path.GetRelativePath(root, path).Replace('\\', '/'), path);
+        }
+    }
+
+    /// <summary>P2-HONEST-14's own file: <c>sim/GameSim.Cli/Program.cs</c>, the interactive REPL's
+    /// player-visible prints. See the class doc's "P2-HONEST-14" paragraph for why this is the whole
+    /// corpus (one file, not a directory sweep) and why <see cref="CliSinkMarker"/> rather than
+    /// <see cref="SinkMarker"/> is the right marker for it.</summary>
+    private static IEnumerable<(string Relative, string Absolute)> CliInteractiveSourceFiles()
+    {
+        var path = Path.Combine(RepoRoot(), "sim", "GameSim.Cli", "Program.cs");
+        if (File.Exists(path))
+        {
+            yield return (Path.GetRelativePath(RepoRoot(), path).Replace('\\', '/'), path);
         }
     }
 
