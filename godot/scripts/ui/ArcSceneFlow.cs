@@ -32,7 +32,10 @@ namespace GodotClient.Ui;
 /// arc — one. The tavern already lost a night to voice pile-up once (U29), and six arcs of eight
 /// scenes each is that failure waiting with more content behind it. The budget needs no counter
 /// field: a day on which something was already shown is a day already spent, and the reveal day is
-/// recorded anyway for the wake and the kin.</para>
+/// recorded anyway for the wake and the kin. <see cref="Commendation"/> (P2-MEMORY-07) is the
+/// second registered client, proving the budget is the engine's and not Torvald's own: it competes
+/// for the identical day, through the identical revealed table, rather than keeping one of its
+/// own.</para>
 ///
 /// <para><b>An unclaimed scene waits indefinitely, and an unrevealed one dies unshown.</b> There is
 /// no expiry, no catch-up, and — deliberately, permanently — no screen anywhere that says what you
@@ -69,8 +72,12 @@ public static class ArcSceneFlow
         ArcScenes.Registry.Any(scene =>
             scene.Grants.Contains(factId, StringComparer.Ordinal) && IsRevealed(scene.Id));
 
-    /// <summary>Today's one scene, or null. See <see cref="OfferFrom"/> for the rule.</summary>
-    public static ArcScene? OfferFor(GameState state) => OfferFrom(ArcScenes.Registry, state);
+    /// <summary>Today's one scene, or null. See <see cref="OfferFrom"/> for the rule.
+    /// <see cref="Commendation.Candidates"/> is concatenated on — P2-MEMORY-07 registers as a
+    /// second client of this same engine, competing for the identical one-per-day budget rather
+    /// than running one of its own (P2-KTD7).</summary>
+    public static ArcScene? OfferFor(GameState state) =>
+        OfferFrom(ArcScenes.Registry.Concat(Commendation.Candidates(state)), state);
 
     /// <summary>
     /// The one scene the town may offer today, out of an arbitrary corpus.
@@ -168,7 +175,11 @@ public static class ArcSceneFlow
             return;
         }
 
-        foreach (var (id, day) in parsed.Where(entry => ArcScenes.ById(entry.Key) is not null))
+        // A commendation id is never a member of the static registry ById checks, so it needs its
+        // own "is this even shaped right" test here — otherwise a already-revealed commendation
+        // would be silently dropped as unknown on every reload and could fire a second time.
+        foreach (var (id, day) in parsed.Where(entry =>
+            ArcScenes.ById(entry.Key) is not null || Commendation.IsKnownId(entry.Key)))
         {
             _revealed = _revealed.SetItem(id, day);
         }

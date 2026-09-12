@@ -1,7 +1,10 @@
 #if GDUNIT_TESTS
+using System.Collections.Generic;
 using System.Linq;
+using GameSim;
 using GameSim.Classes;
 using GameSim.Contracts;
+using GameSim.Kernel;
 using GdUnit4;
 using Godot;
 using GodotClient.Town2d;
@@ -758,6 +761,239 @@ public class TownLifeTests
         finally
         {
             town.Free();
+        }
+    }
+
+    // ── U50 ("the cast stops scattering"): gathering-spot clustering ─────────────────────────────
+    //
+    // Town2D.HomeFor used to hand each of the starting six a private per-id point on a fixed
+    // diagonal band and leave every actor to wander it alone. These tests cover the replacement:
+    // TownLayout2D.SpotAssignmentFor/SpotAnchorFor group heroes into named-landmark clusters, purely
+    // as a function of (heroId, phase) — see TownLayout2D.cs's own U50 doc for the measured numbers.
+
+    [TestCase]
+    public void SpotAssignment_TwoTownsFromTheSameSeed_AssignIdenticalHomesToEveryHero()
+    {
+        var townA = new Town2D { Name = "Town2D" };
+        var townB = new Town2D { Name = "Town2D" };
+        townA.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        townB.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        ((SceneTree)Engine.GetMainLoop()).Root.AddChild(townA);
+        ((SceneTree)Engine.GetMainLoop()).Root.AddChild(townB);
+        townA.Build(new SimAdapter(seed: 11));
+        townB.Build(new SimAdapter(seed: 11));
+        try
+        {
+            AssertThat(townA.HeroActors.Count > 0).IsTrue();
+
+            foreach (var a in townA.HeroActors)
+            {
+                var b = townB.FindHeroActor(a.HeroIdValue);
+                AssertThat(b).IsNotNull();
+                AssertThat(b!.Home)
+                    .OverrideFailureMessage(
+                        $"hero {a.HeroIdValue}: two Town2D instances built from the same seed/state " +
+                        "must assign the identical spot anchor -- spot assignment must be a pure " +
+                        "function of (heroId, phase)")
+                    .IsEqual(a.Home);
+            }
+        }
+        finally
+        {
+            townA.Free();
+            townB.Free();
+        }
+    }
+
+    /// <summary>In-memory round trip only (<see cref="SaveCodec"/> directly, no <c>CampaignSave</c>
+    /// file I/O) — spot assignment keys on nothing but <c>heroId</c> and <see
+    /// cref="GameState.Phase"/>, and Phase is already core sim state the codec round-trips, so this
+    /// needs no new save data and touches no shared on-disk save.</summary>
+    [TestCase]
+    public void SpotAssignment_SurvivesASaveLoadRoundTrip()
+    {
+        var state = GameComposition.NewCampaign(4242) with { Phase = DayPhase.Expedition };
+        var loaded = SaveCodec.Deserialize(SaveCodec.Serialize(state));
+
+        AssertThat(loaded.Phase)
+            .OverrideFailureMessage("the save codec must round-trip Phase -- SpotAnchorFor has nothing else to key on")
+            .IsEqual(state.Phase);
+
+        for (var heroId = 1; heroId <= TownLayout2D.HeroHomeTiles.Length; heroId++)
+        {
+            var before = TownLayout2D.SpotAnchorFor(heroId, state.Phase);
+            var after = TownLayout2D.SpotAnchorFor(heroId, loaded.Phase);
+            AssertThat(after)
+                .OverrideFailureMessage($"hero {heroId}: spot assignment must survive a save/load round trip")
+                .IsEqual(before);
+        }
+    }
+
+    [TestCase]
+    public void SpotAssignment_NoSpotHoldsMoreThanThreeActors_AcrossEveryPhase()
+    {
+        var phases = new[]
+        {
+            DayPhase.Morning, DayPhase.Expedition, DayPhase.Evening, DayPhase.Camp, DayPhase.ExpeditionDeep,
+        };
+
+        foreach (var phase in phases)
+        {
+            var assignments = Enumerable.Range(1, TownLayout2D.HeroHomeTiles.Length)
+                .Select(heroId => (heroId, assignment: TownLayout2D.SpotAssignmentFor(heroId, phase)))
+                .ToList();
+
+            var counts = assignments
+                .GroupBy(x => x.assignment.Spot)
+                .ToDictionary(g => g.Key, g => g.Count());
+
+            foreach (var (heroId, assignment) in assignments)
+            {
+                AssertThat(assignment.ClusterSize)
+                    .OverrideFailureMessage(
+                        $"{phase}/hero {heroId}: ClusterSize disagrees with how many heroes actually " +
+                        $"share {assignment.Spot}")
+                    .IsEqual(counts[assignment.Spot]);
+            }
+
+            AssertThat(counts.Values.Max() <= 3)
+                .OverrideFailureMessage(
+                    $"{phase}: some spot holds {counts.Values.Max()} actors -- the plan's own cap is two or three")
+                .IsTrue();
+        }
+    }
+
+    [TestCase]
+    public void SpotAssignment_ActorsSharingASpot_NeverOccupyTheSamePixel()
+    {
+        var phases = new[] { DayPhase.Morning, DayPhase.Expedition, DayPhase.Evening };
+
+        foreach (var phase in phases)
+        {
+            var anchors = Enumerable.Range(1, TownLayout2D.HeroHomeTiles.Length)
+                .Select(heroId => TownLayout2D.SpotAnchorFor(heroId, phase))
+                .ToList();
+
+            for (var i = 0; i < anchors.Count; i++)
+            {
+                for (var j = i + 1; j < anchors.Count; j++)
+                {
+                    AssertThat(anchors[i] == anchors[j])
+                        .OverrideFailureMessage(
+                            $"{phase}: heroes {i + 1} and {j + 1} resolved to the exact same anchor " +
+                            $"pixel {anchors[i]}")
+                        .IsFalse();
+                }
+            }
+        }
+    }
+
+    /// <summary>The OLD per-id arithmetic scatter measured ~125.6px mean pairwise distance between
+    /// the six starting heroes' Morning home anchors (200 samples across 100 simulated seconds of
+    /// lissajous drift: min 115.6px, max 136.2px). This pins the NEW clustered anchors well under
+    /// that: two three-hero clusters at the closest pair of named spots (Well/GateRoad, 80px apart)
+    /// measured ~58.9px average / ~71.0px worst-case over the same 200-sample protocol. 90px leaves
+    /// real margin above the observed worst case while staying clearly, honestly below the OLD
+    /// number -- a ceiling derived from measurement, not intuition.</summary>
+    [TestCase]
+    public void Morning_MeanPairwiseDistanceBetweenLivingHeroes_IsUnderTheMeasuredCeiling()
+    {
+        const float ceiling = 90f;
+
+        var town = new Town2D { Name = "Town2D" };
+        town.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        ((SceneTree)Engine.GetMainLoop()).Root.AddChild(town);
+        town.Build(new SimAdapter(seed: 11));
+        try
+        {
+            AssertThat(town.Adapter!.CurrentState.Phase).IsEqual(DayPhase.Morning);
+            AssertThat(town.HeroActors.Count).IsEqual(TownLayout2D.HeroHomeTiles.Length);
+
+            var maxMean = 0f;
+            // 10 samples over 2.0 simulated seconds -- comfortably under every hero's own
+            // first-errand stagger (earliest is heroId 1 at 3.5s, HeroActor2D.FirstErrandOffsetSeconds
+            // + 1*FirstErrandStaggerSeconds), so nobody starts a real errand walk mid-measurement and
+            // this reads the pure idle-cluster behavior the ceiling is actually about.
+            for (var i = 0; i < 10; i++)
+            {
+                town._Process(0.2);
+                foreach (var actor in town.HeroActors)
+                {
+                    actor._Process(0.2);
+                }
+
+                var positions = town.HeroActors.Select(a => a.Position).ToList();
+                var total = 0f;
+                var pairs = 0;
+                for (var a = 0; a < positions.Count; a++)
+                {
+                    for (var b = a + 1; b < positions.Count; b++)
+                    {
+                        total += positions[a].DistanceTo(positions[b]);
+                        pairs++;
+                    }
+                }
+
+                maxMean = Mathf.Max(maxMean, total / pairs);
+            }
+
+            AssertThat(maxMean < ceiling)
+                .OverrideFailureMessage(
+                    $"mean pairwise distance between living heroes at Morning peaked at {maxMean:0.##}px " +
+                    $"across 10 samples -- over the {ceiling}px ceiling pinned against the OLD formula's " +
+                    "own ~125.6px measured baseline")
+                .IsTrue();
+        }
+        finally
+        {
+            town.Free();
+        }
+    }
+
+    /// <summary>"No actor is further than r px from its spot." r is derived, not guessed: the
+    /// largest within-cluster offset is one <see cref="TownLayout2D.RallySpacingPx"/> step (14px, a
+    /// 3-hero cluster's outer rank), and the lissajous idle drift on top peaks at <see
+    /// cref="TownLayout2D.HeroWanderAmplitudeX"/>/Y (14px/10px) -- worst case hypot(14+14, 10) =
+    /// 29.73px from the spot's own center. 35px pins that with headroom. No errand targets are set,
+    /// so this is pure idle wander, never an errand's own real walk away from the spot.</summary>
+    [TestCase]
+    public void SpotAnchor_NoLivingHeroWandersFartherThanRPxFromItsSpot()
+    {
+        const float r = 35f;
+        var phases = new[] { DayPhase.Morning, DayPhase.Expedition, DayPhase.Evening };
+
+        foreach (var phase in phases)
+        {
+            for (var heroId = 1; heroId <= TownLayout2D.HeroHomeTiles.Length; heroId++)
+            {
+                var assignment = TownLayout2D.SpotAssignmentFor(heroId, phase);
+                var spotCenter = TownLayout2D.TileToWorld(TownLayout2D.GatheringSpotTiles[(int)assignment.Spot]);
+                var home = TownLayout2D.SpotAnchorFor(heroId, phase);
+
+                var actor = new HeroActor2D();
+                try
+                {
+                    actor.Init(heroId, "vanguard", Colors.White, new PlaceholderTexture2D(), home);
+                    actor.SetPhase(phase); // matches Init's own phase -- a no-op recompute
+
+                    var maxDist = 0f;
+                    for (var i = 0; i < 400; i++) // 40 simulated seconds -- several full lissajous periods
+                    {
+                        actor._Process(0.1);
+                        maxDist = Mathf.Max(maxDist, actor.Position.DistanceTo(spotCenter));
+                    }
+
+                    AssertThat(maxDist < r)
+                        .OverrideFailureMessage(
+                            $"{phase}/hero {heroId}: wandered {maxDist:0.##}px from its spot " +
+                            $"{assignment.Spot} ({spotCenter}) -- over the {r}px ceiling")
+                        .IsTrue();
+                }
+                finally
+                {
+                    actor.QueueFree();
+                }
+            }
         }
     }
 }

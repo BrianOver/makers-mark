@@ -1,3 +1,4 @@
+using GameSim.Contracts;
 using Godot;
 
 namespace GodotClient.Town2d;
@@ -18,6 +19,14 @@ public static class TownLayout2D
 {
     /// <summary>Ground tile edge length, px (pivot plan pixel-discipline: 16×16 tiles).</summary>
     public const int TileSize = 16;
+
+    /// <summary>Party-file rally spacing (px) along X — <c>Town2D.RallySpotFor</c>'s own spread for
+    /// a departing file, and (U50) the SAME spacing a gathering-spot cluster's per-actor offset uses
+    /// (see <see cref="SpotAnchorFor"/>), so the two never drift into two different "how far apart
+    /// do people stand" numbers. Lived in <c>Town2D</c> alone before U50; moved here once a second
+    /// consumer needed it — this file already owns every other shared placement constant (<see
+    /// cref="HeroWanderAmplitudeX"/> etc.).</summary>
+    public const float RallySpacingPx = 14f;
 
     /// <summary>
     /// Uniform downscale applied to every CHARACTER sprite (player, heroes, townsfolk) — the one
@@ -411,6 +420,131 @@ public static class TownLayout2D
 
     /// <summary>U-T3-1: as <see cref="TownsfolkWanderAmplitudeX"/>, Y axis.</summary>
     public const float TownsfolkWanderAmplitudeY = 5f;
+
+    // ── U50 ("the cast stops scattering") ────────────────────────────────────────────────────────
+    //
+    // Town2D.HomeFor used to hand each of the starting six a private per-id point on a fixed
+    // diagonal band (HeroHomeTiles below) and leave every actor to wander it alone — six independent
+    // oscillators with no relationship to one another, not a town's worth of people who know each
+    // other. This table replaces that per-id COORDINATE with a per-id, per-phase SPOT: a handful of
+    // named landmarks, two or three heroes sharing one at a time with a small deterministic offset so
+    // they read as a conversational cluster rather than a crowd of strangers. Which spot a hero holds
+    // is a pure function of (heroId, phase) — no RNG, no roster query, no wall-clock — so it is
+    // save-safe and needs no new sim data (phase already IS persisted sim state).
+
+    /// <summary>U50: named gathering spots a Wandering hero's anchor (<see cref="Town2D.HomeFor"/>,
+    /// via <see cref="SpotAnchorFor"/>) resolves to instead of the old per-id arithmetic scatter.</summary>
+    public enum GatheringSpot
+    {
+        Well,
+        TavernDoor,
+        MarketFront,
+        ForgeYard,
+        GateRoad,
+    }
+
+    /// <summary>U50: <see cref="GatheringSpot"/> → tile. Pulled in around the SAME central plaza the
+    /// four venues + well already ring (<see cref="Props"/>'s own "Tightened into a cozy cluster"
+    /// doc) rather than sitting at each landmark's literal door tile — planting the table at the
+    /// venues' real footprints (up to ~450px corner-to-corner) measured MORE scattered than the OLD
+    /// formula, the opposite of this unit's own title (see <see cref="MorningSpotAssignments"/>'s
+    /// own doc for the numbers). Every tile here still reads as "at that landmark's edge of the plaza," just
+    /// close enough together that clustering actually reads as less scattered, not more.</summary>
+    public static readonly Vector2I[] GatheringSpotTiles =
+    {
+        new(32, 33), // Well — plaza center, the same tile the town2d-well prop sits on
+        new(24, 38), // TavernDoor — plaza's SW corner, nearest the tavern spur
+        new(39, 29), // MarketFront — plaza's NE corner, nearest the market spur
+        new(24, 29), // ForgeYard — plaza's NW corner, nearest the forge spur
+        new(32, 28), // GateRoad — plaza's north edge, where the mine-gate road enters it
+    };
+
+    /// <summary>U50: one hero's cluster membership at a given phase — which <see
+    /// cref="GatheringSpot"/>, this hero's own already-centered rank within that spot's cluster (an
+    /// int; <see cref="SpotAnchorFor"/> multiplies it by <see cref="RallySpacingPx"/> directly, no
+    /// further centering needed), and the cluster's total size (so a test can assert "no spot holds
+    /// more than k actors").</summary>
+    public readonly record struct SpotAssignment(GatheringSpot Spot, int Rank, int ClusterSize);
+
+    /// <summary>U50: Morning — the day's neutral default, before anything has pulled anyone anywhere
+    /// in particular. Splits the six evenly into two three-person clusters at the CLOSEST pair of
+    /// named spots (Well/GateRoad, 80px center-to-center) rather than one hero per landmark — a
+    /// one-per-landmark spread measured ~143px mean pairwise (worse than today); this measured ~59px
+    /// (200 samples across 100 simulated seconds, range 46-71px) against the OLD formula's own
+    /// ~126px (same sampling) — see <c>TownLifeTests</c>' own pinned-ceiling test for the exact
+    /// numbers. Indexed by heroId-1 (ids 1-6 only, mirroring <see cref="HeroHomeTiles"/>'s own
+    /// six-slot scope — never called for a recruit past the starting six).</summary>
+    private static readonly SpotAssignment[] MorningSpotAssignments =
+    {
+        new(GatheringSpot.Well, -1, 3),
+        new(GatheringSpot.Well, 0, 3),
+        new(GatheringSpot.Well, 1, 3),
+        new(GatheringSpot.GateRoad, -1, 3),
+        new(GatheringSpot.GateRoad, 0, 3),
+        new(GatheringSpot.GateRoad, 1, 3),
+    };
+
+    /// <summary>U50: Expedition — "heroes drift toward the gate before an expedition" (this unit's
+    /// own line, verbatim). Three of six cluster at the gate road; the rest scatter one-each to the
+    /// remaining non-tavern spots.</summary>
+    private static readonly SpotAssignment[] ExpeditionSpotAssignments =
+    {
+        new(GatheringSpot.GateRoad, -1, 3),
+        new(GatheringSpot.GateRoad, 0, 3),
+        new(GatheringSpot.GateRoad, 1, 3),
+        new(GatheringSpot.Well, 0, 1),
+        new(GatheringSpot.ForgeYard, 0, 1),
+        new(GatheringSpot.MarketFront, 0, 1),
+    };
+
+    /// <summary>U50: Evening — "toward the tavern in the evening" (this unit's own line, verbatim).
+    /// Camp and ExpeditionDeep fold into this SAME table: <see
+    /// cref="GodotClient.Town2d.AmbientLife2D.LampAlphaFor"/> already treats those three phases as
+    /// one "Night" lamp regime, and this unit does not invent a second such grouping.</summary>
+    private static readonly SpotAssignment[] EveningSpotAssignments =
+    {
+        new(GatheringSpot.TavernDoor, -1, 3),
+        new(GatheringSpot.TavernDoor, 0, 3),
+        new(GatheringSpot.TavernDoor, 1, 3),
+        new(GatheringSpot.Well, 0, 1),
+        new(GatheringSpot.MarketFront, 0, 1),
+        new(GatheringSpot.ForgeYard, 0, 1),
+    };
+
+    /// <summary>U50: which cluster hero <paramref name="heroId"/> (1-6) belongs to at <paramref
+    /// name="phase"/> — a pure table lookup (no RNG, no roster query, no wall-clock read), so two
+    /// <c>Town2D</c> instances built from the same <c>GameState</c> assign identically and the
+    /// assignment survives a save/load round trip untouched (phase is already persisted sim state —
+    /// this needs no new save data). Caller-guarded to heroId 1-6 (mirrors <see
+    /// cref="HeroHomeTiles"/>'s own six-slot scope): never called for a recruit past the starting
+    /// six, which keeps <c>Town2D.HomeFor</c>'s own OLD phase-independent fallback formula instead.
+    /// </summary>
+    public static SpotAssignment SpotAssignmentFor(int heroId, DayPhase phase)
+    {
+        var table = phase switch
+        {
+            DayPhase.Expedition => ExpeditionSpotAssignments,
+            DayPhase.Evening or DayPhase.Camp or DayPhase.ExpeditionDeep => EveningSpotAssignments,
+            _ => MorningSpotAssignments,
+        };
+        return table[heroId - 1];
+    }
+
+    /// <summary>U50: the resolved world position <paramref name="heroId"/> wanders around at
+    /// <paramref name="phase"/> — the assigned <see cref="GatheringSpot"/>'s own <see
+    /// cref="TileToWorld"/> center, offset along X by <see cref="SpotAssignment.Rank"/> times <see
+    /// cref="RallySpacingPx"/> — the SAME spacing <c>Town2D.RallySpotFor</c> already uses for a
+    /// departing file, per this unit's own "match Town2D.RallySpacingPx rather than inventing a
+    /// second spacing constant" rule. <see cref="HeroActor2D.SetPhase"/> calls this on every actual
+    /// phase change (for the starting six only) to re-resolve <see cref="HeroActor2D.Home"/>; <see
+    /// cref="Town2D.HomeFor"/> calls it once at actor creation. Two calls with the same arguments
+    /// always return the same <see cref="Vector2"/> — no hidden state, no roster lookup.</summary>
+    public static Vector2 SpotAnchorFor(int heroId, DayPhase phase)
+    {
+        var assignment = SpotAssignmentFor(heroId, phase);
+        var center = TileToWorld(GatheringSpotTiles[(int)assignment.Spot]);
+        return center + new Vector2(assignment.Rank * RallySpacingPx, 0f);
+    }
 
     /// <summary>Tile coordinate → world-space pixel position of that tile's CENTER. Buildings are
     /// positioned by their Y-sort line (see <see cref="Building2D.Configure"/>'s remarks) at this

@@ -43,6 +43,11 @@ namespace GodotClient.Ui;
 /// <param name="Slot">Resolver for this scene's <c>{item}</c> slot, or null when it names nothing
 /// concrete. Returning null means the fact behind the slot is not there, and the scene is not
 /// eligible.</param>
+/// <param name="ExplicitHero">P2-MEMORY-07's one seam: the shipped engine resolves a scene's hero
+/// by NAME (<see cref="ArcScenes.ArcHero"/>), which only works because Torvald's arc is the only
+/// one authored so far. A scene that belongs to whichever of the six living heroes earned it (the
+/// commendation) carries its hero's id directly instead, so <c>ArcHero</c> never has to guess from
+/// a name. Null for every authored, name-resolved scene — the common case, unchanged.</param>
 public sealed record ArcScene(
     string Id,
     string HeroName,
@@ -52,7 +57,8 @@ public sealed record ArcScene(
     string CloseVerb,
     ImmutableArray<string> Requires,
     ImmutableArray<string> Grants,
-    Func<GameState, Hero, string?>? Slot = null)
+    Func<GameState, Hero, string?>? Slot = null,
+    HeroId? ExplicitHero = null)
 {
     /// <summary>The scene's paragraphs with its <c>{item}</c> slot filled from live state. Called
     /// only for a scene that is already eligible, so the slot resolves by construction; a slot that
@@ -174,6 +180,13 @@ public static class ArcScenes
     /// and nothing anywhere summarises them — see <see cref="ArcSceneFlow"/>.</summary>
     public static Hero? ArcHero(GameState state, ArcScene scene)
     {
+        if (scene.ExplicitHero is { } explicitId)
+        {
+            return state.Heroes.TryGetValue(explicitId.Value, out var explicitHero) && explicitHero.Alive
+                ? explicitHero
+                : null;
+        }
+
         var id = string.Equals(scene.HeroName, TorvaldName, StringComparison.Ordinal) ? TorvaldHeroId : -1;
         return id >= 0
             && state.Heroes.TryGetValue(id, out var hero)

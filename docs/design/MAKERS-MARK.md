@@ -2468,7 +2468,6 @@ changes when it is done. A regression pin now holds that.
 | U42 | The off-camera marker stops landing on the objective card | `godot/scripts/ui/TutorialOverlay.cs`, `godot/scripts/ui/ObjectiveTracker.cs` | U15 |
 | U43 | The course can be photographed mid-step | `godot/tools/shot_harness.gd`, `godot/scripts/MainUi.cs` | — |
 | U44 | The craft lesson can never be skipped past | `godot/scripts/ui/TutorialFlow.cs` | — |
-| U45 | The teaching strip stops cutting a sentence in half | `godot/scripts/ui/ObjectiveTracker.cs`, `godot/scripts/ui/TutorialFlow.cs` | U11 |
 | U46 | An ordinary lesson stops stealing the chain's pointer | `godot/scripts/ui/TutorialAnchorArbiter.cs`, `godot/tests/` | U10 |
 | U47 | The banked slot is named where it bites | `godot/scripts/ui/TutorialFlow.cs` | U28 |
 | U48 | A worn trinket can be sold twice | `sim/GameSim/Economy/ShopHandlers.cs`, `sim/GameSim/Harness/BaselinePlayer.cs` | — |
@@ -3029,24 +3028,6 @@ changes when it is done. A regression pin now holds that.
 - Test scenarios: the line fires the first time a vigil opens with zero slots remaining; it fires once
   ever; it never fires on a night with slots left.
 - Verification: a player who spends all five slots before the vigil is told what it cost them.
-
-#### U45. The teaching strip stops cutting a sentence in half
-
-- Goal: a new player never reads a teach note that begins mid-sentence.
-- Requirements: R5
-- Files: `godot/scripts/ui/ObjectiveTracker.cs`, `godot/scripts/ui/TutorialFlow.cs`
-- Approach: **found by photograph.** U11 bottom-anchored the 75px checklist window so the gating note
-  — the warning that matters at that moment — is always visible. Correct trade, and the cost is now
-  visible: on day 1 step 2 the card renders *"shelf. A finished craft sits in your bag, invisible to
-  them, until you stock it"*, the note's opening words hidden above the fold. A sentence that starts
-  mid-word is worse than one that ends early. Two honest doors and they are not exclusive: give the
-  strip more than 75px now that it carries a note plus a gating line plus a trap warning, or shorten
-  the copy so a full note fits. The copy pass is the better half — that step's note explains the shop,
-  the shelf, the Stock button, the drag alternative and what "unsold" means in one card, and the
-  interact prompt now on screen has already made its first sentence redundant.
-- Test scenarios: the visible text of the current row's note begins at the note's own first character;
-  the gating note stays visible when it exists; a note short enough to fit is not scrolled at all.
-- Verification: a `TutorialOffCamera` capture where the card's first visible word is the note's first word.
 
 #### U44. The craft lesson can never be skipped past
 
@@ -4292,9 +4273,12 @@ the fourth investigation.
 T10 keeps executing in its own namespace, and its remaining units keep their U-numbers — renaming
 live plan rows is exactly the churn rule 8 forbids. The interlocks, named:
 
-- **Supersessions.** `P2-SCREEN-06` (the card diet) absorbs unbuilt U45's scope (the teaching
-  strip cutting a sentence in half) — the PR landing `P2-SCREEN-06` says so, and U45 is not built
-  separately. `P2-ONBOARD-07` supersedes U33's *line list*, never its mechanism — the arc-line
+- **Supersessions.** `P2-SCREEN-06` (the card diet) absorbed U45's scope (the teaching strip
+  cutting a sentence in half), and `P2-SCREEN-08` folded the gating note into the instruction
+  line. U45's row and unit body are deleted rather than annotated — they sat here contradicting
+  this very bullet, which is the shape rule 8 calls an instruction the next session obeys, and a
+  session did obey it: the frontier offered U45 as runnable work on 2026-09-11 and a worker went
+  and read the code before finding nothing left to build. `P2-ONBOARD-07` supersedes U33's *line list*, never its mechanism — the arc-line
   machinery U33 specifies is the delivery vehicle for the six lines quoted above.
   `P2-SCREEN-10` replaces U42's residual: U42 landed (#639), and the screen pass found the design
   residual it left — `KeepClearOf` names one obstacle in a column with two claimants.
@@ -4708,6 +4692,7 @@ name (§11.6 rule 4).
 | P2-HONEST-17 | `GameState.RivalMarketSharePermille` gets a client reader — the idle-day cost becomes legible | `godot/scripts/panels/ShopPanel.cs` | — | [G] |
 | P2-HONEST-18 | `InFlightExpedition.Gold` gets a client reader, or its withholding gets a stated reason | `godot/scripts/panels/CampPanel.cs` | — | [G] |
 | P2-HONEST-19 | The numeric-threshold gate family gets a satisfiability guard — `SatisfiableGateCensusTests` cannot see it | `sim/GameSim.Tests/`, `sim/GameSim/Drama/DirectorSystem.cs`, `sim/GameSim/Venues/`, `sim/GameSim/Crafting/TalentTree.cs` | P2-HONEST-07 | [S] |
+| P2-HONEST-20 | `SHOT_STATE=PhaseN` lands somewhere its own comment does not claim — the capture harness's phase map is wrong | `godot/tools/shot_harness.gd`, `tools/shoot.ps1` | — | [G] |
 
 The per-domain counts, the landed/unbuilt split, and which rows carry a Contracts micro-PR, a
 golden re-record or a balance re-baseline are **derived, not stated here**: run
@@ -4900,6 +4885,19 @@ warn about.
   `LedgerModal`'s earned chips). No comment anywhere claims the mid-raid withhold is a deliberate
   suspense choice, so it reads as an oversight rather than a design decision until one of these two
   things is true.
+
+**The capture harness's phase map, measured 2026-09-11 (`P2-HONEST-20`).** `shot_harness.gd`'s
+own comment says `SHOT_STATE=PhaseN` presses the bell N times to "land on phase N of the day's
+actual 5-phase cycle -- Morning/Dawn=0 -> Expedition/Quest=1 -> Camp/Vigil=2 -> ExpeditionDeep/Deep
+Vigil=3 -> Evening/Night=4". Three captures say otherwise, read off the HUD's own phase label:
+`Phase0` -> Dawn (correct), `Phase1` -> **Vigil**, `Phase2` -> **Night**, `Phase4` -> **Day 2,
+Vigil**. The mechanism is visible in the code the comment sits above: all N presses are emitted in
+a single frame, and Expedition and ExpeditionDeep are resolution steps the day does not rest in, so
+each press skips one. Anyone reaching for "the Evening town" passes `Phase4` and photographs the
+next day's camp instead -- and this repo's own proven kill chain is a stale comment becoming an
+instruction (`QualityRoller`'s `AutoCraftGrade`, three generations deep). Booked rather than fixed
+in place because it is the capture tooling, not the game: it decides what a later session BELIEVES
+it photographed.
 
 ### The anomaly-coverage sweep, 2026-09-05
 
