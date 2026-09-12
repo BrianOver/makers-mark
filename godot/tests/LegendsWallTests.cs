@@ -91,6 +91,40 @@ public class LegendsWallTests
     }
 
     [TestCase]
+    public void TheActorIndex_NamesTheDeadByName_NeverByAnId()
+    {
+        // The regression P2-MEMORY-10 shipped and CI caught: the book's index rendered
+        // "Hero #9 — fallen, floor 5". A fallen hero is gone from GameState.Heroes, so a
+        // roster-only name lookup misses precisely the people this wall exists to name.
+        //
+        // Phrased against the PROPERTY rather than the one string: no rendered line may carry an
+        // id-shaped stand-in for a person, for ANY hero the town remembers — so a second memorial
+        // added to the fixture later is covered on the day it is added, and so is any future row
+        // that reaches for an id when a name is one lookup away.
+        var ui = MountMainUi();
+        try
+        {
+            var world = PopulatedWorld();
+            ui.Legends.ShowWall(world);
+
+            var text = RenderedText(ui.Legends);
+            foreach (var memorial in world.Drama.Memorials)
+            {
+                AssertThat(text)
+                    .OverrideFailureMessage($"The wall of the dead did not name {memorial.HeroName}.")
+                    .Contains(memorial.HeroName);
+                AssertThat(text)
+                    .OverrideFailureMessage("The wall named a person by an id the player cannot see.")
+                    .NotContains($"Hero #{memorial.Hero.Value}");
+            }
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
     public void LegendItemRow_OpensItsOwnProvenanceCard()
     {
         var ui = MountMainUi();
@@ -247,6 +281,7 @@ public class LegendsWallTests
         try
         {
             ui.Legends.ShowWall(WorldWithFallenHero());
+            PressEnabled(ui.Legends, $"Actor_{FallenHeroId.Value}"); // P2-MEMORY-10: Honor now lives on the actor's own page
 
             PressEnabled(ui.Legends, $"Honor_{FallenHeroId.Value}");
 
@@ -272,6 +307,7 @@ public class LegendsWallTests
         try
         {
             ui.Legends.ShowWall(WorldWithFallenHero());
+            PressEnabled(ui.Legends, $"Actor_{FallenHeroId.Value}"); // P2-MEMORY-10: Honor now lives on the actor's own page
 
             var audio = AudioDirector.For(ui);
             AssertThat(audio).IsNotNull();
@@ -298,6 +334,7 @@ public class LegendsWallTests
         try
         {
             ui.Legends.ShowWall(WorldWithFallenHero(honored: true));
+            PressEnabled(ui.Legends, $"Actor_{FallenHeroId.Value}"); // P2-MEMORY-10: her page, not the flat wall
 
             AssertThat(ui.Legends.FindChild($"Honor_{FallenHeroId.Value}", recursive: true, owned: false)).IsNull();
             AssertThat(RenderedText(ui.Legends)).Contains("honored");
@@ -323,6 +360,7 @@ public class LegendsWallTests
         try
         {
             ui.Legends.ShowWall(WorldWithFallenHero(phase: DayPhase.Morning));
+            PressEnabled(ui.Legends, $"Actor_{FallenHeroId.Value}"); // P2-MEMORY-10: her page, not the flat wall
 
             var honor = Find<Button>(ui.Legends, $"Honor_{FallenHeroId.Value}");
             AssertThat(honor.Disabled).IsTrue();
@@ -344,6 +382,7 @@ public class LegendsWallTests
         try
         {
             ui.Legends.ShowWall(WorldWithFallenHero()); // default phase = Evening
+            PressEnabled(ui.Legends, $"Actor_{FallenHeroId.Value}"); // P2-MEMORY-10: her page, not the flat wall
 
             var honor = Find<Button>(ui.Legends, $"Honor_{FallenHeroId.Value}");
             AssertThat(honor.Disabled).IsFalse();
@@ -372,6 +411,7 @@ public class LegendsWallTests
         try
         {
             ui.Legends.ShowWall(world);
+            PressEnabled(ui.Legends, $"Actor_{FallenHeroId.Value}"); // P2-MEMORY-10: Reforge now lives on the actor's own page
 
             // U8b: default selections (nothing touched) still reforge "the same sword in the
             // same metal" — the exact one-click behavior this unit's pickers must preserve.
@@ -426,6 +466,7 @@ public class LegendsWallTests
                 .OverrideFailureMessage("setup check: the wall's own orientation caption should be showing, not the banner.")
                 .IsFalse();
 
+            PressEnabled(ui.Legends, $"Actor_{FallenHeroId.Value}"); // P2-MEMORY-10: Honor now lives on the actor's own page
             PressEnabled(ui.Legends, $"Honor_{FallenHeroId.Value}");
 
             AssertThat(ui.Mentor.Visible)
@@ -517,6 +558,7 @@ public class LegendsWallTests
         try
         {
             ui.Legends.ShowWall(world);
+            PressEnabled(ui.Legends, $"Actor_{FallenHeroId.Value}"); // P2-MEMORY-10: Reforge now lives on the actor's own page
 
             PressEnabled(ui.Legends, $"Reforge_{WornWeaponId.Value}");
 
@@ -546,6 +588,7 @@ public class LegendsWallTests
         try
         {
             ui.Legends.ShowWall(world);
+            PressEnabled(ui.Legends, $"Actor_{FallenHeroId.Value}"); // P2-MEMORY-10: Reforge now lives on the actor's own page
 
             SelectByText(Find<OptionButton>(ui.Legends, $"ReforgeRecipeSelect_{WornWeaponId.Value}"), "Shortsword");
             SelectByText(Find<OptionButton>(ui.Legends, $"ReforgeMaterialSelect_{WornWeaponId.Value}"), "iron");
@@ -576,6 +619,7 @@ public class LegendsWallTests
         {
             // Zero materials at all — dagger/copper's own default (needs 2) is unaffordable.
             ui.Legends.ShowWall(WorldWithFallenHero(materials: ImmutableSortedDictionary<string, int>.Empty));
+            PressEnabled(ui.Legends, $"Actor_{FallenHeroId.Value}"); // P2-MEMORY-10: Reforge now lives on the actor's own page
 
             var button = Find<Button>(ui.Legends, $"Reforge_{WornWeaponId.Value}");
             AssertThat(button.Disabled).IsTrue();
@@ -628,6 +672,7 @@ public class LegendsWallTests
             // recorded gear). ShowWall completing at all, plus exactly one Reforge row, is the
             // proof: three missing slots produced zero rows and zero exceptions.
             ui.Legends.ShowWall(WorldWithFallenHero());
+            PressEnabled(ui.Legends, $"Actor_{FallenHeroId.Value}"); // P2-MEMORY-10: Reforge now lives on the actor's own page
 
             AssertThat(ui.Legends.Visible).IsTrue();
             var reforgeButtons = ui.Legends.FindChildren("Reforge_*", "Button", recursive: true, owned: false);
@@ -646,8 +691,120 @@ public class LegendsWallTests
         try
         {
             ui.Legends.ShowWall(WorldWithFallenHero(alreadyReforged: true));
+            PressEnabled(ui.Legends, $"Actor_{FallenHeroId.Value}"); // P2-MEMORY-10: Reforge now lives on the actor's own page
 
             AssertThat(ui.Legends.FindChild($"Reforge_{WornWeaponId.Value}", recursive: true, owned: false)).IsNull();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    // ── P2-MEMORY-10 (book shell): browsable-by-actor navigation ────────────────────────────
+
+    /// <summary>Navigation, phrased against the actor list <see cref="LegendsWall"/> itself builds
+    /// (<c>Actor_*</c> buttons under its index) rather than a hardcoded hero id — so a THIRD actor
+    /// kind the book learns to list later is exercised here automatically, with no edit to this
+    /// test. Exercises the two kinds that exist today: a fallen hero and a depth-only one.</summary>
+    [TestCase]
+    public void ChoosingAnyActorFromTheIndex_ReachesThatActorsOwnPage()
+    {
+        var baseFixture = WorldWithFallenHero();
+        var world = baseFixture with
+        {
+            Drama = baseFixture.Drama with { DepthsBoard = baseFixture.Drama.DepthsBoard.SetItem(700, 4) },
+        };
+        var ui = MountMainUi(new SimAdapter(world));
+        try
+        {
+            ui.Legends.ShowWall(world);
+
+            var actorRows = ui.Legends.FindChildren("Actor_*", "Button", recursive: true, owned: false)
+                .OfType<Button>()
+                .Select(b => (Name: b.Name.ToString(), DisplayedName: b.Text.Split(" — ")[0]))
+                .ToList();
+
+            AssertThat(actorRows.Count)
+                .OverrideFailureMessage("A fallen hero and a depth-only hero should each get one index row.")
+                .IsEqual(2);
+
+            foreach (var (buttonName, displayedName) in actorRows)
+            {
+                PressEnabled(ui.Legends, buttonName);
+
+                AssertThat(RenderedText(ui.Legends))
+                    .OverrideFailureMessage($"{buttonName}'s page never named who it belongs to.")
+                    .Contains(displayedName);
+                AssertThat(Find<Button>(ui.Legends, "LegendsWallBack"))
+                    .OverrideFailureMessage($"{buttonName}'s page has no way back to the index.")
+                    .IsNotNull();
+
+                PressEnabled(ui.Legends, "LegendsWallBack");
+            }
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>
+    /// The migration-completeness guard: every verb, way-in, and anchor this unit's own PR body
+    /// inventories as pre-existing must still resolve after the book-shell refit. The two way-ins
+    /// (the "OpenLegends" HUD button and the Tavern "storywall" hotspot) and the tutorial anchors
+    /// (<c>LegendsWallTitle</c> — <see cref="PanelControlReachesModalsTests"/>; <c>OnceEverCaption</c>
+    /// — <see cref="OpeningAPopulatedWall_TeachesWhatTheWallIs_WithoutPressingAnything"/>;
+    /// <c>LegendItemsSection</c> — a LIVE onboarding anchor, unmoved by this refit) are each already
+    /// pinned by their own test elsewhere; this one is the thing none of those prove alone — that a
+    /// single populated state still surfaces every verb this wall owned, driven through the real
+    /// render pipeline (mount, click, find), never a static list asserted against itself.
+    /// </summary>
+    [TestCase]
+    public void BookShellMigration_LosesNoVerb_EveryPreExistingControlStillResolves()
+    {
+        var baseFixture = WorldWithFallenHero();
+        var world = baseFixture with
+        {
+            Items = baseFixture.Items.Add(SignedItemId.Value, SignedItem()).Add(FamousBeatItemId.Value, FamousBeatItem()),
+            EventLog = baseFixture.EventLog.AddRange(new GameEvent[] { Beat(1), Beat(2), Beat(3) }),
+        };
+        var ui = MountMainUi(new SimAdapter(world));
+        try
+        {
+            ui.Legends.ShowWall(world);
+
+            // The index: the actor book (this unit's own new navigation spine) and the item-level
+            // records (RenderLegendItems, untouched by this refit) both still render at the top.
+            AssertThat(ui.Legends.FindChildren("Actor_*", "Button", recursive: true, owned: false).Count)
+                .OverrideFailureMessage("The book's own actor index lost a row.")
+                .IsGreater(0);
+            AssertThat(Find<Button>(ui.Legends, $"Legend_{SignedItemId.Value}"))
+                .OverrideFailureMessage("LEGENDARY GEAR migrated away from the index.")
+                .IsNotNull();
+
+            // The fallen hero's own page: every verb that page hosts survives the move off the
+            // flat wall — Honor (unhonored), and Reforge with both its pickers.
+            PressEnabled(ui.Legends, $"Actor_{FallenHeroId.Value}");
+
+            AssertThat(Find<Button>(ui.Legends, $"Honor_{FallenHeroId.Value}"))
+                .OverrideFailureMessage("Honor did not migrate onto the fallen hero's own page.")
+                .IsNotNull();
+            AssertThat(Find<OptionButton>(ui.Legends, $"ReforgeRecipeSelect_{WornWeaponId.Value}"))
+                .OverrideFailureMessage("The Reforge recipe picker did not migrate onto the fallen hero's own page.")
+                .IsNotNull();
+            AssertThat(Find<OptionButton>(ui.Legends, $"ReforgeMaterialSelect_{WornWeaponId.Value}"))
+                .OverrideFailureMessage("The Reforge material picker did not migrate onto the fallen hero's own page.")
+                .IsNotNull();
+            AssertThat(Find<Button>(ui.Legends, $"Reforge_{WornWeaponId.Value}"))
+                .OverrideFailureMessage("Reforge did not migrate onto the fallen hero's own page.")
+                .IsNotNull();
+
+            // The way back is real, not a dead end.
+            PressEnabled(ui.Legends, "LegendsWallBack");
+            AssertThat(ui.Legends.FindChildren("Actor_*", "Button", recursive: true, owned: false).Count)
+                .OverrideFailureMessage("Back did not return to a live actor index.")
+                .IsGreater(0);
         }
         finally
         {

@@ -1,4 +1,5 @@
 #if GDUNIT_TESTS
+using GameSim.Contracts;
 using GdUnit4;
 using Godot;
 using GodotClient.Town2d;
@@ -423,6 +424,126 @@ public class HeroActor2DTests
             AssertThat(actor.Shadow.Scale.Y).IsGreater(0f);
             // Flattened ellipse, not a circle — ground contact, not a puddle drawn as a full disc.
             AssertThat(actor.Shadow.Scale.Y).IsLess(actor.Shadow.Scale.X);
+        }
+        finally
+        {
+            actor.QueueFree();
+        }
+    }
+
+    // ── U50 ("the cast stops scattering"): SetPhase re-resolves Home to the phase's own spot ──────
+
+    [TestCase]
+    public void SetPhase_PhaseChange_ReResolvesHomeToTheNewPhasesSpot_ForTheStartingSixOnly()
+    {
+        var actor = new HeroActor2D();
+        var recruit = new HeroActor2D();
+        try
+        {
+            var initialHome = new Vector2(10, 10);
+            actor.Init(3, "vanguard", Colors.White, new PlaceholderTexture2D(), initialHome);
+            recruit.Init(99, "vanguard", Colors.White, new PlaceholderTexture2D(), initialHome);
+
+            actor.SetPhase(DayPhase.Expedition);
+            recruit.SetPhase(DayPhase.Expedition);
+
+            AssertThat(actor.Home)
+                .OverrideFailureMessage(
+                    "a starting-six hero's Home must re-resolve to the new phase's own gathering spot")
+                .IsEqual(TownLayout2D.SpotAnchorFor(3, DayPhase.Expedition));
+
+            AssertThat(recruit.Home)
+                .OverrideFailureMessage(
+                    "a recruit past the starting six has no spot-table entry -- Home must stay whatever Init gave it")
+                .IsEqual(initialHome);
+        }
+        finally
+        {
+            actor.QueueFree();
+            recruit.QueueFree();
+        }
+    }
+
+    [TestCase]
+    public void SetPhase_SamePhaseCalledRepeatedly_NeverTouchesHome()
+    {
+        var actor = new HeroActor2D();
+        try
+        {
+            var home = new Vector2(77, 88); // deliberately not a real spot anchor
+            actor.Init(1, "vanguard", Colors.White, new PlaceholderTexture2D(), home);
+
+            actor.SetPhase(DayPhase.Morning); // matches the default _phase -- must be a no-op
+            actor.SetPhase(DayPhase.Morning);
+
+            AssertThat(actor.Home).IsEqual(home);
+        }
+        finally
+        {
+            actor.QueueFree();
+        }
+    }
+
+    /// <summary>The unit's own pinned contract: "RallyTo/MarchOutTo still win over the spot anchor
+    /// while they run and the anchor resumes after." A phase change fires mid-Rally and again while
+    /// Away; neither perturbs the actor's travel, and once it lands back in Wandering it resumes at
+    /// the CURRENT (Evening) phase's spot, not the stale one it left home with.</summary>
+    [TestCase]
+    public void SpotAnchor_RallyToAndMarchOutTo_WinWhileRunning_AndTheCurrentPhaseSpotResumesAfter()
+    {
+        var actor = new HeroActor2D();
+        try
+        {
+            var morningHome = TownLayout2D.SpotAnchorFor(2, DayPhase.Morning);
+            actor.Init(2, "vanguard", Colors.White, new PlaceholderTexture2D(), morningHome);
+            actor.SetPhase(DayPhase.Morning); // matches Init's own phase -- no-op
+
+            var rallyPoint = new Vector2(900, -300);
+            actor.RallyTo(rallyPoint);
+            AssertThat(actor.State).IsEqual(HeroActor2D.HeroTownState.Rallying);
+
+            // The day moves on to Expedition WHILE mid-rally -- Home updates quietly underneath,
+            // but it must not perturb the travel already under way.
+            actor.SetPhase(DayPhase.Expedition);
+            AssertThat(actor.State).IsEqual(HeroActor2D.HeroTownState.Rallying);
+
+            for (var i = 0; i < 200 && actor.Position.DistanceTo(rallyPoint) > 0.5f; i++)
+            {
+                actor._Process(0.1);
+            }
+
+            AssertThat(actor.Position.DistanceTo(rallyPoint) < 0.5f)
+                .OverrideFailureMessage("RallyTo must still win over the spot anchor while it is running")
+                .IsTrue();
+
+            var mineDoor = new Vector2(900, -400);
+            actor.MarchOutTo(mineDoor);
+            for (var i = 0; i < 200 && actor.State != HeroActor2D.HeroTownState.Away; i++)
+            {
+                actor._Process(0.1);
+            }
+
+            AssertThat(actor.State).IsEqual(HeroActor2D.HeroTownState.Away);
+
+            // The day moves on again while Away -- the NEXT phase's spot is what should be waiting,
+            // not whatever was current when the hero left.
+            actor.SetPhase(DayPhase.Evening);
+
+            var townEdge = new Vector2(900, -390);
+            actor.ReturnTo(townEdge);
+            for (var i = 0; i < 200 && actor.State != HeroActor2D.HeroTownState.Wandering; i++)
+            {
+                actor._Process(0.1);
+            }
+
+            AssertThat(actor.State).IsEqual(HeroActor2D.HeroTownState.Wandering);
+
+            var eveningHome = TownLayout2D.SpotAnchorFor(2, DayPhase.Evening);
+            AssertThat(actor.Position)
+                .OverrideFailureMessage(
+                    "the spot anchor must resume once travel ends -- landing at the CURRENT phase's " +
+                    "spot, not the stale one it left with")
+                .IsEqual(eveningHome);
         }
         finally
         {

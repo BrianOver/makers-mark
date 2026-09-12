@@ -678,6 +678,64 @@ public sealed class HumanPlayer
         Log($"tap {key}");
     }
 
+    /// <summary>
+    /// Types <paramref name="value"/> into the <see cref="SpinBox"/> named <paramref name="spinBoxName"/>
+    /// the way a player does: click into its editable <see cref="LineEdit"/> child to focus it, clear
+    /// whatever is already there (<c>End</c> then <c>Backspace</c> through every existing character),
+    /// tap each digit key in turn, and commit with <c>Enter</c>.
+    ///
+    /// <para><b>U49 (design doc — "a player can set a price, and a test proves it").</b> This is the ONE
+    /// numeric-entry verb this harness exposes, and it is deliberately narrow: it only ever drives a
+    /// SpinBox already on screen, and it only ever types digits — there is still no way to make this
+    /// class emit a signal or set a sim value directly. Before this method existed, nothing under
+    /// <see cref="HumanPlayer"/> could put a number into the sim, so a shelf price had never been driven
+    /// by a synthetic player — every test set the SpinBox's <c>.Value</c> straight from C#.</para>
+    ///
+    /// <para><b>Assert on sim state, never on this SpinBox's <c>.Value</c> afterwards.</b> Reading the
+    /// widget back only proves Godot echoed what it was told; the actual claim — that the sim received
+    /// the typed number — is provable only by reading it off something the sim itself produced (e.g. the
+    /// shelved item's own price).</para>
+    /// </summary>
+    public async Task EnterNumber(string spinBoxName, int value)
+    {
+        if (value < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(value), value,
+                "EnterNumber only types non-negative integers -- no minus key is wired.");
+        }
+
+        var spin = Descendants(_viewport).OfType<SpinBox>().FirstOrDefault(s => s.Name == spinBoxName)
+            ?? throw new InvalidOperationException(
+                $"No SpinBox named \"{spinBoxName}\" is on screen.{TraceTail()}");
+
+        var field = spin.GetLineEdit();
+        await ClickControl(field, $"SpinBox '{spinBoxName}' field");
+
+        // Clear whatever the spinner pre-filled the way a player overwrites a field: put the caret at
+        // the end, then backspace through every character already there. Reading .Text.Length here is
+        // an OBSERVATION (same contract as Screen()/Sees()), not a way of setting the value.
+        Tap(Key.End);
+        var existing = field.Text.Length;
+        for (var i = 0; i < existing; i++)
+        {
+            Tap(Key.Backspace);
+        }
+
+        // NOT Tap() here -- verified by hand (a debug run of this exact method) that it is not enough.
+        // End/Backspace/Enter above worked through Tap because LineEdit matches THOSE by keycode alone;
+        // a real keyboard also sends the printed character as a Unicode codepoint alongside the keycode,
+        // and LineEdit inserts text from THAT field, which Tap()/PushKey never set. Proof: three Key7
+        // taps plus Enter left the field's .Value and .Text completely unchanged at their pre-fill.
+        foreach (var digit in value.ToString())
+        {
+            PushDigit(digit);
+        }
+
+        Tap(Key.Enter);
+        await Frames(2);
+        Log($"typed {value} into SpinBox '{spinBoxName}'");
+    }
+
     /// <summary>Release every key still held. Call in a test's finally block: a leaked Shift would
     /// silently corrupt the next test in the same runtime.</summary>
     public void ReleaseAll()
@@ -930,6 +988,37 @@ public sealed class HumanPlayer
             CtrlPressed = key == Key.Ctrl ? pressed : _held.Contains(Key.Ctrl),
             AltPressed = key == Key.Alt ? pressed : _held.Contains(Key.Alt),
         });
+
+    /// <summary>Presses and releases one printable digit ('0'-'9'), for <see cref="EnterNumber"/> only.
+    ///
+    /// <para>Unlike <see cref="PushKey"/>, this also sets <see cref="InputEventKey.Unicode"/> — the
+    /// actual character a real keyboard's OS layer attaches to a printable keypress, and the field
+    /// <see cref="LineEdit"/> reads to decide what to insert. A keycode-only event (what every other
+    /// verb in this class pushes) is enough for controls that match keys directly — Backspace, End,
+    /// Enter, an <see cref="InputMap"/> action — but not for actual text entry, which is exactly why it
+    /// needs its own push here instead of reusing <see cref="Tap"/>. Per the engine's own contract the
+    /// released event does not carry a Unicode value (only "pressed" does), so it is omitted there.</para>
+    /// </summary>
+    private void PushDigit(char digit)
+    {
+        var key = (Key)((int)Key.Key0 + (digit - '0'));
+        _viewport.PushInput(new InputEventKey
+        {
+            Keycode = key,
+            PhysicalKeycode = key,
+            Unicode = digit,
+            Pressed = true,
+            Echo = false,
+        });
+        _viewport.PushInput(new InputEventKey
+        {
+            Keycode = key,
+            PhysicalKeycode = key,
+            Pressed = false,
+            Echo = false,
+        });
+        Log($"typed digit '{digit}'");
+    }
 
     private void Log(string entry) => _trace.Add(entry);
 
