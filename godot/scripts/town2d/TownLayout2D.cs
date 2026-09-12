@@ -280,6 +280,11 @@ public static class TownLayout2D
     /// nameplate and door-approach-lane exception sets are all empty against this table — the
     /// sixteen overlaps a four-building 40×28 village had nowhere to avoid are gone, not widened.
     /// </para>
+    ///
+    /// <para><b>U51 ("lantern lights"):</b> each of these four lantern entries now also anchors a
+    /// real <see cref="PointLight2D"/> (<c>Town2D.BuildLanternLights</c>, MineWatch's own
+    /// torch/campfire recipe) alongside the pre-existing <c>AmbientLife2D</c> flicker sprite — a
+    /// genuine light pool, not just a brighter decal.</para>
     /// </summary>
     public static readonly PropLayout[] Props =
     {

@@ -302,6 +302,24 @@ public partial class Town2D : Control
     private CpuParticles2D? _forgeSteam;
     private AmbientLife2D? _ambientLife;
 
+    /// <summary>U51 ("lantern lights"): the five resolved venue window-glow anchors, captured once
+    /// by <see cref="WireAmbientLife"/> — the SAME positions <see cref="AmbientLife2D.Build"/>
+    /// already receives for its own sprite-glow layer. <see cref="BuildLanternLights"/> reuses this
+    /// one list rather than recomputing a second, independently-drifting copy of the same per-venue
+    /// anchor math.</summary>
+    private List<Vector2> _venueWindowPositions = new();
+
+    /// <summary>U51: one real <see cref="PointLight2D"/> per <see cref="TownLayout2D.Props"/> entry
+    /// whose <c>SpriteId</c> is <see cref="LanternPropSpriteId"/> — built by <see
+    /// cref="BuildLanternLights"/>, energy re-driven every <see cref="_Process"/> tick by <see
+    /// cref="LanternLightEnergyFor"/> (test/tuning hook: <see cref="LanternLightCount"/>).</summary>
+    private readonly List<PointLight2D> _lanternPointLights = new();
+
+    /// <summary>U51: one real <see cref="PointLight2D"/> per <see cref="_venueWindowPositions"/>
+    /// entry — same recipe/cadence as <see cref="_lanternPointLights"/>, anchored to a lit venue
+    /// window instead of a lamppost (test/tuning hook: <see cref="VenueWindowLightCount"/>).</summary>
+    private readonly List<PointLight2D> _venueWindowLights = new();
+
     /// <summary>U5 (world-and-interiors plan, KTD-8): the market room's customer choreography —
     /// null only if the "market" row is ever removed from <see cref="InteriorLayout2D.Rooms"/>
     /// (defensive; every shipped build has it). Mounted directly under <see cref="YSort"/> in
@@ -593,6 +611,7 @@ public partial class Town2D : Control
 
         WireForgeFx();
         WireAmbientLife();
+        BuildLanternLights();
 
         // T8-parity: populate Heroes from the adapter's initial state now; Refresh() re-runs this
         // every tick once MainUi wires it up (U2).
@@ -1072,6 +1091,19 @@ public partial class Town2D : Control
             // tint driver above.
             _ambientLife?.SetPhase(Adapter.CurrentState.Phase);
 
+            // U51: the real lantern/window PointLight2D pools hard-flip with phase the same way —
+            // a pure function of phase alone (LanternLightEnergyFor), no easing, no per-frame RNG.
+            var lanternEnergy = LanternLightEnergyFor(Adapter.CurrentState.Phase);
+            foreach (var light in _lanternPointLights)
+            {
+                light.Energy = lanternEnergy;
+            }
+
+            foreach (var light in _venueWindowLights)
+            {
+                light.Energy = lanternEnergy;
+            }
+
             // U6: townsfolk gate NEW errands off the same phase (see TownsfolkNpc2D.IsErrandHours)
             // — a handful of nodes, cheap regardless of the per-frame cadence.
             foreach (var npc in _townsfolk)
@@ -1524,6 +1556,12 @@ public partial class Town2D : Control
     /// <summary>Sprite id gap #2 ("trees never move") keys off — every prop with this id gets a
     /// <see cref="SwayingTreeSprite2D"/> instead of a bare <see cref="Sprite2D"/>.</summary>
     private const string TreePropSpriteId = "town2d-prop-tree";
+
+    /// <summary>U51 ("lantern lights"): every <see cref="TownLayout2D.Props"/> entry with this id
+    /// gets a real <see cref="PointLight2D"/> in <see cref="BuildLanternLights"/> — kept as one
+    /// constant so that method and <see cref="WireAmbientLife"/>'s own (pre-existing) lantern-glow
+    /// filter can never drift apart on the literal.</summary>
+    private const string LanternPropSpriteId = "town2d-prop-lantern";
 
     /// <summary>
     /// Instantiates every <see cref="TownLayout2D.Props"/> entry (well, lanterns, trees, crates) —
@@ -1991,7 +2029,7 @@ public partial class Town2D : Control
         var tavernChimneyPos = tavernBuilding.GlobalPosition + new Vector2(14f, -58f);
         var townRect = new Rect2(0f, 0f, TownLayout2D.GridWidth * TileSize, TownLayout2D.GridHeight * TileSize);
         var lanternPositions = TownLayout2D.Props
-            .Where(prop => prop.SpriteId == "town2d-prop-lantern")
+            .Where(prop => prop.SpriteId == LanternPropSpriteId)
             .Select(prop => TownLayout2D.TileToWorld(prop.Tile))
             .ToList();
 
@@ -2039,7 +2077,140 @@ public partial class Town2D : Control
         // Seed the correct phase immediately (mirrors DayPhaseTint's constructor-seeding
         // discipline: never start wrong for even one frame) — _Process re-drives this every tick.
         _ambientLife.SetPhase(Adapter!.CurrentState.Phase);
+
+        // U51: BuildLanternLights (called right after this method returns) reuses these exact five
+        // anchors for the real PointLight2D layer — captured here so it never recomputes its own,
+        // independently-drifting copy of the same per-venue math.
+        _venueWindowPositions = windowGlowPositions;
     }
+
+    /// <summary>Warm lamp-light color for both the lantern and venue-window <see
+    /// cref="PointLight2D"/>s — the same amber family <see cref="AmbientLife2D"/>'s own lamp/window
+    /// glow sprites already use (<c>new Color(1f, 0.78f, 0.4f, ...)</c> / <c>(1f, 0.72f, 0.38f,
+    /// ...)</c>), so the real light and the pre-existing glow sprite at the same post read as one
+    /// warm source, not two different colors layered on top of each other.</summary>
+    private static readonly Color LanternLightColor = new(1f, 0.76f, 0.4f);
+
+    /// <summary>Lantern-post light footprint, as a fraction of <see cref="LanternLightTexture"/>'s
+    /// 512px width — a small, tile-scale pool (<see cref="TileSize"/> is 16px) rather than
+    /// MineWatch's own screen-filling combat-strip torch, which is tuned for a much narrower
+    /// 1024×260 viewport. ~51px effective diameter: about three tiles across.</summary>
+    private const float LanternLightTextureScale = 0.10f;
+
+    /// <summary>Venue-window light footprint — slightly wider than a lantern's so it reads as
+    /// spilling from a whole window/facade rather than a single point flame. ~72px effective
+    /// diameter: about 4.5 tiles across.</summary>
+    private const float WindowLightTextureScale = 0.14f;
+
+    /// <summary>Energy floor/mid/ceiling <see cref="LanternLightEnergyFor"/> switches on — mirrors
+    /// <see cref="AmbientLife2D.LampAlphaFor"/>'s own three-band shape (Morning nearly snuffed,
+    /// Expedition a faint daytime pilot, Evening/Camp/ExpeditionDeep one shared strong night band)
+    /// so the real light and the pre-existing glow sprite brighten in lockstep, just scaled to
+    /// <see cref="Light2D.Energy"/>'s own range instead of a sprite's 0-1 alpha.</summary>
+    private const float LanternEnergyMorning = 0.15f;
+
+    private const float LanternEnergyExpedition = 0.45f;
+    private const float LanternEnergyNight = 1.15f; // Evening/Camp/ExpeditionDeep shared band, same grouping as LampAlphaFor
+
+    private static GradientTexture2D? _lanternLightTextureCache;
+
+    /// <summary>U51: the single source of truth <see cref="BuildLanternLights"/> and every <see
+    /// cref="_Process"/> tick read for every lantern/window <see cref="PointLight2D"/>'s <see
+    /// cref="Light2D.Energy"/> — a pure function of <see cref="DayPhase"/> alone (no wall-clock, no
+    /// RNG, KTD4/KTD5): two lights built for the same phase always carry the identical energy, and
+    /// calling this twice for the same phase always returns the same value. Public so
+    /// <c>PhaseLightTests</c> can pin it with no live scene tree at all — the same contract <see
+    /// cref="AmbientLife2D.LampAlphaFor"/> already gives its own tests.</summary>
+    public static float LanternLightEnergyFor(DayPhase phase) => phase switch
+    {
+        DayPhase.Morning => LanternEnergyMorning,
+        DayPhase.Expedition => LanternEnergyExpedition,
+        DayPhase.Evening or DayPhase.Camp or DayPhase.ExpeditionDeep => LanternEnergyNight,
+        _ => LanternEnergyNight,
+    };
+
+    /// <summary>
+    /// U51 ("lantern lights"): mounts one real <see cref="PointLight2D"/> per <see
+    /// cref="TownLayout2D.Props"/> lantern entry and one per <see cref="_venueWindowPositions"/>
+    /// entry — MineWatch's own <c>_torch</c>/<c>_campfireLight</c> recipe over <see
+    /// cref="LanternLightTexture"/> (that class's <c>BuildLightGradient</c>, reused verbatim), the
+    /// only other <see cref="PointLight2D"/> recipe anywhere in <c>godot/scripts</c>.
+    ///
+    /// <para><see cref="DuskModulate"/> is UNTOUCHED by this method — Godot allows at most one <see
+    /// cref="CanvasModulate"/> per canvas, so the flat dusk tint stays exactly as it was; these
+    /// lights only carve real, locally-brighter pools out of it, which is the whole point ("pools
+    /// of warm light in a cool wash", not a second flat filter layered on the first).</para>
+    ///
+    /// <para>Iterates <see cref="TownLayout2D.Props"/> itself (never a hand-counted "four") so a
+    /// fifth lantern placed later is covered the day it lands. Called once at the tail of <see
+    /// cref="Build"/>, right after <see cref="WireAmbientLife"/> so <see
+    /// cref="_venueWindowPositions"/> is already resolved.</para>
+    /// </summary>
+    private void BuildLanternLights()
+    {
+        var group = new Node2D { Name = "LanternLights" };
+        World.AddChild(group);
+
+        var startingEnergy = LanternLightEnergyFor(Adapter!.CurrentState.Phase);
+
+        _lanternPointLights.Clear();
+        foreach (var prop in TownLayout2D.Props.Where(p => p.SpriteId == LanternPropSpriteId))
+        {
+            // Near the post's own lamp head — same offset AmbientLife2D's own lamp-glow sprite uses.
+            var pos = TownLayout2D.TileToWorld(prop.Tile) + new Vector2(0f, -14f);
+            var light = MakeLanternLight($"LanternLight_{prop.Tile.X}_{prop.Tile.Y}", pos, LanternLightTextureScale, startingEnergy);
+            group.AddChild(light);
+            _lanternPointLights.Add(light);
+        }
+
+        _venueWindowLights.Clear();
+        for (var i = 0; i < _venueWindowPositions.Count; i++)
+        {
+            var light = MakeLanternLight($"WindowLight_{i}", _venueWindowPositions[i], WindowLightTextureScale, startingEnergy);
+            group.AddChild(light);
+            _venueWindowLights.Add(light);
+        }
+    }
+
+    private static PointLight2D MakeLanternLight(string name, Vector2 pos, float textureScale, float energy) => new()
+    {
+        Name = name,
+        Color = LanternLightColor,
+        Texture = LanternLightTexture(),
+        TextureScale = textureScale,
+        Position = pos,
+        Energy = energy,
+    };
+
+    /// <summary>MineWatch's own light-gradient recipe (<c>MineWatch.BuildLightGradient</c>: white
+    /// core → 0.45 alpha at 0.55 → transparent edge, radial fill), duplicated rather than shared —
+    /// same cross-class reason as <see cref="AmbientLife2D.LampGlowTexture"/>'s own copy of this
+    /// file's <see cref="GlowTexture"/> ("this file owns its own presentation asset"). MineWatch is
+    /// the only other file in <c>godot/scripts</c> that builds a real <see cref="PointLight2D"/> at
+    /// all — this is that SAME recipe, not a second one invented for the town.</summary>
+    private static GradientTexture2D LanternLightTexture() => _lanternLightTextureCache ??= new GradientTexture2D
+    {
+        Gradient = new Gradient
+        {
+            Colors = [new Color(1, 1, 1, 1), new Color(1, 1, 1, 0.45f), new Color(1, 1, 1, 0)],
+            Offsets = [0f, 0.55f, 1f],
+        },
+        Width = 512,
+        Height = 512,
+        Fill = GradientTexture2D.FillEnum.Radial,
+        FillFrom = new Vector2(0.5f, 0.5f),
+        FillTo = new Vector2(1f, 0.5f),
+    };
+
+    /// <summary>Test/inspection surface (U51): live lantern-post <see cref="PointLight2D"/> count —
+    /// mirrors <see cref="TownLayout2D.Props"/>'s own lantern-entry count (see <see
+    /// cref="BuildLanternLights"/>).</summary>
+    public int LanternLightCount() => _lanternPointLights.Count;
+
+    /// <summary>Test/inspection surface (U51): live venue-window <see cref="PointLight2D"/> count —
+    /// mirrors <see cref="_venueWindowPositions"/>'s count (see <see
+    /// cref="BuildLanternLights"/>).</summary>
+    public int VenueWindowLightCount() => _venueWindowLights.Count;
 
     /// <summary>U11: a hand-placed window/light-source glow anchor for <see
     /// cref="WireAmbientLife"/> — <paramref name="xFrac"/>/<paramref name="yFrac"/> are fractions

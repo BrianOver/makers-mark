@@ -91,6 +91,61 @@ public class PhaseLightTests
         }
     }
 
+    /// <summary>
+    /// U51 ("lantern lights"): <see cref="Town2D.LanternLightEnergyFor"/> is the pure function
+    /// every real lantern/venue-window <see cref="PointLight2D"/> reads for its <c>Energy</c> —
+    /// same "phase alone, no scene tree" contract as <see cref="AmbientLife2D.LampAlphaFor"/>
+    /// above, just scaled to <c>Light2D.Energy</c>'s own range instead of a sprite's 0-1 alpha.
+    /// </summary>
+    [TestCase]
+    public void LanternLightEnergyFor_Morning_IsDim()
+    {
+        AssertFloat(Town2D.LanternLightEnergyFor(DayPhase.Morning)).IsEqual(0.15f);
+    }
+
+    [TestCase]
+    public void LanternLightEnergyFor_Expedition_IsAFaintDaytimeGlow()
+    {
+        AssertFloat(Town2D.LanternLightEnergyFor(DayPhase.Expedition)).IsEqual(0.45f);
+    }
+
+    [TestCase]
+    public void LanternLightEnergyFor_EveningCampAndDeep_ShareTheSameStrongNightBand()
+    {
+        var evening = Town2D.LanternLightEnergyFor(DayPhase.Evening);
+        var camp = Town2D.LanternLightEnergyFor(DayPhase.Camp);
+        var deep = Town2D.LanternLightEnergyFor(DayPhase.ExpeditionDeep);
+
+        AssertFloat(evening).IsEqual(camp);
+        AssertFloat(camp).IsEqual(deep);
+    }
+
+    /// <summary>Guard against the PROPERTY, not a pinned magnitude (per this unit's own test
+    /// direction) — a later tuning pass may retune the magic numbers, but Evening must always read
+    /// brighter than Expedition, and Expedition brighter than Morning.</summary>
+    [TestCase]
+    public void LanternLightEnergyFor_RisesFromMorningIntoEvening()
+    {
+        var morning = Town2D.LanternLightEnergyFor(DayPhase.Morning);
+        var expedition = Town2D.LanternLightEnergyFor(DayPhase.Expedition);
+        var evening = Town2D.LanternLightEnergyFor(DayPhase.Evening);
+
+        AssertFloat(evening).IsGreater(expedition);
+        AssertFloat(expedition).IsGreater(morning);
+    }
+
+    /// <summary>Determinism (KTD4/KTD5): calling the pure function twice for the same phase must
+    /// return the identical value — no wall-clock, no RNG, no per-process hash anywhere in it.</summary>
+    [TestCase]
+    public void LanternLightEnergyFor_IsDeterministic_SamePhaseTwiceMatches()
+    {
+        AssertFloat(Town2D.LanternLightEnergyFor(DayPhase.Evening))
+            .IsEqual(Town2D.LanternLightEnergyFor(DayPhase.Evening));
+
+        AssertFloat(Town2D.LanternLightEnergyFor(DayPhase.Morning))
+            .IsEqual(Town2D.LanternLightEnergyFor(DayPhase.Morning));
+    }
+
     [TestCase]
     [RequireGodotRuntime]
     public void Build_CreatesOneWindowGlowPerPosition()

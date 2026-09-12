@@ -275,5 +275,95 @@ public class Town2DSceneTests
             .OverrideFailureMessage($"props-noticeboard must not sit on the noticeboard/Bounties BUILDING's own tile {noticeboardBuilding.Tile} — they are two different objects")
             .IsNotEqual(noticeboardBuilding.Tile);
     }
+
+    /// <summary>U51 ("lantern lights"): guards the PROPERTY (every lantern prop gets a real light),
+    /// never a hand-counted "four" — iterates <see cref="TownLayout2D.Props"/> itself, so a fifth
+    /// lantern placed later is covered on the day it lands.</summary>
+    [TestCase]
+    public void Town2D_Built_OneLanternLightPerLanternProp()
+    {
+        var town = Mount();
+        try
+        {
+            var expectedLanterns = TownLayout2D.Props.Count(p => p.SpriteId == "town2d-prop-lantern");
+
+            AssertThat(expectedLanterns)
+                .OverrideFailureMessage("TownLayout2D.Props has zero lantern entries — this test would pass vacuously")
+                .IsGreater(0);
+
+            AssertThat(town.LanternLightCount())
+                .OverrideFailureMessage("LanternLightCount must mirror every town2d-prop-lantern entry in TownLayout2D.Props — BuildLanternLights regressed or fell back to a hand-counted number")
+                .IsEqual(expectedLanterns);
+        }
+        finally { town.Free(); }
+    }
+
+    [TestCase]
+    public void Town2D_Built_HasFiveVenueWindowLights()
+    {
+        var town = Mount();
+        try
+        {
+            // Mirrors WireAmbientLife's own 5 resolved window anchors (forge/market/tavern/mine/
+            // noticeboard) — BuildLanternLights reuses that exact list, never a second copy.
+            AssertThat(town.VenueWindowLightCount())
+                .OverrideFailureMessage("VenueWindowLightCount must mirror WireAmbientLife's 5 resolved venue window anchors")
+                .IsEqual(5);
+        }
+        finally { town.Free(); }
+    }
+
+    /// <summary>Negative control (U51): Godot allows at most one <see cref="CanvasModulate"/> per
+    /// canvas — the new lantern/window lights must SOFTEN <see cref="Town2D.DuskModulate"/>, never
+    /// replace or duplicate it.</summary>
+    [TestCase]
+    public void Town2D_Built_DuskModulate_StillExistsExactlyOnce()
+    {
+        var town = Mount();
+        try
+        {
+            AssertThat(town.DuskModulate)
+                .OverrideFailureMessage("DuskModulate must still exist — U51 softens it, it never replaces it")
+                .IsNotNull();
+
+            var modulateCount = CountCanvasModulates(town.World);
+            AssertThat(modulateCount)
+                .OverrideFailureMessage($"expected exactly one CanvasModulate under Town2D.World, found {modulateCount} — Godot only honours one per canvas")
+                .IsEqual(1);
+        }
+        finally { town.Free(); }
+    }
+
+    /// <summary>Determinism (KTD4/KTD5): two Town2D instances built from the same adapter seed/day
+    /// must render identical lantern light energy — never a wall-clock or per-process term.</summary>
+    [TestCase]
+    public void Town2D_LanternLightEnergy_IsIdenticalAcrossTwoInstancesAtTheSamePhase()
+    {
+        var townA = Mount();
+        var townB = Mount();
+        try
+        {
+            var lightA = (PointLight2D)townA.World.GetNode<Node2D>("LanternLights").GetChild(0);
+            var lightB = (PointLight2D)townB.World.GetNode<Node2D>("LanternLights").GetChild(0);
+
+            AssertFloat(lightA.Energy).IsEqual(lightB.Energy);
+        }
+        finally
+        {
+            townA.Free();
+            townB.Free();
+        }
+    }
+
+    private static int CountCanvasModulates(Node node)
+    {
+        var count = node is CanvasModulate ? 1 : 0;
+        foreach (var child in node.GetChildren())
+        {
+            count += CountCanvasModulates(child);
+        }
+
+        return count;
+    }
 }
 #endif
