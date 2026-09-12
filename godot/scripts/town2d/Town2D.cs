@@ -3,6 +3,9 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using GameSim.Contracts;
+using GameSim.Drama;
+using GameSim.Flavor;
+using GameSim.Flavor.Packs;
 using GameSim.Professions;
 using Godot;
 using GodotClient.Panels;
@@ -389,6 +392,42 @@ public partial class Town2D : Control
     /// </summary>
     private List<Vector2> _errandTargets = new();
 
+    /// <summary>P2-LONG-19: the rival smith's fixed identity — MAKERS-MARK.md's own line, "the shop
+    /// the town would have if your hands didn't matter." A name and a nameplate like every other
+    /// townsfolk actor, but this one never rotates through <see cref="TownsfolkNpc2D.FlavorNames"/>.</summary>
+    private const string RivalName = "Corren";
+
+    /// <summary>P2-LONG-19: the rival's standing line — competent, fair, unremarkable, and that IS
+    /// the point (MAKERS-MARK.md §11, quoted verbatim). Shown until the first qualifying death
+    /// replaces it with the absence line (see <see cref="RefreshRivalAbsenceLine"/>): his identity,
+    /// not a UI label.</summary>
+    private const string RivalTagline =
+        "Sells a fair sword at a fair price. Nobody has ever crossed the square to thank him for one.";
+
+    /// <summary>P2-LONG-19: the rival's spawn index — fixed and out-of-band from every real
+    /// villager index (0..<see cref="TownsfolkHomeTileCount"/>-1), so his idle wander-drift phase
+    /// never coincides with a real villager's.</summary>
+    private const int RivalNpcIndex = 97;
+
+    /// <summary>P2-LONG-19: the rival smith — present once <see cref="Build"/> has run. Never part
+    /// of <see cref="TownsfolkRoot"/>'s generic cosmetic pool (so <see cref="TownsfolkCount"/>'s
+    /// exact-count contract for the anonymous villagers stays untouched); added directly to
+    /// <see cref="YSort"/>, the same flat placement <see cref="Player"/> itself uses. Null only if
+    /// the market venue was ever renamed out from under <see cref="BuildRivalSmith"/> (defensive,
+    /// mirrors <see cref="WireTavernLife"/>'s own guard).</summary>
+    public TownsfolkNpc2D? RivalSmith { get; private set; }
+
+    /// <summary>P2-LONG-19: hero ids the rival has already spoken his one absence line for — the
+    /// accumulated "already spoken" set <c>GameSim.Drama.RivalAbsenceQuery.PendingAbsenceLines</c>
+    /// threads through every call (its own "never a counter" contract). Presentation-only state:
+    /// never fed back into the sim, never affects determinism (KTD2).</summary>
+    private ImmutableHashSet<int> _rivalNarratedHeroIds = ImmutableHashSet<int>.Empty;
+
+    /// <summary>P2-LONG-19: last observed <see cref="GameState.EventLog"/> count — gates <see
+    /// cref="RefreshRivalAbsenceLine"/> to re-scan the log only when something new actually landed,
+    /// never on an idle frame.</summary>
+    private int _rivalLastEventLogCount = -1;
+
     /// <summary>U6: patron seating inside the tavern room — null only if the tavern has no
     /// <see cref="InteriorLayout2D"/> row (defensive; every real build has one) or its "Patron
     /// Table" stations were renamed out from under <see cref="WireTavernLife"/>.</summary>
@@ -520,6 +559,8 @@ public partial class Town2D : Control
         TownsfolkRoot = new Node2D { Name = "Townsfolk" };
         YSort.AddChild(TownsfolkRoot);
         BuildTownsfolk();
+        BuildRivalSmith(); // P2-LONG-19: the counterfactual made visible — outside BuildTownsfolk's
+                           // generic cosmetic pool so TownsfolkCount's exact-count contract holds
         WireTavernLife(); // U6: needs BuildInteriorRooms' tavern row + stations, already built above
 
         Fx = new Node2D { Name = "Fx" };
@@ -1048,6 +1089,9 @@ public partial class Town2D : Control
             {
                 actor.SetPhase(Adapter.CurrentState.Phase);
             }
+
+            // P2-LONG-19: the rival's one spoken line, checked the same cheap per-frame way.
+            RefreshRivalAbsenceLine(Adapter.CurrentState);
         }
 
         // U10 (KTD-5): accumulate/reset each actor's Away timer every frame, regardless of
@@ -1761,6 +1805,87 @@ public partial class Town2D : Control
             TownsfolkRoot.AddChild(npc);
             _townsfolk.Add(npc);
         }
+    }
+
+    /// <summary>
+    /// P2-LONG-19: spawns the rival smith — "the shop the town would have if your hands didn't
+    /// matter" (MAKERS-MARK.md §11). A named, PERMANENT <see cref="TownsfolkNpc2D"/> standing
+    /// outside the market he actually competes with (<see cref="TownLayout2D.Venues"/>'s "market"
+    /// door anchor — the same proven-safe point heroes and townsfolk already walk to on errands),
+    /// never part of <see cref="TownsfolkRoot"/>'s generic cosmetic pool (see <see
+    /// cref="RivalSmith"/>'s own doc for why) — reuses the SAME extension point every plain
+    /// villager already has (<see cref="TownsfolkNpc2D.Init"/>'s trailing <c>caption</c> param)
+    /// rather than a second NPC mechanism.
+    ///
+    /// <para>Reuses the same civilian body art every anonymous villager already wears — no
+    /// dedicated rival sprite exists in this checkout, and inventing a placeholder asset mechanism
+    /// for one is out of scope (a real sprite is a visual-tuning-pass item, same as every other
+    /// blind-tuned render in this codebase). What marks him out is his fixed name and his two
+    /// lines: the standing tagline set here, and the absence line <see
+    /// cref="RefreshRivalAbsenceLine"/> speaks once per qualifying death.</para>
+    /// </summary>
+    private void BuildRivalSmith()
+    {
+        if (!_buildingsByKey.TryGetValue("market", out var market))
+        {
+            return; // defensive: never expected on a real build (mirrors WireTavernLife's own guard)
+        }
+
+        var civilianId = TownsfolkNpc2D.CivilianIds[0];
+        var body = TownsfolkNpc2D.ResolveSprite(civilianId);
+
+        RivalSmith = new TownsfolkNpc2D();
+        RivalSmith.Init(
+            RivalNpcIndex,
+            body,
+            Colors.White,
+            market.DoorAnchorGlobal,
+            TownsfolkNpc2D.ResolveStepSprite(civilianId),
+            TownsfolkNpc2D.ResolveWalk2Sprite(civilianId),
+            TownsfolkNpc2D.ResolveWalk4Sprite(civilianId),
+            RivalName,
+            RivalTagline);
+        // No SetErrandTargets call: he never leaves his post — the pre-U6 "stay home" default
+        // every villager had before errands existed, deliberately kept for this one.
+        YSort.AddChild(RivalSmith);
+    }
+
+    /// <summary>
+    /// P2-LONG-19: checks for newly-recorded deaths in unmarked gear (<see
+    /// cref="RivalAbsenceQuery.PendingAbsenceLines"/>) and, if any landed since the last check,
+    /// replaces the rival's caption with his one line about the first of them — never a second
+    /// line for a hero already spoken for (<see cref="_rivalNarratedHeroIds"/> is the belt;
+    /// permadeath, R7, means there is only ever one death per hero, which is the suspenders).
+    /// Gated on <see cref="GameState.EventLog"/>'s own count so an idle frame with no new events
+    /// costs one integer comparison, never a log scan.
+    /// </summary>
+    private void RefreshRivalAbsenceLine(GameState state)
+    {
+        if (RivalSmith is null || state.EventLog.Count == _rivalLastEventLogCount)
+        {
+            return;
+        }
+
+        _rivalLastEventLogCount = state.EventLog.Count;
+        var pending = RivalAbsenceQuery.PendingAbsenceLines(state, _rivalNarratedHeroIds);
+        if (pending.IsEmpty)
+        {
+            return;
+        }
+
+        var death = pending[0];
+        var heroName = state.Heroes.TryGetValue(death.Hero.Value, out var fallen)
+            ? fallen.Name
+            : $"Hero #{death.Hero.Value}";
+        var line = FlavorEngine.Render(
+            RivalPack.Pack,
+            RivalPack.Absence,
+            FlavorEngine.Slots(("hero", heroName)),
+            state.Rng.Inc, // campaign identity, same convention as every other pack caller (KTD3)
+            unchecked((ulong)death.Id.Value)); // the stamped HeroDied event id, per LedgerPack's own convention
+
+        RivalSmith.SetCaption(line);
+        _rivalNarratedHeroIds = _rivalNarratedHeroIds.Union(pending.Select(d => d.Hero.Value));
     }
 
     /// <summary>U6: mounts <see cref="TavernLife2D"/> at the tavern room's own "Patron Table"

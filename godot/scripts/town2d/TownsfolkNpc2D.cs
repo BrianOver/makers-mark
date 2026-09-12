@@ -138,6 +138,21 @@ public partial class TownsfolkNpc2D : Node2D
     /// heroes get one).</summary>
     public Label Nameplate { get; private set; } = null!;
 
+    /// <summary>P2-LONG-19: this NPC's own optional spoken line — null for every plain cosmetic
+    /// villager (no caller supplies one). The one extension this class gains for a named, speaking
+    /// townsperson (the rival smith) rather than a second NPC mechanism: see <see
+    /// cref="GodotClient.Town2d.Town2D.BuildRivalSmith"/>.</summary>
+    public Label? Caption { get; private set; }
+
+    /// <summary>P2-LONG-19: extra vertical clearance a <see cref="Caption"/> label needs above <see
+    /// cref="Nameplate"/> so the two never overlap — both sit above the sprite's own roof line via
+    /// <see cref="Building2D.BuildLabel"/>'s Position formula, which climbs with a larger size.</summary>
+    private const float CaptionLift = 14f;
+
+    /// <summary>P2-LONG-19: width of the optional <see cref="Caption"/> label — wide enough to wrap
+    /// the rival's longer lines instead of running them off a nameplate-narrow box.</summary>
+    private const float CaptionWidth = 168f;
+
     private float _spriteHeight = 24f;
     private float _spriteWidth = 16f;
     private double _townTime;
@@ -254,7 +269,11 @@ public partial class TownsfolkNpc2D : Node2D
     /// <paramref name="walk2Sprite"/>/<paramref name="walk4Sprite"/> (U3) complete the 4-frame
     /// gait the same optional, null-tolerant way. <paramref name="name"/> (U4) builds this
     /// villager's <see cref="Nameplate"/> — optional/empty for the same reason the gait frames
-    /// are: every pre-U4 test call site that supplies no name keeps compiling.
+    /// are: every pre-U4 test call site that supplies no name keeps compiling. <paramref
+    /// name="caption"/> (P2-LONG-19) optionally builds this NPC's <see cref="Caption"/> — a second,
+    /// higher label a caller can later update via <see cref="SetCaption"/>; empty (the default)
+    /// builds no label at all, so every existing caller/test keeps its exact pre-P2-LONG-19 child
+    /// set.
     /// </summary>
     public void Init(
         int index,
@@ -264,7 +283,8 @@ public partial class TownsfolkNpc2D : Node2D
         Texture2D? stepSprite = null,
         Texture2D? walk2Sprite = null,
         Texture2D? walk4Sprite = null,
-        string name = "")
+        string name = "",
+        string caption = "")
     {
         NpcIndex = index;
         Home = home;
@@ -304,6 +324,16 @@ public partial class TownsfolkNpc2D : Node2D
         Nameplate = Building2D.BuildLabel(name, new Vector2(_spriteWidth, _spriteHeight));
         AddChild(Nameplate);
 
+        // P2-LONG-19: only the rival (so far) supplies a caption — a plain villager's child set
+        // (and every existing test's assumptions about it) is byte-identical to before this param
+        // existed.
+        if (!string.IsNullOrEmpty(caption))
+        {
+            Caption = Building2D.BuildLabel(caption, new Vector2(CaptionWidth, _spriteHeight + CaptionLift));
+            Caption.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+            AddChild(Caption);
+        }
+
         // Gap #3 / U3: cache base/step/walk2/walk4 textures exactly like HeroActor2D.Init does,
         // now that the resolved sprite is known.
         _baseTex = sprite;
@@ -331,6 +361,18 @@ public partial class TownsfolkNpc2D : Node2D
     /// KTD5). Null/empty degrades to "never leaves home", the exact pre-U6 contract every existing
     /// caller/test that skips this method still gets.</summary>
     public void SetErrandTargets(IReadOnlyList<Vector2> venueDoors) => _errandTargets = venueDoors;
+
+    /// <summary>P2-LONG-19: replaces this NPC's spoken <see cref="Caption"/> text — the caller owns
+    /// the "once per event" discipline (see <c>GameSim.Drama.RivalAbsenceQuery</c>'s own doc); this
+    /// is a plain, no-timer text swap. No-op if this NPC was never given a caption at <see
+    /// cref="Init"/> (every plain cosmetic villager).</summary>
+    public void SetCaption(string text)
+    {
+        if (Caption is not null)
+        {
+            Caption.Text = text;
+        }
+    }
 
     /// <summary>U6/U11: the sim's current <see cref="DayPhase"/> — call every frame (mirrors <see
     /// cref="AmbientLife2D.SetPhase"/>'s contract; <see cref="Town2D"/> calls both from the same
