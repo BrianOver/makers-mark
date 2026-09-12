@@ -251,7 +251,6 @@
   "town2d-monster-tunnel-spider-v3": { "diffuse": true, "normal": false },
   "town2d-monster-tunnel-spider-v4": { "diffuse": true, "normal": false },
   "town2d-monster-tunnel-spider-v5": { "diffuse": true, "normal": false },
-  "town2d-player": { "diffuse": true, "normal": false },
   "town2d-prop-crate": { "diffuse": true, "normal": false },
   "town2d-prop-crate-v2": { "diffuse": true, "normal": false },
   "town2d-prop-crate-v3": { "diffuse": true, "normal": false },
