@@ -31,8 +31,9 @@ Your own worktree under `.claude/worktrees/<slug>`, cut from the base ref the pr
 2. **Tests that would have caught the defect**, phrased against the property rather than the instance. A guard naming one node, one literal or one id stops covering its family the moment the family grows — this repo has paid for that four times. Where production names one thing, name the rule that thing was chosen to satisfy.
 3. `dotnet test sim/GameSim.Tests/GameSim.Tests.csproj --filter Category!=Balance` — green, and you quote the runner's own `Failed: N, Passed: N` line verbatim. Never a wrapper's verdict.
 4. One commit, conventional message, staging only the unit's files. No `git add .`.
-5. `gh pr create` against the base ref, then `gh pr merge --auto --squash --delete-branch` **in the same breath**. The PR body carries one `Serves: <unit-id>` line.
-6. Return: files changed, the raw fast-lane line, the PR number, and any stop reason. No prose summary.
+5. `gh pr create` against the base ref, then `gh pr merge --auto --squash --delete-branch` **in the same breath**. The PR body carries one `Serves: <unit-id>` line, and the PR TITLE carries the unit id too — a title without it is how a shipped unit reads unbuilt forever and gets rebuilt by the next session.
+6. **Then stop. Do not watch CI.** No `gh pr checks --watch`, no Monitor, no poll loop. Auto-merge is armed and the orchestrator confirms the merge with `gh pr view <n> --json state`. A worker that waits on CI wakes every thirty seconds to say nothing changed, and each wake costs the orchestrator a full notification — two of them did this and had to be killed mid-night. Your work is pushed; nothing is lost by returning.
+7. Return: files changed, the raw fast-lane line, the PR number, and any stop reason. No prose summary.
 
 ## The one thing that decides whether the work was worth doing
 
