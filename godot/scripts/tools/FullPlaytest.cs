@@ -7,6 +7,7 @@ using GameSim.Advisor;
 using GameSim.Professions;
 using GodotClient.Minigames;
 using GodotClient.Town2d;
+using GodotClient.Ui;
 using Godot;
 
 namespace GodotClient.Tools;
@@ -186,6 +187,10 @@ public partial class FullPlaytest : Node
         await Settle(24);
         Shot($"r{_run}_02_town");
 
+        // U38 (§11.14.14 Wave 6): the course's opening pointer, checked before the player has
+        // walked anywhere — the Building-scoped aim (see AssertPointerOnScreen's own doc).
+        AssertPointerOnScreen(ui, "initial");
+
         // ── is the world actually alive? ─────────────────────────────────────────────────────
         await MotionBurst(ui, $"r{_run}_town_idle", "town at rest (ambient life, townsfolk)");
 
@@ -205,6 +210,7 @@ public partial class FullPlaytest : Node
                 ui.Town.FindBuilding(building).RaisePick();
                 await Settle(10);
                 Shot($"r{_run}_03_click_{building}");
+                AssertPointerOnScreen(ui, $"at_{building}");
 
                 // U1 (painted-interiors plan; world-and-interiors plan, docs/plans/2026-08-02-004,
                 // grew this to four rooms): "forge"/"market"/"tavern"/"minegate" all enter a
@@ -223,6 +229,9 @@ public partial class FullPlaytest : Node
                             station.RaisePick();
                             await Settle(8);
                             Shot($"r{_run}_03b_station_{station.Key}");
+                            // U38: the station-scoped aim — the exact hand-off (Building -> Station)
+                            // U-T9-5 exists to fix, checked from inside the room where it matters.
+                            AssertPointerOnScreen(ui, $"station_{station.Key}");
                         }
                         catch (Exception ex)
                         {
@@ -277,6 +286,9 @@ public partial class FullPlaytest : Node
             await DriveOtherActiveCraft(ui, profession);
         }
 
+        // U38: post-craft — the course should have moved on to Shelve by now.
+        AssertPointerOnScreen(ui, "post_craft");
+
         // ── every panel, every run ───────────────────────────────────────────────────────────
         foreach (var panel in AllPanels)
         {
@@ -320,6 +332,16 @@ public partial class FullPlaytest : Node
             // and it is exactly the kind of thing an automated playtest must not mistake for a
             // finding. So: buy, craft, PRICE AND STOCK, serve the counter, post a bounty.
             PlayTheDay(adapter);
+
+            // U38: once per day — walks the course's own progression (Shelve/PostBounty/
+            // WatchDeparture/LookIn/OpenCounter/Vigil/EveningClose/MeetHeroes/Commission) as the
+            // registry's own AdvanceFrom/backstop rules carry Step forward across real days.
+            // A real frame first: PlayTheDay only QUEUES actions (no await inside it), and
+            // Overlay.Tick's own off-camera-marker projection only runs from _Process — checking in
+            // the same frame the anchor changed reads ITS PREDECESSOR's stale marker state, a
+            // harness race this unit's own red/green demo run caught, not a product defect.
+            await Settle(2);
+            AssertPointerOnScreen(ui, $"day{day}");
 
             // Roll the day's five phases, watching the delve on the expedition beat.
             for (var phase = 0; phase < 5; phase++)
@@ -438,6 +460,7 @@ public partial class FullPlaytest : Node
                 ui.OpenPanel("Heroes");
                 await Settle(8);
                 Shot($"r{_run}_05_final_heroes");
+                AssertPointerOnScreen(ui, "final");
             }
         }
 
@@ -484,6 +507,24 @@ public partial class FullPlaytest : Node
 
         _report.AppendLine($"- hero needs at run end: {restless} restless, {boycotting} boycotting " +
                            $"(of {end.Heroes.Count} heroes)");
+
+        // U38 (§11.14.14 Wave 6): honest graduation/proof reporting — the plan's own "reaches
+        // graduation on a median seed and honestly reports an absent proof on a starved one."
+        // TutorialFlow.ChainBackstopDay (8) forces Completed by DaysPerRun regardless of seed, so
+        // graduation alone is not the interesting signal here; the durable, seed-dependent fact is
+        // whether link 4's counterfactual ever actually fired (GameSim.Expedition.AttributionEngine's
+        // own event, logged durably in EventLog) — absence is reported plainly, never papered over
+        // and never treated as a failure in its own right (only a chain that never even GRADUATES is).
+        _report.AppendLine($"- tutorial course: {(ui.Tutorial.Completed ? "graduated" : $"STALLED at {ui.Tutorial.Step}")}");
+        var proofBeats = end.EventLog.OfType<GameSim.Contracts.AttributionBeatEvent>().Count();
+        _report.AppendLine(proofBeats > 0
+            ? $"- tutorial course: link 4 proof fired {proofBeats} time(s) this run"
+            : "- tutorial course: no link 4 proof beat this run (honest, not a bug — a starved seed never earns one)");
+        if (!ui.Tutorial.Completed)
+        {
+            Note($"run {_run} ({profession}): tutorial course never graduated by day {DaysPerRun} " +
+                 $"(stalled at {ui.Tutorial.Step}) — ChainBackstopDay should have forced this");
+        }
 
         // Broke-and-stuck is the single most-reported failure of this loop — call it out loudly.
         if (end.Player.Gold <= 0)
@@ -1023,6 +1064,214 @@ public partial class FullPlaytest : Node
             if (data[b] != firstByte)
             {
                 return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// U38 (§11.14.14 Wave 6, "a harness takes the course"): the tutorial's whole promise is a
+    /// pointer, not a status line, and this is the one check in the file that asks what the pointer
+    /// is actually doing right now instead of trusting the scene tree's word for it. Both rendered
+    /// defects this unit exists to catch (U15: a station behind a wall with no off-camera marker
+    /// yet; U42: the off-camera marker itself landing on top of the objective card) passed all
+    /// fifteen suites that existed at the time — every one of those suites asked whether a node
+    /// existed and was <c>Visible</c>, which both defects satisfied. This asks the pixels.
+    ///
+    /// <para><b>"On screen" splits by anchor kind</b>, mirroring <see cref="TutorialOverlay"/>'s own
+    /// split:</para>
+    /// <list type="bullet">
+    /// <item>Building/Station — <see cref="TutorialOverlay.PulsingBuildingKey"/> must have resolved,
+    /// and EITHER its world position projects inside <see cref="Town2D.ViewportScreenRect"/> OR
+    /// <see cref="TutorialOverlay.OffCameraMarkerVisible"/> is standing in for it (U15's honest
+    /// substitute). Neither being true is exactly the pre-U15 "points at nothing" defect — EXCEPT
+    /// the one case <see cref="TutorialOverlay.UpdateOffCameraMarker"/> itself declares deliberate
+    /// silence (a Building anchor while the player stands inside an unrelated interior, a different
+    /// camera-clamped coordinate island): that is reported as declared silence, never an anomaly —
+    /// found live by this unit's own red/green demo run, which first shipped this check without the
+    /// exemption and had to add it.</item>
+    /// <item>Hud/PanelControl/PanelSection — <see cref="TutorialOverlay.PulsingTargetRect"/> must be
+    /// non-null (the target is <c>IsVisibleInTree</c>), non-degenerate, and inside the game window
+    /// (<see cref="ScreenObservation.WindowRect"/> — the OUTER viewport, never <c>Town2D</c>'s own
+    /// sub-viewport, which is the wrong coordinate space for a HUD control).</item>
+    /// </list>
+    ///
+    /// <para><b>Neither half stops at tree state.</b> Once a screen region is named, <see
+    /// cref="RegionHasVariation"/> demands the actual pixels there are not all identical — the real
+    /// "draws nothing" oracle this unit's own doc names: a node the tree swears is visible can still
+    /// be a fully transparent hole, a zero-alpha color, or background bleeding straight through, and
+    /// no <c>IsVisibleInTree</c>/rect-size check will ever see that. This is why the check must run
+    /// windowed with real rendering (this class's own precondition) rather than headless.</para>
+    ///
+    /// <para>Records an anomaly rather than throwing — the same idiom every other check in this file
+    /// already uses — so one bad step reports instead of aborting the remaining runs. A no-op while
+    /// <see cref="TutorialFlow.Active"/> is false (chain finished or dismissed already) and a
+    /// declared <see cref="TutorialAnchorKind.None"/> is logged, never flagged — both are honest, not
+    /// a gap.</para>
+    ///
+    /// <para><b>Known gap, reported rather than silently assumed away:</b> <see
+    /// cref="TutorialOverlay.PulsingTargetRect"/> does not apply the scroll-ancestor clipping <see
+    /// cref="TutorialOverlay.Tick"/> itself already performs (U11) — a control genuinely scrolled out
+    /// of its own panel would still report a rect here. None of the ten registry rows anchor inside a
+    /// scrollable panel body today, so this cannot false-negative against the live registry, but it
+    /// is not proven impossible for a future row and is not re-solved by this unit.</para>
+    /// </summary>
+    private void AssertPointerOnScreen(MainUi ui, string label)
+    {
+        if (!ui.Tutorial.Active)
+        {
+            return; // chain finished or dismissed this run — nothing to point at, and that's honest
+        }
+
+        var step = ui.Tutorial.Step;
+        var anchor = ui.Overlay.CurrentAnchor;
+
+        try
+        {
+            int x0, y0, x1, y1;
+            string where;
+
+            switch (anchor.Kind)
+            {
+                case TutorialAnchorKind.None:
+                    _report.AppendLine($"- tutorial `{step}` ({label}): anchor is None (declared, not a gap)");
+                    return;
+
+                case TutorialAnchorKind.Building:
+                case TutorialAnchorKind.Station:
+                {
+                    var key = ui.Overlay.PulsingBuildingKey;
+                    if (key is null)
+                    {
+                        Note($"tutorial `{step}` ({label}): overlay resolved no world target for a " +
+                             $"{anchor.Kind} anchor — pointer points at nothing");
+                        return;
+                    }
+
+                    var node = anchor.Kind == TutorialAnchorKind.Station
+                        ? ui.Town.FindStation(anchor.Key!, anchor.StationId!)
+                        : ui.Town.FindBuilding(anchor.Key!);
+                    var screen = ui.Town.WorldToScreen(node.GlobalPosition);
+                    var onViewport = ui.Town.ViewportScreenRect.HasPoint(screen);
+
+                    if (!onViewport && !ui.Overlay.OffCameraMarkerVisible)
+                    {
+                        // TutorialOverlay.UpdateOffCameraMarker's own documented exemption: a Building
+                        // anchor naming a town building while the player stands inside an UNRELATED
+                        // interior sits under a camera clamped to that room's own disjoint coordinate
+                        // island — projecting the town building's position there would be arithmetic
+                        // noise, not a real screen point, so the marker deliberately stays dark rather
+                        // than point in a confidently wrong direction. Matched by the EXACT SAME
+                        // condition that class checks, so this reports declared silence, not a gap —
+                        // caught live by this unit's own red/green demo run (see its PR body).
+                        if (anchor.Kind == TutorialAnchorKind.Building && ui.Town.InteriorActive &&
+                            ui.Town.InteriorVenueKey != anchor.Key)
+                        {
+                            _report.AppendLine($"- tutorial `{step}` ({label}): {anchor.Kind} target " +
+                                $"\"{key}\" silent by design — player is inside an unrelated interior " +
+                                $"(\"{ui.Town.InteriorVenueKey}\"), see TutorialOverlay's own camera-island exemption");
+                            return;
+                        }
+
+                        Note($"tutorial `{step}` ({label}): {anchor.Kind} target \"{key}\" is off " +
+                             "screen and the off-camera marker is not showing — pointer points at nothing");
+                        return;
+                    }
+
+                    var center = onViewport ? screen : ui.Overlay.OffCameraMarkerCenter;
+                    where = onViewport ? $"world sprite \"{key}\"" : $"off-camera marker for \"{key}\"";
+                    x0 = (int)center.X - 24;
+                    y0 = (int)center.Y - 24;
+                    x1 = (int)center.X + 24;
+                    y1 = (int)center.Y + 24;
+                    break;
+                }
+
+                default: // Hud, PanelControl, PanelSection — all resolve to a screen-space Control
+                {
+                    var name = ui.Overlay.PulsingHudControlName;
+                    var rect = ui.Overlay.PulsingTargetRect();
+                    if (name is null || rect is null)
+                    {
+                        Note($"tutorial `{step}` ({label}): overlay resolved no on-screen control for " +
+                             $"a {anchor.Kind} anchor \"{anchor.Key}/{anchor.ControlName}\" — pointer points at nothing");
+                        return;
+                    }
+
+                    if (rect.Value.Size.X < 1f || rect.Value.Size.Y < 1f)
+                    {
+                        Note($"tutorial `{step}` ({label}): resolved control \"{name}\" has a " +
+                             $"degenerate rect {rect.Value.Size} — pointer points at nothing");
+                        return;
+                    }
+
+                    if (!ScreenObservation.WindowRect(GetViewport()).Intersects(rect.Value))
+                    {
+                        Note($"tutorial `{step}` ({label}): resolved control \"{name}\" is entirely " +
+                             "outside the game window — pointer points at nothing");
+                        return;
+                    }
+
+                    where = $"control \"{name}\"";
+                    x0 = (int)rect.Value.Position.X;
+                    y0 = (int)rect.Value.Position.Y;
+                    x1 = (int)(rect.Value.Position.X + rect.Value.Size.X);
+                    y1 = (int)(rect.Value.Position.Y + rect.Value.Size.Y);
+                    break;
+                }
+            }
+
+            var img = GetViewport().GetTexture().GetImage();
+            img.SavePng(OutDir + $"r{_run}_tut_{label}_{step}.png");
+            _shots++;
+
+            if (!RegionHasVariation(img, x0, y0, x1, y1))
+            {
+                Note($"tutorial `{step}` ({label}): {where} resolved but the region it occupies is a " +
+                     "uniform blank — a node the tree swears is visible, drawing nothing (pointer points at nothing)");
+                return;
+            }
+
+            _report.AppendLine($"- tutorial `{step}` ({label}): pointer resolved to {where}, on screen, drawing pixels — ok");
+        }
+        catch (Exception ex)
+        {
+            Note($"tutorial `{step}` ({label}) pointer check THREW {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// The actual "draws something" oracle <see cref="AssertPointerOnScreen"/> needs: a handful of
+    /// sample points inside <paramref name="x0"/>..<paramref name="y1"/> (clamped to <paramref
+    /// name="img"/>'s own bounds) are not all identical. Scoped to one small region rather than
+    /// <see cref="Shot"/>'s whole-frame version, which would drown a small, genuinely-blank pointer
+    /// target in the rest of a busy screen.
+    /// </summary>
+    private static bool RegionHasVariation(Image img, int x0, int y0, int x1, int y1)
+    {
+        var cx0 = Math.Clamp(x0, 0, img.GetWidth() - 1);
+        var cy0 = Math.Clamp(y0, 0, img.GetHeight() - 1);
+        var cx1 = Math.Clamp(x1, cx0 + 1, img.GetWidth());
+        var cy1 = Math.Clamp(y1, cy0 + 1, img.GetHeight());
+
+        var strideX = Math.Max(1, (cx1 - cx0) / 6);
+        var strideY = Math.Max(1, (cy1 - cy0) / 6);
+
+        Color? first = null;
+        for (var y = cy0; y < cy1; y += strideY)
+        {
+            for (var x = cx0; x < cx1; x += strideX)
+            {
+                var c = img.GetPixel(x, y);
+                if (first is null)
+                {
+                    first = c;
+                }
+                else if (c != first.Value)
+                {
+                    return true;
+                }
             }
         }
 
