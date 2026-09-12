@@ -207,6 +207,25 @@ public static class CampaignSave
         }
     }
 
+    /// <summary>
+    /// Delete the save FILE and nothing else — the same idiom <c>UiSettings</c>,
+    /// <c>ClockSettings</c> and <c>TutorialFlow</c> already expose for test teardown.
+    ///
+    /// <para>Deliberately NOT <see cref="Clear"/>, which is production behaviour and carries a
+    /// side effect a teardown must not have: it also calls <c>ArcSceneFlow.ResetForNewGame</c>,
+    /// because a fresh campaign inheriting the last one's revealed scenes would be a Torvald who
+    /// has already told you about his brother in a world where he has never been down a stair.
+    /// Correct there, wrong here — a test that reveals an arc scene and then asserts on the caption
+    /// it granted would have that fact wiped out from under it by its own teardown.</para>
+    /// </summary>
+    public static void DeleteForTests()
+    {
+        if (GodotFileAccess.FileExists(SavePath))
+        {
+            DirAccess.RemoveAbsolute(ProjectSettings.GlobalizePath(SavePath));
+        }
+    }
+
     private static Envelope? ReadEnvelope()
     {
         if (!GodotFileAccess.FileExists(SavePath))
