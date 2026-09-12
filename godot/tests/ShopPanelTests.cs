@@ -62,6 +62,59 @@ public class ShopPanelTests
         }
     }
 
+    /// <summary>
+    /// U49 ("a player can set a price, and a test proves it"): every other scenario in this file sets
+    /// <c>StockPrice_{id}</c>'s <see cref="SpinBox.Value"/> straight from C#, so the shelf price had
+    /// never once been driven the way a player actually sets one. This scenario drives it through
+    /// <see cref="HumanPlayer.EnterNumber"/> — a real click into the SpinBox's editable field, real
+    /// digit keys, a real Enter — and reads the proof off <c>state.Player.Shelf</c>, never off the
+    /// widget: the widget echoing "777" would only prove Godot can display text.
+    /// </summary>
+    [TestCase]
+    public async Task HumanPlayer_TypesAStockPrice_AndTheShelvedItemLandsAtThatPrice()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            var itemId = CraftDagger(ui);
+            var player = new HumanPlayer(ui);
+            await player.WaitForLayout(ui.Shop); // freshly opened panel: let its rows reach their
+                                                  // final position before clicking one of them.
+            const int typedPrice = 777; // three digits, far above SuggestedPrice.For's usual floor —
+                                         // coincidentally matching the pre-filled suggestion would hide
+                                         // a capability that silently no-ops.
+
+            // The unshelved craft's card sits below the fold on a fresh open (RealDragOntoShelfTests
+            // hit the same thing) — a player scrolls to it before touching anything in it.
+            var priceField = Find<SpinBox>(ui.Shop, $"StockPrice_{itemId.Value}");
+            AssertThat(await player.ScrollIntoView(priceField))
+                .OverrideFailureMessage(
+                    "Could not scroll the price field into view at all — a player cannot type a price " +
+                    "into a field they cannot see.")
+                .IsTrue();
+
+            await player.EnterNumber($"StockPrice_{itemId.Value}", typedPrice);
+
+            var stockButton = Find<Button>(ui.Shop, $"Stock_{itemId.Value}");
+            AssertThat(await player.ScrollIntoView(stockButton))
+                .OverrideFailureMessage("Could not scroll the Stock button into view after pricing it.")
+                .IsTrue();
+            await player.ClickControl(stockButton, "Stock");
+            ui.Adapter.AdvancePhase(); // lands the stock
+
+            var shelved = ui.Adapter.CurrentState.Player.Shelf.Single(e => e.Item == itemId);
+            AssertThat(shelved.Price)
+                .OverrideFailureMessage(
+                    "The typed stock price never reached the sim -- the shelved item's own price is " +
+                    "the proof, not the SpinBox's displayed Value.")
+                .IsEqual(typedPrice);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
     // U25 (c): StageStrip_IsMountedOutsideTheScrollBody_SoItStaysVisibleWhilScrolling deleted —
     // the drawer's own lit customer strip (ShopPanel.Stage) it pinned is retired as redundant.
     // U4 (painted-interiors plan): the InteriorStage-hosted richer choreography that superseded it
