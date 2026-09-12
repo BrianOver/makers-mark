@@ -203,6 +203,30 @@ public partial class NewGameSelect : Control
     private LineEdit _seedField = null!;
     private Label _seedError = null!;
 
+    /// <summary>P2-SCREEN-17: Begin/Back, hidden while <see cref="_replaceSaveConfirmRow"/> is up so
+    /// the primer is never in two decisions at once — see that field's own doc.</summary>
+    private HBoxContainer _primerActions = null!;
+
+    /// <summary>
+    /// P2-SCREEN-17 (plan line ~4636, "the save-replace press names the day it destroys"):
+    /// <see cref="OnBeginPressed"/>'s own <see cref="CampaignSave.Clear"/> call was already correct
+    /// where it sits — its comment there explains why a fresh campaign must clear the old save
+    /// immediately rather than waiting for the first autosave, and this unit does not touch that.
+    /// The defect was that the only cost-naming anywhere on this screen was <see cref="SeedFieldHint"/>'s
+    /// dim "Starting a new campaign replaces this save" line, clicked past three screens earlier.
+    /// This row is the confirm: shown only when <see cref="CampaignSave.Peek"/> finds an actual save
+    /// to lose (never <see cref="Ui.TutorialFlow.HasPriorProgress"/> — a different file, a different
+    /// question), quoting that save's own day. House idiom for a confirm, matching
+    /// <c>ObjectiveTracker</c>'s dismiss-confirm row: no modal <c>AcceptDialog</c>/
+    /// <c>ConfirmationDialog</c> anywhere in this project (<c>ShopPanelTests</c> asserts none exists),
+    /// an inline row instead. Law 2 ("no timers on decisions"): this row only ever resolves on the
+    /// player's own next press — <see cref="OnReplaceSaveConfirmed"/> or
+    /// <see cref="HideReplaceSaveConfirm"/> — never a countdown or an auto-dismiss.
+    /// </summary>
+    private VBoxContainer _replaceSaveConfirmRow = null!;
+
+    private Label _replaceSaveConfirmLabel = null!;
+
     /// <summary>The profession a pick chose, held while the primer is up; null in the picker
     /// state (nothing committed) and cleared again by Back — the "never leak a campaign on
     /// back-out" invariant.</summary>
@@ -715,7 +739,55 @@ public partial class NewGameSelect : Control
         back.Pressed += OnBackPressed;
         actions.AddChild(back);
 
+        _primerActions = actions;
+
+        _replaceSaveConfirmRow = BuildReplaceSaveConfirmRow();
+        _replaceSaveConfirmRow.Visible = false;
+        primer.AddChild(_replaceSaveConfirmRow);
+
         return primer;
+    }
+
+    /// <summary>P2-SCREEN-17: see <see cref="_replaceSaveConfirmRow"/>'s own doc. Two plain buttons —
+    /// no glyphs, no warning color, one sentence above them (set fresh in <see
+    /// cref="ShowReplaceSaveConfirm"/> every time this row is shown) naming exactly what is lost.</summary>
+    private VBoxContainer BuildReplaceSaveConfirmRow()
+    {
+        var row = new VBoxContainer { Name = "ReplaceSaveConfirm" };
+        row.AddThemeConstantOverride("separation", GameTheme.Space12);
+
+        _replaceSaveConfirmLabel = new Label
+        {
+            Name = "ReplaceSaveConfirmLabel",
+            AutowrapMode = TextServer.AutowrapMode.WordSmart,
+        };
+        row.AddChild(_replaceSaveConfirmLabel);
+
+        var buttons = new HBoxContainer { Name = "ReplaceSaveConfirmButtons" };
+        buttons.AddThemeConstantOverride("separation", GameTheme.Space12);
+        row.AddChild(buttons);
+
+        var replace = new Button
+        {
+            Name = "ReplaceSaveConfirmYes",
+            Text = "Replace it",
+            SizeFlagsHorizontal = SizeFlags.ExpandFill,
+            CustomMinimumSize = new Vector2(0, PickButtonHeight),
+        };
+        replace.Pressed += OnReplaceSaveConfirmed;
+        buttons.AddChild(replace);
+
+        var cancel = new Button
+        {
+            Name = "ReplaceSaveConfirmNo",
+            Text = "Cancel",
+            SizeFlagsHorizontal = SizeFlags.ExpandFill,
+            CustomMinimumSize = new Vector2(0, PickButtonHeight),
+        };
+        cancel.Pressed += HideReplaceSaveConfirm;
+        buttons.AddChild(cancel);
+
+        return row;
     }
 
     /// <summary>
@@ -830,6 +902,10 @@ public partial class NewGameSelect : Control
         _returningSmithChoice.Visible = Ui.TutorialFlow.HasPriorProgress;
         SetReturningSmithChoice(skip: false);
 
+        // P2-SCREEN-17: re-armed every time the primer mounts fresh, same reasoning as the returning-
+        // smith choice above — a Back-then-pick-again must never carry a stale confirm row forward.
+        HideReplaceSaveConfirm();
+
         // Defensive (see class doc's FullPlaytest note): a caller that bypasses "New Game" and
         // presses Pick_* directly must still land in a single coherent view, not primer-over-
         // title-menu — so this hides the title menu too, not just the picker.
@@ -854,29 +930,13 @@ public partial class NewGameSelect : Control
             return; // defensive: Begin is only reachable after a pick (Primer stays hidden otherwise)
         }
 
-        // P2-ONBOARD-10 (§11.15, plan line ~4640): the one validated input on this screen.
-        // PRECEDENCE, explicit and never emergent — the Warrant's pin always wins: when
-        // _pendingSeedIsWarrant is true the field is hidden (OnProfessionPicked) and its content
-        // is never even read here, so nothing typed into it — not even a test poking the Text
-        // property directly — can defeat the pin. Every other door reads the field: blank keeps
-        // the wall-clock draw already sitting in _pendingSeed ("surprise me," unchanged from
-        // before this unit); a valid whole number overrides it; anything else refuses to Begin
-        // rather than silently starting on a seed the player never typed — RETURN here leaves the
-        // primer up with SeedError explaining why, exactly as promised on screen.
-        if (!_pendingSeedIsWarrant)
+        // P2-SCREEN-17: seed validation runs FIRST, confirm second. Order matters — a malformed seed
+        // must refuse before the player is ever asked to approve a destruction that then would not
+        // happen, so ResolveSeedField below never touches CampaignSave and this method returns the
+        // instant it refuses, exactly like before this unit.
+        if (!ResolveSeedField())
         {
-            var typed = _seedField.Text.Trim();
-            if (typed.Length > 0)
-            {
-                if (!ulong.TryParse(typed, out var parsedSeed))
-                {
-                    _seedError.Text = SeedFieldErrorText;
-                    _seedError.Visible = true;
-                    return;
-                }
-
-                _pendingSeed = parsedSeed;
-            }
+            return;
         }
 
         // The refusal is not a dead end, and clearing the complaint is the success path's own job
@@ -887,6 +947,93 @@ public partial class NewGameSelect : Control
         // a stale comment: the player believes the sentence, not the state behind it.
         HideSeedError();
 
+        // P2-SCREEN-17: ask only when there is something to destroy. CampaignSave.Peek() reads just
+        // the save's own envelope (day/phase/profession) without rebuilding the world — the same
+        // cheap read BuildContinue already relies on — so a fresh profile with no prior campaign
+        // never sees this row at all and Begin falls straight through to CommitNewCampaign below,
+        // unchanged from before this unit.
+        if (CampaignSave.Peek() is { } existing)
+        {
+            ShowReplaceSaveConfirm(existing.Day);
+            return;
+        }
+
+        CommitNewCampaign();
+    }
+
+    /// <summary>
+    /// P2-ONBOARD-10 (§11.15, plan line ~4640): the one validated input on this screen, factored out
+    /// of <see cref="OnBeginPressed"/> so it can run BEFORE the P2-SCREEN-17 confirm gate. Returns
+    /// false having already shown <see cref="_seedError"/> — true means <see cref="_pendingSeed"/> is
+    /// settled and Begin may proceed (straight through, or via the confirm row).
+    ///
+    /// <para>PRECEDENCE, explicit and never emergent — the Warrant's pin always wins: when
+    /// <see cref="_pendingSeedIsWarrant"/> is true the field is hidden (<see cref="OnProfessionPicked"/>)
+    /// and its content is never even read here, so nothing typed into it — not even a test poking
+    /// the Text property directly — can defeat the pin. Every other door reads the field: blank
+    /// keeps the wall-clock draw already sitting in <see cref="_pendingSeed"/> ("surprise me,"
+    /// unchanged from before this unit); a valid whole number overrides it; anything else refuses
+    /// rather than silently starting on a seed the player never typed.</para>
+    /// </summary>
+    private bool ResolveSeedField()
+    {
+        if (_pendingSeedIsWarrant)
+        {
+            return true;
+        }
+
+        var typed = _seedField.Text.Trim();
+        if (typed.Length == 0)
+        {
+            return true;
+        }
+
+        if (!ulong.TryParse(typed, out var parsedSeed))
+        {
+            _seedError.Text = SeedFieldErrorText;
+            _seedError.Visible = true;
+            return false;
+        }
+
+        _pendingSeed = parsedSeed;
+        return true;
+    }
+
+    /// <summary>P2-SCREEN-17: arm the row with the doomed save's OWN day, read live off
+    /// <see cref="CampaignSave.Peek"/> at press time — never a guess, never a cached value from an
+    /// earlier mount. Hides <see cref="_primerActions"/> so Begin/Back are unreachable while this is
+    /// up: the primer is in exactly one decision at a time, and the only ways out are
+    /// <see cref="OnReplaceSaveConfirmed"/> or <see cref="HideReplaceSaveConfirm"/>.</summary>
+    private void ShowReplaceSaveConfirm(int day)
+    {
+        _replaceSaveConfirmLabel.Text = $"This replaces day {day} of your current campaign.";
+        _primerActions.Visible = false;
+        _replaceSaveConfirmRow.Visible = true;
+    }
+
+    /// <summary>Cancel: the row closes, Begin/Back reappear, and NOTHING ELSE has happened —
+    /// no clear, no campaign, no state touched anywhere. Also this unit's half of confirming (see
+    /// <see cref="OnReplaceSaveConfirmed"/>), and the reset <see cref="OnProfessionPicked"/> calls on
+    /// every fresh mount so a stale row can never carry forward.</summary>
+    private void HideReplaceSaveConfirm()
+    {
+        _replaceSaveConfirmRow.Visible = false;
+        _primerActions.Visible = true;
+    }
+
+    /// <summary>Confirmed: close the row and proceed through the exact same
+    /// <see cref="CommitNewCampaign"/> path Begin always used — one flow, never forked in two.</summary>
+    private void OnReplaceSaveConfirmed()
+    {
+        HideReplaceSaveConfirm();
+        CommitNewCampaign();
+    }
+
+    /// <summary>The Begin path proper — unchanged from before P2-SCREEN-17 except for its name: split
+    /// out of <see cref="OnBeginPressed"/> so both the direct "nothing to destroy" route and the
+    /// confirmed-replace route call exactly one method, never two copies that could drift.</summary>
+    private void CommitNewCampaign()
+    {
         GD.Print($"[NewGameSelect] new campaign: profession {_pendingProfessionId}, seed {_pendingSeed}");
 
         // Honour what the Continue blurb promises: a new campaign REPLACES the save. Clearing here
@@ -897,9 +1044,9 @@ public partial class NewGameSelect : Control
 
         // U17 (§11.14.14 defect): the returning-smith choice. Re-checked against the LIVE
         // HasPriorProgress here, not just trusted from the toggle state — the same defensive
-        // footing as the null-guard above: a caller that bypasses the picker and fires a hidden
-        // control directly (class doc's FullPlaytest note) must never be able to hand a genuine
-        // first-timer the returning-smith reset.
+        // footing as OnBeginPressed's own null-guard on _pendingProfessionId: a caller that
+        // bypasses the picker and fires a hidden control directly (class doc's FullPlaytest note)
+        // must never be able to hand a genuine first-timer the returning-smith reset.
         if (_skipTutorialCourse && Ui.TutorialFlow.HasPriorProgress)
         {
             Ui.TutorialFlow.ResetForReturningSmith();
@@ -925,7 +1072,10 @@ public partial class NewGameSelect : Control
         // FirstTouch/PendingMentorLines state, never on this one-shot new-game signal.
         MainUi.FirstMorningBeatPending = true;
 
-        var state = GameComposition.NewCampaign(_pendingSeed, _pendingProfessionId);
+        // Non-null by construction: CommitNewCampaign is only ever reached after OnBeginPressed's own
+        // guard on _pendingProfessionId (directly, or via the confirm row it gates) — the compiler
+        // just can't see that narrowing across the method split, hence the forgiving operator.
+        var state = GameComposition.NewCampaign(_pendingSeed, _pendingProfessionId!);
         MainUi.AdapterOverride = new SimAdapter(state);
 
         if (SceneChange is not null)
