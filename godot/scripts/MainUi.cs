@@ -2196,8 +2196,11 @@ public partial class MainUi : Control
         // (UI-3) from a full peer chip to a small compact badge folded into the Calendar cluster;
         // the detail stays on the tooltip.
         var actChip = NamedStatChipCompact("ActChip", "Act", ArcActRoman(state.Arc.Act), UiKit.ChipTone.Accent);
+        // P2-HONEST-06: was raw `{state.Arc.Act}` ("ActIII") three inches under a chip already
+        // rendering the SAME value through ArcActRoman ("III") -- the exact split-brain PhaseVocab
+        // exists to prevent, just for CampaignAct instead of DayPhase. One spelling now.
         actChip.TooltipText =
-            $"Campaign arc: {state.Arc.Act}. Advances on the deepest floor your heroes reach; Act III is the climax, then the ending chronicle.";
+            $"Campaign arc: {ArcActRoman(state.Arc.Act)}. Advances on the deepest floor your heroes reach; Act III is the climax, then the ending chronicle.";
         calendar.AddChild(actChip);
 
         // ── WEALTH + HANDS cluster: gold (the bar's biggest value), heroes, action-slot pips ─────

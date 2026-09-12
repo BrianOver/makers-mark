@@ -475,17 +475,23 @@ public partial class LegendsWall : Control
     {
         if (!ProfessionRegistry.TryGet(recipe.Profession, out var profession))
         {
-            return (false, $"Recipe '{recipe.RecipeId}' belongs to unknown profession '{recipe.Profession}'.");
+            // Defensive: a recipe pointing at a profession id that isn't registered at all is a
+            // content bug, not a normal WhyNot a player earns by playing — there is no DisplayName
+            // to resolve for an id the registry has never heard of (P2-HONEST-06: raw registry ids
+            // don't render, and this branch cannot borrow one).
+            return (false, $"Recipe '{recipe.RecipeId}' belongs to an unregistered profession — this is a content bug.");
         }
 
         if (!state.Player.IsSelected(recipe.Profession))
         {
-            return (false, $"Profession '{recipe.Profession}' is not selected.");
+            return (false, $"Profession '{profession!.DisplayName}' is not selected.");
         }
 
         if (!RecipeTable.MaterialGrades.ContainsKey(materialKey))
         {
-            return (false, $"Unknown material '{materialKey}'.");
+            // Same defensive shape as the profession check above: an unregistered material key has
+            // no DisplayName to resolve either.
+            return (false, "Unknown material — this is a content bug.");
         }
 
         var talents = state.Player.TalentsFor(recipe.Profession);
@@ -504,7 +510,7 @@ public partial class LegendsWall : Control
 
         if (state.ActionSlotsRemaining <= 0)
         {
-            return (false, $"No action slots left today (0/{ActionBudget.SlotsPerDay}) — 'next' to advance.");
+            return (false, $"No action slots left today (0/{ActionBudget.SlotsPerDay}) — try again once {PhaseVocab.Display(state)} ends.");
         }
 
         return (true, string.Empty);

@@ -82,7 +82,7 @@ public partial class DemandPanel : SimPanel
             var body = new VBoxContainer();
             card.AddChild(body);
 
-            AddLabel(body, $"  {commission.HeroName} wants a {commission.MinQuality} {commission.Slot} or better{CommissionSystem.SlotHonestyNote(commission.Slot)}");
+            AddLabel(body, $"  {commission.HeroName} wants a {ItemVocab.Display(commission.MinQuality)} {ItemVocab.Display(commission.Slot)} or better{CommissionSystem.SlotHonestyNote(commission.Slot)}");
             var chipRow = AddRow(body);
             chipRow.AddChild(StatChip("Premium", $"{commission.PremiumGold}g", UiKit.ChipTone.Accent));
             chipRow.AddChild(StatChip("Deadline", $"day {commission.DeadlineDay}"));

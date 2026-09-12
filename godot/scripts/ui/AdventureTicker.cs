@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Linq;
 using GameSim.Contracts;
 using GameSim.Heroes;
+using GameSim.Venues;
 using Godot;
 
 namespace GodotClient.Ui;
@@ -164,12 +165,12 @@ public partial class AdventureTicker : PanelContainer
         RecruitArrived e => $"{HeroName(state, e.Hero)} has come to town looking for work.",
 
         CommissionPosted e =>
-            $"{HeroName(state, e.Hero)} wants {e.Slot} work, {e.MinQuality} or better, by day {e.DeadlineDay} " +
+            $"{HeroName(state, e.Hero)} wants {ItemVocab.Display(e.Slot)} work, {ItemVocab.Display(e.MinQuality)} or better, by day {e.DeadlineDay} " +
             $"— {e.PremiumGold}g over list{CommissionSystem.SlotHonestyNote(e.Slot)}.",
         CommissionFulfilled e =>
             $"{HeroName(state, e.Hero)} takes delivery of {ItemName(state, e.Item)} — {e.Premium}g premium.",
         CommissionExpired e =>
-            $"{HeroName(state, e.Hero)} gave up waiting on that {e.Slot} commission{CommissionSystem.SlotHonestyNote(e.Slot)}.",
+            $"{HeroName(state, e.Hero)} gave up waiting on that {ItemVocab.Display(e.Slot)} commission{CommissionSystem.SlotHonestyNote(e.Slot)}.",
 
         // U3: these two fired into total silence for as long as they've existed (Wave 4 and
         // Wave 4c respectively) — no ticker case, no player-visible feedback at all. Signing a
@@ -279,7 +280,11 @@ public partial class AdventureTicker : PanelContainer
 
         // Unknown id: a new incident landed in DirectorSystem.Catalog without copy here. Say
         // something true rather than nothing, so the gap surfaces in play instead of vanishing.
-        _ => $"Word from the {e.VenueId}: {e.IncidentId.Replace('_', ' ')}.",
+        // The venue half has a registered DisplayName and always resolves (every incident fires
+        // from a real venue), so P2-HONEST-06 routes it through the registry below. The incident
+        // half genuinely has no authored copy to fall back to, so it stays a best-effort
+        // humanization of the catalog id — not a registry lookup, so outside that unit's scope.
+        _ => $"Word from {VenueRegistry.Require(e.VenueId).DisplayName.ToLowerInvariant()}: {e.IncidentId.Replace('_', ' ')}.",
     };
 
     private static string ItemName(GameState state, ItemId id) =>
