@@ -326,7 +326,13 @@ public class NewGameSelectTests
 
             // Clock behavior explainer (R7/R8/KTD3 copy) and the exact seed about to be used.
             AssertThat(Find<Label>(screen, "ClockNote").Text).IsNotEmpty();
-            AssertThat(Find<Label>(screen, "SeedLabel").Text).IsEqual("Seed: 999");
+
+            // P2-ONBOARD-10: the seed door — SeedLabel is now the caption, SeedField is the
+            // enterable number itself (pre-filled with the wall-clock draw until the player
+            // types over it).
+            AssertThat(Find<Label>(screen, "SeedLabel").Text).IsNotEmpty();
+            AssertThat(Find<LineEdit>(screen, "SeedField").Text).IsEqual("999");
+            AssertThat(Find<LineEdit>(screen, "SeedField").Editable).IsTrue();
         }
         finally
         {
