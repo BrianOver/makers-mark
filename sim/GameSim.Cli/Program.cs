@@ -8,8 +8,10 @@ using GameSim.Crafting;
 using GameSim.Drama;
 using GameSim.Heroes;
 using GameSim.Kernel;
+using GameSim.Materials;
 using GameSim.Narrative;
 using GameSim.Professions;
+using GameSim.Venues;
 
 // Maker's Mark — text-mode play (U13, R21).
 // Usage: dotnet run --project sim/GameSim.Cli [-- --seed N]
@@ -250,7 +252,7 @@ PrintStatus(state);
 
 while (true)
 {
-    Console.Write($"[day {state.Day} {state.Phase}] > ");
+    Console.Write($"[day {state.Day} {PhaseWord(state.Phase)}] > ");
     var line = Console.ReadLine();
     if (line is null)
     {
@@ -897,15 +899,15 @@ while (true)
         case "recipes":
             foreach (var r in RecipeTable.All.Values)
             {
-                Console.WriteLine($"  {r.RecipeId,-14} t{r.Tier} {r.Slot,-7} {r.MaterialKey} x{r.MaterialQuantity}  atk {r.BaseStats.Attack} def {r.BaseStats.Defense} wt {r.BaseStats.Weight}");
+                Console.WriteLine($"  {r.RecipeId,-14} t{r.Tier} {SlotWord(r.Slot),-7} {MaterialWord(r.MaterialKey)} x{r.MaterialQuantity}  atk {r.BaseStats.Attack} def {r.BaseStats.Defense} wt {r.BaseStats.Weight}");
             }
 
-            // U12 (craft-quality legibility, PKD4): the tier column above IS the ceiling key —
-            // see 'mats' for what each material you're holding caps out at.
+            // U12 (craft-quality legibility): the tier column above IS the ceiling key — see
+            // 'mats' for what each material you're holding caps out at.
             Console.WriteLine("  quality ceiling: a material graded below a recipe's tier caps the "
-                + "craft at Fine; matched grade caps Superior (auto-craft's hard cap too, PKD4); "
-                + "above-tier is uncapped — only the forge minigame reaches past Superior, up to "
-                + "Masterwork. See 'mats' for your materials' ceilings.");
+                + "craft at Fine; matched grade caps Superior — that's auto-craft's hard cap "
+                + "regardless of material; above-tier is uncapped — only the forge minigame reaches "
+                + "past Superior, up to Masterwork. See 'mats' for your materials' ceilings.");
 
             break;
 
@@ -923,7 +925,8 @@ while (true)
                 foreach (var n in profession.TalentNodes.Values)
                 {
                     var have = state.Player.TalentsFor(professionId).Contains(n.NodeId) ? "*" : " ";
-                    Console.WriteLine($" {have} {n.NodeId,-24} needs: {(n.Prerequisites.IsEmpty ? "-" : string.Join(",", n.Prerequisites))}");
+                    var needs = n.Prerequisites.IsEmpty ? "-" : string.Join(",", n.Prerequisites);
+                    Console.WriteLine($" {have} {n.NodeId,-24} needs: {needs}");
                 }
             }
 
@@ -936,7 +939,7 @@ while (true)
             }
             else
             {
-                // U12 (craft-quality legibility, PKD4): the ceiling QualityRoller.MaterialCeiling
+                // U12 (craft-quality legibility): the ceiling QualityRoller.MaterialCeiling
                 // enforces is keyed on (material grade − recipe tier), not the material alone — show
                 // it per tier so the ceiling is readable before crafting, no RNG draw needed.
                 foreach (var (key, qty) in state.Player.Materials)
@@ -947,9 +950,9 @@ while (true)
                     Console.WriteLine($"  {key}: {qty}{note}");
                 }
 
-                Console.WriteLine("  ceiling key: tN = recipe tier; Fine below it, Superior at it "
-                    + "(auto-craft's hard cap too, PKD4), uncapped above it — only 'uncapped' can "
-                    + "reach Masterwork, and only via the forge minigame.");
+                Console.WriteLine("  ceiling key: tN = recipe tier; Fine below it, Superior at it — "
+                    + "that's auto-craft's hard cap regardless of material — uncapped above it; only "
+                    + "'uncapped' can reach Masterwork, and only via the forge minigame.");
             }
 
             break;
@@ -966,7 +969,7 @@ while (true)
             foreach (var item in crafted)
             {
                 var (kills, saves) = LedgerQuery.MarkTally(state, item.Id);
-                Console.WriteLine($"  {item.Id} {item.Name} [{item.Quality}] atk {item.Stats.Attack} def {item.Stats.Defense} — {kills} kills, {saves} saves");
+                Console.WriteLine($"  {item.Id} {item.Name} [{QualityWord(item.Quality)}] atk {item.Stats.Attack} def {item.Stats.Defense} — {kills} kills, {saves} saves");
             }
 
             break;
@@ -1037,7 +1040,7 @@ while (true)
 
             foreach (var party in forecast)
             {
-                Console.WriteLine($"  {string.Join(", ", party.HeroNames)} — {party.VenueId}, target floor {party.TargetFloor}");
+                Console.WriteLine($"  {string.Join(", ", party.HeroNames)} — {VenueWord(party.VenueId)}, target floor {party.TargetFloor}");
                 Console.WriteLine($"    threats: {string.Join(" · ", party.Threats.Select(t => $"F{t.Floor} {t.MonsterKind}"))}");
                 Console.WriteLine(party.GearGaps.IsEmpty
                     ? "    gear: all equipped"
@@ -1124,7 +1127,7 @@ while (true)
             }
 
             var legal = ActionLegality.LegalActions(state, state.Phase);
-            Console.WriteLine($"  LEGAL THIS PHASE ({state.Phase}):");
+            Console.WriteLine($"  LEGAL THIS PHASE ({PhaseWord(state.Phase)}):");
             if (legal.IsEmpty)
             {
                 Console.WriteLine("    (nothing legal right now)");
@@ -1159,7 +1162,7 @@ void TryQueue(PlayerAction action, string queuedMessage)
         // Name the offending verb (finding R3), matching the per-verb error style the id/arg
         // checks use — the verb is the first token of the action's own re-typeable form.
         var verb = CliActionFormat.Format(action)?.Split(' ')[0] ?? action.GetType().Name;
-        Console.WriteLine($"  {verb}: can't do that during {state.Phase} — type 'advice' to see this phase's legal actions.");
+        Console.WriteLine($"  {verb}: can't do that during {PhaseWord(state.Phase)} — type 'advice' to see this phase's legal actions.");
         return;
     }
 
@@ -1187,7 +1190,7 @@ GameState Advance(GameState current)
     {
         if (!rejectedActions.Contains(ore))
         {
-            Console.WriteLine($"  ⛏ bought {ore.Quantity}x {ore.MaterialKey} from H{ore.From.Value}");
+            Console.WriteLine($"  ⛏ bought {ore.Quantity}x {MaterialWord(ore.MaterialKey)} from H{ore.From.Value}");
         }
     }
 
@@ -1649,6 +1652,50 @@ void PrintHeroCard(Hero hero, GameState s)
 }
 
 string HeroName(GameState s, HeroId id) => s.Heroes.TryGetValue(id.Value, out var h) ? h.Name : id.ToString();
+
+// P2-HONEST-14: the ONE place this file turns a DayPhase/QualityGrade/ItemSlot/material key/venue
+// id into player-facing text — the same "one table per enum" discipline
+// godot/scripts/ui/PhaseVocab.cs and ItemVocab.cs already apply for the Godot client's own render
+// layer. GameSim.Cli cannot reference those (a Godot-only client project; this is the sim-side
+// console runner), so this is a deliberately small, separate mirror rather than a shared source of
+// truth. The words below MUST match PhaseVocab.Display/ItemVocab.Display exactly, or the CLI and
+// the client narrate the same sim moment two different ways — the split-brain PhaseVocab's own
+// class doc was written about. A future rename of either table needs a human diff of the other;
+// PlayerVocabularyCensusTests only catches a raw leak, not a word drifting between two declared
+// tables.
+string PhaseWord(DayPhase phase) => phase switch
+{
+    DayPhase.Morning => "Dawn",
+    DayPhase.Expedition => "Quest",
+    DayPhase.Camp => "Vigil",
+    DayPhase.ExpeditionDeep => "Deep Vigil",
+    DayPhase.Evening => "Night",
+    _ => phase.ToString(),
+};
+
+string QualityWord(QualityGrade grade) => grade switch
+{
+    QualityGrade.Poor => "Poor",
+    QualityGrade.Common => "Common",
+    QualityGrade.Fine => "Fine",
+    QualityGrade.Superior => "Superior",
+    QualityGrade.Masterwork => "Masterwork",
+    _ => grade.ToString(),
+};
+
+string SlotWord(ItemSlot slot) => slot switch
+{
+    ItemSlot.Weapon => "Weapon",
+    ItemSlot.Shield => "Shield",
+    ItemSlot.Armor => "Armor",
+    ItemSlot.Consumable => "Consumable",
+    ItemSlot.Trinket => "Trinket",
+    _ => slot.ToString(),
+};
+
+string MaterialWord(string materialKey) => MaterialRegistry.Require(materialKey).DisplayName;
+
+string VenueWord(string venueId) => VenueRegistry.Require(venueId).DisplayName;
 
 // Distinct from the generic '? unknown command': this is a RECOGNIZED verb with bad args
 // (wrong arg count or an id that didn't parse), so it names the verb and shows the exact
