@@ -4720,7 +4720,14 @@ public partial class MainUi : Control
         // MentorBanner.Show's own doc), so routing here is the whole fix.
         if (station.Id == MentorVoice.StationId)
         {
-            Mentor.Show(MentorVoice.CurrentLesson(Tutorial.Active ? Tutorial.Step : null));
+            // P2-MEMORY-05 ("the idle line varies"): once the apprenticeship is done, every press
+            // used to answer with the exact same RestingLine forever — the memorial-nag shape
+            // (1,287 fires, ObjectiveAdvisor's own U8 doc) said with a different face. MentorIdleVoice
+            // speaks the live top objective instead (the same sim-decided reason the Objective HUD
+            // chip already renders), falling back to RestingLine only when nothing is actually happening.
+            Mentor.Show(Tutorial.Active
+                ? MentorVoice.CurrentLesson(Tutorial.Step)
+                : MentorIdleVoice.Line(Adapter.CurrentState));
             return;
         }
 
