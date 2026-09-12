@@ -1851,6 +1851,17 @@ public partial class MainUi : Control
     /// back once the surface opens.</summary>
     private readonly Dictionary<string, (Button Button, string OpenTooltip)> _gatedTrayButtons = new();
 
+    /// <summary>P2-SCREEN-12: the shelf's row list — one <see cref="Label"/> per <see
+    /// cref="SurfaceUnlocks.Gate"/>, rebuilt every <see cref="RefreshBooksShelf"/> tick straight off
+    /// <see cref="SurfaceUnlocks.Gates"/>, never a hand-kept second copy of the seven surfaces.</summary>
+    private VBoxContainer _booksShelfRows = null!;
+
+    /// <summary>P2-SCREEN-12: the shelf itself — a <see cref="Control.TopLevel"/> flyout (see
+    /// its own construction comment in <see cref="BuildUi"/> for why), hidden until the Books Tray
+    /// is hovered so it can never add height to the header or be swept by a geometry test that
+    /// never hovers anything.</summary>
+    private PanelContainer _booksShelf = null!;
+
     /// <summary>Every surface id <see cref="SurfaceEffectivelyOpen"/> has ever reported open —
     /// grows only (mirrors <see cref="TutorialFlow.Step"/>'s own one-way ratchet), so <see
     /// cref="RefreshSurfaceUnlocks"/> can tell "just opened this tick" (worth an arrival toast)
@@ -1925,6 +1936,7 @@ public partial class MainUi : Control
             }
         }
 
+        RefreshBooksShelf(state);
         _surfaceUnlocksSeeded = true;
 
         // §11.13 amendment (U5): the apprenticeship warrant's own dawn beat — once ever, the first
@@ -1937,6 +1949,63 @@ public partial class MainUi : Control
         {
             ShowBellToast(warrantBeat);
         }
+    }
+
+    /// <summary>
+    /// P2-SCREEN-12: the Books Tray becomes a shelf — clear-then-compose straight off <see
+    /// cref="SurfaceUnlocks.Gates"/> (the same pattern <see cref="RefreshBellTray"/> already uses for
+    /// its own chip strip), so the shelf can never drift from the single gate table and never lists a
+    /// surface by hand. A closed row reads its OWN <see cref="SurfaceUnlocks.Gate.ClosedReason"/> as
+    /// standing text — the reason a player used to have to press a disabled button to learn (a real
+    /// click could never even reach it — see <see cref="OpenGatedSurface"/>'s own doc), now readable
+    /// at a glance the moment the shelf is looked at. An open row carries only its own name — no reason
+    /// text at all, which IS the "available" signal (constraint: never a cached flag, always <see
+    /// cref="SurfaceEffectivelyOpen"/>'s live verdict against <paramref name="state"/> this same
+    /// tick).
+    /// </summary>
+    private void RefreshBooksShelf(GameState state)
+    {
+        foreach (var child in _booksShelfRows.GetChildren())
+        {
+            _booksShelfRows.RemoveChild(child);
+            child.Free();
+        }
+
+        foreach (var gate in SurfaceUnlocks.Gates)
+        {
+            var open = SurfaceEffectivelyOpen(state, gate.SurfaceId);
+            var name = ShelfDisplayNameFor(gate.SurfaceId);
+            var row = new Label
+            {
+                Name = $"BooksShelfRow_{gate.SurfaceId}",
+                Text = open ? name : $"{name} — {gate.ClosedReason}",
+                AutowrapMode = TextServer.AutowrapMode.WordSmart,
+            };
+            row.AddThemeColorOverride("font_color", open ? GameTheme.BoneColor : GameTheme.TextDim);
+            _booksShelfRows.AddChild(row);
+        }
+    }
+
+    /// <summary>The player-visible name for a gated tray surface, for the shelf's own row —
+    /// NEVER <paramref name="surfaceId"/> itself (P2-SCREEN-11's own defect, one row over: the tray
+    /// calls "HeroCards" by its display word "Renown", and splicing the raw id in front of a
+    /// sentence read as broken and unfamiliar both). Reuses the leading clause of the button's own
+    /// substantive tooltip (<see cref="RegisterGatedTrayButton"/>'s <c>OpenTooltip</c>) — every one
+    /// of the seven was already authored "Name — sentence" by U7 (§11.12), so this is a read of an
+    /// existing single source, not a second name table. The dictionary miss below can never happen
+    /// on a real gate (every one of the seven is registered in <see cref="BuildUi"/> before the first
+    /// tick ever reaches this), so its fallback is a generic, still-honest phrase rather than the
+    /// raw id — belt-and-suspenders against the exact leak <c>PlayerVocabularyCensusTests</c> exists
+    /// to catch, never a path meant to actually render.</summary>
+    private string ShelfDisplayNameFor(string surfaceId)
+    {
+        if (!_gatedTrayButtons.TryGetValue(surfaceId, out var entry))
+        {
+            return "This book";
+        }
+
+        var dash = entry.OpenTooltip.IndexOf(" — ", StringComparison.Ordinal);
+        return dash < 0 ? entry.OpenTooltip : entry.OpenTooltip[..dash];
     }
 
     /// <summary>The one place every gated tray button's press funnels through — refuses a closed
@@ -3561,6 +3630,64 @@ public partial class MainUi : Control
         trayRow.AddChild(CapTrayIcon(progressButton));
         RegisterGatedTrayButton("Progress", progressButton);
 
+        // P2-SCREEN-12: the tray becomes a shelf on hover — every gated surface's own name, and
+        // (while closed) its own ClosedReason, as standing text a player reads without pressing
+        // anything. Before this unit, TooltipText already carried the same ClosedReason (P2-HONEST-02)
+        // but one icon at a time, on a precise hover, with no visible name at all until that hover
+        // landed; the shelf shows every book at once the moment the tray itself is looked at.
+        //
+        // A TopLevel flyout, not a row this Container lays out: Container.Sort skips a TopLevel
+        // child outright (same as it skips an invisible one), so the shelf can never add height to
+        // the header or shift a sibling — while HIDDEN it is invisible to every geometry sweep this
+        // repo runs (none of them ever hover the tray), and while SHOWN it floats above the header
+        // instead of reflowing it. RefreshBooksShelf keeps its rows honest every tick regardless of
+        // whether it is currently visible, so there is never a stale read the instant it opens.
+        _booksShelf = new PanelContainer { Name = "BooksShelf", Visible = false, TopLevel = true };
+        var shelfStyle = new StyleBoxFlat
+        {
+            BgColor = GameTheme.SurfaceDeep,
+            BorderWidthLeft = 1,
+            BorderWidthRight = 1,
+            BorderWidthTop = 1,
+            BorderWidthBottom = 1,
+            BorderColor = GameTheme.IronColor,
+            CornerRadiusBottomLeft = GameTheme.RadiusChip,
+            CornerRadiusBottomRight = GameTheme.RadiusChip,
+            CornerRadiusTopLeft = GameTheme.RadiusChip,
+            CornerRadiusTopRight = GameTheme.RadiusChip,
+            ContentMarginLeft = GameTheme.Space8,
+            ContentMarginRight = GameTheme.Space8,
+            ContentMarginTop = GameTheme.Space8,
+            ContentMarginBottom = GameTheme.Space8,
+        };
+        _booksShelf.AddThemeStyleboxOverride("panel", shelfStyle);
+        _booksShelf.CustomMinimumSize = new Vector2(ShelfWidth, 0);
+        tray.AddChild(_booksShelf);
+
+        _booksShelfRows = new VBoxContainer { Name = "BooksShelfRows" };
+        _booksShelfRows.AddThemeConstantOverride("separation", GameTheme.Space4);
+        _booksShelf.AddChild(_booksShelfRows);
+
+        void ShowBooksShelf()
+        {
+            var trayRect = tray.GetGlobalRect();
+            _booksShelf.Size = new Vector2(ShelfWidth, _booksShelf.GetCombinedMinimumSize().Y);
+            _booksShelf.GlobalPosition = new Vector2(
+                trayRect.Position.X + trayRect.Size.X - ShelfWidth,
+                trayRect.Position.Y + trayRect.Size.Y + GameTheme.Space4);
+            _booksShelf.Visible = true;
+        }
+
+        void HideBooksShelf() => _booksShelf.Visible = false;
+
+        // Hovering either the tray or the shelf itself keeps it open — the shelf renders just below
+        // the tray, so the cursor crosses from one into the other on its way down to actually read a
+        // row.
+        tray.MouseEntered += ShowBooksShelf;
+        tray.MouseExited += HideBooksShelf;
+        _booksShelf.MouseEntered += ShowBooksShelf;
+        _booksShelf.MouseExited += HideBooksShelf;
+
         // U2 (tutorial-revamp plan, §11.13): the Lessons book — every teaching the guided chain
         // ever showed, permanently, whether the chain is running, dismissed, or done. NOT one of
         // the seven gated books below (SurfaceUnlocks never names "Lessons") — the whole point is
@@ -4514,6 +4641,13 @@ public partial class MainUi : Control
     /// 2*this, exactly the <c>TrayIconSize + 8</c> <see cref="Control.CustomMinimumSize"/> already
     /// declares.</summary>
     private const float TrayIconMargin = 4f;
+
+    /// <summary>P2-SCREEN-12: fixed width (px) of the Books Shelf hover flyout — wide enough for the
+    /// longest standing <see cref="SurfaceUnlocks.Gate.ClosedReason"/> to wrap across two or three
+    /// lines rather than one very long one, narrow enough to stay clear of the 1152px minimum
+    /// supported window's edge when anchored under the tray's own right side (see
+    /// <c>ShowBooksShelf</c>'s local function in <see cref="BuildUi"/>).</summary>
+    private const float ShelfWidth = 340f;
 
     /// <summary>
     /// Cap a tray button's glyph so the TEXTURE stops driving the button's minimum width.
