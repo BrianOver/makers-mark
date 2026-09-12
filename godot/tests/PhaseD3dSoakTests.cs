@@ -8,10 +8,10 @@ namespace GodotClient.Tests;
 
 /// <summary>
 /// 3D-client soak: drive a real MainUi deep into a session (many days) and confirm the whole client
-/// — including the new Phase C/D surfaces (Confidence/Assessment/Act chips, the progression panel,
-/// the per-venue Depths tiles + den threat) — keeps rendering without throwing at LATE-game states
-/// (maxed ladders, escalated dens, a possibly-Ended arc) that the per-feature tests don't reach.
-/// This is the "rounds of play" pass for the 3D game.
+/// — including the new Phase C/D surfaces (Confidence/Act chips, the guild assessor's face, the
+/// progression panel, the per-venue Depths tiles + den threat) — keeps rendering without throwing
+/// at LATE-game states (maxed ladders, escalated dens, a possibly-Ended arc) that the per-feature
+/// tests don't reach. This is the "rounds of play" pass for the 3D game.
 /// </summary>
 [TestSuite]
 [RequireGodotRuntime]
@@ -28,8 +28,15 @@ public class PhaseD3dSoakTests
 
             // The HUD kept its Phase C/D chips through the whole run.
             AssertThat(Find<Control>(ui, "ConfidenceChip")).IsNotNull();
-            AssertThat(Find<Control>(ui, "AssessmentChip")).IsNotNull();
             AssertThat(Find<Control>(ui, "ActChip")).IsNotNull();
+
+            // P2-LONG-17: the assessor is still standing at the board late-game, still captioned.
+            ui.Town._Process(0.0);
+            AssertThat(ui.Town.Assessor).IsNotNull();
+            AssertThat(ui.Town.Assessor!.Caption).IsNotNull();
+            AssertThat(ui.Town.Assessor!.Caption!.Text.Length > 0)
+                .OverrideFailureMessage("the assessor's caption went blank deep into the session")
+                .IsTrue();
 
             // The progression panel opens and renders all five ladders at a matured state.
             Press(ui, "OpenProgress");

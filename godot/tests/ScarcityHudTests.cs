@@ -7,34 +7,142 @@ using GameSim.Kernel;
 using GdUnit4;
 using Godot;
 using GodotClient.Panels;
+using GodotClient.Tools;
 using static GdUnit4.Assertions;
 using static GodotClient.Tests.UiTestSupport;
 
 namespace GodotClient.Tests;
 
 /// <summary>
-/// U10 (first-play/Legends-Visible plan, "surface scarcity in the Godot HUD"): the rent-countdown
-/// chip, the action-slot pip row, and the <see cref="RaidForecastBoard"/> are pure projections of
-/// existing sim state (<c>GameState.Rent</c>/<c>ActionSlotsRemaining</c> and
-/// <see cref="RaidForecast.ForTomorrow"/>) — zero sim change (KTD2). Property-only assertions; no
-/// frame pump (no 3D viewport in this chain, but the no-pump idiom is kept house-wide).
+/// U10 (first-play/Legends-Visible plan, "surface scarcity in the Godot HUD"): the action-slot pip
+/// row and the <see cref="RaidForecastBoard"/> are pure projections of existing sim state
+/// (<c>GameState.ActionSlotsRemaining</c> and <see cref="RaidForecast.ForTomorrow"/>) — zero sim
+/// change (KTD2). Property-only assertions; no frame pump (no 3D viewport in this chain, but the
+/// no-pump idiom is kept house-wide).
+///
+/// <para>P2-LONG-17 ("Rent demoted; the assessor gets a face"): the rent-countdown chip this class
+/// doc used to describe is gone — Rent no longer occupies a permanent HUD chip at all. The tests
+/// below cover its replacement instead: a Morning-only line on the clock banner, stating the sim's
+/// own recorded charge with no pay verb attached (a manual pay button would be "a deadline dressed
+/// as a verb" — the plan's own ruling), plus the two guards this demotion is worth having: no
+/// Rent/Assessment-named chip survives anywhere in the permanent stat-chip row, and no new
+/// pressable verb appeared on the rent path.</para>
 /// </summary>
 [TestSuite]
 [RequireGodotRuntime]
 public class ScarcityHudTests
 {
+    /// <summary>Property-driven, not the default campaign's own numbers: a fixture whose Rent is
+    /// set to values nothing else in this suite happens to produce, so a hardcoded string ("30g",
+    /// the base rent) could never make this pass by accident.</summary>
     [TestCase]
-    public void RentChip_ShowsDaysUntilDueAndAmount()
+    public void RentMorningLine_StatesTheRecordedCharge()
+    {
+        var custom = GameFactory.NewGame(2026) with
+        {
+            Rent = new RentState(DaysUntilDue: 4, AmountDueGold: 77, MissedPayments: 0, ConfidencePermille: 900),
+        };
+        var ui = MountMainUi(new SimAdapter(custom));
+        try
+        {
+            AssertThat(ui.Adapter.CurrentState.Phase)
+                .OverrideFailureMessage("Setup check: this fixture must start in Morning for the rent line to render.")
+                .IsEqual(DayPhase.Morning);
+
+            var clockLabel = Find<Label>(ui, "ClockLabel").Text;
+            AssertThat(clockLabel)
+                .OverrideFailureMessage($"the Morning line never named the sim's own recorded rent (77g/4d): \"{clockLabel}\"")
+                .Contains("77g");
+            AssertThat(clockLabel).Contains("4d");
+        }
+        finally { Unmount(ui); }
+    }
+
+    /// <summary>A missed payment escalates the sim's own record (<see
+    /// cref="RentState.MissedPayments"/>) — the Morning line must name it, still off the recorded
+    /// fields alone, never a formula this client invents.</summary>
+    [TestCase]
+    public void RentMorningLine_NamesMissedPayments_WhenTheSimRecordedAny()
+    {
+        var custom = GameFactory.NewGame(2026) with
+        {
+            Rent = new RentState(DaysUntilDue: 1, AmountDueGold: 55, MissedPayments: 3, ConfidencePermille: 400),
+        };
+        var ui = MountMainUi(new SimAdapter(custom));
+        try
+        {
+            var clockLabel = Find<Label>(ui, "ClockLabel").Text;
+            AssertThat(clockLabel).Contains("55g");
+            AssertThat(clockLabel)
+                .OverrideFailureMessage($"the Morning line never named the 3 missed payments: \"{clockLabel}\"")
+                .Contains("3 missed");
+        }
+        finally { Unmount(ui); }
+    }
+
+    /// <summary>Only Morning gets the line — outside it, the fact is still true but costs no
+    /// screen space, which is the actual demotion (never present all day the way the old chip
+    /// was).</summary>
+    [TestCase]
+    public void RentMorningLine_NeverRendersOutsideMorning()
+    {
+        var custom = GameFactory.NewGame(2026) with
+        {
+            Phase = DayPhase.Evening,
+            Rent = new RentState(DaysUntilDue: 4, AmountDueGold: 77, MissedPayments: 0, ConfidencePermille: 900),
+        };
+        var ui = MountMainUi(new SimAdapter(custom));
+        try
+        {
+            var clockLabel = Find<Label>(ui, "ClockLabel").Text;
+            AssertThat(clockLabel)
+                .OverrideFailureMessage($"the rent line leaked outside Morning: \"{clockLabel}\"")
+                .NotContains("77g");
+        }
+        finally { Unmount(ui); }
+    }
+
+    /// <summary>Scans whatever chips actually live in the permanent stat-chip row, rather than
+    /// asserting the two removed node NAMES are individually absent — so a differently-named
+    /// future re-add of a demoted Rent/Assessment gauge is still caught.</summary>
+    [TestCase]
+    public void StatChips_CarryNoPermanentChipForRentOrGuildAssessment()
     {
         var ui = MountMainUi();
         try
         {
-            var state = ui.Adapter.CurrentState;
-            var rentChip = Find<Control>(ui, "RentChip");
-            var text = RenderedText(rentChip);
+            var statChips = Find<HBoxContainer>(ui, "StatChips");
+            var names = ScreenObservation.Descendants(statChips).Select(n => n.Name.ToString()).ToList();
 
-            AssertThat(text).Contains($"{state.Rent.DaysUntilDue}d");
-            AssertThat(text).Contains($"{state.Rent.AmountDueGold}g");
+            AssertThat(names.Any(n => n.Contains("Rent")))
+                .OverrideFailureMessage($"a Rent-named node still lives in the permanent stat-chip row: {string.Join(", ", names)}")
+                .IsFalse();
+            AssertThat(names.Any(n => n.Contains("Assessment")))
+                .OverrideFailureMessage($"an Assessment-named node still lives in the permanent stat-chip row: {string.Join(", ", names)}")
+                .IsFalse();
+        }
+        finally { Unmount(ui); }
+    }
+
+    /// <summary>The ruling's own guard, and the one most worth having: demoting Rent must never
+    /// grow a manual pay verb (§11's own words — "a deadline dressed as a verb"). Scans every
+    /// Button in the whole client rather than one known location.</summary>
+    [TestCase]
+    public void NoNewPressableVerbAppearsOnTheRentPath()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            var suspects = ScreenObservation.Descendants(ui).OfType<Button>()
+                .Where(b => b.Name.ToString().Contains("Rent")
+                    || (b.Text is { Length: > 0 } text && text.Contains("Rent")))
+                .ToList();
+
+            AssertThat(suspects.Count)
+                .OverrideFailureMessage(
+                    "a rent-related pressable verb exists — the plan's own ruling is that a pay " +
+                    $"button would be a deadline dressed as a verb: {string.Join(", ", suspects.Select(b => b.Name))}")
+                .IsEqual(0);
         }
         finally { Unmount(ui); }
     }
