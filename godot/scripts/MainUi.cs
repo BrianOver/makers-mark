@@ -1912,7 +1912,16 @@ public partial class MainUi : Control
             if (open && _openSurfaceIds.Add(gate.SurfaceId) && _surfaceUnlocksSeeded
                 && Adapter.LastRejections.IsEmpty)
             {
-                ShowBellToast($"{gate.SurfaceId}'s open now — {gate.OpenedReason}");
+                // P2-SCREEN-11 (the strip decodes): was `$"{gate.SurfaceId}'s open now — {gate.
+                // OpenedReason}"` — a raw registry id spliced onto a sentence that already stands
+                // alone (SurfaceUnlocksTests.EveryGate_NamesDistinctNonEmptyClosedAndOpenedReasons
+                // pins OpenedReason as a complete present-tense sentence written for exactly this
+                // toast). For "HeroCards" that rendered "HeroCards's open now — you've made your
+                // first sale...", naming a word the player has never seen (the tray calls this
+                // surface "Renown") in front of a broken possessive. OpenedReason alone is correct
+                // and sufficient; only its case needs fixing, since every OpenedReason is authored
+                // lowercase-first — a leftover of the deleted prefix it used to continue.
+                ShowBellToast(CapitalizeFirst(gate.OpenedReason));
             }
         }
 
@@ -1941,7 +1950,12 @@ public partial class MainUi : Control
         var state = Adapter.CurrentState;
         if (!SurfaceEffectivelyOpen(state, surfaceId))
         {
-            ShowBellToast(SurfaceUnlocks.GateFor(surfaceId)?.ClosedReason ?? $"{surfaceId} is not open yet.");
+            // P2-SCREEN-11 (the strip decodes): the fallback used to be `$"{surfaceId} is not open
+            // yet."` — a raw registry id the player has no word for (this method's own doc: a real
+            // click could not reach this branch, only a test harness or a future hotkey bypassing
+            // the Disabled guard). It never needs the id at all; same honest-but-generic idiom
+            // LastResort already uses for its own unreachable corners.
+            ShowBellToast(SurfaceUnlocks.GateFor(surfaceId)?.ClosedReason ?? "That's not open yet.");
             return;
         }
 
@@ -3125,6 +3139,14 @@ public partial class MainUi : Control
         ToastRemaining = RejectionToastSeconds;
     }
 
+    /// <summary>P2-SCREEN-11: <see cref="SurfaceUnlocks.Gate.OpenedReason"/> is authored lowercase-
+    /// first (every one of the seven gates — it used to continue a clause this unit deleted, see
+    /// <see cref="RefreshSurfaceUnlocks"/>'s own remark), so the toast that now renders it standalone
+    /// needs its first letter capitalized. Ordinal, not culture-aware: this is UI chrome, not
+    /// localized prose.</summary>
+    private static string CapitalizeFirst(string text) =>
+        string.IsNullOrEmpty(text) ? text : char.ToUpperInvariant(text[0]) + text[1..];
+
     private void BuildUi()
     {
         SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
@@ -3553,8 +3575,29 @@ public partial class MainUi : Control
         // U6/U7 rejection banner: a transient, themed, player-phrased line — hidden
         // except while a toast is live (OnPhaseCompleted shows it, ClearToast/_Process
         // hide it). NOT a persistent status readout, and never the raw kernel string.
+        //
+        // P2-SCREEN-11 (reclaim the height): wrapped in a plain (non-Container) Control with a
+        // fixed CustomMinimumSize — the same StatChipsWrap/TimelineWrap/TickerWrap pattern this
+        // method already uses three times, and for the identical reason (see StatChipsWrap's own
+        // remark above: a Container's reported minimum is its CONTENT'S, a plain Control's is only
+        // ever its own CustomMinimumSize). Unwrapped, ToastBanner reported zero height while hidden
+        // and its Label's real height — one line, or two on a long joined-rejection/gate-open
+        // message — while shown, so WorldSlot (the ExpandFill sibling immediately below, in this
+        // same `layout` VBox) visibly resized every single time any toast opened or closed. Reserve
+        // one line's worth always, the same 28px AdventureTicker already reserves for the identical
+        // shape (bare PanelContainer, one Label, no font/style override) a few rows down — so
+        // WorldSlot's height now holds constant regardless of whether a toast is live, and a rare
+        // overflowing line clips instead of growing the layout.
+        var toastWrap = new Control
+        {
+            Name = "ToastWrap",
+            ClipContents = true,
+            CustomMinimumSize = new Vector2(0, 28),
+        };
+        layout.AddChild(toastWrap);
         _toastBanner = new PanelContainer { Name = "ToastBanner", Visible = false };
-        layout.AddChild(_toastBanner);
+        _toastBanner.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+        toastWrap.AddChild(_toastBanner);
         _toast = new Label
         {
             Name = "RejectionToast",
