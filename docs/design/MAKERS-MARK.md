@@ -4692,6 +4692,7 @@ name (§11.6 rule 4).
 | P2-HONEST-17 | `GameState.RivalMarketSharePermille` gets a client reader — the idle-day cost becomes legible | `godot/scripts/panels/ShopPanel.cs` | — | [G] |
 | P2-HONEST-18 | `InFlightExpedition.Gold` gets a client reader, or its withholding gets a stated reason | `godot/scripts/panels/CampPanel.cs` | — | [G] |
 | P2-HONEST-19 | The numeric-threshold gate family gets a satisfiability guard — `SatisfiableGateCensusTests` cannot see it | `sim/GameSim.Tests/`, `sim/GameSim/Drama/DirectorSystem.cs`, `sim/GameSim/Venues/`, `sim/GameSim/Crafting/TalentTree.cs` | P2-HONEST-07 | [S] |
+| P2-HONEST-20 | `SHOT_STATE=PhaseN` lands somewhere its own comment does not claim — the capture harness's phase map is wrong | `godot/tools/shot_harness.gd`, `tools/shoot.ps1` | — | [G] |
 
 The per-domain counts, the landed/unbuilt split, and which rows carry a Contracts micro-PR, a
 golden re-record or a balance re-baseline are **derived, not stated here**: run
@@ -4884,6 +4885,19 @@ warn about.
   `LedgerModal`'s earned chips). No comment anywhere claims the mid-raid withhold is a deliberate
   suspense choice, so it reads as an oversight rather than a design decision until one of these two
   things is true.
+
+**The capture harness's phase map, measured 2026-09-11 (`P2-HONEST-20`).** `shot_harness.gd`'s
+own comment says `SHOT_STATE=PhaseN` presses the bell N times to "land on phase N of the day's
+actual 5-phase cycle -- Morning/Dawn=0 -> Expedition/Quest=1 -> Camp/Vigil=2 -> ExpeditionDeep/Deep
+Vigil=3 -> Evening/Night=4". Three captures say otherwise, read off the HUD's own phase label:
+`Phase0` -> Dawn (correct), `Phase1` -> **Vigil**, `Phase2` -> **Night**, `Phase4` -> **Day 2,
+Vigil**. The mechanism is visible in the code the comment sits above: all N presses are emitted in
+a single frame, and Expedition and ExpeditionDeep are resolution steps the day does not rest in, so
+each press skips one. Anyone reaching for "the Evening town" passes `Phase4` and photographs the
+next day's camp instead -- and this repo's own proven kill chain is a stale comment becoming an
+instruction (`QualityRoller`'s `AutoCraftGrade`, three generations deep). Booked rather than fixed
+in place because it is the capture tooling, not the game: it decides what a later session BELIEVES
+it photographed.
 
 ### The anomaly-coverage sweep, 2026-09-05
 
