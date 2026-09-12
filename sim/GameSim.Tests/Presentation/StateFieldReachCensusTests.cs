@@ -203,6 +203,12 @@ public class StateFieldReachCensusTests
     {
         // ---- AttributionBeat: the counterfactual-proof beat (link 4) ----
         ["AttributionBeat.Beat"] = new(FieldKind.Rendered, "godot/scripts/panels/DelveStage.cs (kill-poof/loot-sparkle/proof-flare framing keyed by BeatType)"),
+        // P2-MEMORY-05: crossed the N=3 sim-reader bar once SignedWorkInscription.cs became a third
+        // sim/GameSim/**/*.cs file matching ".Detail" — the property-name collision this census's
+        // own preamble already warns about (Detail is shared with ItemHistoryEntry.Detail below).
+        // Already RENDERED before this PR, just never counted: MineWatch's own event-line reads it.
+        ["AttributionBeat.Detail"] = new(FieldKind.Rendered,
+            "godot/scripts/panels/MineWatch.cs:1326 (AttributionBeatEvent b => $\"{HeroLabel(...)} — {b.Detail} (floor {b.Floor})\")"),
         ["AttributionBeat.Floor"] = new(FieldKind.Rendered, "godot/scripts/panels/ScryingMirror.cs (AttributionBeat_{item}_{floor} provenance buttons)"),
         ["AttributionBeat.Hero"] = new(FieldKind.Rendered, "godot/scripts/panels/LedgerModal.cs (lead attribution card, LedgerCard_0)"),
         ["AttributionBeat.Item"] = new(FieldKind.Rendered, "godot/scripts/panels/ScryingMirror.cs (AttributionBeat_{item}_{floor} provenance buttons)"),
@@ -435,6 +441,11 @@ public class StateFieldReachCensusTests
 
         // ---- ItemHistoryEntry / ItemMemory: ProvenanceCard / deeds tally ----
         ["ItemHistoryEntry.Day"] = new(FieldKind.Rendered, "godot/scripts/panels/ProvenanceCard.cs (dated history entries)"),
+        // P2-MEMORY-05: same bar-crossing as AttributionBeat.Detail above (SignedWorkInscription.cs
+        // is the third sim reader of ".Detail") — already RENDERED before this PR via
+        // ProvenanceCard's own HistoryTimeline line, just never counted.
+        ["ItemHistoryEntry.Detail"] = new(FieldKind.Rendered,
+            "godot/scripts/panels/ProvenanceCard.cs (HistoryTimeline: \"Day {h.Day} — {h.Kind}: {h.Detail}\")"),
         ["ItemHistoryEntry.Kind"] = new(FieldKind.Rendered, "godot/scripts/panels/ProvenanceCard.cs (kill/save history line)"),
         ["ItemMemory.Item"] = new(FieldKind.Rendered, "godot/scripts/panels/HeroPanel.cs (deeds tally cross-references the item)"),
 
@@ -482,7 +493,11 @@ public class StateFieldReachCensusTests
     // never recomputing a threshold client-side. The census working as intended: a GAP this repo
     // named on purpose closed the moment a renderer actually read the field, and the count moves,
     // not just the row.
-    private const int ExpectedRenderedCount = 122;
+    // 122 -> 124 (P2-MEMORY-05): AttributionBeat.Detail and ItemHistoryEntry.Detail newly cross the
+    // N=3 sim-reader bar (SignedWorkInscription.cs is a third sim/GameSim/**/*.cs file matching
+    // ".Detail") — both were already RENDERED (MineWatch.cs / ProvenanceCard.cs respectively), just
+    // never counted below the bar. No new client surface; the census catching up to one already there.
+    private const int ExpectedRenderedCount = 124;
     private const int ExpectedRoutedCount = 9;
     private const int ExpectedInternalCount = 6;
     // 12 -> 8: the same join, mirrored — the four fields that left GAP for RENDERED above.

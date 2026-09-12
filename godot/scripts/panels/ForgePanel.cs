@@ -304,6 +304,7 @@ public partial class ForgePanel : SimPanel
     private Label? _ceremonyGrade;
     private Label? _ceremonyStars;
     private HBoxContainer? _ceremonyPips;
+    private Label? _ceremonySignedWork;
     private double _ceremonyRemaining = -1;
 
     // ── U-T2 Wave B (§11.14.4, Act I): Bryn's own teaching banner — see BuildMentorBanner's doc.
@@ -1698,6 +1699,20 @@ public partial class ForgePanel : SimPanel
         _ceremonyPips.AddChild(StatChip("Forge", subScores[1].ToString(), PipTone(subScores[1])));
         _ceremonyPips.AddChild(StatChip("Quench", subScores[2].ToString(), PipTone(subScores[2])));
 
+        // P2-MEMORY-05: "the forge speaks" — before this unit the ceremony rendered the same
+        // grade/stars/pips for a Signed Work as for any ordinary craft; nothing here ever read
+        // Item.IsSigned at all. SignedWorkInscription is the SAME read model a Provenance browse
+        // card would read (never a second opinion), so the two can never say different things.
+        // The item this very craft just minted is the tail of Adapter.LastEvents — Queue() (called
+        // by our own caller, OnQuenchFinished, immediately before this method) appends this craft's
+        // ItemCrafted onto that accumulated list, so the LAST one is always this craft's own.
+        var inscription = Adapter?.LastEvents.OfType<ItemCrafted>().LastOrDefault() is { } crafted
+            && Adapter!.CurrentState.Items.TryGetValue(crafted.Item.Value, out var craftedItem)
+                ? SignedWorkInscription.Render(craftedItem)
+                : string.Empty;
+        _ceremonySignedWork!.Text = inscription;
+        _ceremonySignedWork.Visible = inscription.Length > 0;
+
         GodotClient.Audio.AudioDirector.For(this)?.Play(GradeStingCueFor(band), "grade-sting");
 
         _ceremony!.Visible = true;
@@ -2439,6 +2454,16 @@ public partial class ForgePanel : SimPanel
 
         _ceremonyPips = AddRow(body);
         _ceremonyPips.Name = "ForgeCeremonyPips";
+
+        // P2-MEMORY-05 ("The Signed Work speaks"): hidden by default — ShowCeremony reveals it
+        // only for the rare craft that just earned a legend name (Item.IsSigned). Its own row so a
+        // width bug in ONE label (see MentorBannerWrapWidth's own doc for this class' history with
+        // exactly that class of bug) can never be blamed on the grade/star labels above it.
+        _ceremonySignedWork = AddLabel(body, string.Empty);
+        _ceremonySignedWork.Name = "ForgeCeremonySignedWork";
+        _ceremonySignedWork.HorizontalAlignment = HorizontalAlignment.Center;
+        _ceremonySignedWork.AddThemeColorOverride("font_color", GameTheme.HeaderColor);
+        _ceremonySignedWork.Visible = false;
 
         var skip = AddButton(body, "ForgeCeremonySkip", "Skip", Verdict.Ok, HideCeremony);
         skip.SizeFlagsHorizontal = SizeFlags.ShrinkCenter;
