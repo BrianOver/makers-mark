@@ -12,7 +12,7 @@ namespace GodotClient.Tests;
 /// P2-SCREEN-03 (§11.15): the live-mount half of the discovery proof. <see
 /// cref="GameSim.Tests.Presentation.SurfaceClaimDiscoveryCensusTests"/> (fast lane) is a text scan —
 /// it proves the SOURCE declares a claim for every surface shaped like a claimable modal. This suite
-/// proves the DISCOVERED set actually matches at runtime: every one of the nine full-rect modal
+/// proves the DISCOVERED set actually matches at runtime: every one of the eight full-rect modal
 /// surfaces <c>MainUi.BuildUi</c> constructs is found by <see cref="SurfaceArbiter.Discover"/> once
 /// mounted, <c>Chronicle</c> included — the exact row <c>MainUi.OverlaySurfaces()</c>'s own
 /// hand-written array is missing.
@@ -22,7 +22,7 @@ namespace GodotClient.Tests;
 public class SurfaceArbiterDiscoveryTests
 {
     [TestCase]
-    public void Discover_FindsAllNineFullScreenModalClaims_ChronicleIncluded()
+    public void Discover_FindsAllEightFullScreenModalClaims_ChronicleIncluded()
     {
         var ui = MountMainUi();
         try
@@ -30,7 +30,7 @@ public class SurfaceArbiterDiscoveryTests
             // P2-SCREEN-04: filtered to FullScreenModal first — MountMainUi now also constructs
             // CompanionDock's own HudDock claim and up to five ChildModal ProvenanceCard claims
             // (one per hosting panel, all built eagerly at boot), so an unfiltered Discover() is no
-            // longer exactly nine. The NINE full-rect modals this test pins are unaffected by either.
+            // longer exactly eight. The EIGHT full-rect modals this test pins are unaffected by either.
             var claims = SurfaceArbiter.Discover(ui.GetTree())
                 .Where(c => c.Claim.Region == SurfaceRegion.FullScreenModal)
                 .ToList();
@@ -38,7 +38,7 @@ public class SurfaceArbiterDiscoveryTests
 
             string[] expected =
             [
-                "Bestiary", "Camp", "Chronicle", "Commissions", "Forecast", "Ledger", "Legends",
+                "Camp", "Chronicle", "Commissions", "Forecast", "Ledger", "Legends",
                 "Mirror", "SystemMenu",
             ];
             AssertThat(ids.Count).IsEqual(expected.Length);
@@ -60,7 +60,7 @@ public class SurfaceArbiterDiscoveryTests
     }
 
     /// <summary>P2-SCREEN-04: the "required property, all rows must answer" invariant — every
-    /// FullScreenModal claim (the nine surfaces <see cref="MainUi.OverlaySurfaces"/> now projects)
+    /// FullScreenModal claim (the eight surfaces <see cref="MainUi.OverlaySurfaces"/> now projects)
     /// answers <see cref="SurfaceClaim.OwnsScreen"/> true. Renamed from the P2-SCREEN-03 original
     /// (<c>EveryDiscoveredClaim_IsInTheFullScreenModalRegion</c>), which is no longer true of every
     /// DISCOVERED claim now that <c>CompanionDock</c> (<see cref="SurfaceRegion.HudDock"/>) and
@@ -115,7 +115,7 @@ public class SurfaceArbiterDiscoveryTests
     /// <summary>P2-SCREEN-04 proof requirement: a provenance card opened from any of its five hosts
     /// registers a claim. All five (<c>ShopPanel</c>/<c>HeroesPanel</c>/<c>TavernPanel</c>/
     /// <c>LegendsWall</c>/<c>ScryingMirror</c>) build their own <c>ProvenanceCard</c> child eagerly at
-    /// boot (mirroring the nine modals' own eager construction), so all five claims are discoverable
+    /// boot (mirroring the eight modals' own eager construction), so all five claims are discoverable
     /// the instant <c>MainUi</c> mounts — proof that the claim lives on <c>ProvenanceCard</c>'s own
     /// constructor rather than on any one host, the fix for a class that "cannot be hand-listed,
     /// being instantiated per hosting panel" (unit body).</summary>

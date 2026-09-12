@@ -41,7 +41,7 @@ namespace GodotClient.Tests;
 /// assembly (identical query to <see cref="ActionReachabilityCensusTests"/>/<c>ActionBudgetTests</c>);
 /// every panel comes from reflecting <see cref="SimPanel"/> subtypes in the client assembly, unioned
 /// with the small, explicitly-cited set of modal siblings that predate/deliberately diverge from that
-/// base (each one's own class doc says so — <see cref="BestiaryPanel"/>/<see cref="CommissionBoard"/>/
+/// base (each one's own class doc says so — <see cref="CommissionBoard"/>/
 /// <see cref="LegendsWall"/>/<see cref="RaidForecastBoard"/>).</para>
 ///
 /// <para><b>Fails in both directions</b> (the owner's own standing complaint about one-directional
@@ -369,21 +369,21 @@ public class TeachingCoverageCensusTests
     }
 
     // ============================================================================================
-    // Category 3: every panel — the 15 concrete SimPanel subtypes (reflected) unioned with the 4
+    // Category 3: every panel — the 15 concrete SimPanel subtypes (reflected) unioned with the 3
     // Control-derived modal siblings that predate/deliberately diverge from that base (each cited
     // against its own class doc, which says so explicitly).
     // ============================================================================================
 
-    /// <summary>The four panels built directly on <see cref="Control"/> rather than
-    /// <see cref="SimPanel"/> — <see cref="BestiaryPanel"/>/<see cref="RaidForecastBoard"/>/
+    /// <summary>The three panels built directly on <see cref="Control"/> rather than
+    /// <see cref="SimPanel"/> — <see cref="RaidForecastBoard"/>/
     /// <see cref="LegendsWall"/>'s own class docs each say "code-built modal sibling, mirroring
     /// RaidForecastBoard/CommissionBoard" (or the reverse citation), so this is a small, explicitly-
-    /// verified set rather than an invented one. If any of these four is ever refactored onto
+    /// verified set rather than an invented one. If any of these three is ever refactored onto
     /// <see cref="SimPanel"/>, the reflected set below would then ALSO find it, and the two would
     /// double-count it as one type in one HashSet — not silently drop it either way.</summary>
     private static readonly Type[] NonSimPanelModalSiblings =
     [
-        typeof(BestiaryPanel), typeof(CommissionBoard), typeof(LegendsWall), typeof(RaidForecastBoard),
+        typeof(CommissionBoard), typeof(LegendsWall), typeof(RaidForecastBoard),
     ];
 
     private static IReadOnlyCollection<Type> ConcretePanelTypes() =>
@@ -392,8 +392,8 @@ public class TeachingCoverageCensusTests
             .Concat(NonSimPanelModalSiblings)
             .ToHashSet();
 
-    /// <summary>Four panels/boards taught by their own T2 first-touch lesson. <see cref="DepthsPanel"/>/
-    /// <see cref="HeroesPanel"/>/<see cref="HeroPanel"/>/<see cref="BestiaryPanel"/> share ONE id
+    /// <summary>Three panels/boards taught by their own T2 first-touch lesson. <see cref="DepthsPanel"/>/
+    /// <see cref="HeroesPanel"/>/<see cref="HeroPanel"/> share ONE id
     /// ("read-only-surfaces", Wave E, widened here in Wave F to close the HeroesPanel gap this very
     /// census caught — see <c>MainUi.OpenPanel</c>'s own comment).</summary>
     private static readonly Dictionary<Type, string> PanelFirstTouch = new()
@@ -403,7 +403,6 @@ public class TeachingCoverageCensusTests
         [typeof(DepthsPanel)] = "read-only-surfaces",
         [typeof(HeroesPanel)] = "read-only-surfaces",
         [typeof(HeroPanel)] = "read-only-surfaces",
-        [typeof(BestiaryPanel)] = "read-only-surfaces",
         [typeof(ProgressionPanel)] = "second-profession-picked",
         [typeof(CommissionBoard)] = "hold-or-sell",
         [typeof(RaidForecastBoard)] = "forecast-board-taught",

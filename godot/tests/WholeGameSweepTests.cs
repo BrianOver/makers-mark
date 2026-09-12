@@ -19,13 +19,13 @@ namespace GodotClient.Tests;
 ///
 /// <para><b>Why this exists.</b> The drawer sweep found three real bugs on its first run — the Depths panel
 /// 124px too wide, the Demand panel's growing chip row, and the Shop's completely dead "Open Counter"
-/// button. It covered nine surfaces. The game has eight more that nothing was sweeping at all: the Ledger,
-/// Forecast, Commissions and Legends modals, the Bestiary, the Scrying Mirror, the Chronicle, and the
+/// button. It covered nine surfaces. The game has seven more that nothing was sweeping at all: the Ledger,
+/// Forecast, Commissions and Legends modals, the Scrying Mirror, the Chronicle, and the
 /// building interiors. Owner, bluntly: "you need to test the whole game lol".</para>
 ///
 /// <para><b>Opened the way a player opens them.</b> Where the HUD has a real button (Ledger, Forecast,
 /// Commissions, Legends) the sweep clicks it through <see cref="HumanPlayer"/>. The contextual surfaces
-/// (Bestiary, Mirror, Chronicle, Interior) have no HUD button — a hero click or a phase beat raises them —
+/// (Mirror, Chronicle, Interior) have no HUD button — a hero click or a phase beat raises them —
 /// so those are shown via the same public method their real trigger calls. That is a seam, and a defensible
 /// one: the claim under test is "once this surface is up, is it usable", not "does its trigger fire", which
 /// belongs to whatever raises it.</para>
@@ -47,7 +47,6 @@ public class WholeGameSweepTests
         new("Legends", async ui => await ClickTray(ui, "OpenLegends"), ui => ui.Legends),
 
         // ── Contextual: no HUD button exists, so raised through the same call their trigger makes. ──
-        new("Bestiary", ui => { ui.Bestiary.ShowAll(); return Task.CompletedTask; }, ui => ui.Bestiary),
         new("Mirror", ui => { ui.Mirror.ShowMirror(); return Task.CompletedTask; }, ui => ui.Mirror),
     ];
 
@@ -102,7 +101,7 @@ public class WholeGameSweepTests
     /// </summary>
     /// <summary>U3 (tutorial-revamp plan, §11.13): the four HUD-tray-routed surfaces in
     /// <see cref="Surfaces"/> are now gated tray books — a totally fresh mount would fail all four
-    /// of them closed, dropping this sweep to 2-of-6 (Bestiary + Mirror only) and tripping its own
+    /// of them closed, dropping this sweep to 1-of-5 (Mirror only) and tripping its own
     /// <c>swept &gt;= 4</c> floor for a reason unrelated to what this sweep actually claims (every
     /// surface is readable and non-overlapping once raised). Mounted with each gate's own fact
     /// already true so the sweep still measures readability, not gating — <c>SurfaceUnlocksTests</c>
@@ -139,8 +138,8 @@ public class WholeGameSweepTests
                 await surface.Open(ui);
                 var node = surface.Node(ui);
 
-                // TrySettle, not WaitForLayout: BestiaryPanel animates forever by design (an idle breath in
-                // its own _Process), so demanding a settled layout aborted the whole sweep on it. Its
+                // TrySettle, not WaitForLayout: some surfaces animate forever by design (an idle breath in
+                // their own _Process), so demanding a settled layout would abort the whole sweep on one. Its
                 // geometry is then approximate, which is the right trade for measuring it at all.
                 await player.TrySettleLayout(node);
 

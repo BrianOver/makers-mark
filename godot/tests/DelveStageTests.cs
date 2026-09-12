@@ -113,8 +113,8 @@ public class DelveStageTests
 
     // ── U-T5-9 (law breach, §11.14.7): "the monster HP bar depletes by a client-authored fixed ⅓
     // per beat" — a drawn quantity no sim rule produced. The fix reads GameSim.Venues.VenueDefinition
-    // .MonsterHp(floor), the resolver's own seed for the floor's fight, already public and already
-    // rendered by BestiaryPanel. The test below is the one the OLD code could never pass: it proves
+    // .MonsterHp(floor), the resolver's own seed for the floor's fight, already public. The test
+    // below is the one the OLD code could never pass: it proves
     // the SAME damage number depletes the bar by a DIFFERENT amount depending on the monster's real
     // max HP — impossible under a fixed fraction, which drains every monster at the identical rate
     // regardless of size. ──────────────────────────────────────────────────────────────────────────

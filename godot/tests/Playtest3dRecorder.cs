@@ -111,7 +111,7 @@ public class Playtest3dRecorder
             {
                 ("Forge", ui.Forge), ("Shop", ui.Shop), ("Heroes", ui.Heroes), ("Tavern", ui.Tavern),
                 ("Depths", ui.Depths), ("Bounties", ui.Bounties), ("Demand", ui.Demand), ("HeroCards", ui.HeroCards),
-                ("Ledger", ui.Ledger), ("Forecast", ui.Forecast), ("Bestiary", ui.Bestiary),
+                ("Ledger", ui.Ledger), ("Forecast", ui.Forecast),
                 ("Commissions", ui.Commissions), ("Legends", ui.Legends), ("Camp", ui.Camp), ("Progress", ui.Progress),
             };
             foreach (var (name, host) in panelHosts)

@@ -26,10 +26,10 @@ public class InteriorRoomTests
     /// player discovers by pressing E and getting nothing (this repo's recurring failure class).</summary>
     private static readonly HashSet<string> KnownStationActions = new()
     {
-        "Forge", "Shop", "Tavern", "Bounties", "Depths", "Bestiary", "Legends",
+        "Forge", "Shop", "Tavern", "Bounties", "Depths", "Legends",
         // U1 (world-and-interiors plan): "Watch" is the ONE new action string this unit adds —
         // the gatehouse's "overlook" station, routed to MainUi.OnInteriorHotspotActivated's own
-        // Mirror.ShowMirror() case (same shape as Bestiary/Legends above).
+        // Mirror.ShowMirror() case (same shape as Legends above).
         "Watch",
     };
 

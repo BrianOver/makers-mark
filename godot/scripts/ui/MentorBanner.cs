@@ -586,7 +586,7 @@ public partial class MentorBanner : PanelContainer
     }
 
     /// <summary>Same small local widget-builders every other code-built panel on this project
-    /// carries (<c>SimPanel</c>/<c>BestiaryPanel</c>/<c>CommissionBoard</c> precedent) — this class
+    /// carries (<c>SimPanel</c>/<c>CommissionBoard</c> precedent) — this class
     /// is a bare <see cref="PanelContainer"/>, not a <c>SimPanel</c>, so it does not inherit theirs.</summary>
     private static Label AddLabel(Node parent, string text)
     {

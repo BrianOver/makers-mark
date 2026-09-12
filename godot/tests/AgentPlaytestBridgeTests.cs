@@ -364,7 +364,7 @@ public class AgentPlaytestBridgeTests
     /// <summary>
     /// 2026-08-12 (coverage-can-see-the-overlays finding A): <see cref="Location"/> used to check only
     /// <c>ui.Drawer.IsOpen</c> and <c>ui.Town.InteriorActive</c> — the Ledger, Camp, Scrying Mirror,
-    /// Forecast, Bestiary, Commissions, and Legends overlays all bypass the drawer by design
+    /// Forecast, Commissions, and Legends overlays all bypass the drawer by design
     /// (<c>MainUi.cs</c>'s own "FullRect overlays above the drawer" comments), so opening any one of
     /// them reported the exact same location string ("town") as never opening it at all. A full
     /// playthrough that opened the Ledger every evening produced byte-identical coverage to a run that

@@ -192,7 +192,7 @@ public class Playtest3dClickThrough
 
     private static readonly string[] SkipExact =
     {
-        "ProvenanceClose", "CloseLedger", "ForecastClose", "BestiaryClose", "CommissionClose",
+        "ProvenanceClose", "CloseLedger", "ForecastClose", "CommissionClose",
         // U1 (plan 2026-08-03-001): "CampHold"/"Hold (close)" is retired — the camp slate's third
         // verb is now "CampDeeper" ("Send them deeper"), which both closes the slate AND ticks
         // Camp -> ExpeditionDeep (RaidConductor.ResolveVigil). Skipped for the same reason Hold

@@ -781,7 +781,7 @@ public sealed class HumanPlayer
     /// <summary>
     /// Like <see cref="WaitForLayout"/> but reports whether it settled instead of throwing.
     ///
-    /// <para>Some surfaces animate FOREVER by design — <c>BestiaryPanel</c> runs an idle breath in its own
+    /// <para>Some surfaces animate FOREVER by design — a panel running an idle breath in its own
     /// <c>_Process</c> (the house accumulated-delta idiom), so its rects never hold still and the strict wait
     /// above reports it as broken when nothing is wrong. A sweep over many surfaces needs to measure such a
     /// panel anyway, accepting that its geometry is approximate, rather than abort on the first one that

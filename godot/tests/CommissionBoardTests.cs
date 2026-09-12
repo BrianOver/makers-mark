@@ -15,7 +15,7 @@ namespace GodotClient.Tests;
 /// lists <see cref="GameState.Commissions"/> (mirroring <see cref="GodotClient.Panels.RaidForecastBoard"/>'s
 /// code-built-modal idiom), Accept/Decline buttons queue the matching action through
 /// <see cref="SimAdapter"/>, an empty board renders the explicit "nobody's asking" line, and the
-/// modal engages the clock latch exactly like Forecast/Bestiary.
+/// modal engages the clock latch exactly like Forecast.
 /// </summary>
 [TestSuite]
 [RequireGodotRuntime]

@@ -628,7 +628,7 @@ public class InteriorEntryExitTests
 
     /// <summary>
     /// R4/KTD-2: the ONE new action string this unit adds. Unlike every other real-verb station,
-    /// the Mirror is not a drawer panel — it's a code-built modal (same shape as Legends/Bestiary),
+    /// the Mirror is not a drawer panel — it's a code-built modal (same shape as Legends),
     /// so this pins that pressing "The Overlook" reaches <c>ScryingMirror.ShowMirror()</c> without
     /// ever touching the drawer.
     /// </summary>

@@ -25,7 +25,7 @@ public class WorkshopVocabTests
     /// profession's own workshop.</summary>
     private static readonly System.Collections.Generic.HashSet<string> KnownStationActions = new()
     {
-        "Forge", "Shop", "Tavern", "Bounties", "Depths", "Bestiary", "Legends", "Watch",
+        "Forge", "Shop", "Tavern", "Bounties", "Depths", "Legends", "Watch",
     };
 
     private static readonly System.Collections.Generic.HashSet<string> KnownFocusValues = new() { "materials", "foundry", "craft" };

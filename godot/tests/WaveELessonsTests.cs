@@ -1,7 +1,9 @@
 #if GDUNIT_TESTS
+using System.Collections.Immutable;
 using System.Linq;
 using GameSim;
 using GameSim.Contracts;
+using GameSim.Kernel;
 using GameSim.Professions;
 using GdUnit4;
 using Godot;
@@ -13,7 +15,7 @@ namespace GodotClient.Tests;
 
 /// <summary>
 /// U-T2 Wave E (§11.14.4, the long tail): talents and the second profession, the Foundry's four
-/// gold-for-certainty verbs, and the read-only surfaces (HeroCards/Depths/Bestiary) — each gets a
+/// gold-for-certainty verbs, and the read-only surfaces (HeroCards/Depths/Heroes) — each gets a
 /// first-touch lesson through the shared <see cref="MentorBanner"/>/<see
 /// cref="TutorialFlow.ConsumeFirstTouch"/> mechanism, same contract every earlier wave used.
 /// Reforge (<see cref="GodotClient.Panels.LegendsWall"/>) and quick-travel-unlocked (<see
@@ -322,20 +324,30 @@ public class WaveELessonsTests
         }
     }
 
-    /// <summary>Same lesson, other door: opening Bestiary first must ALSO teach it, and opening
+    /// <summary>Same lesson, other door: opening HeroCards first must ALSO teach it, and opening
     /// Depths right after must NOT show it a second time (<see
     /// cref="TutorialFlow.ConsumeFirstTouch"/>'s once-ever contract, shared across both open
     /// paths) — now checked on each panel's OWN caption rather than a shared banner, since P2-
-    /// ONBOARD-02 gives every one of the four read-only surfaces its own stable caption label.</summary>
+    /// ONBOARD-02 gives every one of the three read-only surfaces its own stable caption label.
+    ///
+    /// <para><b>Why this one needs a world and the sibling above does not.</b> The Bestiary was the
+    /// other door before P2-SCREEN-14 deleted it, and it opened by a direct <c>ShowAll()</c> that
+    /// no gate stood in front of. HeroCards is not like that: it is one of the three ids <see
+    /// cref="SurfaceUnlocks"/> gates, and on a bare fresh mount <see cref="MainUi.OpenPanel"/>
+    /// shows the closed-reason toast and returns BEFORE the lesson line is ever reached — so
+    /// swapping the door without also opening its gate asserts something the game does not do, and
+    /// a passing version of that test would have been the tautology, not the proof. The gate's own
+    /// predicate is the fixture: one <see cref="ItemSold"/> carrying
+    /// <c>FromPlayerShop: true</c> — "a stranger becomes a customer".</para></summary>
     [TestCase]
-    public void OpeningBestiaryFirst_TeachesTheSameLesson_AndDepthsAfterDoesNotRepeatIt()
+    public void OpeningHeroCardsFirst_TeachesTheSameLesson_AndDepthsAfterDoesNotRepeatIt()
     {
-        var ui = MountMainUi();
+        var ui = MountMainUi(new SimAdapter(AfterAShopSale()));
         try
         {
-            ui.Bestiary.ShowAll();
-            AssertThat(Find<Label>(ui.Bestiary, "OnceEverCaption").Visible)
-                .OverrideFailureMessage("The read-only-surface lesson never showed on Bestiary's first-ever open.")
+            ui.OpenPanel("HeroCards");
+            AssertThat(Find<Label>(ui.HeroCards, "OnceEverCaption").Visible)
+                .OverrideFailureMessage("The read-only-surface lesson never showed on HeroCards' first-ever open.")
                 .IsTrue();
 
             ui.OpenPanel("Depths");
@@ -730,5 +742,21 @@ public class WaveELessonsTests
             Unmount(ui);
         }
     }
+
+    /// <summary>A world where one piece has already crossed the counter from the player's own shop —
+    /// exactly and only what <c>SurfaceUnlocks</c>' HeroCards gate asks for
+    /// (<c>state.EventLog.OfType&lt;ItemSold&gt;().Any(e =&gt; e.FromPlayerShop)</c>). Built from the
+    /// gate's own predicate rather than from a remembered list of preconditions, so a gate that is
+    /// later tightened fails this test loudly instead of leaving it quietly opening nothing.</summary>
+    private static GameState AfterAShopSale() =>
+        GameFactory.NewGame(seed: 5150) with
+        {
+            EventLog = ImmutableList.Create<GameEvent>(
+                new ItemSold(new ItemId(1), new HeroId(2), Price: 14, FromPlayerShop: true)
+                {
+                    Id = new EventId(1),
+                    Day = 1,
+                }),
+        };
 }
 #endif

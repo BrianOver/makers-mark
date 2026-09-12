@@ -21,8 +21,8 @@ namespace GameArt.Specs.Emberfall;
 /// shapes, big eyes, sympathetic flavor) and already baked into this venue's own doc comment
 /// ("apologetic", "resents any withdrawal"). No entrance/props spec — task #80's scope is the
 /// backdrop + five portraits only; an entrance is not required by any current render path
-/// (<c>DepthsPanel</c> never mounts a dormant venue's tile, and <c>BestiaryPanel</c> only ever asks
-/// for a monster portrait, never an entrance).</para>
+/// (<c>DepthsPanel</c> never mounts a dormant venue's tile, and no other surface asks this venue
+/// for anything but a monster portrait).</para>
 ///
 /// <para>Diffuse+normal pairs came from the real SDXL/ComfyUI chain (task #95, 2026-08-11),
 /// matching every other venue — the set originally shipped as hand-authored Python pixel grids
