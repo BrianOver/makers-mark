@@ -3584,15 +3584,27 @@ public partial class MainUi : Control
         // and its Label's real height — one line, or two on a long joined-rejection/gate-open
         // message — while shown, so WorldSlot (the ExpandFill sibling immediately below, in this
         // same `layout` VBox) visibly resized every single time any toast opened or closed. Reserve
-        // one line's worth always, the same 28px AdventureTicker already reserves for the identical
-        // shape (bare PanelContainer, one Label, no font/style override) a few rows down — so
-        // WorldSlot's height now holds constant regardless of whether a toast is live, and a rare
-        // overflowing line clips instead of growing the layout.
+        // one line's worth always, so WorldSlot's height holds constant regardless of whether a
+        // toast is live.
+        //
+        // The reservation is measured, not borrowed. The first pass copied AdventureTicker's 28px
+        // on the theory that the two rows are the identical shape — "bare PanelContainer, one
+        // Label, no font/style override" — and they are not: this PanelContainer carries a themed
+        // panel whose own margins inset the Label by 12px, so a single 23px line needs 47, not 28.
+        // `EveryPanel_FitsOnScreen` caught it and printed the geometry that fixes it: Label
+        // 'RejectionToast' at (12, 183) height 23, inside ToastWrap at (0, 171) height 28 — cut off
+        // by seven pixels on four panels. A sibling widget's constant is a guess about your own
+        // widget; its rendered box is not.
+        //
+        // And it no longer clips. A toast that overflows grows the row by a line instead of
+        // truncating mid-sentence, which is the same ruling U45 made about the teaching strip: a
+        // sentence that starts (or stops) mid-word is worse than one that moves the layout. The
+        // common case still reserves exactly one line, so the stability this wrap exists for is
+        // intact for every toast that fits.
         var toastWrap = new Control
         {
             Name = "ToastWrap",
-            ClipContents = true,
-            CustomMinimumSize = new Vector2(0, 28),
+            CustomMinimumSize = new Vector2(0, 47),
         };
         layout.AddChild(toastWrap);
         _toastBanner = new PanelContainer { Name = "ToastBanner", Visible = false };
