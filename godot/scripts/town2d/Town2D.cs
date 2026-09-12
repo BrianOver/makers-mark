@@ -118,10 +118,6 @@ public partial class Town2D : Control
 
     private const int TileSize = TownLayout2D.TileSize;
 
-    /// <summary>Party-file rally spacing (px) along X — mirrors <c>Town3D.RallySpotFor</c>'s spread
-    /// so a departing party reads as a cluster, not a stack.</summary>
-    private const float RallySpacingPx = 14f;
-
     /// <summary>How long the camera lingers on the gate when a party leaves. Long enough to read the
     /// moment, short enough that it never feels like the game took the controls away — the player can
     /// walk throughout, and the camera returns to wherever they actually got to.</summary>
@@ -952,7 +948,7 @@ public partial class Town2D : Control
             var actor = new HeroActor2D();
             var color = ClassColors.RoleColor(hero.ClassId);
             var sprite = TownAssets2D.ForHero(hero.ClassId, hero.Id.Value);
-            actor.Init(hero.Id.Value, hero.ClassId, color, sprite, HomeFor(hero.Id.Value), hero.Name);
+            actor.Init(hero.Id.Value, hero.ClassId, color, sprite, HomeFor(hero.Id.Value, state.Phase), hero.Name);
             // U-T3-8: same venue-door pool townsfolk errand toward (see _errandTargets' own doc) —
             // gives a wandering hero a real destination instead of the frozen-below-threshold
             // lissajous drift alone.
@@ -1430,26 +1426,30 @@ public partial class Town2D : Control
     }
 
     /// <summary>Deterministic wander-band home per hero id (no RNG, KTD2/KTD4) — a 2D twin of
-    /// <c>Town3D.HomeFor</c>, spread across an open tile band clear of every venue footprint.
+    /// <c>Town3D.HomeFor</c>.
     ///
-    /// <para>U-T3-1: the starting six's own tile now lives in <see
-    /// cref="TownLayout2D.HeroHomeTiles"/> — the same six numbers this formula always produced for
-    /// ids 1..6, moved somewhere <c>godot/tests</c> can read them (<c>TownPlacementTests</c>). Any
-    /// id past 6 (a recruit outliving the starting cast — ids are never reused after a death, see
-    /// <c>RecruitSystem</c>) still falls through to the ORIGINAL formula below: a fixed 6-slot table
-    /// has no entry to give it, and the formula's own period (its X term repeats every 28 ids, not
-    /// 6) means the six extracted values cannot stand in for it. Byte-identical for every id either
-    /// way — this is a data-extraction refactor, not a behaviour change.</para>
+    /// <para>U-T3-1: the starting six's own tile used to live verbatim in <see
+    /// cref="TownLayout2D.HeroHomeTiles"/> (the same six numbers this formula always produced for
+    /// ids 1..6). <b>U50 ("the cast stops scattering"):</b> that per-id COORDINATE is replaced by a
+    /// per-id, per-PHASE gathering spot (<see cref="TownLayout2D.SpotAnchorFor"/>) — <see
+    /// cref="TownLayout2D.HeroHomeTiles"/> itself is untouched (still the bound this method checks,
+    /// and still what <c>TownPlacementTests</c> pins for anything still reading it) but no longer
+    /// what a hero actually spawns at. Any id past 6 (a recruit outliving the starting cast — ids
+    /// are never reused after a death, see <c>RecruitSystem</c>) still falls through to the
+    /// ORIGINAL phase-independent formula below: a fixed 6-slot table has no entry to give it, and
+    /// the formula's own period (its X term repeats every 28 ids, not 6) means the spot table cannot
+    /// stand in for it either.</para>
     /// </summary>
-    private static Vector2 HomeFor(int heroValue) =>
+    private static Vector2 HomeFor(int heroValue, DayPhase phase) =>
         heroValue >= 1 && heroValue <= TownLayout2D.HeroHomeTiles.Length
-            ? TownLayout2D.TileToWorld(TownLayout2D.HeroHomeTiles[heroValue - 1])
+            ? TownLayout2D.SpotAnchorFor(heroValue, phase)
             : TownLayout2D.TileToWorld(new Vector2I(6 + heroValue * 3 % 28, 10 + heroValue * 2 % 6));
 
     /// <summary>Party-file rally slot near the town square, spread along X (mirrors
     /// <c>Town3D.RallySpotFor</c>).</summary>
     private static Vector2 RallySpotFor(int index, int count) =>
-        TownLayout2D.TileToWorld(TownLayout2D.RallyTile) + new Vector2((index - (count - 1) / 2f) * RallySpacingPx, 0f);
+        TownLayout2D.TileToWorld(TownLayout2D.RallyTile) +
+        new Vector2((index - (count - 1) / 2f) * TownLayout2D.RallySpacingPx, 0f);
 
     private void BuildBuildings()
     {

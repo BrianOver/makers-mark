@@ -156,7 +156,9 @@ public partial class HeroActor2D : Node2D
     public HeroTownState State { get; private set; } = HeroTownState.Wandering;
 
     /// <summary>Anchor point the wander drifts around; deterministic per hero id (set by
-    /// <see cref="Init"/>, resumed by <see cref="SetState"/>'s Wandering case).</summary>
+    /// <see cref="Init"/>, resumed by <see cref="SetState"/>'s Wandering case). <b>U50:</b> for the
+    /// starting six, also re-resolved by <see cref="SetPhase"/> on every genuine day-phase change —
+    /// see that method's own doc.</summary>
     public Vector2 Home { get; private set; }
 
     public Sprite2D Sprite { get; private set; } = null!;
@@ -350,8 +352,30 @@ public partial class HeroActor2D : Node2D
     /// cref="TownsfolkNpc2D.SetPhase"/>'s contract; <see cref="Town2D"/> calls both from the same
     /// <c>_Process</c> tick). Gates only the START of a new errand (see <see
     /// cref="IsErrandHours"/>) — an errand already under way always finishes, so a phase flip
-    /// mid-walk never recalls or freezes a hero.</summary>
-    public void SetPhase(DayPhase phase) => _phase = phase;
+    /// mid-walk never recalls or freezes a hero.
+    ///
+    /// <para><b>U50 ("the cast stops scattering"):</b> for the starting six (<see
+    /// cref="TownLayout2D.HeroHomeTiles"/>'s own six-slot scope) a genuine phase CHANGE also
+    /// re-resolves <see cref="Home"/> to <see cref="TownLayout2D.SpotAnchorFor"/> for the new phase
+    /// — the mechanism behind "heroes drift toward the gate before an expedition, toward the tavern
+    /// in the evening." Harmless while Rallying/WalkingOut/Away/WalkingIn: none of those states ever
+    /// read <see cref="Home"/>, so <see cref="RallyTo"/>/<see cref="MarchOutTo"/> keep owning the
+    /// actor's rendered position exactly as before this unit — the new anchor is simply what <see
+    /// cref="Home"/> already holds by the time <see cref="HeroTownState.Wandering"/> resumes. A
+    /// no-op when the phase hasn't actually changed (every pre-U50 test that never calls this method,
+    /// or calls it with the same phase repeatedly, sees no behavior change). A recruit past the
+    /// starting six keeps <c>Town2D.HomeFor</c>'s OLD phase-independent fallback formula, untouched.
+    /// </para>
+    /// </summary>
+    public void SetPhase(DayPhase phase)
+    {
+        if (phase != _phase && HeroIdValue >= 1 && HeroIdValue <= TownLayout2D.HeroHomeTiles.Length)
+        {
+            Home = TownLayout2D.SpotAnchorFor(HeroIdValue, phase);
+        }
+
+        _phase = phase;
+    }
 
     /// <summary>"Daytime" for errand purposes — the same two phases <see
     /// cref="TownsfolkNpc2D.IsErrandHours"/> treats as bright/awake. In practice a hero is Wandering
