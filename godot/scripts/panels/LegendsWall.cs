@@ -815,6 +815,38 @@ public partial class LegendsWall : Control
         return row;
     }
 
-    private static string HeroName(GameState state, HeroId id) =>
-        state.Heroes.TryGetValue(id.Value, out var hero) ? hero.Name : $"Hero #{id.Value}";
+    /// <summary>
+    /// The name the town would say out loud, for a hero the town may no longer have.
+    ///
+    /// <para><b>Why the roster alone is not enough here, of all places.</b> This is the wall of the
+    /// DEAD: a hero who has fallen is gone from <see cref="GameState.Heroes"/>, so a roster-only
+    /// lookup misses exactly the people this surface exists to name, and falls through to an id.
+    /// "Hero #9 — fallen, floor 5" is the jargon rule's own example of the defect — player copy
+    /// naming a thing the player cannot see — printed on the one screen whose entire promise is
+    /// that the town remembers your name.</para>
+    ///
+    /// <para>The name was never missing, only unread: every <see cref="Memorial"/> carries the
+    /// hero's own <see cref="Memorial.HeroName"/>, recorded at the moment they died. The roster
+    /// still comes first, because a living hero can be renamed and the memorial cannot.</para>
+    /// </summary>
+    private static string HeroName(GameState state, HeroId id)
+    {
+        if (state.Heroes.TryGetValue(id.Value, out var hero))
+        {
+            return hero.Name;
+        }
+
+        foreach (var memorial in state.Drama.Memorials)
+        {
+            if (memorial.Hero == id)
+            {
+                return memorial.HeroName;
+            }
+        }
+
+        // Unreachable for any hero the town remembers by either route, and deliberately left as a
+        // visible id rather than a plausible-looking invented name: a wrong name on this wall would
+        // be a lie the player has no way to catch, while this is obviously a bug on sight.
+        return $"Hero #{id.Value}";
+    }
 }

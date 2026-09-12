@@ -91,6 +91,40 @@ public class LegendsWallTests
     }
 
     [TestCase]
+    public void TheActorIndex_NamesTheDeadByName_NeverByAnId()
+    {
+        // The regression P2-MEMORY-10 shipped and CI caught: the book's index rendered
+        // "Hero #9 — fallen, floor 5". A fallen hero is gone from GameState.Heroes, so a
+        // roster-only name lookup misses precisely the people this wall exists to name.
+        //
+        // Phrased against the PROPERTY rather than the one string: no rendered line may carry an
+        // id-shaped stand-in for a person, for ANY hero the town remembers — so a second memorial
+        // added to the fixture later is covered on the day it is added, and so is any future row
+        // that reaches for an id when a name is one lookup away.
+        var ui = MountMainUi();
+        try
+        {
+            var world = PopulatedWorld();
+            ui.Legends.ShowWall(world);
+
+            var text = RenderedText(ui.Legends);
+            foreach (var memorial in world.Drama.Memorials)
+            {
+                AssertThat(text)
+                    .OverrideFailureMessage($"The wall of the dead did not name {memorial.HeroName}.")
+                    .Contains(memorial.HeroName);
+                AssertThat(text)
+                    .OverrideFailureMessage("The wall named a person by an id the player cannot see.")
+                    .NotContains($"Hero #{memorial.Hero.Value}");
+            }
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
     public void LegendItemRow_OpensItsOwnProvenanceCard()
     {
         var ui = MountMainUi();
