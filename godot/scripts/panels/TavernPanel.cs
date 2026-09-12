@@ -528,7 +528,10 @@ public partial class TavernPanel : SimPanel
     /// </summary>
     private void BuildSceneAtTheBar(Node parent, GameState state, Hero hero, string sceneId)
     {
-        if (Ui.ArcScenes.ById(sceneId) is not { } scene)
+        // P2-MEMORY-07: the commendation isn't a member of the static registry ById covers — it's
+        // built fresh per hero from live state — so a scene id it can't find falls through to that
+        // second client before giving up.
+        if ((Ui.ArcScenes.ById(sceneId) ?? Ui.Commendation.SceneFor(state, hero, sceneId)) is not { } scene)
         {
             _pursued = null;
             AddLabel(parent, $"  ({hero.Name} has said his piece — back to the room)");
