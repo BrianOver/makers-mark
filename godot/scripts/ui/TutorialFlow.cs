@@ -1838,18 +1838,27 @@ public sealed partial class TutorialFlow : PanelContainer
     /// commission) are not something this class should force — so one day of grace past the
     /// pointed chain's own last day closes the chain unconditionally instead, preserving "nothing
     /// the player does or fails to do can strand this card forever".</para>
+    ///
+    /// <para>P2-SCREEN-15: returns the leaving-a-room lesson's own spoken line the one call it
+    /// actually fires on, <see langword="null"/> every other call (including every call before the
+    /// player's first craft, and every call after — <see cref="ConsumeFirstTouch"/>'s once-ever
+    /// gate). Before this unit the value below was consumed and discarded in the same breath — the
+    /// lesson reached <see cref="FirstTouch"/> (so the Lessons book always had it) but never reached
+    /// the screen at all. <c>MainUi.StateChanged</c> is the caller that now does something with it.
+    /// </para>
     /// </summary>
-    public void Advance(GameState state)
+    public string? Advance(GameState state)
     {
-        // P2-SCREEN-07: leaving a room becomes true the moment the player has anything to leave
-        // FOR — the first thing they ever craft, since stocking it means walking back out of the
-        // workshop to the Shop (the same fact Craft's own IsDone above already reads). Checked
-        // before the Active guard below, deliberately: this is a fact about the world, not about
-        // whether the numbered chain is still running (ConsumeFirstTouch's own "the long tail
+        // P2-SCREEN-07/P2-SCREEN-15: leaving a room becomes true the moment the player has anything
+        // to leave FOR — the first thing they ever craft, since stocking it means walking back out
+        // of the workshop to the Shop (the same fact Craft's own IsDone above already reads).
+        // Checked before the Active guard below, deliberately: this is a fact about the world, not
+        // about whether the numbered chain is still running (ConsumeFirstTouch's own "the long tail
         // matters to every campaign" precedent).
+        string? leavingARoomLesson = null;
         if (state.EventLog.OfType<ItemCrafted>().Any())
         {
-            ConsumeFirstTouch(LeavingARoomLessonId, MentorVoice.Speak(LeavingARoomLessonText));
+            leavingARoomLesson = ConsumeFirstTouch(LeavingARoomLessonId, MentorVoice.Speak(LeavingARoomLessonText));
         }
 
         // U32 (§11.14.14): the Memory act's own arming — read every call, Active or not, Dismissed
@@ -1864,7 +1873,7 @@ public sealed partial class TutorialFlow : PanelContainer
 
         if (!Active)
         {
-            return;
+            return leavingARoomLesson;
         }
 
         var startingStep = Step;
@@ -1918,6 +1927,8 @@ public sealed partial class TutorialFlow : PanelContainer
         {
             Save();
         }
+
+        return leavingARoomLesson;
     }
 
     /// <summary>
@@ -2028,8 +2039,19 @@ public sealed partial class TutorialFlow : PanelContainer
     /// walkable-interior route and the drawer-panel route), passing the SAME lowercase venue key
     /// (<c>Town2D.FindBuilding</c>'s own vocabulary) the anchor itself is declared in. A no-op for
     /// any venue that is not the current step's own anchor, or while the chain is inactive.
+    ///
+    /// <para>P2-SCREEN-15: returns whichever of the forge's two first-touch lessons actually fired
+    /// THIS call (empty for every other venue, and empty again on any later arrival — <see
+    /// cref="ConsumeFirstTouch"/>'s own once-ever gate), so a caller can put the words on screen at
+    /// the same moment the book records them. Before this unit both calls below discarded their own
+    /// return value — <see cref="SlotBudgetLessonId"/>/<see cref="StationPressLessonId"/> were
+    /// recorded into <see cref="FirstTouch"/> (so <c>LessonsPanel</c> could always show them) but
+    /// never actually SPOKEN, exactly the gap <c>MainUi.OnTownBuildingClicked</c>'s own remark
+    /// already named for <see cref="GreedyRuleLessonId"/>'s sibling call: "that method owns no
+    /// Mentor reference and stays pure bookkeeping" — the routing belongs at the call site, not
+    /// here, so this class still holds no <c>MentorBanner</c> reference of its own.</para>
     /// </summary>
-    public void NotifyEnteredBuilding(string venueKey)
+    public IReadOnlyList<string> NotifyEnteredBuilding(string venueKey)
     {
         var def = ByStep[Step];
         // U2 (tutorial-revamp plan, §11.13): Station counts too — a Station anchor's own Key IS
@@ -2055,11 +2077,23 @@ public sealed partial class TutorialFlow : PanelContainer
         // beat in this file already follows), so a returning smith who skipped the numbered chain
         // still hears both once. "forge" names the venue itself, never the per-profession label —
         // the same station-anchor Key every profession's BuyMaterial/Craft row already resolves to.
-        if (venueKey == "forge")
+        if (venueKey != "forge")
         {
-            ConsumeFirstTouch(SlotBudgetLessonId, MentorVoice.Speak(SlotBudgetLessonText));
-            ConsumeFirstTouch(StationPressLessonId, MentorVoice.Speak(StationPressLessonText));
+            return Array.Empty<string>();
         }
+
+        var spoken = new List<string>(capacity: 2);
+        if (ConsumeFirstTouch(SlotBudgetLessonId, MentorVoice.Speak(SlotBudgetLessonText)) is { } slotBudget)
+        {
+            spoken.Add(slotBudget);
+        }
+
+        if (ConsumeFirstTouch(StationPressLessonId, MentorVoice.Speak(StationPressLessonText)) is { } stationPress)
+        {
+            spoken.Add(stationPress);
+        }
+
+        return spoken;
     }
 
     /// <summary>
@@ -2228,7 +2262,7 @@ public sealed partial class TutorialFlow : PanelContainer
     /// station to spend a slot at — see <see cref="NotifyEnteredBuilding"/>.</summary>
     public const string SlotBudgetLessonId = "slot-budget";
 
-    private const string SlotBudgetLessonText =
+    public const string SlotBudgetLessonText =
         "Each day gives you a limited run of action slots — buying material, crafting, posting "
         + "a bounty, and the forge's bigger upgrades each spend one, so the pips beside your "
         + "gold count down as you go and refill fresh at dawn, spent or not. The shelf, the "
@@ -2240,7 +2274,7 @@ public sealed partial class TutorialFlow : PanelContainer
     /// cref="SlotBudgetLessonId"/> — see <see cref="NotifyEnteredBuilding"/>.</summary>
     public const string StationPressLessonId = "station-press";
 
-    private const string StationPressLessonText =
+    public const string StationPressLessonText =
         "Inside a building you walk up to a station and press E to use it. The material vendor "
         + "and the crafting station are both stations in your workshop.";
 
@@ -2249,7 +2283,7 @@ public sealed partial class TutorialFlow : PanelContainer
     /// moment they next need to walk back out of the workshop to reach the shelf.</summary>
     public const string LeavingARoomLessonId = "leaving-a-room";
 
-    private const string LeavingARoomLessonText =
+    public const string LeavingARoomLessonText =
         "Every room has a way back out, too — press Escape to step outside when you're ready to move on.";
 
     // ── P2-ONBOARD-07 (§11.15): beat 3, her rule, wrong on purpose ──────────────────────────────
