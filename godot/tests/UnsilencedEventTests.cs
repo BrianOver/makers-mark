@@ -1,6 +1,7 @@
 #if GDUNIT_TESTS
 using System.Collections.Immutable;
 using System.Linq;
+using System.Text.RegularExpressions;
 using GameSim.Contracts;
 using GameSim.Factions;
 using GameSim.Factions.Wardens;
@@ -505,7 +506,10 @@ public class UnsilencedEventTests
                     "The pledge line claims something was paid. Nothing was: a piece left the world and no "
                     + $"coin moved. Line was \"{ticker.DisplayText}\".")
                 .IsFalse();
-            AssertThat(ticker.DisplayText.Contains("0g"))
+            // A bare substring check reads "60g" as containing "0g" and fails on the very figure the
+            // assertion two lines up requires — caught by this test failing on a correct line. The
+            // boundary is what was meant: a zero amount, not a zero digit inside some other amount.
+            AssertThat(Regex.IsMatch(ticker.DisplayText, @"\b0g\b"))
                 .OverrideFailureMessage(
                     "The pledge line names a 0g amount — the exact artefact of settling this cycle through "
                     + $"GuildAssessmentPassed's DuesPaidGold. Line was \"{ticker.DisplayText}\".")

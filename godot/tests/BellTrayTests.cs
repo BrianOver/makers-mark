@@ -69,6 +69,10 @@ public class BellTrayTests
         [typeof(UpgradeForgeAction)] = () => new UpgradeForgeAction(),
         [typeof(SetProfessionsAction)] = () => new SetProfessionsAction(ImmutableSortedSet.Create("blacksmith")),
         [typeof(CommissionLegendaryWorkAction)] = () => new CommissionLegendaryWorkAction("dagger", "copper"),
+        // P2-LONG-18: immediate lane (ActionTiming rules it Now), so like HonorMemorialAction and
+        // ConcludeApprenticeshipAction above it never reaches the bell tray — but DeferredTypes()
+        // reflects over EVERY concrete PlayerAction and needs to be able to build one to ask.
+        [typeof(PledgeDuesAction)] = () => new PledgeDuesAction(new ItemId(1)),
     };
 
     private static IEnumerable<Type> ConcretePlayerActionTypesInAssembly() =>

@@ -180,8 +180,14 @@ public partial class PledgePanel : Control
         body.AddChild(pledge);
     }
 
+    /// <summary>The pledge lesson's id, named rather than spelled twice: <c>LessonsPanel</c> heads
+    /// this lesson's card in the book with its own title, and a census proves every live first-touch
+    /// id has one. Two copies of the same string in two files is how that pairing silently comes
+    /// apart — the guard would still pass while the book headed the card with the raw slug.</summary>
+    public const string PledgeLessonId = "the-pledge";
+
     /// <summary>
-    /// P2-LONG-18's own first-touch lesson (id <c>"the-pledge"</c>) — fires the first time this
+    /// P2-LONG-18's own first-touch lesson (<see cref="PledgeLessonId"/>) — fires the first time this
     /// panel EVER opens, once per campaign, through the same first-touch engine every other lesson
     /// in this codebase uses. Explains the MECHANIC (a pledged piece never reaches a hero); the
     /// separately-shown <see cref="VossConfirmQuote"/> names the COST, every time a pledge is
@@ -191,7 +197,7 @@ public partial class PledgePanel : Control
     private void ShowPledgeLesson() =>
         Mentor?.ShowFirstTouch(
             Tutorial?.ConsumeFirstTouch(
-                "the-pledge",
+                PledgeLessonId,
                 MentorVoice.Speak(
                     "The guild takes a piece instead of coin and hangs it where the town can see what "
                     + "a smith is worth. That piece is gone for good the moment you hand it over — it "
