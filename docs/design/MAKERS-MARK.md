@@ -4621,6 +4621,8 @@ name (§11.6 rule 4).
 | P2-SCREEN-15 | The three split lessons speak on screen, not only in the book | `godot/scripts/MainUi.cs`, `godot/scripts/ui/MentorVoice.cs`, `godot/scripts/ui/TutorialFlow.cs` | — | [G] |
 | ⚑ P2-SCREEN-16 | The audio column gets an owner — every ceremony names its cues (P2-KTD11) | `godot/scripts/MainUi.cs` (`SoundTheTick`), `godot/scripts/audio/SfxLibrary.cs` (read-only), `godot/tests/` | — | [G] |
 | P2-SCREEN-17 | The save-replace press names the day it destroys | `godot/scripts/NewGameSelect.cs` | — | [G] |
+| ⚑ P2-SCREEN-18 | The muster names what the full slots already hold, not only the gaps | `sim/GameSim/Heroes/RaidForecast.cs`, `godot/scripts/panels/RaidForecastBoard.cs` | — | [S] |
+| ⚑ P2-SCREEN-20 | The day's thread survives being read late (research M5) | `godot/scripts/ui/AdventureTicker.cs`, `godot/scripts/panels/LegendsWall.cs` | P2-MEMORY-12 | [G] |
 | P2-ONBOARD-09 | Bryn's redemption beat keys on the band that pays, not the chip that doesn't | `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/panels/CounterPanel.cs` | — | [G] |
 | P2-ONBOARD-10 | The seed becomes enterable at New Game | `godot/scripts/NewGameSelect.cs` | — | [G] |
 | P2-PROOF-03 | The stage, pass one — one duel, recorded rolls | new `godot/scripts/panels/TellingPanel.cs` (+`.uid`) | — | [G] |
@@ -4628,6 +4630,8 @@ name (§11.6 rule 4).
 | P2-PROOF-05 | The other shapes — every `TellingScript.Shape` staged or downgraded, reflectively enumerated | `godot/scripts/panels/TellingPanel.cs`, `godot/tests/` | P2-PROOF-04 | [G] |
 | P2-PROOF-06 | The copy pack — deterministic pick, tone guards | `godot/scripts/panels/TellingPanel.cs` corpus | P2-PROOF-04 | [G] |
 | P2-PROOF-07 | The wiring and the deletion — "Ask how it happened", Full-tale dies | `godot/scripts/panels/LedgerModal.cs`, `docs/debugging.md` | P2-PROOF-05, P2-PROOF-06 | [G] |
+| ⚑ P2-PROOF-11 | Legible defeat — the death names its margin (research M4) | `godot/scripts/panels/LedgerModal.cs`, `sim/GameSim/Expedition/TellingQuery.cs` (read-only) | — | [G] |
+| ⚑ P2-PROOF-13 | The maker names the signed work — the glossary's own sentence becomes true | `sim/GameSim/Contracts/Actions.cs`, `sim/GameSim/Crafting/CraftingHandlers.cs`, `godot/scripts/panels/ForgePanel.cs` | P4 | [S][C] |
 | P2-MEMORY-02 | The death card reads the pack and the last blow | `godot/scripts/panels/LedgerModal.cs` | — | [G] |
 | P2-MEMORY-05 | The Signed Work speaks; the idle line varies | `godot/scripts/panels/ForgePanel.cs`, advisor idle copy | — | [G] |
 | P2-MEMORY-06 | Provenance derives sales instead of omitting them | `godot/scripts/panels/ProvenanceCard.cs` | — | [G] |
@@ -4640,6 +4644,8 @@ name (§11.6 rule 4).
 | P2-MEMORY-14 | The bind and the export; `ChronicleScroll.cs` deleted (P2-OQ4) | `godot/scripts/panels/LegendsWall.cs`, `godot/scripts/panels/ChronicleScroll.cs` (deleted) | P2-MEMORY-11, P2-MEMORY-13 | [G] |
 | P2-MEMORY-15 | `BountyRefunded` — the silent refund gets an event | `sim/GameSim/Contracts/Events.cs`, `sim/GameSim/Bounties/BountySystems.cs` | — | [S][C][GOLD] |
 | P2-MEMORY-16 | `Fleeced` on the close event; fleece and pinned gossip | `sim/GameSim/Contracts/Events.cs`, `sim/GameSim/Counter/HaggleResolver.cs`, `sim/GameSim/Drama/GossipGenerator.cs` | P2-MEMORY-15 (serialize) | [S][C][GOLD] |
+| ⚑ P2-MEMORY-20 | The forecast gets a face (research M3) | `godot/scripts/ui/ArcScenes.cs`, `godot/scripts/panels/RaidForecastBoard.cs` | — | [G] |
+| ⚑ P2-MEMORY-21 | The reforge row previews the lineage it will write, from the one template that writes it | `sim/GameSim/Crafting/HeirloomHandlers.cs`, `godot/scripts/panels/LegendsWall.cs` | — | [S] |
 | P2-PEOPLE-02 | The register gate — a lint that fails on a planted violation of each rule | `godot/tests/`, scene corpus | — | [G] |
 | P2-PEOPLE-03 | The remaining arcs — Torvald 4–8, Brunhilde, Kael, Sable, Elowen, Moss | scene corpus | P2-PEOPLE-02 + the probe's verdict | [G] |
 | P2-PEOPLE-04 | Durable-fact read-back — "Halvar's floor" on the muster board | `godot/scripts/panels/RaidForecastBoard.cs`, vigil slate | — | [G] |
@@ -4653,6 +4659,10 @@ name (§11.6 rule 4).
 | P2-PEOPLE-12 | Wake staging and the deletions — the advisor nag retires, render ownership fixed | `godot/scripts/`, `sim/GameSim/Advisor/ObjectiveAdvisor.cs` | P2-PEOPLE-07, P2-PEOPLE-11 | [G] |
 | P2-PEOPLE-13 | Recruit micro-arcs — starters and kin first, the rest later | scene corpus | P2-PEOPLE-03 | [G] |
 | ⚑ P2-PEOPLE-14 | Wake versus Quiet Morning — the precedence, written and pinned (P2-KTD12) | `sim/GameSim/Heroes/PartyFormation.cs`, `sim/GameSim.Tests/` | lands with whichever of P2-PEOPLE-11 / P2-LONG-16 is first | [S] |
+| ⚑ P2-PEOPLE-15 | The camp speaks first — the vigil slate opens with the party's own ask | `godot/scripts/panels/CampPanel.cs`, `godot/scripts/ui/CustomerVoice.cs` (read-only) | — | [G] |
+| ⚑ P2-PEOPLE-16 | The camped rows carry the trait and band chips the roster already shows | `godot/scripts/panels/CampPanel.cs`, `godot/scripts/panels/HeroPanel.cs` (read-only) | — | [G] |
+| ⚑ P2-PEOPLE-17 | Stocking a piece names the morning queue that will reach it first | `godot/scripts/panels/ShopPanel.cs`, `sim/GameSim/Heroes/CommissionHandlers.cs` | — | [S] |
+| ⚑ P2-PEOPLE-20 | The Patron (research M1) | `sim/GameSim/Contracts/Player.cs`, `sim/GameSim/Chronicle/`, `godot/scripts/` | P4 | [S][C] |
 | ⚑ P2-LONG-01 | Re-date the wall on the current build | `sim/GameSim.Cli/`, one instrumented sweep | — | [S] |
 | P2-LONG-02 | Typed consumable kinds; hazard type on `VenueDefinition` | `sim/GameSim/Contracts/`, `sim/GameSim/Venues/VenueDefinition.cs` | P2-LONG-01, P4 | [S][C][GOLD] |
 | P2-LONG-03 | The teeth — the venom week, the redistribution rule, the ToolAssist emitter | `sim/GameSim/Drama/DirectorSystem.cs`, `sim/GameSim/Expedition/` | P2-LONG-02 | [S][BAL] |
@@ -4670,13 +4680,14 @@ name (§11.6 rule 4).
 | P2-LONG-15 | The failure gradient renders — 400 and 200 get faces | `godot/scripts/town2d/`, `godot/scripts/panels/TavernPanel.cs` | — | [G] |
 | P2-LONG-16 | The latch lands — the Quiet Morning and the Rekindling | `sim/GameSim/Drama/`, `sim/GameSim/Heroes/PartyFormation.cs` | P2-LONG-15 | [S][GOLD][BAL] |
 | P2-LONG-17 | Rent demoted; the assessor gets a face | `godot/scripts/MainUi.cs`, `godot/scripts/` | P2-SCREEN-11 | [G] |
-| P2-LONG-18 | The pledge — dues paid in proven work, the cost named | `sim/GameSim/Economy/`, `godot/scripts/` | P2-LONG-17 | [S] |
+| P2-LONG-18 | The pledge — dues paid in proven work, the cost named | `sim/GameSim/Contracts/Actions.cs`, `sim/GameSim/Contracts/Events.cs`, `sim/GameSim/Economy/`, `godot/scripts/` | P2-LONG-17 | [S][C] |
 | P2-LONG-19 | The rival's face, and the spoken absence of proof | `godot/scripts/town2d/`, flavor packs | — | [G] |
 | P2-LONG-20 | The rival breathes, capped — irrelevance is the victory | `sim/GameSim/Economy/` | P2-LONG-19 | [S][BAL] |
 | P2-LONG-21 | The Mark Endures — the carryover contract and the no-stats tripwire | `sim/GameSim/Contracts/`, `sim/GameSim/Kernel/GameFactory.cs` | P2-LONG-13 | [S][C][GOLD] |
 | P2-LONG-22 | The seventh decision — the choice, the door, the commission echo | `godot/scripts/`, `sim/GameSim/Economy/` | P2-LONG-21 | [G] |
 | ⚑ P2-LONG-25 | Aim the send verb at where camped heroes actually are — one knob, re-baselined | `sim/GameSim/Expedition/ExpeditionResolver.cs`, `sim/GameSim/Expedition/ExpeditionSystem.cs`, the two tests above | — | [S][BAL] |
 | ⚑ P2-LONG-26 | Measure the FELT wall, not the novelty wall | `sim/GameSim.Cli/`, one instrumented sweep | P2-LONG-01 | [S] |
+| ⚑ P2-LONG-27 | The Deep vigil gets a stakes slate — words, never numbers | `godot/scripts/panels/MineWatch.cs` | — | [G] |
 | P2-HONEST-02 | Four dead-mechanism sentences die; `Gate.Reason` splits closed/opened | `godot/scripts/ui/SurfaceUnlocks.cs`, copy | — | [G] |
 | P2-HONEST-03 | The sentence "your commission died with them" gets a home (the sim half landed in #667) | `godot/scripts/panels/LedgerModal.cs`, `godot/scripts/panels/LegendsWall.cs` | P2-PEOPLE-07 | [G] |
 | P2-HONEST-04 | The queued suffix dies; eight panels stop teaching a console command | `godot/scripts/panels/SimPanel.cs`, `godot/scripts/panels/` | — | [G] |
@@ -6178,21 +6189,6 @@ other games.
   a patron who dies while patron is a line in the book. **No hero state is written, ever** — the
   patron must not change a hero's behaviour, or it becomes an order and law 1 is gone.
 
-#### P2-PROOF-10. Storied gear gets a voice (research M2b)
-
-- Goal: attribution gains a **floor beneath the beat** — an ordinary night still reads as evidence.
-- Approach: `ShoppingAi.SentimentalDeedThreshold = 3` already makes a hero refuse to trade away
-  worn work carrying three deeds, `TraitEffects.SentimentalDeedThresholdFor` already shifts that
-  threshold per hero along the Sentiment axis, and the pass already emits
-  `PassReasonKind.Sentimental` — and `grep -rni "sentimental\|storied" godot/scripts/` returns
-  nothing. The sim has been promoting the player's old work to heirloom status for months, changing
-  behaviour differently per hero, and telling nobody. Render it: the item's card reads *storied*,
-  the legends wall lists objects as well as people, and the counter voices the refusal in the
-  hero's own words. The per-hero trait shift is visible in **behaviour**, never stated in a tooltip.
-- The condition that is the whole design: **recorded facts, not credit.** A total, a ratio, a medal,
-  a percentage of party contribution, a ranking against other items, or a score makes it
-  participation credit, which law 4 forbids. Never in the Night reveal's headline; that is beats'.
-
 #### P2-MEMORY-20. The forecast gets a face (research M3)
 
 - Goal: the strongest pre-watch reveal in the whole sample is ours, and we deliver it on a board.
@@ -6210,6 +6206,79 @@ other games.
 - Goal: Omasse's Grindcast was missed because it played while the player forged. Ours does too.
 - Approach: Godot-only; the thread is readable after the fact without becoming a summary of
   scenes that died unshown.
+
+#### P2-PEOPLE-15. The camp speaks first
+
+- Goal: the vigil stops being a dashboard and becomes the question the middle of the day exists to
+  ask. Serves decision 6 (send the runner, or trust their judgment) and link 2.
+- Approach: `CampPanel` opens with the party anchor's own line instead of the `PARTY CAMPED — below
+  floor {n}` header, in the same first-person register `CustomerVoice` already speaks in — *"We're
+  under floor 1 and going on. Torvald's at 9 of 14. Two salves between three of us, one of them
+  yours. Floor 2 is the Cave Rat's. We go where we go; if you've anything to send, this is the stop
+  for it."* Every clause derives from data the panel already holds (`InFlightExpedition.Hp`, the
+  packs, `YoursHealsLeft`, `venue.MonsterKind`) — never a second rule set, the constraint the
+  existing `Still ahead, in the dark:` line already keeps.
+- The condition: it is a **request, never an order**. No verb is added and the slate still waits
+  indefinitely, so law 1 and the no-timers law are both untouched. If the line ever tells the player
+  what to send rather than what the party has, it has become an order and it is wrong.
+
+#### P2-PEOPLE-16. The camped rows know who is camped
+
+- Goal: the hero the player is deciding about is the same person the roster shows them. Serves
+  decision 6 and link 3.
+- Approach: each camped row carries the trait and relationship-band chips `HeroPanel` already
+  builds, plus the fact that matters most at that moment — whether this hero is wearing the player's
+  work. Presentation only; `CampPanel` holds no `Trait` or `RelationshipBand` reference today.
+- The condition: chips, never survival math. The stakes stay qualitative.
+
+#### P2-PEOPLE-17. Stocking a piece names the queue that will reach it
+
+- Goal: decision 1 ("sell the good one or hold it for the hero who needs it") is asked with the one
+  fact that decides it — whether the hero who asked will actually be the one to get it.
+- Approach: the morning pass walks the roster in ascending hero id, so an earlier hero's ordinary
+  shopping can take a piece a later hero commissioned. Stocking names that: *"Fills Kael's ask
+  (+40g). Torvald and Brunhilde shop before he does."* The match predicate is **read from**
+  `CommissionHandlers`, never mirrored in the client — a second copy of a legality rule is the
+  family this repo has already paid for.
+- The condition: a fact, never a suggestion. The advisor never orders.
+
+#### P2-SCREEN-18. The muster names what the full slots hold
+
+- Goal: decision 3 ("fill the empty slot or upgrade the full one") currently has only one visible
+  arm. `ForecastParty` carries gear GAPS and the board prints *all slots filled* — so the upgrade
+  arm is invisible at the exact surface where the decision is made.
+- Approach: the forecast read-model carries what each filled slot actually holds, and the board
+  names it beside the gap list: *"Kael — Common copper dagger (yours, day 2)."* Sim read-model, not
+  Contracts.
+
+#### P2-MEMORY-21. The reforge row previews the lineage it will write
+
+- Goal: the heirloom decision is made with its own result visible, not after it.
+- Approach: the lineage template is hand-typed once inside `HeirloomHandlers`. Extract it to a pure
+  static both the handler and the reforge row call, so the preview cannot drift from the thing it
+  previews — the preview must call the same function, never a second copy of the sentence.
+
+#### P2-LONG-27. The Deep vigil gets a stakes slate
+
+- Goal: the Deep phase is the one stretch of the day with nothing to read. `MineWatch` draws figures
+  and HP bars; there is no slate down there.
+- Approach: one card, words only — who is below, bound for which floor, carrying which of the
+  player's work, and whose depth record stands. §11.7.4 already permits a surface that reveals stake
+  where it forbids a verb, and this adds no verb.
+- The condition: stakes are never percentages, and Deep stays verbless.
+
+#### P2-PROOF-13. The maker names the signed work
+
+- Goal: `THE-GAME.md`'s glossary says a signed work is "an item whose maker chose to name it". The
+  maker chooses nothing: `CraftingHandlers` takes `ArtifactSigning.LegendName(...)` off the seed.
+  The glossary sentence is corrected to the truth in the same PR that books this row, and this unit
+  is what would make the original sentence true.
+- Approach: the proc still decides WHICH piece qualifies (`ArtifactSigning.Qualifies`, threshold
+  950) — rarity is untouched. At the ceremony the player writes the name, with the generated one as
+  the default, so a player who skips it loses nothing. *Emberbite turned the killing blow* reads
+  differently when Emberbite was the player's own word.
+- Carries a Contracts micro-PR and sits behind **P4**: it adds an optional payload to the craft
+  path, and the owner rules on whether the naming ceremony belongs at the anvil or at the ledger.
 
 #### What this round says NOT to build
 
