@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using System.Reflection;
 using GameSim.Contracts;
+using GameSim.Crafting;
 using GameSim.Drama;
 using GameSim.Kernel;
 
@@ -216,6 +217,24 @@ public class ProvenanceQueryTests
         var item = PlayerItem(31, "Iron Blade", ItemSlot.Weapon, 5, 0);
 
         Assert.Null(ProvenanceQuery.HeirloomClause(item));
+    }
+
+    /// <summary>P2-MEMORY-21: the property the reforge row's PREVIEW leans on —
+    /// <see cref="ProvenanceQuery.Sentence"/> applied to <see cref="HeirloomHandlers.LineageOf"/>'s
+    /// raw output, computed BEFORE any item exists to stamp, reads identically to
+    /// <see cref="ProvenanceQuery.HeirloomClause"/> once an item carries that exact lineage. Iterated
+    /// over more than one hero/item pair — a formatter that happens to agree for one name and
+    /// disagrees for the next (an apostrophe, a multi-word name) is exactly what this pins against.
+    /// </summary>
+    [Theory]
+    [InlineData("Iron Blade", "Torvald")]
+    [InlineData("Widow's Kiss", "Bram Ashwood")]
+    public void Sentence_OfLineageOf_MatchesHeirloomClause_OnceAnItemCarriesThatLineage(string itemName, string heroName)
+    {
+        var lineage = HeirloomHandlers.LineageOf(itemName, heroName);
+        var item = PlayerItem(32, itemName, ItemSlot.Weapon, 5, 0) with { HeirloomLineage = lineage };
+
+        Assert.Equal(ProvenanceQuery.HeirloomClause(item), ProvenanceQuery.Sentence(lineage));
     }
 
     [Fact]

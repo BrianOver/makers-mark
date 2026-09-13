@@ -91,6 +91,56 @@ public class HeirloomHandlersTests
         Assert.Equal(before - 1, result.NewState.ActionSlotsRemaining);
     }
 
+    // ---- P2-MEMORY-21: one producer for the lineage sentence -------------------------------
+
+    /// <summary>A fallen-hero world shaped like <see cref="FallenHeroWorld"/> except the hero's
+    /// name and the worn item's display name are parameters — the property this unit exists to
+    /// prove (the actual write is exactly <see cref="HeirloomHandlers.LineageOf"/>'s own output)
+    /// has to hold for every heirloom shape, not just "Sera"'s dagger, or a change that broke it
+    /// for every OTHER hero could still pass a suite that only ever constructed one.</summary>
+    private static GameState FallenHeroWorldNamed(string heroName, string itemDisplayName, ulong seed, int copper = 5)
+    {
+        var state = GameFactory.NewGame(seed);
+        var wornGear = new GearSet(new ItemId(10), null, null);
+        var item = new Item(
+            new ItemId(10), "dagger", itemDisplayName, ItemSlot.Weapon, QualityGrade.Common,
+            new ItemStats(8, 0, 2), new MakersMark("You", 1), ImmutableList<ItemHistoryEntry>.Empty);
+
+        var hero = new Hero(
+            new HeroId(1), heroName, "vanguard", Level: 4, MaxHp: 40, Gold: 0,
+            wornGear, ImmutableList<ItemMemory>.Empty, Alive: false, DeepestFloorReached: 3, DiedOnDay: 1);
+
+        var died = new HeroDied(new HeroId(1), 3, "slain by a Tunnel Spider", wornGear) { Id = new EventId(1), Day = 1 };
+
+        return state with
+        {
+            Heroes = ImmutableSortedDictionary<int, Hero>.Empty.Add(1, hero),
+            Items = ImmutableSortedDictionary<int, Item>.Empty.Add(10, item),
+            EventLog = ImmutableList.Create<GameEvent>(died),
+            Player = state.Player with { Materials = state.Player.Materials.SetItem("copper", copper) },
+        };
+    }
+
+    [Theory]
+    [InlineData("Sera", "Rusty Dagger")]
+    [InlineData("Torvald", "Iron Blade")]
+    [InlineData("Bram Ashwood", "Widow's Kiss")]
+    [InlineData("Kess", "Notched Cleaver")]
+    public void Apply_WritesExactly_WhatLineageOf_ProducesForThisHeroAndItem(string heroName, string itemDisplayName)
+    {
+        var state = FallenHeroWorldNamed(heroName, itemDisplayName, seed: 99);
+        var action = new ReforgeHeirloomAction(new ItemId(10), "shortsword", "copper");
+        var result = Kernel.Tick(state, ImmutableList.Create<PlayerAction>(action));
+
+        Assert.Empty(result.Rejected);
+        var reforged = Assert.Single(result.NewState.Items.Values, i => i.HeirloomLineage is not null);
+
+        // The property this unit exists to prove: the ACTUAL write is exactly what the shared
+        // static produces for this hero/item pair — never a hand-typed expectation string, so a
+        // change to the template's shape is caught here regardless of which side it was made on.
+        Assert.Equal(HeirloomHandlers.LineageOf(itemDisplayName, heroName), reforged.HeirloomLineage);
+    }
+
     // ---- Rejections: invalid source ------------------------------------------------------
 
     [Fact]

@@ -57,6 +57,16 @@ namespace GodotClient.Panels;
 /// still render on the index; <see cref="ProvenanceCard"/> becoming the book's own item-page
 /// renderer, and richer per-actor page content, are later units' work
 /// (<c>docs/design/MAKERS-MARK.md</c> §11, P2-MEMORY-11/-12/-14).</para>
+///
+/// <para>P2-MEMORY-21: each Reforge row (<see cref="RenderReforgeOptions"/>) now shows the lineage
+/// sentence it will write BEFORE the press — built by calling <see
+/// cref="GameSim.Crafting.HeirloomHandlers.LineageOf"/>, the SAME static the handler itself calls
+/// when it actually stamps <see cref="Item.HeirloomLineage"/>, formatted through <see
+/// cref="ProvenanceQuery.Sentence"/>, the SAME presentation rule <c>ProvenanceCard</c> applies once
+/// the item exists. Never a second copy of either: a preview built from its own hand-typed sentence
+/// or its own hand-typed capitalization rule is a preview that can drift from what gets written or
+/// shown the moment either side changes alone, and this repo has paid for exactly that family of
+/// bug before.</para>
 /// </summary>
 public partial class LegendsWall : Control
 {
@@ -407,6 +417,22 @@ public partial class LegendsWall : Control
             var label = AddLabel(row, $"    reforge {item.Name} into:");
             label.SizeFlagsHorizontal = SizeFlags.ExpandFill;
 
+            // P2-MEMORY-21: the lineage sentence this reforge will write, shown BEFORE the press —
+            // HeirloomHandlers.LineageOf builds the exact same raw string Apply will stamp onto
+            // Item.HeirloomLineage for this sourceItem/fallenHero pair, and ProvenanceQuery.Sentence
+            // applies the SAME "capitalize, period" rule ProvenanceCard uses once the item exists —
+            // so this is not a preview of the data, it's the exact sentence the player will later
+            // read on the card. Set once here so it is on screen the instant the row exists (before
+            // any picker touch, before any press), and re-set inside Repaint below so it stays wired
+            // to the SAME live-recompute cycle the button's own legality already uses — the sim's
+            // template happens to be source/hero-only (recipe/material choice never changes what a
+            // reforge writes here; pinned by HeirloomHandlersTests and LegendsWallTests), so the text
+            // does not change VALUE across a picker touch, but it is never a value frozen at build
+            // time either.
+            var heroName = HeroName(state, hero);
+            var previewLabel = AddLabel(parent, $"      {ProvenanceQuery.Sentence(HeirloomHandlers.LineageOf(item.Name, heroName))}");
+            previewLabel.Name = $"ReforgePreview_{itemId.Value}";
+
             var recipeSelect = new OptionButton { Name = $"ReforgeRecipeSelect_{itemId.Value}" };
             var recipeDefaultIndex = 0;
             for (var i = 0; i < recipeOptions.Count; i++)
@@ -459,6 +485,11 @@ public partial class LegendsWall : Control
                 button.TooltipText = Adapter is null
                     ? string.Empty
                     : legal ? string.Empty : whyNot;
+
+                // Recomputed from the SAME shared functions every repaint, not just at row build —
+                // live-wired the way the button's own legality is, so it can never go stale relative
+                // to what a press right now would actually write.
+                previewLabel.Text = $"      {ProvenanceQuery.Sentence(HeirloomHandlers.LineageOf(item.Name, heroName))}";
             }
 
             recipeSelect.ItemSelected += _ => Repaint();

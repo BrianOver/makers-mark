@@ -140,7 +140,7 @@ public sealed class HeirloomHandlers : IActionHandler
         var item = ItemForge.Forge(itemId, recipe, quality, state.Day);
 
         var fallenName = state.Heroes.TryGetValue(fallenHero.Value.Value, out var fallenRecord) ? fallenRecord.Name : "a fallen hero";
-        var lineage = $"forged from the {sourceItem.Name} of {fallenName}";
+        var lineage = LineageOf(sourceItem.Name, fallenName);
         item = item with { HeirloomLineage = lineage };
 
         var newState = state with
@@ -162,4 +162,16 @@ public sealed class HeirloomHandlers : IActionHandler
 
     private static bool WoreItem(GearSet gear, ItemId item) =>
         gear.Weapon == item || gear.Shield == item || gear.Armor == item || gear.Trinket == item;
+
+    /// <summary>
+    /// P2-MEMORY-21: the lineage sentence stamped onto a reforged heirloom (<see
+    /// cref="Item.HeirloomLineage"/>), extracted to a pure static so the reforge row's PREVIEW
+    /// (<c>LegendsWall.RenderReforgeOptions</c>) and this handler's actual write share the exact
+    /// same producer. Before this unit the sentence was hand-typed once, here, and the client had
+    /// no way to show it before the press without either copying the string (a second copy that
+    /// could silently drift the moment either side changed alone) or waiting for the write to
+    /// happen — this is the one place the template exists now, for both callers.
+    /// </summary>
+    public static string LineageOf(string sourceItemName, string fallenHeroName) =>
+        $"forged from the {sourceItemName} of {fallenHeroName}";
 }
