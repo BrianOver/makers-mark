@@ -277,8 +277,38 @@ public sealed record DenThreatShifted(
     string VenueId, int ThreatPermille, int ThreatTier, bool Lockdown) : GameEvent;
 
 /// <summary>Phase D (U-D2): the Guild Assessment was paid in full — dues escalate for next cycle,
-/// Confidence (<see cref="RentState.ConfidencePermille"/>) recovers a little.</summary>
-public sealed record GuildAssessmentPassed(int DuesPaidGold, int NextDuesGold, int ConfidencePermille) : GameEvent;
+/// Confidence (<see cref="RentState.ConfidencePermille"/>) recovers a little.
+///
+/// <para>P2-LONG-18: <paramref name="PledgedItem"/> is set when the cycle was settled by a
+/// <see cref="DuesPledged"/> piece rather than coin, in which case <paramref name="DuesPaidGold"/>
+/// is 0 because no gold moved. Added with defaults deliberately — every existing reader and every
+/// existing construction stays correct, and a surface that wants to say WHICH piece bought the
+/// cycle can, without a second event shape saying almost the same thing.</para></summary>
+public sealed record GuildAssessmentPassed(
+    int DuesPaidGold,
+    int NextDuesGold,
+    int ConfidencePermille,
+    ItemId? PledgedItem = null,
+    string? PledgedItemName = null) : GameEvent;
+
+/// <summary>
+/// P2-LONG-18 (§11.15): the player handed the guild a piece they made in place of the dues — see
+/// <see cref="PledgeDuesAction"/> for the trade being made and why it is not a seventh decision.
+/// Fires the moment the pledge is accepted, not at the assessment it settles.
+///
+/// <para>This event IS the guild wall. There is no separate wall collection on
+/// <see cref="GuildAssessmentState"/> and there should not be one: a wall derived from the event
+/// log cannot drift out of step with the pledges that built it, and the same "the log is the
+/// record" idiom already carries the town's other memories. <paramref name="ItemName"/> travels
+/// with it because the piece itself is gone from the world by then — the same reason
+/// <see cref="Memorial"/> carries a fallen hero's name rather than only their id.</para>
+///
+/// <para><paramref name="AppraisedGold"/> is what the piece was worth
+/// (<c>GameSim.Advisor.SuggestedPrice</c>) and <paramref name="DuesCoveredGold"/> what it settled.
+/// The gap between them is not refunded and is not a bug: the guild gives no change, and a player
+/// who pledges their best piece against small dues has overpaid on purpose.</para></summary>
+public sealed record DuesPledged(
+    ItemId Item, string ItemName, int AppraisedGold, int DuesCoveredGold) : GameEvent;
 
 /// <summary>Phase D (U-D2): the Guild Assessment came due and the till couldn't cover it — no gold
 /// moves (never driven negative; <see cref="GameSim.Economy.DestitutionRecoverySystem"/> still runs this same
