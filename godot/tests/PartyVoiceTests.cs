@@ -78,13 +78,20 @@ public class PartyVoiceTests
             AssertThat(line.Contains("We", StringComparison.Ordinal))
                 .OverrideFailureMessage($"[{context}] line must name the PARTY, not just the anchor alone. Line: \"{line}\"").IsTrue();
 
-            AssertThat(line.Contains($"floor {party.CheckpointFloor}", StringComparison.Ordinal))
+            // The three floor mentions are compared case-INSENSITIVELY, and the difference is not
+            // cosmetic: the anchor speaks in sentences, so whichever floor happens to open a sentence
+            // is capitalised ("Floor 2 is the Tunnel Spider's."). An Ordinal compare here asserts a
+            // fact about where the line breaks rather than about which floor it names, and it failed
+            // on exactly one scenario -- checkpoint 1 pressing for floor 3, the only shape where the
+            // next floor is named ONLY at a sentence start. Every other scenario passed by accident,
+            // because the next floor also appeared mid-sentence as the target.
+            AssertThat(line.Contains($"floor {party.CheckpointFloor}", StringComparison.OrdinalIgnoreCase))
                 .OverrideFailureMessage($"[{context}] checkpoint floor must appear verbatim. Line: \"{line}\"").IsTrue();
-            AssertThat(line.Contains($"floor {party.TargetFloor}", StringComparison.Ordinal))
+            AssertThat(line.Contains($"floor {party.TargetFloor}", StringComparison.OrdinalIgnoreCase))
                 .OverrideFailureMessage($"[{context}] target floor must appear verbatim. Line: \"{line}\"").IsTrue();
             AssertThat(line.Contains($"{expectedHp} of {expectedMaxHp}", StringComparison.Ordinal))
                 .OverrideFailureMessage($"[{context}] the anchor's OWN hp/maxHp must appear verbatim. Line: \"{line}\"").IsTrue();
-            AssertThat(line.Contains($"floor {expectedNextFloor}", StringComparison.Ordinal))
+            AssertThat(line.Contains($"floor {expectedNextFloor}", StringComparison.OrdinalIgnoreCase))
                 .OverrideFailureMessage($"[{context}] the very next floor must appear. Line: \"{line}\"").IsTrue();
             AssertThat(line.Contains(expectedMonster, StringComparison.Ordinal))
                 .OverrideFailureMessage($"[{context}] the next floor's own VenueRegistry monster kind must appear. Line: \"{line}\"").IsTrue();
