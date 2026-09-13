@@ -4908,9 +4908,25 @@ public partial class MainUi : Control
             // (1,287 fires, ObjectiveAdvisor's own U8 doc) said with a different face. MentorIdleVoice
             // speaks the live top objective instead (the same sim-decided reason the Objective HUD
             // chip already renders), falling back to RestingLine only when nothing is actually happening.
-            Mentor.Show(Tutorial.Active
-                ? MentorVoice.CurrentLesson(Tutorial.Step)
-                : MentorIdleVoice.Line(Adapter.CurrentState));
+            // P2-SCREEN-15 (fix): preempt, and this is the unit that made it necessary. Her
+            // station is the one surface whose entire contract is "ask her and she answers NOW",
+            // but MentorBanner's busy-guard queues a line that arrives while the banner is
+            // already showing one — and the forge is exactly where that collides, because
+            // walking through its door now SPEAKS the slot-budget and station-press lessons
+            // rather than only recording them. The first press of Bryn therefore answered with
+            // the door's own orientation note instead of her live lesson: her voice was not
+            // lost, but it arrived behind a "Got it" the player had no reason to press.
+            //
+            // That is the precise case preempt was built for (MentorBanner.ShowFirstTouch's own
+            // doc: a SPECIFIC lesson "belonging to an act the player just performed" against "a
+            // more generic 'here is what this screen is' note fired moments earlier"). Pressing
+            // a station IS the act, and nothing is discarded: the displaced note goes to the
+            // FRONT of the queue and is the very next thing "Got it" shows.
+            Mentor.Show(
+                Tutorial.Active
+                    ? MentorVoice.CurrentLesson(Tutorial.Step)
+                    : MentorIdleVoice.Line(Adapter.CurrentState),
+                preempt: true);
             return;
         }
 
