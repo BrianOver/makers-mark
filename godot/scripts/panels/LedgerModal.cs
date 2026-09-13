@@ -656,18 +656,21 @@ public partial class LedgerModal : SimPanel
 
         if (!card.Survived)
         {
-            // P2-MEMORY-02: the death card's two pure reads (FallenQuery). Both are facts the sim
-            // already recorded and nothing on any screen had ever said out loud — what of the
-            // player's work went down and came back unopened, and whose blade landed the last blow
-            // this hero ever struck. Same honest-empty-state contract as the beat rows' channel
-            // clause above: FallenQuery returns an empty string wherever the record cannot prove
-            // the sentence, and an empty string draws nothing at all rather than a vaguer line.
+            // P2-MEMORY-02 / P2-PROOF-11: the death card's three pure reads (FallenQuery). All three
+            // are facts the sim already recorded and nothing on any screen had ever said out loud —
+            // how close the fatal blow actually was, what of the player's work went down and came
+            // back unopened, and whose blade landed the last blow this hero ever struck. Same
+            // honest-empty-state contract as the beat rows' channel clause above: FallenQuery returns
+            // an empty string wherever the record cannot prove the sentence, and an empty string
+            // draws nothing at all rather than a vaguer line.
             //
-            // Ordering is the grief, not an accident: the pack line (what you sent, unused) sits
-            // directly under the fate line, and the last-blow line — the one that takes no credit —
-            // sits under that, ABOVE the beat rows that do.
+            // Ordering is the grief, not an accident: the margin line is the direct continuation of
+            // the fate line just above it ("Slain by a Deep Ghoul." / "The blow read 15...") so it
+            // leads; the pack line (what you sent, unused) sits under that; and the last-blow line —
+            // the one that takes no credit — sits under that, ABOVE the beat rows that do.
             foreach (var (line, nodeName) in new[]
             {
+                (FallenQuery.MarginLine(state, card.Hero), "FallenMarginLine"),
                 (FallenQuery.PackLine(state, card.Hero), "FallenPackLine"),
                 (FallenQuery.LastBlowLine(state, card.Hero), "FallenLastBlowLine"),
             })
