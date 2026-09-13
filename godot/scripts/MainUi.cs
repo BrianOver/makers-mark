@@ -1456,7 +1456,11 @@ public partial class MainUi : Control
 
         // U23 (fix): reads GameState.EventLog durably now, not just this tick's LastEvents — see
         // TutorialFlow.Advance's own doc for why a per-tick-only read could dead-end the chain.
-        Tutorial.Advance(state);
+        //
+        // P2-SCREEN-15: Advance's own return is the leaving-a-room lesson's spoken line, the one
+        // call it ever fires on — routed here exactly like every other first-touch lesson in this
+        // file, rather than discarded as it used to be (the book recorded it; the screen never did).
+        Mentor.ShowFirstTouch(Tutorial.Advance(state));
 
         // U26 (§11.14.14, R19, "a player learns where the game publishes what the town wants"):
         // Bryn points at the Demand board — the surface that already carries the rolled-up pass
@@ -4743,7 +4747,14 @@ public partial class MainUi : Control
             // check. Called AFTER EnterInterior/UpdateEngaged so CurrentLocationPanelId already
             // sees the new room — the non-interior route below gets the same call for free at the
             // end of OpenPanel, which runs after Drawer.Open has set CurrentPanelId.
-            Tutorial.NotifyEnteredBuilding(venueKey);
+            //
+            // P2-SCREEN-15: its return is whichever first-touch lesson this exact arrival spoke
+            // (the forge's slot-budget/station-press pair, empty everywhere else and on any later
+            // arrival) — spoken here, same once-ever gate, rather than discarded as it used to be.
+            foreach (var line in Tutorial.NotifyEnteredBuilding(venueKey))
+            {
+                Mentor.ShowFirstTouch(line);
+            }
 
             // P2-ONBOARD-07 (§11.15): beat 3, her rule, wrong on purpose — fires on the player's
             // first ever real walk to the Shop's own room, before ANY pricing decision exists to
@@ -4768,7 +4779,13 @@ public partial class MainUi : Control
 
         if (venueKey is not null)
         {
-            Tutorial.NotifyEnteredBuilding(venueKey);
+            // P2-SCREEN-15: same routing as the walkable-interior branch above — no split lesson
+            // currently anchors a drawer-only venue, so this loop runs empty in practice today, but
+            // the NEXT one that does is covered here for free rather than needing its own wiring.
+            foreach (var line in Tutorial.NotifyEnteredBuilding(venueKey))
+            {
+                Mentor.ShowFirstTouch(line);
+            }
         }
 
         var panelId = building switch
@@ -4891,9 +4908,25 @@ public partial class MainUi : Control
             // (1,287 fires, ObjectiveAdvisor's own U8 doc) said with a different face. MentorIdleVoice
             // speaks the live top objective instead (the same sim-decided reason the Objective HUD
             // chip already renders), falling back to RestingLine only when nothing is actually happening.
-            Mentor.Show(Tutorial.Active
-                ? MentorVoice.CurrentLesson(Tutorial.Step)
-                : MentorIdleVoice.Line(Adapter.CurrentState));
+            // P2-SCREEN-15 (fix): preempt, and this is the unit that made it necessary. Her
+            // station is the one surface whose entire contract is "ask her and she answers NOW",
+            // but MentorBanner's busy-guard queues a line that arrives while the banner is
+            // already showing one — and the forge is exactly where that collides, because
+            // walking through its door now SPEAKS the slot-budget and station-press lessons
+            // rather than only recording them. The first press of Bryn therefore answered with
+            // the door's own orientation note instead of her live lesson: her voice was not
+            // lost, but it arrived behind a "Got it" the player had no reason to press.
+            //
+            // That is the precise case preempt was built for (MentorBanner.ShowFirstTouch's own
+            // doc: a SPECIFIC lesson "belonging to an act the player just performed" against "a
+            // more generic 'here is what this screen is' note fired moments earlier"). Pressing
+            // a station IS the act, and nothing is discarded: the displaced note goes to the
+            // FRONT of the queue and is the very next thing "Got it" shows.
+            Mentor.Show(
+                Tutorial.Active
+                    ? MentorVoice.CurrentLesson(Tutorial.Step)
+                    : MentorIdleVoice.Line(Adapter.CurrentState),
+                preempt: true);
             return;
         }
 

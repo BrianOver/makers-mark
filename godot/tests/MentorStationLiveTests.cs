@@ -60,6 +60,50 @@ public class MentorStationLiveTests
         }
     }
 
+    /// <summary>
+    /// P2-SCREEN-15 (fix): the property the test above only happens to exercise, pinned in its own
+    /// right — pressing her answers in HER voice regardless of what the banner is already saying.
+    /// Before this unit the forge door recorded its two lessons silently, so the banner was always
+    /// free by the time the player reached her and the test above passed for a reason that had
+    /// nothing to do with the rule. The moment the door started speaking, it didn't.
+    ///
+    /// <para>The second half is the cost of preempting, and the half worth guarding: the displaced
+    /// note must be DISPLACED, not dropped. ConsumeFirstTouch has already marked its id fired and
+    /// persisted that, so a line the banner bins here never fires again for this campaign — the
+    /// exact defect MentorBanner's own queue was built to end. "Got it" must bring it back.</para>
+    /// </summary>
+    [TestCase]
+    public void PressingBryn_DisplacesWhateverTheDoorSaid_WithoutLosingIt()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.Town.FindBuilding("forge").RaisePick();
+
+            var doorNote = Find<Label>(ui.Mentor, "MentorBannerText").Text;
+            AssertThat(doorNote)
+                .OverrideFailureMessage("Walking into the forge said nothing, so this test proves nothing about a busy banner.")
+                .IsNotEmpty();
+
+            var room = ui.Town.FindInteriorRoom("forge");
+            room.Stations.First(s => s.Key == MentorVoice.StationId).RaisePick();
+
+            AssertThat(Find<Label>(ui.Mentor, "MentorBannerText").Text)
+                .OverrideFailureMessage("Pressing Bryn queued her behind the door's own note instead of answering — asking her is the one act that must be answered on the press.")
+                .IsEqual(MentorVoice.CurrentLesson(ui.Tutorial.Step));
+
+            ui.Mentor.Dismiss();
+
+            AssertThat(Find<Label>(ui.Mentor, "MentorBannerText").Text)
+                .OverrideFailureMessage("The door's own note was binned rather than displaced — its lesson id is already spent, so binning it loses those words for the whole campaign.")
+                .IsEqual(doorNote);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
     /// <summary>The rejection-toast half of the fix: her station used to special-case straight into
     /// <c>ShowBellToast</c>, so pressing her also lit the SAME banner an illegal action rejection
     /// uses. That banner must now stay dark for her entirely.</summary>
