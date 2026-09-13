@@ -200,6 +200,108 @@ public class ScarcityHudTests
         finally { Unmount(ui); }
     }
 
+    /// <summary>
+    /// P2-SCREEN-18 (decision 3, "fill the empty slot, or upgrade the full one"): the board's OTHER
+    /// arm. <see cref="ForecastButton_OpensBoard_ContentMatchesSimQuery"/> above only ever pins the
+    /// party/floor/threat rendering — the starting roster carries no gear at all, so <see
+    /// cref="ForecastParty.WornGear"/> stays empty there and never gets exercised. This fixture
+    /// equips one hero with a real, player-marked item so the "Gear worn:" line has something to
+    /// prove: link 1 ("you make a thing, and it is provably yours") reaching the one screen the
+    /// player reads before every decision to fill or upgrade.
+    /// </summary>
+    [TestCase]
+    public void ForecastBoard_NamesWornGear_ForAPlayerCraftedSlot()
+    {
+        var state = HeroRoster.InstallStartingRoster(GameFactory.NewGame(2026));
+        var hero = state.Heroes.Values.First();
+        var item = new Item(
+            new ItemId(9001), "recipe", "Copper Dagger", ItemSlot.Weapon, QualityGrade.Common,
+            new ItemStats(1, 1, 1), new MakersMark("You", 2), ImmutableList<ItemHistoryEntry>.Empty);
+        var geared = hero with { Gear = new GearSet(item.Id, null, null) };
+        state = state with
+        {
+            Items = state.Items.Add(item.Id.Value, item),
+            Heroes = state.Heroes.SetItem(geared.Id.Value, geared),
+        };
+
+        var ui = MountMainUi(new SimAdapter(state));
+        try
+        {
+            ui.Forecast.ShowForTomorrow(state);
+
+            var text = RenderedText(ui.Forecast);
+            AssertThat(text).Contains("Gear worn:");
+            AssertThat(text).Contains(geared.Name);
+            AssertThat(text).Contains("Copper Dagger");
+            AssertThat(text)
+                .OverrideFailureMessage(
+                    $"link 1 (\"it is provably yours\") never rendered for the player's own MakersMark: \"{text}\"")
+                .Contains("(yours, day 2)");
+        }
+        finally { Unmount(ui); }
+    }
+
+    /// <summary>
+    /// The law this unit is closest to breaking: "the forecast does not tell you who will
+    /// survive." Guarded as a PATTERN over the actual rendered worn-gear block, never a single
+    /// literal string — scoped to that block specifically (not the whole board) because the board
+    /// legitimately narrates "it does not tell you who will survive" as first-touch teaching
+    /// elsewhere on the same screen (<see cref="RaidForecastBoard"/>'s own gear-gap lesson), which
+    /// is meta-commentary ABOUT the rule, not a violation of it.
+    /// </summary>
+    [TestCase]
+    public void ForecastBoard_WornGearBlock_NeverNamesASurvivalEstimateOrPowerScore()
+    {
+        var state = HeroRoster.InstallStartingRoster(GameFactory.NewGame(2027));
+        var hero = state.Heroes.Values.First();
+        var item = new Item(
+            new ItemId(9002), "recipe", "Iron Shield", ItemSlot.Shield, QualityGrade.Superior,
+            new ItemStats(1, 1, 1), new MakersMark("You", 5), ImmutableList<ItemHistoryEntry>.Empty);
+        var geared = hero with { Gear = new GearSet(null, item.Id, null) };
+        state = state with
+        {
+            Items = state.Items.Add(item.Id.Value, item),
+            Heroes = state.Heroes.SetItem(geared.Id.Value, geared),
+        };
+
+        var ui = MountMainUi(new SimAdapter(state));
+        try
+        {
+            ui.Forecast.ShowForTomorrow(state);
+
+            var text = RenderedText(ui.Forecast);
+            var wornBlock = ExtractBlock(text, "Gear worn:", "Gear gaps:");
+            AssertThat(wornBlock.Length > 0)
+                .OverrideFailureMessage("setup check: the worn-gear block never rendered at all.")
+                .IsTrue();
+
+            var suspect = new System.Text.RegularExpressions.Regex(
+                @"\d+%|\bsurvive[sd]?\b|\bchance\b|\bpower\b|\bwill (win|lose|die)\b",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            AssertThat(suspect.IsMatch(wornBlock))
+                .OverrideFailureMessage(
+                    $"the worn-gear block must state facts only, never a survival estimate or power score: \"{wornBlock}\"")
+                .IsFalse();
+        }
+        finally { Unmount(ui); }
+    }
+
+    /// <summary>Slices the text between the first <paramref name="startMarker"/> and the following
+    /// <paramref name="endMarker"/> (or to the end, if the end marker never appears) — scopes a
+    /// property check to one section of the board's rendered text rather than the whole screen.</summary>
+    private static string ExtractBlock(string text, string startMarker, string endMarker)
+    {
+        var start = text.IndexOf(startMarker, StringComparison.Ordinal);
+        if (start < 0)
+        {
+            return string.Empty;
+        }
+
+        start += startMarker.Length;
+        var end = text.IndexOf(endMarker, start, StringComparison.Ordinal);
+        return end < 0 ? text[start..] : text[start..end];
+    }
+
     [TestCase]
     public void ForecastBoard_QuietDay_RendersNoRaidsLine_NotEmpty()
     {
