@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using GameSim.Contracts;
+using GameSim.Drama;
 using GameSim.Presentation;
 using GameSim.Venues;
 using Godot;
@@ -308,6 +309,45 @@ public partial class MineWatch : SubViewportContainer
     /// empty-state sentence when nobody does (test/tuning hook, U2).</summary>
     public ImmutableList<string> DepartureSlateLines { get; private set; } = ImmutableList<string>.Empty;
 
+    /// <summary>
+    /// P2-LONG-27 ("the Deep vigil gets a stakes slate"): the ONE thing <see
+    /// cref="DayPhase.ExpeditionDeep"/> shows besides the marching figures above.
+    /// <c>docs/design/THE-GAME.md</c> used to say plainly that the deep floors have "no slate down
+    /// there restating what is at stake" — that line is now false, and this is the fix. Same
+    /// construction idiom as <see cref="_departureSlate"/> (a sibling <see cref="PanelContainer"/>/
+    /// <see cref="VBoxContainer"/> pair, a direct child of `this` so it escapes the SubViewport
+    /// boundary the same way — see that field's own remarks), reusing that slate's own <see
+    /// cref="JourneyCard"/> source rather than re-deriving anything: <see cref="JourneyCard.Party"/>/
+    /// <see cref="JourneyCard.PartyNames"/> is who is below, <see cref="JourneyCard.TargetFloor"/>
+    /// is which floor they are bound for, and <see cref="JourneyCard.Manifest"/> (already gated on
+    /// <see cref="Item.PlayerCrafted"/> — link1's own gate, reused rather than re-checked) is which
+    /// of the player's own work each of them carries. The one fact this slate adds that the
+    /// departure slate never needed is each hero's OWN depth record (<see
+    /// cref="Hero.DeepestFloorReached"/>), routed through <see cref="DepthCopy.Deepest"/> —
+    /// <c>ChronicleFloorCopyTests</c>'s own census fails any Godot source that interpolates that int
+    /// unaided, and this file has no exemption row.
+    ///
+    /// <para><b>The two laws this unit sits closest to, both held on purpose.</b> §11.7.4 permits a
+    /// surface that reveals stake where it forbids a verb — this card carries no <see
+    /// cref="BaseButton"/> anywhere in its subtree and reacts to nothing; it is read-only exactly
+    /// like every other pixel <see cref="Refresh"/> draws (KTD2). And stakes are never percentages:
+    /// every line below is a name, a floor number, or a recorded fact the sim already produced —
+    /// never a chance, a score or a ratio. Shown ONLY at <see cref="DayPhase.ExpeditionDeep"/>
+    /// (<c>PhaseVocab</c>'s own "Deep Vigil") with a real party actually below (<see
+    /// cref="AlreadyBackThisCycle"/> false) — the Camp phase already has <c>CampPanel</c>'s decision
+    /// surface and <see cref="_departureSlate"/> already covers Expedition/Camp/Evening;
+    /// ExpeditionDeep had neither.</para>
+    /// </summary>
+    private PanelContainer _deepStakesSlate = null!;
+    private VBoxContainer _deepStakesSlateBody = null!;
+
+    /// <summary>The Deep stakes slate's currently rendered lines (test/tuning hook, P2-LONG-27) —
+    /// one "bound for floor N, own record: floor M" line per hero actually below, followed by every
+    /// <see cref="JourneyManifestLine.Text"/> that party carries (or the honest empty-state sentence).
+    /// Empty whenever the slate is hidden — every phase except <see cref="DayPhase.ExpeditionDeep"/>,
+    /// or ExpeditionDeep with nobody actually camped.</summary>
+    public ImmutableList<string> DeepStakesSlateLines { get; private set; } = ImmutableList<string>.Empty;
+
     /// <summary>A2 (+A3 FX), plan <c>2026-07-28-001</c> Part 2: the beat-driven combat overlay
     /// (floor chip, current-floor monster + HP bar, hit/quaff/death-cloud FX) layered over the
     /// figures built above. Mounted as a sibling of <see cref="_world"/> (never a descendant) —
@@ -555,6 +595,25 @@ public partial class MineWatch : SubViewportContainer
         slateHeader.AddThemeFontSizeOverride("font_size", GameTheme.LegibilityFloor);
         _departureSlateBody.AddChild(slateHeader);
 
+        // P2-LONG-27: same sibling-of-`this` placement as _departureSlate above and for the same
+        // reason (escapes the SubViewport boundary), anchored at the strip's OTHER top corner so
+        // the two can never overlap on the one phase (ExpeditionDeep) where both are eligible to
+        // show at once (_departureSlate's own contract keeps it visible Rumored through Resolved).
+        _deepStakesSlate = UiKit.Card("DeepStakesSlate");
+        _deepStakesSlate.MouseFilter = MouseFilterEnum.Ignore; // decoration only — never eats a click (§11.7.4: no verb down here)
+        _deepStakesSlate.Position = new Vector2(DesignSize.X - 270f, 6f);
+        _deepStakesSlate.CustomMinimumSize = new Vector2(260f, 0f);
+        _deepStakesSlate.Visible = false; // Refresh's first UpdateDeepStakesSlate call decides
+        AddChild(_deepStakesSlate);
+
+        _deepStakesSlateBody = new VBoxContainer { Name = "DeepStakesSlateBody" };
+        _deepStakesSlate.AddChild(_deepStakesSlateBody);
+
+        var stakesHeader = new Label { Name = "DeepStakesSlateHeader", Text = "THE DEEP VIGIL" };
+        stakesHeader.AddThemeColorOverride("font_color", GameTheme.HeaderColor);
+        stakesHeader.AddThemeFontSizeOverride("font_size", GameTheme.LegibilityFloor);
+        _deepStakesSlateBody.AddChild(stakesHeader);
+
         _built = true;
     }
 
@@ -646,6 +705,15 @@ public partial class MineWatch : SubViewportContainer
         UpdateFeedLabel();
         RefreshDelveBeats(state, live);
         UpdateDepartureSlate(_feed.Cards.Count > 0 ? _feed.Cards[0] : null);
+
+        // P2-LONG-27: the SAME tracked-party card the departure slate reads, gated to the one
+        // phase it exists for. AlreadyBackThisCycle already names "nobody is actually below" at
+        // Camp/ExpeditionDeep (repo task #67) — reused here rather than re-deriving it, so this
+        // card and that flag can never disagree about whether a party is really camped.
+        var deepStakesCard = state.Phase == DayPhase.ExpeditionDeep && !AlreadyBackThisCycle && _feed.Cards.Count > 0
+            ? _feed.Cards[0]
+            : null;
+        UpdateDeepStakesSlate(deepStakesCard, state);
     }
 
     /// <summary>
@@ -1084,6 +1152,96 @@ public partial class MineWatch : SubViewportContainer
         }
 
         DepartureSlateLines = card.Manifest.Select(m => m.Text).ToImmutableList();
+    }
+
+    /// <summary>
+    /// P2-LONG-27: rebuilds the Deep stakes slate — see that field's own remarks for what this
+    /// card is and the two laws it is built to respect. Same detach-then-defer rebuild shape as
+    /// <see cref="UpdateDepartureSlate"/> just above, and reads the SAME <paramref name="card"/>
+    /// that slate reads (this method derives no party/manifest data of its own) — the one thing it
+    /// adds is each hero's own depth record, read straight off <paramref name="state"/>.<see
+    /// cref="GameState.Heroes"/> and phrased through <see cref="DepthCopy.Deepest"/> so a hero who
+    /// has never delved reads "not yet", never the impossible "floor 0" (register #166's family).
+    /// </summary>
+    private void UpdateDeepStakesSlate(JourneyCard? card, GameState state)
+    {
+        foreach (var child in _deepStakesSlateBody.GetChildren().Skip(1))
+        {
+            _deepStakesSlateBody.RemoveChild(child);
+            PanelGraveyard.Bury(child);
+        }
+
+        if (card is null)
+        {
+            _deepStakesSlate.Visible = false;
+            DeepStakesSlateLines = ImmutableList<string>.Empty;
+            return;
+        }
+
+        _deepStakesSlate.Visible = Visible;
+        var lines = ImmutableList.CreateBuilder<string>();
+
+        // One "who, bound for which floor, whose record" line per hero actually below — never a
+        // hero absent from card.Party, and never a percentage/odds phrase (the pinned property
+        // both DeepStakesSlateTests.NamesEveryHeroBelow_AndNobodyElse and
+        // DeepStakesSlateTests.NeverReadsAsAPercentage guard).
+        for (var i = 0; i < card.Party.Count; i++)
+        {
+            var heroId = card.Party[i];
+            var name = i < card.PartyNames.Count ? card.PartyNames[i] : $"Hero #{heroId.Value}";
+            var record = state.Heroes.TryGetValue(heroId.Value, out var hero)
+                ? DepthCopy.Deepest(hero.DeepestFloorReached)
+                : DepthCopy.Deepest(0);
+            var line = $"{name} — bound for floor {card.TargetFloor}. Own record: {record}.";
+            lines.Add(line);
+            _deepStakesSlateBody.AddChild(new Label
+            {
+                Name = $"DeepStakesSlateHero_{heroId.Value}",
+                Text = line,
+                AutowrapMode = TextServer.AutowrapMode.WordSmart,
+            });
+        }
+
+        // Which of the player's own work each of them carries — the SAME PlayerCrafted-gated
+        // manifest the departure slate renders (link1's gate, never re-checked here), so an item
+        // the player made is attributed to its bearer and an item they did not make never is.
+        if (card.Manifest.IsEmpty)
+        {
+            const string emptyText = "Nobody below carries anything you forged.";
+            var row = new HBoxContainer { Name = "DeepStakesSlateEmptyRow" };
+            _deepStakesSlateBody.AddChild(row);
+            row.AddChild(new TextureRect
+            {
+                Name = "DeepStakesSlateEmptyIcon",
+                Texture = IconRegistry.Glyph("rune"),
+                CustomMinimumSize = new Vector2(16f, 16f),
+                StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
+                MouseFilter = MouseFilterEnum.Ignore,
+            });
+            row.AddChild(new Label
+            {
+                Name = "DeepStakesSlateEmptyLabel",
+                Text = emptyText,
+                AutowrapMode = TextServer.AutowrapMode.WordSmart,
+                SizeFlagsHorizontal = SizeFlags.ExpandFill,
+            });
+            lines.Add(emptyText);
+        }
+        else
+        {
+            foreach (var line in card.Manifest)
+            {
+                _deepStakesSlateBody.AddChild(new Label
+                {
+                    Name = $"DeepStakesSlateCarry_{line.Item.Value}",
+                    Text = line.Text,
+                    AutowrapMode = TextServer.AutowrapMode.WordSmart,
+                });
+                lines.Add(line.Text);
+            }
+        }
+
+        DeepStakesSlateLines = lines.ToImmutable();
     }
 
     // ── phase rendering ──────────────────────────────────────────────────────────────────────
