@@ -2,6 +2,8 @@
 using System.Collections.Immutable;
 using GameSim.Classes;
 using GameSim.Contracts;
+using GameSim.Crafting;
+using GameSim.Drama;
 using GameSim.Kernel;
 using GdUnit4;
 using Godot;
@@ -229,13 +231,20 @@ public class LegendsWallTests
     /// time, per <see cref="ReforgeGate"/>'s own doc), so every existing Reforge-focused test in
     /// this suite is unaffected by this default; only the Honor-button tests need a different
     /// value, and pass it explicitly.</summary>
+    /// <summary>P2-MEMORY-21: <paramref name="heroName"/>/<paramref name="itemDisplayName"/> default
+    /// to "Sera"/"Rusty Dagger" — every existing call site (and its literal
+    /// <c>"forged from the Rusty Dagger of Sera"</c> expectation) is unaffected — but let the
+    /// lineage-preview tests construct a DIFFERENT heirloom shape without hand-rolling a second
+    /// fixture. The already-reforged branch's own lineage is now built the same way
+    /// (<see cref="HeirloomHandlers.LineageOf"/>) rather than a hand-typed string, so it never
+    /// drifts from these parameters either.</summary>
     private static GameState WorldWithFallenHero(
         bool honored = false, bool alreadyReforged = false, ImmutableSortedDictionary<string, int>? materials = null,
-        DayPhase phase = DayPhase.Evening)
+        DayPhase phase = DayPhase.Evening, string heroName = "Sera", string itemDisplayName = "Rusty Dagger")
     {
         var baseState = GameFactory.NewGame(6010);
         var weapon = new Item(
-            WornWeaponId, "dagger", "Rusty Dagger", ItemSlot.Weapon, QualityGrade.Common,
+            WornWeaponId, "dagger", itemDisplayName, ItemSlot.Weapon, QualityGrade.Common,
             new ItemStats(8, 0, 2), new MakersMark("You", 1), ImmutableList<ItemHistoryEntry>.Empty);
         var wornGear = new GearSet(WornWeaponId, null, null);
         var died = new HeroDied(FallenHeroId, 3, "slain by a Tunnel Spider", wornGear) { Id = new EventId(1), Day = 3 };
@@ -243,7 +252,7 @@ public class LegendsWallTests
         var events = ImmutableList.Create<GameEvent>(died);
         if (alreadyReforged)
         {
-            events = events.Add(new HeirloomReforged(new ItemId(900), WornWeaponId, "forged from the Rusty Dagger of Sera")
+            events = events.Add(new HeirloomReforged(new ItemId(900), WornWeaponId, HeirloomHandlers.LineageOf(itemDisplayName, heroName))
             {
                 Id = new EventId(2), Day = 4,
             });
@@ -256,7 +265,7 @@ public class LegendsWallTests
         // hero" — which made this fixture disagree with every real campaign, and made the reforge
         // read as anonymous exactly where R6's "the dead persist as inheritance" is the point.
         var fallen = new Hero(
-            FallenHeroId, "Sera", ClassRegistry.StrikerId, Level: 2, MaxHp: 24, Gold: 0,
+            FallenHeroId, heroName, ClassRegistry.StrikerId, Level: 2, MaxHp: 24, Gold: 0,
             Gear: wornGear, Memories: ImmutableList<ItemMemory>.Empty, Alive: false,
             DeepestFloorReached: 3, DiedOnDay: 3);
 
@@ -268,7 +277,7 @@ public class LegendsWallTests
             Items = ImmutableSortedDictionary<int, Item>.Empty.Add(WornWeaponId.Value, weapon),
             Drama = baseState.Drama with
             {
-                Memorials = ImmutableList.Create(new Memorial(FallenHeroId, "Sera", Day: 3, GearNamed: "Rusty Dagger", Honored: honored)),
+                Memorials = ImmutableList.Create(new Memorial(FallenHeroId, heroName, Day: 3, GearNamed: itemDisplayName, Honored: honored)),
             },
             EventLog = events,
         };
@@ -694,6 +703,150 @@ public class LegendsWallTests
             PressEnabled(ui.Legends, $"Actor_{FallenHeroId.Value}"); // P2-MEMORY-10: Reforge now lives on the actor's own page
 
             AssertThat(ui.Legends.FindChild($"Reforge_{WornWeaponId.Value}", recursive: true, owned: false)).IsNull();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    // ── P2-MEMORY-21: the reforge row previews the lineage it will write ────────────────────
+
+    /// <summary>Present before any press, and worded exactly like <see
+    /// cref="ProvenanceCard"/>'s own <see cref="ProvenanceQuery.HeirloomClause"/> would once the
+    /// item exists — the reforge row's own KEY CONSTRAINT is that it never invents a second copy
+    /// of either the sentence or its display formatting.</summary>
+    [TestCase]
+    public void ReforgePreview_ShowsTheLineageSentence_BeforeAnyPress()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.Legends.ShowWall(WorldWithFallenHero());
+            PressEnabled(ui.Legends, $"Actor_{FallenHeroId.Value}");
+
+            var preview = Find<Label>(ui.Legends, $"ReforgePreview_{WornWeaponId.Value}");
+            AssertThat(preview.Text.Trim()).IsEqual("Forged from the Rusty Dagger of Sera.");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>The property this unit exists to prove: what the row shows BEFORE the press is
+    /// EXACTLY what the reforge WRITES, read back off the minted item via the SAME
+    /// <see cref="ProvenanceQuery.HeirloomClause"/> the ProvenanceCard would later show — never a
+    /// hand-typed expectation string, and iterated over more than one hero/item pair so a change
+    /// that breaks the property for anyone but Sera's dagger cannot pass this file.</summary>
+    [TestCase("Sera", "Rusty Dagger")]
+    [TestCase("Torvald", "Iron Blade")]
+    [TestCase("Bram Ashwood", "Widow's Kiss")]
+    public void ReforgePreview_MatchesWhatThePressActuallyWrites_ForEveryHeirloomShape(string heroName, string itemDisplayName)
+    {
+        var world = WorldWithFallenHero(heroName: heroName, itemDisplayName: itemDisplayName);
+        var ui = MountMainUi(new SimAdapter(world));
+        try
+        {
+            ui.Legends.ShowWall(world);
+            PressEnabled(ui.Legends, $"Actor_{FallenHeroId.Value}");
+
+            var previewedBeforePress = Find<Label>(ui.Legends, $"ReforgePreview_{WornWeaponId.Value}").Text.Trim();
+
+            PressEnabled(ui.Legends, $"Reforge_{WornWeaponId.Value}");
+
+            AssertThat(ui.Adapter.LastRejections.IsEmpty).IsTrue();
+            var minted = ui.Adapter.CurrentState.Items.Values.Single(i => i.Id != WornWeaponId);
+
+            AssertThat(previewedBeforePress)
+                .OverrideFailureMessage(
+                    $"Previewed \"{previewedBeforePress}\" but the reforge actually wrote "
+                    + $"\"{ProvenanceQuery.HeirloomClause(minted)}\" for {heroName}'s {itemDisplayName}.")
+                .IsEqual(ProvenanceQuery.HeirloomClause(minted));
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>Different heirloom shapes get different previews — built from the SAME shared
+    /// functions, never a frozen or hand-typed string, so a hero/item pair no earlier test picked
+    /// still reads correctly.</summary>
+    [TestCase]
+    public void ChoosingADifferentHeirloomShape_ShowsADifferentPreview()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.Legends.ShowWall(WorldWithFallenHero(heroName: "Sera", itemDisplayName: "Rusty Dagger"));
+            PressEnabled(ui.Legends, $"Actor_{FallenHeroId.Value}");
+            var seraPreview = Find<Label>(ui.Legends, $"ReforgePreview_{WornWeaponId.Value}").Text.Trim();
+
+            ui.Legends.ShowWall(WorldWithFallenHero(heroName: "Kess", itemDisplayName: "Notched Cleaver"));
+            PressEnabled(ui.Legends, $"Actor_{FallenHeroId.Value}");
+            var kessPreview = Find<Label>(ui.Legends, $"ReforgePreview_{WornWeaponId.Value}").Text.Trim();
+
+            AssertThat(seraPreview).IsEqual("Forged from the Rusty Dagger of Sera.");
+            AssertThat(kessPreview).IsEqual("Forged from the Notched Cleaver of Kess.");
+            AssertThat(seraPreview).IsNotEqual(kessPreview);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>KEY CONSTRAINT check: <c>HeirloomHandlersTests</c>'s own
+    /// <c>ChoosingADifferentRecipeAndMaterial_..._NotTheSourceItemsOwnRecipe</c> pins that the sim's
+    /// template is source-item/fallen-hero only — choosing a different recipe or material never
+    /// changes what the sentence SAYS. This is the row's own half of that same property: the label
+    /// stays wired to <see cref="HeirloomHandlers.LineageOf"/> through the SAME <c>Repaint()</c>
+    /// cycle that re-gates the Reforge button on every picker touch (never a string frozen at
+    /// row-build time and left behind), so it reads correctly both before and after either picker
+    /// fires.</summary>
+    [TestCase]
+    public void ChangingRecipeOrMaterial_PreviewStaysCorrect_NeverGoesStale()
+    {
+        var materials = ImmutableSortedDictionary<string, int>.Empty.Add("copper", 2).Add("iron", 3);
+        var world = WorldWithFallenHero(materials: materials);
+        var ui = MountMainUi(new SimAdapter(world));
+        try
+        {
+            ui.Legends.ShowWall(world);
+            PressEnabled(ui.Legends, $"Actor_{FallenHeroId.Value}");
+
+            const string expected = "Forged from the Rusty Dagger of Sera.";
+            var preview = Find<Label>(ui.Legends, $"ReforgePreview_{WornWeaponId.Value}");
+            AssertThat(preview.Text.Trim()).IsEqual(expected);
+
+            SelectByText(Find<OptionButton>(ui.Legends, $"ReforgeRecipeSelect_{WornWeaponId.Value}"), "Shortsword");
+            SelectByText(Find<OptionButton>(ui.Legends, $"ReforgeMaterialSelect_{WornWeaponId.Value}"), "iron");
+
+            AssertThat(preview.Text.Trim())
+                .OverrideFailureMessage("The preview went stale (or blank) after a picker touch instead of staying live-wired.")
+                .IsEqual(expected);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>Negative control: nothing left eligible to reforge (the same fixture <see
+    /// cref="AlreadyReforgedSource_HasNoReforgeButton"/> uses) must render no preview either — a
+    /// row with no source item to reforge must not invent a sentence for one that isn't there.
+    /// </summary>
+    [TestCase]
+    public void NoEligibleHeirloom_NoPreviewRendered_NothingInvented()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.Legends.ShowWall(WorldWithFallenHero(alreadyReforged: true));
+            PressEnabled(ui.Legends, $"Actor_{FallenHeroId.Value}");
+
+            AssertThat(ui.Legends.FindChild($"ReforgePreview_{WornWeaponId.Value}", recursive: true, owned: false)).IsNull();
         }
         finally
         {

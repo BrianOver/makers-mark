@@ -118,7 +118,17 @@ public static class ProvenanceQuery
     /// a template filled in twice.
     /// </summary>
     public static string? HeirloomClause(Item item) =>
-        item.HeirloomLineage is { Length: > 0 } lineage ? Capitalize(lineage) + "." : null;
+        item.HeirloomLineage is { Length: > 0 } lineage ? Sentence(lineage) : null;
+
+    /// <summary>
+    /// P2-MEMORY-21: the "capitalize, terminate with a period" presentation rule <see
+    /// cref="HeirloomClause"/> applies to an already-stamped lineage, exposed on a raw string so the
+    /// Reforge row's PREVIEW (<c>LegendsWall.RenderReforgeOptions</c>) — built from <see
+    /// cref="GameSim.Crafting.HeirloomHandlers.LineageOf"/> before any item exists to stamp — reads
+    /// as EXACTLY the sentence the player will later see on the item's own <c>ProvenanceCard</c>,
+    /// never a second hand-typed "how we display a lineage" rule.
+    /// </summary>
+    public static string Sentence(string lineage) => Capitalize(lineage) + ".";
 
     /// <summary>The floor gold decided (P2-MEMORY-17): present only when an accepted bounty is the
     /// reason an expedition departed for <see cref="Floor"/> rather than the ordinary depth-based
