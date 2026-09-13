@@ -111,6 +111,25 @@ public sealed class GuildAssessmentSystem : IPhaseSystem
         {
             assessment = assessment with { DaysUntilAssessment = daysLeft };
         }
+        else if (PledgeDuesHandlers.FindPledgeThisCycle(state) is { } pledge)
+        {
+            // P2-LONG-18: a pledged piece already covered this cycle — settle it on the SAME
+            // on-time track a coin payment gets (escalation + Confidence bonus + AssessmentsPassed
+            // tally), but DuesPaidGold is 0 because no gold moves at all; the piece itself already
+            // paid, back when it was pledged (PledgeDuesHandlers.ApplyPledge, at submit time). This
+            // branch is checked BEFORE the coin-payment branch below so a pledge always wins the
+            // cycle even in the (deliberately legal, never expected in practice — one pledge per
+            // cycle, guarded at submit time) case where the till also happens to hold enough gold.
+            var due = assessment.DuesGold;
+            var nextDues = EscalatedDues(due, OnTimeEscalationPerMille);
+            confidence += AssessmentPassedBonusPermille;
+
+            events.Emit(new GuildAssessmentPassed(0, nextDues, Math.Clamp(confidence, 0, 1000), pledge.Item, pledge.ItemName));
+
+            assessment = new GuildAssessmentState(
+                GuildAssessmentState.CadenceDays, nextDues, assessment.AssessmentsPassed + 1,
+                assessment.MissedAssessments, assessment.SoftFailed);
+        }
         else if (gold >= assessment.DuesGold)
         {
             var due = assessment.DuesGold;

@@ -123,6 +123,17 @@ public static class ActionTiming
         // just above (a durable fact the player asserts, not a commitment the world has to act on).
         ConcludeApprenticeshipAction => true,
 
+        // P2-LONG-18: handing the piece to Voss is the player's own two hands, in a conversation
+        // with someone standing right there — the exact rule this file's remarks state. Unlike
+        // CommissionLegendaryWorkAction (a pact the GUILD has to act on before it means anything —
+        // the legendary piece does not exist until later), a pledge is complete the instant it is
+        // submitted: the piece leaves the world and DuesPledged fires in the same breath
+        // (PledgeDuesHandlers.ApplyPledge). That the ASSESSMENT itself settles later, on its own
+        // 7-day heartbeat, is no different from a bounty reward waiting on a hero who has not
+        // walked in yet (PostBountyAction, also Now) — the WORLD'S remaining business is not a
+        // reason to delay the player's own act.
+        PledgeDuesAction => true,
+
         // Everything else waits for the bell — the three deliberate ceremony verbs (2026-08-02
         // KTD-A, open question 1): each is a beat between deciding and having, visible and
         // cancellable (bell tray, U3), not a dead click.

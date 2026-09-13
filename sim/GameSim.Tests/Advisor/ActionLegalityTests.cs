@@ -310,6 +310,39 @@ public class ActionLegalityTests
             $"{string.Join("; ", result.Rejected.Select(r => r.Reason))}");
     }
 
+    /// <summary>P2-LONG-18: a concrete, deterministic <see cref="PledgeDuesAction"/> opportunity — a
+    /// player-marked item appraising above the current dues, held (not worn, not sold, not packed).
+    /// Same "construct the one concrete opportunity directly" precedent as
+    /// <see cref="SendSupplyAction_ConcreteOpportunity_MirrorAgreesWithKernel"/>: <see cref="BaselinePlayer"/>
+    /// never submits <see cref="PledgeDuesAction"/>, so an organic 100-day run's REVERSE direction can
+    /// never observe it — this fixture at least closes the FORWARD half directly.</summary>
+    [Fact]
+    public void PledgeDuesAction_ConcreteOpportunity_MirrorAgreesWithKernel()
+    {
+        var fresh = GameComposition.NewCampaign(Seed);
+        var itemId = new ItemId(fresh.NextItemId);
+        var sword = new Item(
+            itemId, "shortsword", "Fixture Blade", ItemSlot.Weapon, QualityGrade.Common,
+            new ItemStats(15, 0, 3), new MakersMark("You", fresh.Day), ImmutableList<ItemHistoryEntry>.Empty);
+
+        var state = fresh with
+        {
+            Items = fresh.Items.Add(itemId.Value, sword),
+            NextItemId = fresh.NextItemId + 1,
+            Assessment = fresh.Assessment with { DuesGold = 20 }, // well under the sword's 30g appraisal
+        };
+
+        var pledge = new PledgeDuesAction(itemId);
+        Assert.True(ActionLegality.IsLegal(state, pledge, state.Phase));
+
+        var kernel = GameComposition.BuildKernel();
+        var result = kernel.Tick(state, ImmutableList.Create<PlayerAction>(pledge));
+        Assert.True(result.Rejected.IsEmpty,
+            $"PledgeDues fixture: kernel rejected a fixture ActionLegality reported legal: " +
+            $"{string.Join("; ", result.Rejected.Select(r => r.Reason))}");
+        Assert.False(result.NewState.Items.ContainsKey(itemId.Value));
+    }
+
     /// <summary>
     /// Phase B (B2, R-B5): a concrete, deterministic <see cref="HaggleResponseAction"/> opportunity
     /// — one rookie hero with empty gear and gold to spare, offered a shelf item their class can

@@ -15,8 +15,9 @@ namespace GameSim.Tests.Kernel;
 /// <see cref="ActionTiming_ResolvesImmediately_MatchesTheExpectedLaneForEveryType"/> by name. Twelve
 /// verbs moved Now under this plan's widening (KTD-A: "an action resolves NOW unless the WORLD must
 /// move before the action means anything"); three remain deliberate bell-riders (construction, identity,
-/// a pact with the Guild) — 22 Now, 3 Bell, 25 total (§11.13 amendment U4a added
-/// <see cref="ConcludeApprenticeshipAction"/> as a 22nd Now verb).
+/// a pact with the Guild) — 23 Now, 3 Bell, 26 total (§11.13 amendment U4a added
+/// <see cref="ConcludeApprenticeshipAction"/> as a 22nd Now verb; P2-LONG-18 added
+/// <see cref="PledgeDuesAction"/> as a 23rd).
 /// </summary>
 public class ActionTimingConformanceTests
 {
@@ -68,6 +69,11 @@ public class ActionTimingConformanceTests
         // §11.13 amendment (U4a): the graduation stance — the player's own two hands closing the
         // apprenticeship, same shape as HonorMemorialAction just above — Now.
         [typeof(ConcludeApprenticeshipAction)] = (true, () => new ConcludeApprenticeshipAction()),
+
+        // P2-LONG-18: handing a piece to Voss is complete the instant it is submitted (the piece
+        // leaves the world, DuesPledged fires) — unlike CommissionLegendaryWorkAction, nothing about
+        // the pledge itself waits on the world; only the assessment's OWN later heartbeat does — Now.
+        [typeof(PledgeDuesAction)] = (true, () => new PledgeDuesAction(new ItemId(1))),
     };
 
     private static IEnumerable<Type> ConcretePlayerActionTypesInAssembly() =>
@@ -75,10 +81,10 @@ public class ActionTimingConformanceTests
             .Where(t => typeof(PlayerAction).IsAssignableFrom(t) && !t.IsAbstract && t.IsClass);
 
     [Fact]
-    public void ExpectedLane_Has22NowAnd3Bell_25Total()
+    public void ExpectedLane_Has23NowAnd3Bell_26Total()
     {
-        Assert.Equal(25, ExpectedLane.Count);
-        Assert.Equal(22, ExpectedLane.Values.Count(v => v.Immediate));
+        Assert.Equal(26, ExpectedLane.Count);
+        Assert.Equal(23, ExpectedLane.Values.Count(v => v.Immediate));
         Assert.Equal(3, ExpectedLane.Values.Count(v => !v.Immediate));
     }
 

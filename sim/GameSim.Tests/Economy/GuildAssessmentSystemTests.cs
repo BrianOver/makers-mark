@@ -115,6 +115,84 @@ public class GuildAssessmentSystemTests
         Assert.Equal(missed.ConfidencePermille, after.Rent.ConfidencePermille);
     }
 
+    // ---- P2-LONG-18: a pledged piece settles the cycle instead of coin ----------------------
+
+    [Fact]
+    public void DueDate_PledgedThisCycle_SettlesWithZeroGold_EscalatesOnTimeTrack_NamesPledgedItem()
+    {
+        var start = BaseState() with
+        {
+            Day = 8,
+            Assessment = new GuildAssessmentState(DaysUntilAssessment: 1, DuesGold: 20, AssessmentsPassed: 0, MissedAssessments: 0, SoftFailed: false),
+            Rent = new RentState(DaysUntilDue: 5, AmountDueGold: 30, MissedPayments: 0, ConfidencePermille: 500),
+            EventLog = ImmutableList.Create<GameEvent>(
+                new DuesPledged(new ItemId(10), "Shortsword", 30, 20) { Day = 5, Id = new EventId(1) }),
+        };
+        var beforeGold = start.Player.Gold;
+
+        var (after, events) = Run(start);
+
+        var passed = Assert.Single(events.OfType<GuildAssessmentPassed>());
+        Assert.Equal(0, passed.DuesPaidGold);
+        Assert.Equal(new ItemId(10), passed.PledgedItem);
+        Assert.Equal("Shortsword", passed.PledgedItemName);
+        Assert.Equal(beforeGold, after.Player.Gold); // the piece already paid — no gold moves at settlement either
+        Assert.Equal(GuildAssessmentState.CadenceDays, after.Assessment.DaysUntilAssessment);
+        Assert.Equal(1, after.Assessment.AssessmentsPassed);
+        Assert.Equal(0, after.Assessment.MissedAssessments);
+        Assert.True(after.Assessment.DuesGold > 20, "a pledge-settled cycle must still escalate the next ask, same as a coin payment");
+        Assert.Equal(passed.NextDuesGold, after.Assessment.DuesGold);
+
+        // Confidence: -10 passive decay, +100 assessment-passed bonus — the SAME bonus a coin payment earns.
+        Assert.Equal(500 - GuildAssessmentSystem.PassiveDailyDecayPermille + GuildAssessmentSystem.AssessmentPassedBonusPermille, after.Rent.ConfidencePermille);
+        Assert.Equal(passed.ConfidencePermille, after.Rent.ConfidencePermille);
+    }
+
+    [Fact]
+    public void DueDate_PledgedThisCycle_WinsEvenWhenTheTillAlsoHasEnoughGold()
+    {
+        var start = BaseState() with
+        {
+            Day = 8,
+            Assessment = new GuildAssessmentState(1, 20, 0, 0, false),
+            Rent = new RentState(5, 30, 0, 500),
+            EventLog = ImmutableList.Create<GameEvent>(
+                new DuesPledged(new ItemId(10), "Shortsword", 30, 20) { Day = 5, Id = new EventId(1) }),
+        };
+        var beforeGold = start.Player.Gold;
+        Assert.True(beforeGold >= 20, "fixture assumption: the till ALSO covers dues, so a gold-untouched result proves the pledge branch is checked first");
+
+        var (after, events) = Run(start);
+
+        Assert.Equal(beforeGold, after.Player.Gold);
+        var passed = Assert.Single(events.OfType<GuildAssessmentPassed>());
+        Assert.Equal(0, passed.DuesPaidGold);
+    }
+
+    [Fact]
+    public void DueDate_PledgeFromAnOlderCycle_DoesNotCarryForward_StillMisses()
+    {
+        // A pledge dated before the LAST settlement must not count toward a later cycle — otherwise
+        // one pledge would clear every assessment forever instead of just the one it covered.
+        var start = BaseState() with
+        {
+            Day = 15,
+            Player = BaseState().Player with { Gold = 0 },
+            Assessment = new GuildAssessmentState(1, 20, 1, 0, false),
+            Rent = new RentState(5, 30, 0, 500),
+            EventLog = ImmutableList.Create<GameEvent>(
+                new DuesPledged(new ItemId(10), "Shortsword", 30, 20) { Day = 2, Id = new EventId(1) },
+                new GuildAssessmentPassed(20, 30, 590) { Day = 8, Id = new EventId(2) }),
+        };
+
+        var (after, events) = Run(start);
+
+        Assert.Empty(events.OfType<GuildAssessmentPassed>());
+        var missed = Assert.Single(events.OfType<GuildAssessmentMissed>());
+        Assert.Equal(20, missed.DuesDueGold);
+        _ = after;
+    }
+
     [Fact]
     public void MissedEscalation_IsSteeperThanOnTimeEscalation()
     {

@@ -283,6 +283,11 @@ public partial class MainUi : Control
     /// legendary (Signed/high-attribution) gear. Opened from the HUD button or the Tavern's
     /// "Legends" hotspot.</summary>
     public LegendsWall Legends { get; private set; } = null!;
+    /// <summary>P2-LONG-18: the guild wall — Voss's own counter for pledging a piece against the
+    /// Guild Assessment's dues. Opened by clicking Voss himself (<see cref="Town2D.AssessorClicked"/>),
+    /// not a HUD tray button — the pledge belongs to the assessor's own person, the same way the
+    /// tavern's mentor conversation belongs to Bryn's own station rather than a generic button.</summary>
+    public PledgePanel Pledge { get; private set; } = null!;
     public CampPanel Camp { get; private set; } = null!;
     /// <summary>U-D4: the multi-axis progression spine — the five ladders + each one's next rung.
     /// Opened from the HUD "Progress" button.</summary>
@@ -418,6 +423,8 @@ public partial class MainUi : Control
     private bool _resumePlayOnCommissionsClose;
     /// <summary>Wave 4 (U21): mirror of the Forecast latch for the Legends Wall.</summary>
     private bool _resumePlayOnLegendsClose;
+    /// <summary>P2-LONG-18: mirror of the Forecast latch for the pledge panel.</summary>
+    private bool _resumePlayOnPledgeClose;
     /// <summary>U4 (shell-and-audio plan): mirror of the Forecast latch for the in-game
     /// system menu — pause while it owns the screen, resume on close when play was running.</summary>
     private bool _resumePlayOnSystemMenuClose;
@@ -3765,6 +3772,7 @@ public partial class MainUi : Control
         Town.Clock = Clock;
         Town.HeroClicked += OnTownHeroClicked;
         Town.BuildingClicked += OnTownBuildingClicked;
+        Town.AssessorClicked += OnAssessorClicked;
         // U3 (painted-interiors plan): a station's Picked now carries its WHOLE StationSpec
         // (Action/Focus/HoverLine/FlavorLine), so it routes through its own OnStationActivated
         // rather than straight onto OnInteriorHotspotActivated.
@@ -3937,6 +3945,15 @@ public partial class MainUi : Control
         SurfaceArbiter.Claim(Legends, new SurfaceClaim("Legends", SurfaceRegion.FullScreenModal, 6, OwnsScreen: true));
         Legends.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         Legends.VisibilityChanged += OnLegendsVisibilityChanged;
+
+        // --- P2-LONG-18 the pledge: a code-built modal sibling, mirroring CommissionBoard (submits
+        //     an action, so it needs the adapter handed in the same way). Opened by clicking Voss
+        //     himself (Town.AssessorClicked), not a HUD tray button — see OnAssessorClicked.
+        Pledge = new PledgePanel { Adapter = Adapter };
+        AddChild(Pledge);
+        SurfaceArbiter.Claim(Pledge, new SurfaceClaim("Pledge", SurfaceRegion.FullScreenModal, 7, OwnsScreen: true));
+        Pledge.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+        Pledge.VisibilityChanged += OnPledgeVisibilityChanged;
 
         // --- camp decision slate (V7a): a second modal overlay, code-built (no scene, so no
         //     .tscn/import metadata churn). Camp (phase 3) and the Evening Ledger never show at
@@ -4125,6 +4142,10 @@ public partial class MainUi : Control
         // U-T2 Wave E (the long tail): the Legends Wall's Reforge lesson needs the same wiring.
         Legends.Tutorial = Tutorial;
         Legends.Mentor = Mentor;
+
+        // P2-LONG-18: the pledge panel's own first-touch lesson needs the same wiring.
+        Pledge.Tutorial = Tutorial;
+        Pledge.Mentor = Mentor;
 
         // U-T2 Wave E: Progress's own general profession-switch header shares the second-profession
         // lesson's id with MainUi.OnSecondProfessionPicked (see ProgressionPanel.Tutorial's own doc).
@@ -4702,6 +4723,12 @@ public partial class MainUi : Control
         Heroes.SelectHero(heroValue);
     }
 
+    /// <summary>P2-LONG-18: Voss himself is the pledge's only entry point — opened directly (the
+    /// CommissionBoard/LegendsWall precedent: a code-built modal sibling shown by calling its own
+    /// Show method, never through <see cref="OpenPanel"/>'s scene-panel string switch), not gated
+    /// behind a HUD tray button.</summary>
+    private void OnAssessorClicked() => Pledge.ShowPledge(Adapter.CurrentState);
+
     /// <summary>
     /// Town building click/interact (R20, T8, U1 painted-interiors plan): <see cref="Town2D"/>'s
     /// <see cref="Building2D"/> emits its lowercase venue keys ("forge"/"market"/"tavern"/
@@ -5182,6 +5209,23 @@ public partial class MainUi : Control
             Clock.Pause();
         }
         else if (_resumePlayOnLegendsClose)
+        {
+            Clock.Play();
+        }
+
+        UpdateEngaged();
+        UpdateClockLabel();
+        TryFireDeferredMineGateFocus(); // U1: fires the deferred departure pan if the screen is now clear
+    }
+
+    private void OnPledgeVisibilityChanged()
+    {
+        if (Pledge.Visible)
+        {
+            _resumePlayOnPledgeClose = Clock.Playing;
+            Clock.Pause();
+        }
+        else if (_resumePlayOnPledgeClose)
         {
             Clock.Play();
         }

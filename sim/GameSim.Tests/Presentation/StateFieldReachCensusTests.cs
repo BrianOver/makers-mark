@@ -483,6 +483,15 @@ public class StateFieldReachCensusTests
 
         // ---- VenueState ----
         ["VenueState.Closed"] = new(FieldKind.Rendered, "godot/scripts/panels/DepthsPanel.cs:172 (lockdown warning line)"),
+
+        // ---- GuildAssessmentState: P2-LONG-18 crossed both fields over the N=3 sim-reader bar
+        // (PledgeDuesHandlers.cs and ActionLegality.cs joined GuildAssessmentSystem.cs in reading
+        // .Assessment/.DuesGold to check appraisal-vs-dues) — both were already RENDERED before this
+        // PR via Voss, the Guild Assessment's own face (P2-LONG-17), just never counted below the bar.
+        ["GameState.Assessment"] = new(FieldKind.Rendered,
+            "godot/scripts/town2d/Town2D.cs:1990 (BuildAssessor seeds Voss's caption from Adapter.CurrentState.Assessment) and :2026 RefreshAssessorLine (keeps it live every Morning)."),
+        ["GuildAssessmentState.DuesGold"] = new(FieldKind.Rendered,
+            "godot/scripts/town2d/Town2D.cs:2016-2017 (AssessorLine quotes \"{assessment.DuesGold}g due in...\"/\"...overdue now\" verbatim in Voss's spoken caption)."),
     };
 
     private static readonly HashSet<FieldKind> GapAndInternalKinds = [FieldKind.Gap, FieldKind.Internal];
@@ -497,7 +506,11 @@ public class StateFieldReachCensusTests
     // N=3 sim-reader bar (SignedWorkInscription.cs is a third sim/GameSim/**/*.cs file matching
     // ".Detail") — both were already RENDERED (MineWatch.cs / ProvenanceCard.cs respectively), just
     // never counted below the bar. No new client surface; the census catching up to one already there.
-    private const int ExpectedRenderedCount = 124;
+    // 124 -> 126 (P2-LONG-18): GameState.Assessment and GuildAssessmentState.DuesGold newly cross the
+    // bar (PledgeDuesHandlers.cs + ActionLegality.cs, checking appraisal-vs-dues, joined
+    // GuildAssessmentSystem.cs as sim readers) — both already RENDERED via Voss (P2-LONG-17), just
+    // never counted below the bar. Same "census catching up," no new client surface.
+    private const int ExpectedRenderedCount = 126;
     private const int ExpectedRoutedCount = 9;
     private const int ExpectedInternalCount = 6;
     // 12 -> 8: the same join, mirrored — the four fields that left GAP for RENDERED above.
@@ -697,7 +710,11 @@ public class StateFieldReachCensusTests
 
     /// <summary>Scope-boundary claim from the brief, re-verified cheaply (a one-off count, not a
     /// re-walk): the event surface is already fully censused elsewhere, so this file does not touch
-    /// it. If this count ever drifts from 50, the event census (not this one) needs re-running.</summary>
+    /// it. If this count ever drifts from 51, the event census (not this one) needs re-running.
+    /// 50 -> 51 (P2-LONG-18): <see cref="GameSim.Contracts.DuesPledged"/> is a new GameEvent type —
+    /// bumping the count here only re-proves the regex still finds it; it does not stand in for the
+    /// separate event-census pass docs/reference/surfaces-census.md's "wiring audit" performs, which
+    /// is out of this unit's scope (a broad hand-written audit doc, not a gating test).</summary>
     [Fact]
     public void EventTypeCount_Is50_MatchingThePriorCensus()
     {
@@ -706,8 +723,8 @@ public class StateFieldReachCensusTests
         var code = File.ReadAllText(eventsPath);
         var count = Regex.Matches(code, @": GameEvent;").Count;
 
-        Assert.True(count == 50,
-            $"Events.cs now declares {count} GameEvent types, not 50 — the event surface census "
+        Assert.True(count == 51,
+            $"Events.cs now declares {count} GameEvent types, not 51 — the event surface census "
             + "this file deliberately excludes state-field work from needs re-running, not just this "
             + "count updated.");
     }

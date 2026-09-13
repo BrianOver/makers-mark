@@ -156,13 +156,17 @@ public class BalanceCorpusCoverageCensusTests
             + "rules-census.md:1236-1241. P2-HONEST-12.",
         ["ConcludeApprenticeshipAction"] = "No corpus sweep policy ever walks out of the "
             + "apprenticeship warrant early — rules-census.md:1236-1241. P2-HONEST-12.",
+        ["PledgeDuesAction"] = "No corpus sweep policy ever hands the guild a piece instead of coin — "
+            + "BaselinePlayer (and every other Balance-tagged sweep policy) always pays dues in gold "
+            + "when the till covers it, same shape as SetPriceAction/UnstockAction just above: a "
+            + "verb offered every cycle that no scripted policy ever chooses. P2-LONG-18.",
     };
 
-    private const int ExpectedNeverSubmittedCount = 14;
+    private const int ExpectedNeverSubmittedCount = 15;
 
     [Fact]
     public void PlayerActionHierarchyHasTheMemberCountThisCensusExpects()
-        => Assert.True(AllActionTypes.Length == 25,
+        => Assert.True(AllActionTypes.Length == 26,
             $"PlayerAction now reflects {AllActionTypes.Length} concrete derived types — "
             + "sanity-check this census's reflection query still finds them all before trusting the "
             + "coverage split below (and if a type was really added or removed, the offered/"
