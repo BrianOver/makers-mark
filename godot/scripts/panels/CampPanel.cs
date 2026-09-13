@@ -43,6 +43,16 @@ namespace GodotClient.Panels;
 /// player's own SendSupply would add to. <see cref="OpenForgeRequested"/> makes the
 /// craft-and-send round trip (already mechanically real — see <c>CampPanelTests.VigilRoundTrip</c>)
 /// discoverable: a real button, not a fact the player had to already know.</para>
+///
+/// <para>P2-PEOPLE-15 ("the camp speaks first"): before this unit, the card opened straight into
+/// the dashboard header — a stop whose entire purpose is a question, stating numbers instead of
+/// asking. <see cref="GodotClient.Ui.PartyVoice.AnchorLine"/> now opens each card with the
+/// party's own anchor speaking in first person (see that class's own doc for the speaker pick,
+/// why a re-render can never change it, and why the line can never become an order). Zero new
+/// verb, zero new rule set: every clause is read off the same <see cref="InFlightExpedition"/>
+/// and <see cref="GameSim.Venues.VenueRegistry"/> data the header and the "Still ahead, in the
+/// dark" line below it already render — this is a line ADDED above the existing facts, never a
+/// replacement, and the vigil still waits indefinitely on the same three verbs.</para>
 /// </summary>
 public partial class CampPanel : SimPanel
 {
@@ -185,6 +195,14 @@ public partial class CampPanel : SimPanel
         var cardBody = new VBoxContainer();
         card.AddChild(cardBody);
 
+        // P2-PEOPLE-15 ("the camp speaks first", link2/decision 6): the party's own anchor
+        // (PartyVoice.AnchorLine — see that class doc for the speaker pick and why the line can
+        // never become an order) opens the card, ahead of the dashboard header below. The header
+        // itself is untouched: this is a line ADDED above the existing facts, not a replacement.
+        var anchorLine = AddLabel(cardBody, PartyVoice.AnchorLine(state, party));
+        anchorLine.Name = $"CampAnchorLine_{lead.Value}";
+        anchorLine.AddThemeColorOverride("font_color", GameTheme.AccentColor);
+
         AddHeader(cardBody, $"PARTY CAMPED — below floor {party.CheckpointFloor}, pressing for floor {party.TargetFloor}");
 
         // Hero-facing-day H1 §3.3 V-1: name what is actually still down there, read straight off
@@ -222,8 +240,8 @@ public partial class CampPanel : SimPanel
         {
             var hp = party.Hp.TryGetValue(member.Value, out var value) ? value : 0;
             var maxHp = state.Heroes.TryGetValue(member.Value, out var hero) ? hero.MaxHp : 0;
-            var heals = HealsLeft(state, party, member);
-            var yours = YoursHealsLeft(state, party, member);
+            var heals = PartyVoice.HealsLeft(state, party, member);
+            var yours = PartyVoice.YoursHealsLeft(state, party, member);
             var gold = party.Gold.TryGetValue(member.Value, out var goldSoFar) ? goldSoFar : 0;
 
             var row = AddRow(cardBody);
@@ -328,23 +346,6 @@ public partial class CampPanel : SimPanel
             GodotClient.Audio.AudioDirector.For(this)?.Play(GodotClient.Audio.Cue.Coin);
         }
     }
-
-    /// <summary>Heal consumables still in the hero's working (stage-1-depleted) pack.</summary>
-    private static int HealsLeft(GameState state, InFlightExpedition party, HeroId member) =>
-        party.Packs.TryGetValue(member.Value, out var pack)
-            ? pack.Count(id => state.Items.TryGetValue(id.Value, out var item) && item.Effect is { Kind: ConsumableKind.Heal })
-            : 0;
-
-    /// <summary>Of <see cref="HealsLeft"/>, how many are the player's OWN marked craft (a Morning
-    /// stock, or a fresh vigil-forge send) rather than something the hero bought for themselves.
-    /// Same <see cref="Item.PlayerCrafted"/> gate the sim's attribution engine reads when it proves
-    /// a Provisioned/PotionLifesave beat — this label and that beat can never disagree.</summary>
-    private static int YoursHealsLeft(GameState state, InFlightExpedition party, HeroId member) =>
-        party.Packs.TryGetValue(member.Value, out var pack)
-            ? pack.Count(id => state.Items.TryGetValue(id.Value, out var item)
-                && item.Effect is { Kind: ConsumableKind.Heal }
-                && item.PlayerCrafted)
-            : 0;
 
     /// <summary>
     /// The player's HELD consumables: player-crafted, in the player's own hands — not shelved,

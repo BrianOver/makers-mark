@@ -8,6 +8,7 @@ using GameSim.Kernel;
 using GdUnit4;
 using Godot;
 using GodotClient.Audio;
+using GodotClient.Ui;
 using static GdUnit4.Assertions;
 using static GodotClient.Tests.UiTestSupport;
 
@@ -133,6 +134,40 @@ public class CampPanelTests
             AssertThat(text).Contains("heals left");
             AssertThat(text).Contains($"Runner: {Floor1Fee}g"); // fee read from the checkpoint-1 formula
             AssertThat(party.CheckpointFloor).IsEqual(1);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    // ── 1b2. P2-PEOPLE-15 ("the camp speaks first"): the card opens with the party's own line ──
+    //
+    // Negative control, verbatim from the unit spec: the pre-existing "Still ahead, in the dark"
+    // dashboard line is UNCHANGED — the anchor line is added ABOVE it, never a replacement. And
+    // what CampPanel renders must be byte-identical to PartyVoice.AnchorLine's own return for the
+    // same live state — the panel renders that one function's output verbatim, never a second
+    // composition of the same moment (the CustomerVoice/MentorVoice precedent).
+
+    [TestCase]
+    public void CampSlate_OpensWithThePartysOwnAnchorLine_AboveTheUnchangedStillAheadLine()
+    {
+        var ui = MountAtCamp();
+        try
+        {
+            var party = ui.Adapter.CurrentState.InFlight.Single();
+            var lead = party.Party[0];
+            var text = RenderedText(ui.Camp);
+
+            // Negative control: the pre-existing dashboard line is untouched by this unit.
+            AssertThat(text).Contains("Still ahead, in the dark:");
+            AssertThat(text).Contains("Tunnel Spider"); // floor 2's monster, per ExpeditionWorld's checkpoint-1 fixture
+
+            // The new line: rendered verbatim from PartyVoice.AnchorLine, never re-derived here.
+            var expectedLine = PartyVoice.AnchorLine(ui.Adapter.CurrentState, party);
+            var anchorLabel = Find<Label>(ui.Camp, $"CampAnchorLine_{lead.Value}");
+            AssertThat(anchorLabel.Text).IsEqual(expectedLine);
+            AssertThat(text).Contains(expectedLine);
         }
         finally
         {
