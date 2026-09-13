@@ -710,21 +710,27 @@ public class StateFieldReachCensusTests
 
     /// <summary>Scope-boundary claim from the brief, re-verified cheaply (a one-off count, not a
     /// re-walk): the event surface is already fully censused elsewhere, so this file does not touch
-    /// it. If this count ever drifts from 51, the event census (not this one) needs re-running.
-    /// 50 -> 51 (P2-LONG-18): <see cref="GameSim.Contracts.DuesPledged"/> is a new GameEvent type —
-    /// bumping the count here only re-proves the regex still finds it; it does not stand in for the
-    /// separate event-census pass docs/reference/surfaces-census.md's "wiring audit" performs, which
-    /// is out of this unit's scope (a broad hand-written audit doc, not a gating test).</summary>
+    /// it. If this count ever drifts from the pin, the event census (not this one) needs re-running.
+    /// 50 -> 52 (P2-LONG-18): <see cref="GameSim.Contracts.DuesPledged"/> and
+    /// <see cref="GameSim.Contracts.DuesSettledByPledge"/> are both new GameEvent types — bumping the
+    /// count here only re-proves the regex still finds them; it does not stand in for the separate
+    /// event-census pass docs/reference/surfaces-census.md's "wiring audit" performs, which is out of
+    /// this unit's scope (a broad hand-written audit doc, not a gating test).
+    ///
+    /// <para>The name says 50 and the pin says 52, which is the shape rule 8 warns about in a test
+    /// name rather than a doc. The pin is the assertion and the name is prose, so the name is the
+    /// half that is corrected: <c>EventTypeCount_MatchesThePriorCensus</c> stays true at every
+    /// count.</para></summary>
     [Fact]
-    public void EventTypeCount_Is50_MatchingThePriorCensus()
+    public void EventTypeCount_MatchesThePriorCensus()
     {
         var root = RepoRoot();
         var eventsPath = Path.Combine(root, "sim", "GameSim", "Contracts", "Events.cs");
         var code = File.ReadAllText(eventsPath);
         var count = Regex.Matches(code, @": GameEvent;").Count;
 
-        Assert.True(count == 51,
-            $"Events.cs now declares {count} GameEvent types, not 51 — the event surface census "
+        Assert.True(count == 52,
+            $"Events.cs now declares {count} GameEvent types, not 52 — the event surface census "
             + "this file deliberately excludes state-field work from needs re-running, not just this "
             + "count updated.");
     }

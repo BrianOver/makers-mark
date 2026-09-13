@@ -124,7 +124,8 @@ public sealed class GuildAssessmentSystem : IPhaseSystem
             var nextDues = EscalatedDues(due, OnTimeEscalationPerMille);
             confidence += AssessmentPassedBonusPermille;
 
-            events.Emit(new GuildAssessmentPassed(0, nextDues, Math.Clamp(confidence, 0, 1000), pledge.Item, pledge.ItemName));
+            events.Emit(new DuesSettledByPledge(
+                pledge.Item, pledge.ItemName, due, nextDues, Math.Clamp(confidence, 0, 1000)));
 
             assessment = new GuildAssessmentState(
                 GuildAssessmentState.CadenceDays, nextDues, assessment.AssessmentsPassed + 1,

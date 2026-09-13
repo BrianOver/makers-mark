@@ -279,17 +279,33 @@ public sealed record DenThreatShifted(
 /// <summary>Phase D (U-D2): the Guild Assessment was paid in full — dues escalate for next cycle,
 /// Confidence (<see cref="RentState.ConfidencePermille"/>) recovers a little.
 ///
-/// <para>P2-LONG-18: <paramref name="PledgedItem"/> is set when the cycle was settled by a
-/// <see cref="DuesPledged"/> piece rather than coin, in which case <paramref name="DuesPaidGold"/>
-/// is 0 because no gold moved. Added with defaults deliberately — every existing reader and every
-/// existing construction stays correct, and a surface that wants to say WHICH piece bought the
-/// cycle can, without a second event shape saying almost the same thing.</para></summary>
-public sealed record GuildAssessmentPassed(
-    int DuesPaidGold,
-    int NextDuesGold,
-    int ConfidencePermille,
-    ItemId? PledgedItem = null,
-    string? PledgedItemName = null) : GameEvent;
+/// <para>P2-LONG-18: this event means COIN moved. A cycle settled by a pledged piece emits
+/// <see cref="DuesSettledByPledge"/> instead, and the first draft of that unit got this wrong in a
+/// way worth recording. It added two optional parameters here rather than a second event, on the
+/// reasoning that one shape beats two nearly-identical ones. Two things fell out of that, and both
+/// are the reason the split exists. The visible one: every existing reader kept compiling and kept
+/// being WRONG — the ticker said "Guild Assessment paid — 0g" and <c>GoldLedger</c> wrote a 0g
+/// debit row, neither of which any test could see, because a defaulted parameter changes no
+/// signature. The quiet one: <c>AtomicEquivalenceTests</c> golden hash moved immediately, on a
+/// thirty-day run containing no pledge at all, because the widened record serializes its nulls.
+/// A behaviour-neutral change that costs a golden re-record is a change that has stopped being
+/// free, and the ceremony was the tree saying so.</para></summary>
+public sealed record GuildAssessmentPassed(int DuesPaidGold, int NextDuesGold, int ConfidencePermille) : GameEvent;
+
+/// <summary>
+/// P2-LONG-18: an assessment cycle settled by a pledged piece rather than by coin — the piece was
+/// handed over back when <see cref="DuesPledged"/> fired, and this is the cycle it bought coming
+/// due. <b>No gold moves.</b> That is the entire reason this is its own event and not a nullable
+/// field on <see cref="GuildAssessmentPassed"/>: a reader that debits a till, or writes "paid"
+/// followed by an amount, must be forced to notice that neither is true here. A defaulted
+/// parameter lets every such reader keep compiling while it starts lying.
+///
+/// <para>Dues escalate on the same ON-TIME track a coin payment earns, and Confidence takes the
+/// same pass bonus — the guild does not think less of a smith who pays in work. The cost of the
+/// pledge was paid at pledge time and is permanent: the piece can never reach a hero, so it can
+/// never earn a beat. See <see cref="PledgeDuesAction"/> for the trade.</para></summary>
+public sealed record DuesSettledByPledge(
+    ItemId Item, string ItemName, int DuesCoveredGold, int NextDuesGold, int ConfidencePermille) : GameEvent;
 
 /// <summary>
 /// P2-LONG-18 (§11.15): the player handed the guild a piece they made in place of the dues — see

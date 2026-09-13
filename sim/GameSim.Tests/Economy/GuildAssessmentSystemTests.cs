@@ -132,10 +132,16 @@ public class GuildAssessmentSystemTests
 
         var (after, events) = Run(start);
 
-        var passed = Assert.Single(events.OfType<GuildAssessmentPassed>());
-        Assert.Equal(0, passed.DuesPaidGold);
-        Assert.Equal(new ItemId(10), passed.PledgedItem);
-        Assert.Equal("Shortsword", passed.PledgedItemName);
+        // The settlement is its OWN event, and the absence of GuildAssessmentPassed is half the
+        // assertion rather than an omission: that event means coin moved, and no coin moved here.
+        // Asserted both ways because the first draft of this unit rode the pledge on
+        // GuildAssessmentPassed's optional fields, and every reader of it — the ticker, the gold
+        // ledger — kept compiling while it started saying "paid — 0g" and writing a 0g debit row.
+        Assert.Empty(events.OfType<GuildAssessmentPassed>());
+        var passed = Assert.Single(events.OfType<DuesSettledByPledge>());
+        Assert.Equal(new ItemId(10), passed.Item);
+        Assert.Equal("Shortsword", passed.ItemName);
+        Assert.Equal(20, passed.DuesCoveredGold); // what the cycle actually asked, not what the piece was worth
         Assert.Equal(beforeGold, after.Player.Gold); // the piece already paid — no gold moves at settlement either
         Assert.Equal(GuildAssessmentState.CadenceDays, after.Assessment.DaysUntilAssessment);
         Assert.Equal(1, after.Assessment.AssessmentsPassed);
@@ -165,8 +171,8 @@ public class GuildAssessmentSystemTests
         var (after, events) = Run(start);
 
         Assert.Equal(beforeGold, after.Player.Gold);
-        var passed = Assert.Single(events.OfType<GuildAssessmentPassed>());
-        Assert.Equal(0, passed.DuesPaidGold);
+        Assert.Empty(events.OfType<GuildAssessmentPassed>());
+        Assert.Equal(20, Assert.Single(events.OfType<DuesSettledByPledge>()).DuesCoveredGold);
     }
 
     [Fact]

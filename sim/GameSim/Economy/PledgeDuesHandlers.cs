@@ -116,8 +116,8 @@ public sealed class PledgeDuesHandlers : IActionHandler
     /// The <see cref="DuesPledged"/> event that settled the CURRENT assessment cycle, or null if none
     /// has landed yet — read straight off <see cref="GameState.EventLog"/> rather than a dedicated
     /// state flag, the same durable-fact idiom <see cref="Contracts.DuesPledged"/>'s own doc names.
-    /// "Current cycle" means since the most recent <see cref="GuildAssessmentPassed"/> or
-    /// <see cref="GuildAssessmentMissed"/> settlement (day 0, a fresh campaign's own cycle 1, when
+    /// "Current cycle" means since the most recent <see cref="GuildAssessmentPassed"/>,
+    /// <see cref="GuildAssessmentMissed"/> or <see cref="DuesSettledByPledge"/> settlement (day 0, a fresh campaign's own cycle 1, when
     /// neither has fired yet) — the same "yesterday's stamped log" idiom
     /// <see cref="GuildAssessmentSystem"/> already reads for its Confidence deltas, just walking back
     /// to the last SETTLEMENT day instead of a fixed one-day offset. Guard 7 above and
@@ -131,7 +131,7 @@ public sealed class PledgeDuesHandlers : IActionHandler
         var lastSettledDay = 0;
         foreach (var settled in state.EventLog)
         {
-            if (settled is GuildAssessmentPassed or GuildAssessmentMissed)
+            if (settled is GuildAssessmentPassed or GuildAssessmentMissed or DuesSettledByPledge)
             {
                 lastSettledDay = Math.Max(lastSettledDay, settled.Day);
             }
