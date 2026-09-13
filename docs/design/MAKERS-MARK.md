@@ -4662,6 +4662,7 @@ name (§11.6 rule 4).
 | ⚑ P2-PEOPLE-15 | The camp speaks first — the vigil slate opens with the party's own ask | `godot/scripts/panels/CampPanel.cs`, `godot/scripts/ui/CustomerVoice.cs` (read-only) | — | [G] |
 | ⚑ P2-PEOPLE-16 | The camped rows carry the trait and band chips the roster already shows | `godot/scripts/panels/CampPanel.cs`, `godot/scripts/panels/HeroPanel.cs` (read-only) | — | [G] |
 | ⚑ P2-PEOPLE-17 | Stocking a piece names the morning queue that will reach it first | `godot/scripts/panels/ShopPanel.cs`, `sim/GameSim/Heroes/CommissionHandlers.cs` | — | [S] |
+| ⚑ P2-PEOPLE-18 | The morning pass's fixed hero order is a standing bias — measured, then ruled | `sim/GameSim/Heroes/HeroShoppingSystem.cs`, Balance suite | P4 | [S][BAL] |
 | ⚑ P2-PEOPLE-20 | The Patron (research M1) | `sim/GameSim/Contracts/Player.cs`, `sim/GameSim/Chronicle/`, `godot/scripts/` | P4 | [S][C] |
 | ⚑ P2-LONG-01 | Re-date the wall on the current build | `sim/GameSim.Cli/`, one instrumented sweep | — | [S] |
 | P2-LONG-02 | Typed consumable kinds; hazard type on `VenueDefinition` | `sim/GameSim/Contracts/`, `sim/GameSim/Venues/VenueDefinition.cs` | P2-LONG-01, P4 | [S][C][GOLD] |
@@ -4705,6 +4706,7 @@ name (§11.6 rule 4).
 | P2-HONEST-19 | The numeric-threshold gate family gets a satisfiability guard — `SatisfiableGateCensusTests` cannot see it | `sim/GameSim.Tests/`, `sim/GameSim/Drama/DirectorSystem.cs`, `sim/GameSim/Venues/`, `sim/GameSim/Crafting/TalentTree.cs` | P2-HONEST-07 | [S] |
 | P2-HONEST-20 | `SHOT_STATE=PhaseN` lands somewhere its own comment does not claim — the capture harness's phase map is wrong | `godot/tools/shot_harness.gd`, `tools/shoot.ps1` | — | [G] |
 | P2-HONEST-21 | One art `.import` uid regenerates on every import, dirtying a clean tree | `godot/assets/art/item-mithril-warblade.png.import` | — | [G] |
+| ⚑ P2-HONEST-22 | The runner fee is mirrored in four files and guarded in none | `sim/GameSim/Expedition/CampHandlers.cs`, `godot/scripts/panels/CampPanel.cs`, `sim/GameSim.Tests/`, `godot/tests/` | — | [S] |
 
 The per-domain counts, the landed/unbuilt split, and which rows carry a Contracts micro-PR, a
 golden re-record or a balance re-baseline are **derived, not stated here**: run
@@ -6279,6 +6281,39 @@ other games.
   differently when Emberbite was the player's own word.
 - Carries a Contracts micro-PR and sits behind **P4**: it adds an optional payload to the craft
   path, and the owner rules on whether the naming ceremony belongs at the anvil or at the ledger.
+
+#### P2-HONEST-22. The runner fee is mirrored in four files and guarded in none
+
+- Goal: the fee the player is quoted and the fee the sim charges cannot disagree.
+- Found while building `P2-PEOPLE-17`, which was told to read a predicate from its handler rather
+  than mirror it, and cited `CampHandlers.SupplyFee` as the precedent for doing so. The precedent
+  does not hold: `SupplyFee` is `internal`, `GameSim` exposes no `InternalsVisibleTo` to
+  `GodotClient`, and so `CampPanel.cs:54-63` re-declares `SupplyFeeBase`, `SupplyFeePerFloor` and
+  the formula itself. Two test files and one balance file mirror the same arithmetic again. Four
+  copies of `6 + 3 x floor`, and nothing anywhere ties them together.
+- The failure this prevents is specific and silent: change `SupplyFeePerFloor` to 4 and the sim
+  charges the new fee while the winch-house slate quotes the old one to the player's face — and
+  every mirrored test goes on passing, because each one pins the copy it made.
+- Approach: give the formula one public home the client can call, delete the mirrors, and guard the
+  absence of new ones the way `P2-PEOPLE-17`'s own census does. The mirror is DOCUMENTED, with its
+  reason written down, which is exactly why it survived: a comment explaining a duplication is not
+  a substitute for a guard against it.
+
+#### P2-PEOPLE-18. The morning pass's fixed hero order
+
+- Goal: the town's shopping order stops being an accident of recruitment date.
+- Found while building `P2-PEOPLE-17`. `HeroShoppingSystem` walks the roster in ascending hero id,
+  so whoever was recruited earliest shops first, every morning, for the whole campaign. Worse, the
+  commission check is per-hero inside that same pass: an earlier hero's ORDINARY shopping can take
+  the very piece a later hero commissioned and is paying a premium for.
+- That is a standing bias, not an edge case, and it lands directly on decision 1 ("sell the good
+  one, or hold it for the hero who needs it") — a player who holds a piece for the hero who asked
+  can lose it to a hero who merely walked in first.
+- **Behind P4, and measured before it is ruled on.** Changing the pass order changes every seed's
+  outcomes, so this is a balance re-baseline and an owner decision, not a fix. The measurement
+  comes first: how often does an ordinary purchase actually take a commissioned piece across the
+  corpus? `P2-PEOPLE-17` made the order legible to the player without changing it, deliberately,
+  so this question can be asked with the current behaviour on screen.
 
 #### What this round says NOT to build
 
