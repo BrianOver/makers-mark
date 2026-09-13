@@ -52,6 +52,16 @@ public class ActionBudgetTests
         // §11.13 amendment (U4a): a stance, not an economy verb — mutates nothing, so it never
         // competes for the day's real-work budget.
         typeof(ConcludeApprenticeshipAction),
+
+        // P2-LONG-18 (ruling, documented here — no owner citation exists for this one, the call is
+        // this unit's own): the pledge is decision 1 ("sell the good one or hold it") at a THIRD
+        // destination — shelf, counter, or the guild wall — and neither of the other two
+        // destinations spends a slot (StockAction, PresentItemAction are both listed here too). All
+        // three are places to put a piece already forged, not fresh work; charging a slot for the
+        // guild-wall destination while the shelf and counter destinations stay free would be an
+        // arbitrary penalty for choosing the guild over the shop, not a real cost. PledgeDuesHandlers
+        // never decrements ActionSlotsRemaining, matching this ruling.
+        typeof(PledgeDuesAction),
     ];
 
     /// <summary>
@@ -123,6 +133,7 @@ public class ActionBudgetTests
         Assert.False(ActionBudget.ConsumesSlot(new SendSupplyAction(new HeroId(1), new ItemId(1))));
         Assert.False(ActionBudget.ConsumesSlot(new RecallPartyAction(new HeroId(1))));
         Assert.False(ActionBudget.ConsumesSlot(new HonorMemorialAction(new HeroId(1))));
+        Assert.False(ActionBudget.ConsumesSlot(new PledgeDuesAction(new ItemId(1))));
     }
 
     // ---- Craft: consume on success, gate at zero, existing rejections stay byte-identical -----

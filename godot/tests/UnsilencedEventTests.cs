@@ -1,6 +1,7 @@
 #if GDUNIT_TESTS
 using System.Collections.Immutable;
 using System.Linq;
+using System.Text.RegularExpressions;
 using GameSim.Contracts;
 using GameSim.Factions;
 using GameSim.Factions.Wardens;
@@ -470,6 +471,56 @@ public class UnsilencedEventTests
     /// would purge the Passed line before the Missed one ever landed, and this test would be
     /// asserting a marquee state a player could never actually see. Staying inside the window
     /// is what proves the two lines coexist without one evicting or overwriting the other.</summary>
+    /// <summary>
+    /// P2-LONG-18: a cycle settled by a pledged piece is its own event, and the reason it is its own
+    /// event is entirely visible from here. While the pledge rode on two optional parameters of
+    /// <see cref="GuildAssessmentPassed"/>, THIS renderer kept compiling and started saying "Guild
+    /// Assessment paid — 0g" — a sentence that is false twice over, since nothing was paid and no
+    /// gold moved. A defaulted parameter changes no signature, so nothing anywhere went red.
+    ///
+    /// <para>So the assertions run in both directions. The line must name the piece and the dues it
+    /// covered, and it must NOT contain the word "paid" or a "0g", because those are the exact two
+    /// tokens the wrong version produced. Phrased against the tokens rather than against the whole
+    /// sentence so a copy rewrite stays free while the lie stays caught.</para>
+    /// </summary>
+    [TestCase]
+    public void DuesSettledByPledge_Renders_WithoutClaimingAnythingWasPaid()
+    {
+        var ticker = new AdventureTicker();
+        try
+        {
+            ticker.Build();
+            ticker.OnPhaseCompleted(
+                DayPhase.Morning, completedDay: 7, StagedWorld(),
+                ImmutableList.Create<GameEvent>(
+                    new DuesSettledByPledge(
+                        new ItemId(10), "Emberbite", DuesCoveredGold: 60, NextDuesGold: 90, ConfidencePermille: 820)));
+
+            AssertThat(ticker.Lines.Count).IsEqual(1);
+            AssertThat(ticker.DisplayText).Contains("Emberbite");
+            AssertThat(ticker.DisplayText).Contains("60g");
+            AssertThat(ticker.DisplayText).Contains("Next dues: 90g");
+
+            AssertThat(ticker.DisplayText.ToLowerInvariant().Contains("paid"))
+                .OverrideFailureMessage(
+                    "The pledge line claims something was paid. Nothing was: a piece left the world and no "
+                    + $"coin moved. Line was \"{ticker.DisplayText}\".")
+                .IsFalse();
+            // A bare substring check reads "60g" as containing "0g" and fails on the very figure the
+            // assertion two lines up requires — caught by this test failing on a correct line. The
+            // boundary is what was meant: a zero amount, not a zero digit inside some other amount.
+            AssertThat(Regex.IsMatch(ticker.DisplayText, @"\b0g\b"))
+                .OverrideFailureMessage(
+                    "The pledge line names a 0g amount — the exact artefact of settling this cycle through "
+                    + $"GuildAssessmentPassed's DuesPaidGold. Line was \"{ticker.DisplayText}\".")
+                .IsFalse();
+        }
+        finally
+        {
+            ticker.Free();
+        }
+    }
+
     [TestCase]
     public void GuildAssessment_PassedAndMissed_Render()
     {

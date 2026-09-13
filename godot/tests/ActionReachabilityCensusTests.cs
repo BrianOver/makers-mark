@@ -56,7 +56,7 @@ public class ActionReachabilityCensusTests
     /// add a decision for it — <see cref="EveryConcretePlayerActionType_HasASurfaceOrAReasonedExclusion"/>
     /// fails BY NAME right alongside it.
     /// </summary>
-    private const int ExpectedActionCount = 25;
+    private const int ExpectedActionCount = 26;
 
     /// <summary>
     /// Every concrete <see cref="PlayerAction"/> type mapped to the ONE real Godot submit site that
@@ -124,6 +124,11 @@ public class ActionReachabilityCensusTests
             "the same press. Gated the way BuyOreAction's is: only reachable while the confirm row " +
             "is shown, itself gated on the ten-step chain being Active — a gated surface is a " +
             "recorded surface (KTD-3).",
+        [typeof(PledgeDuesAction)] =
+            "PledgePanel's per-item Pledge_{id} button arms a confirm row (Voss's cost-naming quote); " +
+            "the confirm row's PledgeConfirm_{id} button (PledgePanel.cs, RenderItem) is what actually " +
+            "queues PledgeDuesAction. The panel itself opens only from clicking Voss at the " +
+            "noticeboard (Town2D.AssessorClicked -> MainUi.OnAssessorClicked), not a HUD tray button.",
     };
 
     /// <summary>

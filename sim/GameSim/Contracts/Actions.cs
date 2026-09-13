@@ -201,5 +201,30 @@ public sealed record CommissionLegendaryWorkAction(string RecipeId, string Mater
 /// </summary>
 public sealed record ConcludeApprenticeshipAction() : PlayerAction;
 
+/// <summary>
+/// P2-LONG-18 (§11.15, "the pledge"): hand the guild a piece you made instead of the coin it is
+/// owed — the guild takes it and hangs it where the town can see what a smith is worth, and the
+/// next assessment passes without touching the till.
+///
+/// <para><b>This is not a seventh decision.</b> It is decision 1 ("sell the good one or hold it
+/// for the hero who needs it") at a THIRD destination, priced in decision 5's currency — the plan
+/// says so in its own invariant list, and the identity depends on that reading holding. It re-asks
+/// two of the six at a new address; it asks no new question. The moment it starts asking one, it
+/// is the seventh decision and it is wrong.</para>
+///
+/// <para>The cost is the whole point and is named to the player at the moment of pledging, in the
+/// guild's own words: <i>"nothing on our wall ever turns a blow. Your name, displayed — or your
+/// name, proven. The coin buys neither."</i> A pledged piece leaves the chain permanently: it can
+/// never reach a hero, so it can never earn a beat, so it can never write a legend. That trade is
+/// the decision, and softening it (a pledge that somehow still counts, a wall piece a hero may
+/// borrow) removes the only thing being decided.</para>
+///
+/// <para>Only a piece carrying the player's own <c>MakersMark</c> may be pledged — link 1 is the
+/// axiom, and a guild wall that would accept bought stock is a wall that proves nothing. The piece
+/// must appraise (<c>GameSim.Advisor.SuggestedPrice</c>) at or above the dues it covers: the guild
+/// takes a better piece happily and gives no change, which is exactly the sting.</para>
+/// </summary>
+public sealed record PledgeDuesAction(ItemId Item) : PlayerAction;
+
 /// <summary>An action the kernel refused, with a typed reason — never a silent drop.</summary>
 public sealed record RejectedAction(PlayerAction Action, string Reason);

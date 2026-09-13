@@ -78,6 +78,7 @@ public static class ActionSubject
         MasterworkAttemptAction a => $"masterwork attempt: {a.RecipeId} from {a.MaterialKey}",
         CommissionLegendaryWorkAction a => $"commission legendary {a.RecipeId} from {a.MaterialKey}",
         ConcludeApprenticeshipAction => "conclude the apprenticeship",
+        PledgeDuesAction a => $"pledge item #{a.Item.Value} against the guild dues",
         _ => $"{NoCaseSentinel}{action.GetType().Name}]",
     };
 }

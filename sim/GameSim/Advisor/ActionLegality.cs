@@ -74,6 +74,7 @@ public static class ActionLegality
         MasterworkAttemptAction masterwork => MasterworkAttemptLegal(state, masterwork),
         CommissionLegendaryWorkAction commissionLegendary => CommissionLegendaryWorkLegal(state, commissionLegendary),
         ConcludeApprenticeshipAction => ConcludeApprenticeshipLegal(),
+        PledgeDuesAction pledge => PledgeDuesLegal(state, pledge),
         _ => throw new UnhandledActionException(action.GetType()),
     };
 
@@ -129,6 +130,20 @@ public static class ActionLegality
             if (IsLegal(state, unstock, phase))
             {
                 actions.Add(unstock);
+            }
+        }
+
+        // PledgeDues (P2-LONG-18): one candidate per known item, first one the guild would actually
+        // accept wins — same "first legal wins" shape as PresentItem below, since not every item in
+        // state.Items is a live opportunity (most fail ownership or appraisal) and this is one
+        // canonical instance per opportunity, not every legal pledge.
+        foreach (var candidateItem in state.Items.Values)
+        {
+            var pledge = new PledgeDuesAction(candidateItem.Id);
+            if (IsLegal(state, pledge, phase))
+            {
+                actions.Add(pledge);
+                break;
             }
         }
 
@@ -771,6 +786,47 @@ public static class ActionLegality
     // by its own dated end, so Concluded flipping true from here on changes nothing Covers() would not
     // already report).
     private static bool ConcludeApprenticeshipLegal() => true;
+
+    // ---- PledgeDuesHandlers.ApplyPledge guards (P2-LONG-18): existence, MakersMark (link 1), not
+    // worn, not sold, not already in a hero's pack, appraisal >= dues, one pledge per cycle — the
+    // exact order the handler checks in, so the FIRST reason either side would give always agrees.
+    private static bool PledgeDuesLegal(GameState state, PledgeDuesAction action)
+    {
+        if (!state.Items.TryGetValue(action.Item.Value, out var item))
+        {
+            return false;
+        }
+
+        if (!item.PlayerCrafted)
+        {
+            return false;
+        }
+
+        foreach (var hero in state.Heroes.Values)
+        {
+            if (WoreItem(hero.Gear, action.Item))
+            {
+                return false;
+            }
+        }
+
+        if (state.EventLog.Any(e => e is ItemSold sold && sold.Item == action.Item))
+        {
+            return false;
+        }
+
+        if (state.Heroes.Values.Any(h => h.Pack.Contains(action.Item)))
+        {
+            return false;
+        }
+
+        if (SuggestedPrice.For(item) < state.Assessment.DuesGold)
+        {
+            return false;
+        }
+
+        return PledgeDuesHandlers.FindPledgeThisCycle(state) is null;
+    }
 
     // ---- ForgeTierHandlers.Apply guards (U4): ceiling, lock-and-key floor ore, gold, action-budget
     // checked LAST — same order as the handler. ----

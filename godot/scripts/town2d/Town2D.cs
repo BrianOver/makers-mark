@@ -155,6 +155,12 @@ public partial class Town2D : Control
     /// <summary>Re-emits <see cref="HeroActor2D.Picked"/> — hero id.</summary>
     public event Action<int>? HeroClicked;
 
+    /// <summary>P2-LONG-18: re-emits <see cref="TownsfolkNpc2D.Picked"/> for <see cref="Assessor"/>
+    /// specifically — the one townsfolk NPC built with <c>clickable: true</c> (see
+    /// <see cref="BuildAssessor"/>). Parameterless, same reason <see cref="TownsfolkNpc2D.Picked"/>
+    /// itself is: there is exactly one Voss.</summary>
+    public event Action? AssessorClicked;
+
     /// <summary>U1 (painted-interiors plan): re-emits <see cref="InteriorRoom2D.StationActivated"/>
     /// — the WHOLE <see cref="InteriorLayout2D.StationSpec"/> (U3: Action/Focus/HoverLine/FlavorLine
     /// together), mirroring how <see cref="BuildingClicked"/> re-emits <see cref="Building2D.Picked"/>
@@ -1999,10 +2005,12 @@ public partial class Town2D : Control
             TownsfolkNpc2D.ResolveWalk2Sprite(civilianId),
             TownsfolkNpc2D.ResolveWalk4Sprite(civilianId),
             AssessorName,
-            AssessorLine(assessment));
+            AssessorLine(assessment),
+            clickable: true); // P2-LONG-18: the one townsfolk NPC the player can click — the pledge
         // No SetErrandTargets call: he never leaves his post at the board, same "stay home"
         // default the rival smith keeps.
         _assessorLastSeen = (assessment.DaysUntilAssessment, assessment.DuesGold, assessment.MissedAssessments);
+        Assessor.Picked += () => AssessorClicked?.Invoke();
         YSort.AddChild(Assessor);
     }
 

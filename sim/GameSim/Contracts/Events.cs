@@ -277,8 +277,54 @@ public sealed record DenThreatShifted(
     string VenueId, int ThreatPermille, int ThreatTier, bool Lockdown) : GameEvent;
 
 /// <summary>Phase D (U-D2): the Guild Assessment was paid in full — dues escalate for next cycle,
-/// Confidence (<see cref="RentState.ConfidencePermille"/>) recovers a little.</summary>
+/// Confidence (<see cref="RentState.ConfidencePermille"/>) recovers a little.
+///
+/// <para>P2-LONG-18: this event means COIN moved. A cycle settled by a pledged piece emits
+/// <see cref="DuesSettledByPledge"/> instead, and the first draft of that unit got this wrong in a
+/// way worth recording. It added two optional parameters here rather than a second event, on the
+/// reasoning that one shape beats two nearly-identical ones. Two things fell out of that, and both
+/// are the reason the split exists. The visible one: every existing reader kept compiling and kept
+/// being WRONG — the ticker said "Guild Assessment paid — 0g" and <c>GoldLedger</c> wrote a 0g
+/// debit row, neither of which any test could see, because a defaulted parameter changes no
+/// signature. The quiet one: <c>AtomicEquivalenceTests</c> golden hash moved immediately, on a
+/// thirty-day run containing no pledge at all, because the widened record serializes its nulls.
+/// A behaviour-neutral change that costs a golden re-record is a change that has stopped being
+/// free, and the ceremony was the tree saying so.</para></summary>
 public sealed record GuildAssessmentPassed(int DuesPaidGold, int NextDuesGold, int ConfidencePermille) : GameEvent;
+
+/// <summary>
+/// P2-LONG-18: an assessment cycle settled by a pledged piece rather than by coin — the piece was
+/// handed over back when <see cref="DuesPledged"/> fired, and this is the cycle it bought coming
+/// due. <b>No gold moves.</b> That is the entire reason this is its own event and not a nullable
+/// field on <see cref="GuildAssessmentPassed"/>: a reader that debits a till, or writes "paid"
+/// followed by an amount, must be forced to notice that neither is true here. A defaulted
+/// parameter lets every such reader keep compiling while it starts lying.
+///
+/// <para>Dues escalate on the same ON-TIME track a coin payment earns, and Confidence takes the
+/// same pass bonus — the guild does not think less of a smith who pays in work. The cost of the
+/// pledge was paid at pledge time and is permanent: the piece can never reach a hero, so it can
+/// never earn a beat. See <see cref="PledgeDuesAction"/> for the trade.</para></summary>
+public sealed record DuesSettledByPledge(
+    ItemId Item, string ItemName, int DuesCoveredGold, int NextDuesGold, int ConfidencePermille) : GameEvent;
+
+/// <summary>
+/// P2-LONG-18 (§11.15): the player handed the guild a piece they made in place of the dues — see
+/// <see cref="PledgeDuesAction"/> for the trade being made and why it is not a seventh decision.
+/// Fires the moment the pledge is accepted, not at the assessment it settles.
+///
+/// <para>This event IS the guild wall. There is no separate wall collection on
+/// <see cref="GuildAssessmentState"/> and there should not be one: a wall derived from the event
+/// log cannot drift out of step with the pledges that built it, and the same "the log is the
+/// record" idiom already carries the town's other memories. <paramref name="ItemName"/> travels
+/// with it because the piece itself is gone from the world by then — the same reason
+/// <see cref="Memorial"/> carries a fallen hero's name rather than only their id.</para>
+///
+/// <para><paramref name="AppraisedGold"/> is what the piece was worth
+/// (<c>GameSim.Advisor.SuggestedPrice</c>) and <paramref name="DuesCoveredGold"/> what it settled.
+/// The gap between them is not refunded and is not a bug: the guild gives no change, and a player
+/// who pledges their best piece against small dues has overpaid on purpose.</para></summary>
+public sealed record DuesPledged(
+    ItemId Item, string ItemName, int AppraisedGold, int DuesCoveredGold) : GameEvent;
 
 /// <summary>Phase D (U-D2): the Guild Assessment came due and the till couldn't cover it — no gold
 /// moves (never driven negative; <see cref="GameSim.Economy.DestitutionRecoverySystem"/> still runs this same

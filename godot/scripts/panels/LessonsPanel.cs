@@ -86,6 +86,9 @@ public partial class LessonsPanel : SimPanel
         [TutorialFlow.LeavingARoomLessonId] = "Leaving a room",
         // P2-ONBOARD-07 (§11.15): beat 3, her rule, wrong on purpose.
         [TutorialFlow.GreedyRuleLessonId] = "Her rule, for pricing",
+        // P2-LONG-18: the one lesson in this book whose subject is a trade the player can decline
+        // forever. Titled for the cost rather than the mechanism, because the cost IS the lesson.
+        [PledgePanel.PledgeLessonId] = "What the wall costs",
     };
 
     /// <summary>Copy for <paramref name="id"/>'s card heading — see <see cref="FirstTouchTitles"/>'s

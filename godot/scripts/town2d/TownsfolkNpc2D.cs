@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using GameSim.Contracts;
 using Godot;
@@ -5,11 +6,21 @@ using Godot;
 namespace GodotClient.Town2d;
 
 /// <summary>
-/// Cosmetic wandering villager for the 2.5D town — pure ambience, zero gameplay surface. Unlike
-/// <see cref="HeroActor2D"/> this node has NO pick zone and NO <c>Picked</c> event: it exists purely
-/// to make the town read as populated, and is never clicked, never tied to a sim hero, and never
-/// affects anything the sim tracks (KTD2: presentation-only, no RNG/clock read beyond the phase
-/// input below).
+/// Cosmetic wandering villager for the 2.5D town — pure ambience, zero gameplay surface for every
+/// PLAIN villager. Unlike <see cref="HeroActor2D"/> a plain townsfolk NPC has NO pick zone and NO
+/// <c>Picked</c> event: it exists purely to make the town read as populated, and is never clicked,
+/// never tied to a sim hero, and never affects anything the sim tracks (KTD2: presentation-only, no
+/// RNG/clock read beyond the phase input below).
+///
+/// <para><b>P2-LONG-18 exception, opt-in and off by default:</b> <see cref="Init"/>'s
+/// <c>clickable</c> parameter (default <c>false</c>, so every existing caller/test keeps the exact
+/// zero-pick-zone contract above) builds a real <see cref="Pick"/> Area2D + <see cref="Picked"/>
+/// event — the SAME <see cref="HeroActor2D.BuildPick"/> recipe (collision layer 2, no monitoring,
+/// input-pickable, a circular shape sized off this NPC's own resolved sprite height) — for the ONE
+/// named, speaking townsperson this unit gives a real verb: Voss, the Guild Assessor
+/// (<see cref="Town2D.BuildAssessor"/>), who the player can now click to open the pledge. A plain
+/// ambient villager never passes <c>clickable: true</c>, so the class doc's own "never clicked"
+/// claim stays true for the population it was written about.</para>
 ///
 /// <para><b>U6 (world-and-interiors plan, R9 "make more lively"):</b> gained an ERRAND mode
 /// (<see cref="ErrandPhase"/>) alongside the original idle lissajous drift — a villager now
@@ -144,6 +155,18 @@ public partial class TownsfolkNpc2D : Node2D
     /// cref="GodotClient.Town2d.Town2D.BuildRivalSmith"/>.</summary>
     public Label? Caption { get; private set; }
 
+    /// <summary>P2-LONG-18: real-click pick zone, built ONLY when <see cref="Init"/> is called with
+    /// <c>clickable: true</c> — null for every plain villager (see class doc). Same shape as
+    /// <see cref="HeroActor2D.Pick"/>.</summary>
+    public Area2D? Pick { get; private set; }
+
+    /// <summary>P2-LONG-18: fires on a real left-click of <see cref="Pick"/> — null-checked by
+    /// nature (a plain villager with no <see cref="Pick"/> zone can never raise this). Mirrors
+    /// <see cref="HeroActor2D.Picked"/>, parameterless because a townsfolk NPC (unlike a hero) has
+    /// no sim id to carry — the one caller (<see cref="Town2D"/>) already knows which NPC this is
+    /// from which instance raised the event.</summary>
+    public event Action? Picked;
+
     /// <summary>P2-LONG-19: extra vertical clearance a <see cref="Caption"/> label needs above <see
     /// cref="Nameplate"/> so the two never overlap — both sit above the sprite's own roof line via
     /// <see cref="Building2D.BuildLabel"/>'s Position formula, which climbs with a larger size.</summary>
@@ -273,7 +296,8 @@ public partial class TownsfolkNpc2D : Node2D
     /// name="caption"/> (P2-LONG-19) optionally builds this NPC's <see cref="Caption"/> — a second,
     /// higher label a caller can later update via <see cref="SetCaption"/>; empty (the default)
     /// builds no label at all, so every existing caller/test keeps its exact pre-P2-LONG-19 child
-    /// set.
+    /// set. <paramref name="clickable"/> (P2-LONG-18) optionally builds <see cref="Pick"/>; false
+    /// (the default) keeps every existing caller/test's exact zero-pick-zone contract.
     /// </summary>
     public void Init(
         int index,
@@ -284,7 +308,8 @@ public partial class TownsfolkNpc2D : Node2D
         Texture2D? walk2Sprite = null,
         Texture2D? walk4Sprite = null,
         string name = "",
-        string caption = "")
+        string caption = "",
+        bool clickable = false)
     {
         NpcIndex = index;
         Home = home;
@@ -353,7 +378,47 @@ public partial class TownsfolkNpc2D : Node2D
         // yet at Init time, so this is applied mod the list length once it arrives (AdvanceIdle).
         _errandRotation = index;
 
+        // P2-LONG-18: opt-in only — a plain villager (clickable: false, the default) never gets a
+        // Pick zone, keeping this class's own "never clicked" claim true for everyone but Voss.
+        if (clickable)
+        {
+            Pick = BuildPick();
+            AddChild(Pick);
+        }
+
         Visible = true;
+    }
+
+    /// <summary>P2-LONG-18: verbatim copy of <see cref="HeroActor2D.BuildPick"/>'s Area2D recipe —
+    /// collision layer 2 (the actor-pick layer every clickable actor in this town shares), no
+    /// monitoring/monitorable (this NPC never needs to detect anything else, only be clicked), a
+    /// circular shape sized off this NPC's own resolved sprite height so the click zone matches its
+    /// actual silhouette rather than a fixed guess.</summary>
+    private Area2D BuildPick()
+    {
+        var area = new Area2D
+        {
+            Name = "Pick",
+            CollisionLayer = 2,
+            CollisionMask = 0,
+            Monitoring = false,
+            Monitorable = false,
+            InputPickable = true,
+        };
+        area.AddChild(new CollisionShape2D
+        {
+            Name = "PickShape",
+            Shape = new CircleShape2D { Radius = _spriteHeight / 2f },
+            Position = new Vector2(0, -_spriteHeight / 2f),
+        });
+        area.InputEvent += (Node _, InputEvent @event, long _) =>
+        {
+            if (@event is InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true })
+            {
+                Picked?.Invoke();
+            }
+        };
+        return area;
     }
 
     /// <summary>U6: supplies the venue door anchors an errand can walk to — a deterministic

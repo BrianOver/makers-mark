@@ -284,6 +284,11 @@ public class TeachingCoverageCensusTests
         // illegal to send) in the same breath it names the dilemma -- the "foundry-four-verbs"
         // precedent for one id covering more than one action already exists on this same dict.
         [typeof(UnstockAction)] = "hold-or-sell",
+        // P2-LONG-18: PledgePanel.ShowPledgeLesson fires this once, the first time the panel ever
+        // opens (clicking Voss) — the mechanic explainer, distinct from the cost-naming quote shown
+        // every time a pledge is actually about to happen (PledgePanel.VossConfirmQuote, deliberately
+        // NOT gated behind ConsumeFirstTouch, since the whole point is that it is said every time).
+        [typeof(PledgeDuesAction)] = "the-pledge",
     };
 
     /// <summary>Taught by the scripted 3-day apprenticeship chain (<see cref="TutorialFlow.Registry"/>,
@@ -384,6 +389,9 @@ public class TeachingCoverageCensusTests
     private static readonly Type[] NonSimPanelModalSiblings =
     [
         typeof(CommissionBoard), typeof(LegendsWall), typeof(RaidForecastBoard),
+        // P2-LONG-18: PledgePanel is a fourth code-built Control modal sibling (see its own class
+        // doc — mirrors CommissionBoard's idiom), not a SimPanel subtype.
+        typeof(PledgePanel),
     ];
 
     private static IReadOnlyCollection<Type> ConcretePanelTypes() =>
@@ -410,6 +418,11 @@ public class TeachingCoverageCensusTests
         // was carried as a named exemption in PanelUntaught until this unit, on the honest grounds
         // that a visit which neither honored nor reforged anything saw nothing taught.
         [typeof(LegendsWall)] = "legends-wall-taught",
+        // P2-LONG-18: same id as ActionFirstTouch[typeof(PledgeDuesAction)] above — one lesson, one
+        // call site (PledgePanel.ShowPledgeLesson), explaining both the panel and the verb it exists
+        // to offer. Same "share an id across categories" precedent as CommissionBoard/"hold-or-sell"
+        // below, which shares its id with ActionFirstTouch[typeof(UnstockAction)].
+        [typeof(PledgePanel)] = "the-pledge",
     };
 
     /// <summary>Six panels taught by the numbered chain opening a real submit site inside them.</summary>

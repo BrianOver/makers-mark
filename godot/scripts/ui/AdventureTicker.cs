@@ -229,6 +229,14 @@ public partial class AdventureTicker : PanelContainer
 
         GuildAssessmentPassed e =>
             $"Guild Assessment paid — {e.DuesPaidGold}g. Next dues: {e.NextDuesGold}g.",
+        // P2-LONG-18: deliberately does NOT say "paid", and deliberately names no gold amount.
+        // Nothing was paid and no coin moved; a piece the player made left the world for good and
+        // bought the cycle. Saying "paid - 0g" (which is exactly what this line said while the
+        // pledge rode on GuildAssessmentPassed's optional fields) reads as a bug to a player and as
+        // a free lunch to anyone skimming, and it is neither.
+        DuesSettledByPledge e =>
+            $"The guild took {e.ItemName} against the {e.DuesCoveredGold}g dues — it hangs on their "
+            + $"wall now, where it will never turn a blow. Next dues: {e.NextDuesGold}g.",
         GuildAssessmentMissed e =>
             $"Guild Assessment missed — {e.DuesDueGold}g unpaid, {e.MissedAssessments} time(s) now. " +
             $"Next dues climb to {e.NextDuesGold}g.",

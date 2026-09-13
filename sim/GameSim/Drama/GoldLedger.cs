@@ -93,6 +93,12 @@ public static class GoldLedger
                     // Phase D (U-D2): the Guild Assessment debits the till only on a PASS
                     // (DuesPaidGold). A missed assessment moves no gold (never driven negative — see
                     // GuildAssessmentMissed's contract), so it needs no reconstruction row.
+                    //
+                    // P2-LONG-18: neither does a cycle settled by a pledge, and its ABSENCE from this
+                    // switch is the correct handling rather than an oversight. DuesSettledByPledge
+                    // moves no gold at all, so a row here — even a 0g one, which is what this case
+                    // wrote while the pledge rode on GuildAssessmentPassed's optional fields — would
+                    // put a line in the player's own ledger for a transaction that never touched it.
                     rows.Add(new GoldLedgerEntry("guild dues", -assessment.DuesPaidGold, "guild assessment"));
                     break;
                 case RecoveryStipendGranted stipend:
