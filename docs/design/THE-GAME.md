@@ -521,7 +521,7 @@ Stated as description. These are properties of the game as it stands, not gaps a
 | **Commission** | A named hero's specific request, with a deadline and a premium. |
 | **Bounty** | Escrowed gold against a target floor — the one lever aimed at where heroes go, and still an offer they can refuse. |
 | **Heirloom** | An item reforged from a dead hero's recorded gear, carrying their lineage forward. |
-| **Signed work** | An item whose maker chose to name it. |
+| **Signed work** | A rare item the forge itself named, the name drawn from the campaign's own seed. The maker choosing it is P2-PROOF-13, not today. |
 | **Golden replay** | The determinism test: same seed and actions reproduce the same world byte for byte. |
 
 ---
