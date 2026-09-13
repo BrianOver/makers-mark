@@ -5,6 +5,14 @@ using GameSim.Contracts;
 
 namespace GameSim.Heroes;
 
+/// <summary>P2-PEOPLE-17 ("stocking a piece names the morning queue that will reach it first",
+/// decision 1 — sell the good one or hold it for the hero who needs it): which accepted commission
+/// a piece would fill, and who else's Morning turn comes before that hero's. A fact about queue
+/// POSITION, computed by walking <see cref="HeroShoppingSystem.MorningShoppingOrder"/> exactly as
+/// the real Morning pass will — never advice about pricing or holding the piece (law 12, "influence
+/// never orders"): the caller decides what to do with the fact, this only states it.</summary>
+public sealed record CommissionQueueForecast(Commission Commission, ImmutableArray<HeroId> AheadInQueue);
+
 /// <summary>
 /// Wave 3 "Commissions" (plan 2026-07-24-003, U14): the player's two responses to a posted
 /// commission — <see cref="AcceptCommissionAction"/> flips <see cref="Commission.Accepted"/> (locking
@@ -85,29 +93,7 @@ public sealed class CommissionHandlers : IActionHandler
         Item? matchItem = null;
         foreach (var entry in state.Player.Shelf.OrderBy(e => e.Item.Value))
         {
-            if (!state.Items.TryGetValue(entry.Item.Value, out var item))
-            {
-                continue;
-            }
-
-            if (item.Slot != commission.Slot || item.Quality < commission.MinQuality)
-            {
-                continue;
-            }
-
-            // U-T1-11 (found while wiring BaselinePlayer to accept commissions): this match loop
-            // bypasses ShoppingAi's ordinary verdict gates ON PURPOSE (a bespoke commission SHOULD
-            // skip veteran-quality/gear-score-must-improve) — but it was also skipping role-fit and
-            // weight-cap, which are not preference gates, they are "can this hero physically use it"
-            // facts. A Shield never reaches a shield-incapable class through ordinary shopping
-            // (ShoppingAi.EvaluateItem's own first check); it should not reach one through a
-            // commission either.
-            if (item.Slot == ItemSlot.Shield && !heroClass.AllowsShield)
-            {
-                continue;
-            }
-
-            if (heroClass.MaxItemWeight is { } cap && item.Stats.Weight > cap)
+            if (!state.Items.TryGetValue(entry.Item.Value, out var item) || !Satisfies(commission, item, heroClass))
             {
                 continue;
             }
@@ -169,5 +155,81 @@ public sealed class CommissionHandlers : IActionHandler
         events.Emit(new CommissionFulfilled(hero.Id, matchItem.Id, premiumPaid));
 
         return CommissionSystem.BumpMood(next, hero.Id, FulfillMoodBonus);
+    }
+
+    /// <summary>
+    /// The forge-request match predicate <see cref="TryFulfillFromShelf"/>'s shelf scan uses,
+    /// extracted so a reader never re-derives it (P2-PEOPLE-17): slot and quality first, then the
+    /// two "can this hero physically use it" facts a bespoke commission still enforces even though it
+    /// bypasses <see cref="ShoppingAi"/>'s ordinary preference gates (U-T1-11, found while wiring
+    /// <c>BaselinePlayer</c> to accept commissions) — a Shield never reaches a shield-incapable class
+    /// through ordinary shopping (<see cref="ShoppingAi.EvaluateItem"/>'s own first check), so it
+    /// must not reach one through a commission either, and the same goes for a class's per-slot
+    /// weight cap.
+    /// </summary>
+    public static bool Satisfies(Commission commission, Item item, ClassDefinition heroClass)
+    {
+        if (item.Slot != commission.Slot || item.Quality < commission.MinQuality)
+        {
+            return false;
+        }
+
+        if (item.Slot == ItemSlot.Shield && !heroClass.AllowsShield)
+        {
+            return false;
+        }
+
+        if (heroClass.MaxItemWeight is { } cap && item.Stats.Weight > cap)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// P2-PEOPLE-17: which ACCEPTED commission <paramref name="item"/> would fill if stocked, and
+    /// who shops ahead of that hero in the Morning queue right now — the fact decision 1 ("sell the
+    /// good one, or hold it for the hero who needs it") is otherwise made blind: a piece stocked to
+    /// fill one hero's ask can be bought out from under them by an earlier hero's ORDINARY shopping
+    /// before that hero's own commission check ever runs (<see cref="HeroShoppingSystem.ShopOnce"/>
+    /// checks <see cref="TryFulfillFromShelf"/> first, but only on that hero's OWN turn).
+    ///
+    /// <para>Only ACCEPTED commissions are considered: an open (not yet accepted) commission carries
+    /// no guaranteed sale or premium — <see cref="TryFulfillFromShelf"/> never touches one either —
+    /// so naming one here would promise a sale the sim has not committed to. Walked in
+    /// <see cref="HeroShoppingSystem.MorningShoppingOrder"/>'s own order (never re-sorted here): the
+    /// first hero in that real order whose accepted commission <paramref name="item"/> satisfies is
+    /// the one who would actually receive it, because every hero ahead of them takes their own turn
+    /// — commission check, then ordinary shopping — first and can take the shelf slot before this
+    /// hero's turn ever arrives. Returns null when no accepted commission matches: no ask, no line.</para>
+    ///
+    /// <para>This is a fact about queue POSITION, never a suggestion about pricing or holding the
+    /// piece — law 12, "influence never orders": the caller renders the fact and stops there.</para>
+    /// </summary>
+    public static CommissionQueueForecast? ForecastQueueFor(GameState state, Item item)
+    {
+        var aheadInQueue = ImmutableArray.CreateBuilder<HeroId>();
+        foreach (var heroIdValue in HeroShoppingSystem.MorningShoppingOrder(state))
+        {
+            var heroId = new HeroId(heroIdValue);
+            var commission = state.Commissions.FirstOrDefault(c => c.Accepted && c.Hero == heroId);
+            if (commission is null)
+            {
+                aheadInQueue.Add(heroId);
+                continue;
+            }
+
+            if (!state.Heroes.TryGetValue(heroIdValue, out var hero)
+                || !Satisfies(commission, item, ClassRegistry.Require(hero.ClassId)))
+            {
+                aheadInQueue.Add(heroId);
+                continue;
+            }
+
+            return new CommissionQueueForecast(commission, aheadInQueue.ToImmutable());
+        }
+
+        return null;
     }
 }

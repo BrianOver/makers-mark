@@ -4,6 +4,7 @@ using System.Linq;
 using GameSim.Advisor;
 using GameSim.Contracts;
 using GameSim.Drama;
+using GameSim.Heroes;
 using Godot;
 using GodotClient.Ui;
 
@@ -332,6 +333,16 @@ public partial class ShopPanel : SimPanel
             priceOrigin.Name = $"PriceOrigin_{itemId.Value}";
             priceOrigin.AddThemeColorOverride("font_color", GameTheme.TextDim);
 
+            // P2-PEOPLE-17 ("stocking a piece names the morning queue that will reach it first"):
+            // absent (never a blank/invented line) unless this piece actually satisfies an accepted
+            // commission right now.
+            if (QueueForecastLine(state, item) is { } queueLine)
+            {
+                var queueLabel = AddLabel(cardBody, queueLine);
+                queueLabel.Name = $"QueueForecast_{itemId.Value}";
+                queueLabel.AddThemeColorOverride("font_color", GameTheme.TextDim);
+            }
+
             var controlsRow = AddRow(cardBody);
             // U5: a reprice IS a tag flip now (design doc §B6) — MinValue stays the default 1, so
             // the tag itself can never carry (and therefore never queue) a sub-1 price.
@@ -520,6 +531,16 @@ public partial class ShopPanel : SimPanel
                 priceHint.Text = $"priced at {(int)value}g — {PriceOrigin((int)value, item)}";
             // U5: same provenance popup as the shelf section above.
             AddButton(controlsRow, $"Provenance_{item.Id.Value}", "History", Verdict.Ok, () => OnShowProvenance(item.Id));
+
+            // P2-PEOPLE-17 ("stocking a piece names the morning queue that will reach it first"):
+            // the exact fact the player needs at the moment they are deciding whether to Stock this
+            // piece — absent (never invented) unless it actually satisfies an accepted commission.
+            if (QueueForecastLine(state, item) is { } queueLine)
+            {
+                var queueLabel = AddLabel(cardBody, queueLine);
+                queueLabel.Name = $"QueueForecast_{item.Id.Value}";
+                queueLabel.AddThemeColorOverride("font_color", GameTheme.TextDim);
+            }
         }
     }
 
@@ -830,6 +851,36 @@ public partial class ShopPanel : SimPanel
     /// three call sites.</summary>
     private static string PriceOrigin(int price, Item item) =>
         price == SuggestedPrice.For(item) ? "suggested" : "custom";
+
+    /// <summary>
+    /// P2-PEOPLE-17 ("stocking a piece names the morning queue that will reach it first", decision
+    /// 1 — sell the good one or hold it for the hero who needs it): reads
+    /// <see cref="CommissionHandlers.ForecastQueueFor"/> — the sim's own commission-match predicate
+    /// and its own Morning shopping order, NEVER re-derived here — and renders the one fact it
+    /// computes: which accepted commission this piece would fill, and who shops ahead of that hero
+    /// in the queue right now. A fact about queue POSITION, never advice about pricing or holding
+    /// the piece (law 12, "influence never orders") — this never says what the player should do
+    /// about it. Null (no line rendered, never an invented one) when the item satisfies no accepted
+    /// commission.
+    /// </summary>
+    private string? QueueForecastLine(GameState state, Item item)
+    {
+        var forecast = CommissionHandlers.ForecastQueueFor(state, item);
+        if (forecast is null)
+        {
+            return null;
+        }
+
+        var heroName = HeroName(forecast.Commission.Hero);
+        var fillsLine = $"Fills {heroName}'s ask (+{forecast.Commission.PremiumGold}g).";
+        if (forecast.AheadInQueue.IsEmpty)
+        {
+            return $"{fillsLine} No one shops before {heroName} does.";
+        }
+
+        var aheadNames = string.Join(", ", forecast.AheadInQueue.Select(HeroName));
+        return $"{fillsLine} {aheadNames} shop before {heroName} does.";
+    }
 
     /// <summary>
     /// U5 seam (KTD-A): reprices a shelved item — queues the exact <see cref="SetPriceAction"/> a

@@ -43,11 +43,56 @@ public sealed class HeroShoppingSystem : IPhaseSystem
             return state; // stepped session still open — CounterQueueSystem owns these heroes
         }
 
-        var served = state.Counter?.Served; // non-null only on the closing tick (PKD5 fallback gate)
+        // Both passes walk the SAME queue, in the SAME order — see MorningShoppingOrder's own doc.
+        foreach (var heroId in MorningShoppingOrder(state))
+        {
+            var hero = state.Heroes[heroId];
+            state = ShopOnce(state, hero, events);
+        }
 
-        // Snapshot the id order up front; ImmutableSortedDictionary keys are already
-        // ascending HeroId.Value — the deterministic shopping order.
-        foreach (var heroId in state.Heroes.Keys.ToImmutableArray())
+        // Consumable pass (P2), after the whole gear pass: gold spent on gear is gone,
+        // so the pass reads each hero's post-gear purse.
+        foreach (var heroId in MorningShoppingOrder(state))
+        {
+            var hero = state.Heroes[heroId];
+            state = ShopConsumableOnce(state, hero, events);
+        }
+
+        return state;
+    }
+
+    /// <summary>
+    /// The Morning shopping queue, in the exact order <see cref="Process"/> runs it against
+    /// <paramref name="state"/> right now: ascending HeroId order (<see cref="GameState.Heroes"/>
+    /// keys are already sorted that way — ImmutableSortedDictionary), alive heroes only, minus
+    /// anyone a still-open counter session's closing tick already served this session (PKD5
+    /// fallback gate). Recomputed at each call site (never cached across a mutation) — exactly the
+    /// re-snapshot <see cref="Process"/> itself did inline before this was extracted, so this change
+    /// is a pure rename, not a behavior change: nothing either shopping pass does can flip a hero's
+    /// <see cref="Hero.Alive"/> or touch <see cref="GameState.Counter"/>, so re-deriving the filter
+    /// against the post-gear-pass <paramref name="state"/> for the second call always reproduces the
+    /// identical set anyway.
+    ///
+    /// <para>Extracted (P2-PEOPLE-17, "stocking a piece names the morning queue that will reach it
+    /// first"): a stocking-time reader — the shop panel's own "who reaches this piece first" line —
+    /// needs the REAL queue a hero's commission will actually wait behind, and re-deriving "ascending
+    /// HeroId, alive, not already served" a second time in the renderer is exactly the failure family
+    /// this repo already paid for with a hand-copied formula (see <see cref="CommissionHandlers.ForecastQueueFor"/>,
+    /// which calls this instead of re-sorting hero ids itself). Also honors <see cref="Process"/>'s
+    /// own stepped-counter-session guard, so a caller outside <see cref="Process"/> during an open
+    /// session sees the truthful "nobody shops through this pass yet" empty queue rather than a
+    /// queue that will not actually run this tick.</para>
+    /// </summary>
+    internal static ImmutableArray<int> MorningShoppingOrder(GameState state)
+    {
+        if (state.Counter is { Closed: false })
+        {
+            return ImmutableArray<int>.Empty; // stepped session still open — see Process's own guard
+        }
+
+        var served = state.Counter?.Served; // non-null only on the closing tick (PKD5 fallback gate)
+        var order = ImmutableArray.CreateBuilder<int>(state.Heroes.Count);
+        foreach (var heroId in state.Heroes.Keys)
         {
             var hero = state.Heroes[heroId];
             if (!hero.Alive || served is { } s && s.Contains(heroId))
@@ -55,23 +100,10 @@ public sealed class HeroShoppingSystem : IPhaseSystem
                 continue; // dead heroes never shop (R7 permadeath); counter-served heroes don't shop twice
             }
 
-            state = ShopOnce(state, hero, events);
+            order.Add(heroId);
         }
 
-        // Consumable pass (P2), after the whole gear pass: gold spent on gear is gone,
-        // so the pass reads each hero's post-gear purse.
-        foreach (var heroId in state.Heroes.Keys.ToImmutableArray())
-        {
-            var hero = state.Heroes[heroId];
-            if (!hero.Alive || served is { } s && s.Contains(heroId))
-            {
-                continue;
-            }
-
-            state = ShopConsumableOnce(state, hero, events);
-        }
-
-        return state;
+        return order.ToImmutable();
     }
 
     /// <summary>One hero's whole morning: evaluate both shelves, buy at most one item.</summary>
