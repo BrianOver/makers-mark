@@ -76,9 +76,10 @@ public partial class AdventureTicker : PanelContainer
     /// arrivals, the drama director's daily incident, the confidence spiral's edge-triggered
     /// warnings, (U5(b)) the faction-standing gauge's own edge-triggered threshold crossings,
     /// (U7) the four cadence-periodic/edge-triggered economic moments: rent paid/missed, guild
-    /// assessment passed/missed, a hero's rank-up crossing, and a paid-out bounty, and (U3) two
+    /// assessment passed/missed, a hero's rank-up crossing, and a paid-out bounty, (U3) two
     /// moments that fired into total silence until now: a craft signed into a named legend, and
-    /// a fallen hero's memorial rite performed.
+    /// a fallen hero's memorial rite performed, and (P2-HONEST-23) the idle-day half of the
+    /// market-share meter — law 7's named cost for a day that spent no action slot.
     /// Unrecognized/irrelevant event types render nothing; a batch
     /// with no qualifying event appends nothing (no placeholder noise). Same-day repeats
     /// (identical formatted text) are deduped — which is also the spam guard, since a
@@ -259,11 +260,25 @@ public partial class AdventureTicker : PanelContainer
         // action read back at them, paying out is someone else's gold moving.
         BountyPaid e => $"{HeroName(state, e.To)} collects {e.RewardGold}g on a completed bounty.",
 
+        // P2-HONEST-23 (law 7 — "skipping stays legal and its cost is named in copy, never
+        // engineered"): the idle-day HALF of MarketShareShifted only. MarketShareSystem (Evening)
+        // stamps this event on almost every day in one direction or the other — RivalGained on a
+        // day nothing was spent, the claw-back on any day that spent a slot — and the exclusion
+        // below originally silenced the WHOLE event as gauge noise on that basis. But "the rival
+        // edged up because you skipped the forge" is not a gauge tick; it is the exact charge law 7
+        // requires be named, so this direction alone gets a line. Phase-gated the same defensive
+        // way as HeroDied/AttributionBeatEvent above, even though MarketShareSystem only ever runs
+        // at Evening (structurally redundant, belt-and-suspenders).
+        MarketShareShifted e when e.RivalGained && completedPhase == DayPhase.Evening =>
+            "You were not at the anvil today. The rival's stall was.",
+
         // DELIBERATELY still silent here, and why:
         //  • SupplyDelivered — confirmation of the player's OWN camp action, already shown by
         //    CampPanel. Town gossip about a thing you just did reads as noise.
-        //  • MarketShareShifted — drifts EVERY day (MarketShareSystem, Evening). It is gauge
-        //    material, not news; in a marquee it would crowd out everything above.
+        //  • MarketShareShifted (RivalGained: false only) — the claw-back on any day that spent an
+        //    action slot. That is the mechanic rewarding ordinary work, not a cost to disclose; the
+        //    day's own actions already say what the player did. The idle-day half that IS a cost is
+        //    the case above.
         //  • TariffApplied (U5(b)) — the per-purchase price delta that ONE buy's standing-at-the-
         //    time produced. Like SupplyDelivered, this is confirmation of the player's OWN action
         //    (their own buy, already reflected in their own gold total and material count on

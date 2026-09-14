@@ -25,10 +25,13 @@ namespace GodotClient.Tests;
 /// had no reader at all — the campaign could end and the player would never be told.
 ///
 /// <para>These tests assert the SURFACING, not the sim: each one proves a formerly-dropped event
-/// now produces player-visible text. They deliberately also pin the two exclusions
-/// (<see cref="SupplyDelivered"/>, <see cref="MarketShareShifted"/>), because those were judgment
-/// calls — a future reader deserves to see they were decided rather than missed, and a test is the
-/// only place that survives.</para>
+/// now produces player-visible text. They deliberately also pin the remaining exclusions
+/// (<see cref="SupplyDelivered"/>, <see cref="MarketShareShifted"/>'s active-recovery direction),
+/// because those were judgment calls — a future reader deserves to see they were decided rather
+/// than missed, and a test is the only place that survives. P2-HONEST-23 later narrowed
+/// <see cref="MarketShareShifted"/>'s own exclusion to that one direction — see
+/// <see cref="MarketShareShifted_IdleDay_NamesThePlayersOwnIdleDay"/> below for the half that now
+/// speaks.</para>
 ///
 /// <para>Driven directly against the components with hand-built state, following
 /// <see cref="AdventureTickerTests"/>' established technique: deterministic and fast, and it can
@@ -155,9 +158,14 @@ public class UnsilencedEventTests
     }
 
     /// <summary>
-    /// The three deliberate exclusions. <see cref="SupplyDelivered"/> confirms the player's own
-    /// camp action (CampPanel already shows it) and <see cref="MarketShareShifted"/> drifts every
-    /// single Evening — in a finite marquee it would crowd out the news above.
+    /// The remaining deliberate exclusions. <see cref="SupplyDelivered"/> confirms the player's own
+    /// camp action (CampPanel already shows it), and <see cref="MarketShareShifted"/>'s
+    /// active-recovery direction (<c>RivalGained: false</c>, any day that spent an action slot)
+    /// drifts every single Evening the player actually works — in a finite marquee it would crowd
+    /// out the news above, and it names no cost worth disclosing (working is the expected default,
+    /// not a fee). The OTHER direction — <c>RivalGained: true</c>, the idle-day charge law 7
+    /// requires be named — is no longer silent; see
+    /// <see cref="MarketShareShifted_IdleDay_NamesThePlayersOwnIdleDay"/> below (P2-HONEST-23).
     ///
     /// <para><see cref="TariffApplied"/> (U5(b) ruling) joins them here rather than getting a
     /// renderer: it is the per-purchase price delta ONE buy's standing-at-the-time produced — like
@@ -183,7 +191,7 @@ public class UnsilencedEventTests
                 StagedWorld(),
                 ImmutableList.Create<GameEvent>(
                     new SupplyDelivered(new HeroId(1), new ItemId(1), Fee: 5),
-                    new MarketShareShifted(Permille: 120, RivalGained: true),
+                    new MarketShareShifted(Permille: 120, RivalGained: false),
                     new TariffApplied(FactionRegistry.DeepveinId, "copper", BaseLineCost: 100, PlayerCost: 90, Delta: -10)));
 
             AssertThat(ticker.Lines.Count).IsEqual(0);
@@ -209,6 +217,70 @@ public class UnsilencedEventTests
             var evt = Incident("goblin_probe", IncidentCategory.Skirmish, IncidentMagnitude.Minor);
             ticker.OnPhaseCompleted(
                 DayPhase.Morning, completedDay: 4, StagedWorld(), ImmutableList.Create<GameEvent>(evt, evt));
+
+            AssertThat(ticker.Lines.Count).IsEqual(1);
+        }
+        finally
+        {
+            ticker.Free();
+        }
+    }
+
+    // ── the idle-day cost (P2-HONEST-23, law 7) ────────────────────────────────────────────────
+    // Law 7 ("skipping stays legal and its cost is named in copy, never engineered") had a live
+    // gap: MarketShareSystem's idle-day charge (+150‰ toward the rival) was real and mechanically
+    // enforced, but nothing ever told the player it happened or why. The two tests below cover
+    // both directions the unit's own spec demands, plus the per-tick dedupe guard.
+
+    /// <summary>
+    /// P2-HONEST-23: the idle-day HALF of <see cref="MarketShareShifted"/> now speaks — see
+    /// <see cref="AdventureTicker"/>'s FormatLine case and its neighbouring exclusion comment.
+    /// Phrased against the PROPERTY, not one sentence (a copy rewrite must stay free): the line
+    /// must name the CAUSE — the player's own idle day, addressed directly — not just repeat the
+    /// EFFECT <c>ShopPanel.RivalEdgeGradient</c> already names ("The rival's edge is creeping
+    /// up."). The active-recovery direction (<c>RivalGained: false</c>, any day that spent a slot)
+    /// stays silent exactly as before — pinned by
+    /// <see cref="DeliberateExclusions_StaySilentInTheMarquee"/> above.
+    /// </summary>
+    [TestCase]
+    public void MarketShareShifted_IdleDay_NamesThePlayersOwnIdleDay()
+    {
+        var ticker = new AdventureTicker();
+        try
+        {
+            ticker.Build();
+            ticker.OnPhaseCompleted(
+                DayPhase.Evening, completedDay: 6, StagedWorld(),
+                ImmutableList.Create<GameEvent>(new MarketShareShifted(Permille: 350, RivalGained: true)));
+
+            AssertThat(ticker.Lines.Count).IsEqual(1);
+            AssertThat(ticker.DisplayText.ToLowerInvariant().Contains("you"))
+                .OverrideFailureMessage(
+                    "The idle-day line must address the player directly (the CAUSE) rather than "
+                    + $"only restating the rival's gain (the EFFECT). Line was \"{ticker.DisplayText}\".")
+                .IsTrue();
+        }
+        finally
+        {
+            ticker.Free();
+        }
+    }
+
+    /// <summary>The generic same-day dedupe (<see cref="SameDayRepeat_IsDeduped_SoAWiderAllowListCannotSpam"/>)
+    /// already covers every event type structurally, but this event gets its own pin by name: this
+    /// repo has shipped a per-tick nag before (1,287 fires in one run, per the repo's own history),
+    /// and a future refactor that special-cased MarketShareShifted's rendering is exactly the kind
+    /// of change that could silently step around the shared guard.</summary>
+    [TestCase]
+    public void MarketShareShifted_IdleDay_FiredTwiceInOneBatch_RendersExactlyOneLine()
+    {
+        var ticker = new AdventureTicker();
+        try
+        {
+            ticker.Build();
+            var evt = new MarketShareShifted(Permille: 350, RivalGained: true);
+            ticker.OnPhaseCompleted(
+                DayPhase.Evening, completedDay: 6, StagedWorld(), ImmutableList.Create<GameEvent>(evt, evt));
 
             AssertThat(ticker.Lines.Count).IsEqual(1);
         }

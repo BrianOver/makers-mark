@@ -16,6 +16,13 @@ namespace GameSim.Economy;
 /// (Morning) reads the resulting share to discount newly-minted rival stock — the visible, economic
 /// consequence of a day spent doing nothing.
 ///
+/// Law 7 ("skipping stays legal and its cost is named in copy, never engineered") does not change
+/// this system: skipping a day is still perfectly legal, and the +150‰/-100‰ numbers below are
+/// unchanged by P2-HONEST-23. What changed lives entirely client-side — the idle direction of the
+/// event below (<see cref="MarketShareShifted"/>, <c>RivalGained: true</c>) now renders a line on
+/// <c>AdventureTicker</c> the same evening it fires (godot/scripts/ui/AdventureTicker.cs), so the
+/// charge this system has always applied is now also told.
+///
 /// Determinism: pure integer, no RNG, no wall clock — a fixed step per day, clamped to [0, 1000].
 /// </summary>
 public sealed class MarketShareSystem : IPhaseSystem

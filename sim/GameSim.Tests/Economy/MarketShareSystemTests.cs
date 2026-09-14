@@ -100,6 +100,19 @@ public class MarketShareSystemTests
         Assert.Empty(events);
     }
 
+    /// <summary>
+    /// P2-HONEST-23 closed the gap between "charged" and "named" for the idle-day cost — it must
+    /// never quietly retune what it was only supposed to disclose. Literal numbers, not the
+    /// constants compared against themselves, because a constant-vs-constant assertion can't
+    /// catch the constant itself drifting under a "just adjusting the disclosure" PR.
+    /// </summary>
+    [Fact]
+    public void IdleGainAndActiveRecovery_ConstantsUnchanged_DisclosureOnlyUnitMustNotRetune()
+    {
+        Assert.Equal(150, MarketShareSystem.IdleGainPerMille);
+        Assert.Equal(100, MarketShareSystem.ActiveRecoveryPerMille);
+    }
+
     [Fact]
     public void DrawsNoRng_TwoRunsIdentical()
     {

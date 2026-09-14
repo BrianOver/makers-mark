@@ -549,10 +549,14 @@ public partial class ShopPanel : SimPanel
     /// (<see cref="GameSim.Economy.MarketShareSystem"/>, Evening — a fully idle day raises it toward
     /// the rival, any real-work day claws it back; <see cref="GameSim.Economy.RivalRestockSystem"/>,
     /// Morning, spends it discounting the rival's next-minted stock) had zero <c>godot/scripts</c>
-    /// readers before this unit. Its own event, <c>MarketShareShifted</c>, is a DELIBERATE ticker
-    /// exclusion (<c>AdventureTicker.cs:256</c>, "gauge material, not news" —
+    /// readers before this unit. Its own event, <c>MarketShareShifted</c>, was a DELIBERATE ticker
+    /// exclusion in full (<c>AdventureTicker.cs:256</c>, "gauge material, not news" —
     /// <c>docs/reference/surfaces-census.md</c> §8) — this gauge is the reader that exclusion was
-    /// always waiting on, not a reason to revisit it.
+    /// always waiting on. P2-HONEST-23 later narrowed that exclusion to the active-recovery
+    /// direction only: the idle-day half now speaks once, on the ticker, at the moment it is
+    /// charged (law 7 — "its cost is named in copy, never engineered"). The two surfaces are
+    /// complementary, not a duplicate: this gauge shows the CURRENT standing share; the ticker
+    /// line names the CAUSE of the one day that just moved it.
     ///
     /// <para>Mirrors <see cref="TavernPanel.ConfidenceGradient"/>'s own shape exactly: an ascending,
     /// iterable band list <see cref="For"/> matches against, rendered GENERICALLY by
