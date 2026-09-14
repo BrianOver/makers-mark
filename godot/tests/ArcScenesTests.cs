@@ -5,6 +5,7 @@ using GameSim;
 using GameSim.Classes;
 using GameSim.Contracts;
 using GameSim.Kernel;
+using GameSim.Venues;
 using GdUnit4;
 using Godot;
 using GodotClient.Ui;
@@ -603,6 +604,151 @@ public class ArcScenesTests
             ArcSceneFlow.ResetForNewGame();
         }
     }
+
+    // ── P2-PEOPLE-04: the same durable-fact read-back, on the vigil slate ──────────────────
+
+    [TestCase]
+    public void AfterFloorThree_TheVigilSlateCallsItHalvarsFloor()
+    {
+        ArcSceneFlow.ResetForNewGame();
+        try
+        {
+            // A party camped below floor 3, pressing for it, with Torvald marching — the vigil
+            // slate's own "PARTY CAMPED ... pressing for floor 3" header names the same floor the
+            // muster board's Target line does.
+            var state = CampedAtFloorThree();
+
+            AssertThat(ArcScenes.FloorCaption(ArcScenes.TorvaldName, 3))
+                .OverrideFailureMessage("The caption leaked before the scene that grants it was ever shown.")
+                .IsEqual(string.Empty);
+
+            var ui = MountMainUi(new SimAdapter(state));
+            try
+            {
+                var before = RenderedText(ui.Camp);
+                AssertThat(before).Contains("pressing for floor 3");
+                AssertThat(before)
+                    .OverrideFailureMessage("An unnamed floor must never gain an invented name.")
+                    .NotContains("Halvar");
+
+                // Negative controls: P2-PEOPLE-15's anchor voice and P2-PEOPLE-16's chips are the
+                // most likely regression here (landed hours before this unit) — both must still
+                // render alongside the new caption.
+                var liveParty = ui.Adapter.CurrentState.InFlight[0];
+                AssertThat(before).Contains(PartyVoice.AnchorLine(ui.Adapter.CurrentState, liveParty));
+                AssertThat(before).Contains("Standing");
+                AssertThat(before).Contains("Gear");
+
+                // Walk the chain to "Floor three" and show it — the same walk DepthsPanel's own
+                // test above uses.
+                var weigh = ArcSceneFlow.OfferFor(state)!;
+                ArcSceneFlow.Reveal(weigh, state.Day);
+                var floorThree = ArcSceneFlow.OfferFor(state with { Day = state.Day + 1 })!;
+                AssertThat(floorThree.Id).IsEqual("torvald-floor-three");
+                ArcSceneFlow.Reveal(floorThree, state.Day + 1);
+
+                ui.Camp.Refresh();
+                AssertThat(RenderedText(ui.Camp))
+                    .OverrideFailureMessage("The same sentence on the vigil slate did not become a different sentence.")
+                    .Contains("pressing for floor 3 — Halvar's floor");
+            }
+            finally { Unmount(ui); }
+
+            // Negative control: the shared rule the muster board's Target line reads
+            // (RaidForecastBoard.HalvarsFloorCaption) is unchanged by wiring a fourth reader onto it.
+            AssertThat(ArcScenes.FloorCaption(ArcScenes.TorvaldName, 3)).IsEqual(" — Halvar's floor");
+        }
+        finally
+        {
+            ArcSceneFlow.ResetForNewGame();
+        }
+    }
+
+    [TestCase]
+    public void FloorCaption_OnTheVigilSlate_NeverInventsAName_ForAWrongFloorOrAWrongHero()
+    {
+        ArcSceneFlow.ResetForNewGame();
+        try
+        {
+            // Grant the fact once, town-wide — both scenarios below check it does not leak onto a
+            // floor or a hero it does not belong to.
+            var granting = AfterFloorThreeAndAnAsk();
+            var weigh = ArcSceneFlow.OfferFor(granting)!;
+            ArcSceneFlow.Reveal(weigh, granting.Day);
+            var floorThree = ArcSceneFlow.OfferFor(granting with { Day = granting.Day + 1 })!;
+            ArcSceneFlow.Reveal(floorThree, granting.Day + 1);
+            AssertThat(ArcSceneFlow.ArcFactRevealed(ArcScenes.HalvarsFloor)).IsTrue(); // sanity: fact IS granted
+
+            // Torvald himself, but pressing for floor 4, not 3.
+            var wrongFloor = CampedWorld(Torvald, ArcScenes.TorvaldName, targetFloor: 4, checkpointFloor: 3);
+            var uiWrongFloor = MountMainUi(new SimAdapter(wrongFloor));
+            try
+            {
+                AssertThat(RenderedText(uiWrongFloor.Camp))
+                    .OverrideFailureMessage("The fact is about floor 3, not floor 4 — it must not leak onto the wrong floor.")
+                    .NotContains("Halvar");
+            }
+            finally { Unmount(uiWrongFloor); }
+
+            // Floor 3, but a different hero — the fact belongs to Torvald alone.
+            var wrongHero = CampedWorld(new HeroId(2), "Brunhilde", targetFloor: 3, checkpointFloor: 2);
+            var uiWrongHero = MountMainUi(new SimAdapter(wrongHero));
+            try
+            {
+                AssertThat(RenderedText(uiWrongHero.Camp))
+                    .OverrideFailureMessage("The fact is Torvald's alone — it must not leak onto another hero's floor 3.")
+                    .NotContains("Halvar");
+            }
+            finally { Unmount(uiWrongHero); }
+        }
+        finally
+        {
+            ArcSceneFlow.ResetForNewGame();
+        }
+    }
+
+    /// <summary>A day-1 world with Torvald camped below floor 2, pressing for floor 3 — the world
+    /// facts "Floor three" needs are already true (mirrors <see cref="AfterFloorThreeAndAnAsk"/>),
+    /// but the arc has not been walked, so the caption itself is not yet granted.</summary>
+    private static GameState CampedAtFloorThree() =>
+        AfterFloorThreeAndAnAsk() with
+        {
+            Phase = DayPhase.Camp,
+            InFlight = ImmutableList.Create(BuildInFlight(Torvald, targetFloor: 3, checkpointFloor: 2)),
+        };
+
+    /// <summary>A minimal, standalone camped world for one hero — mirrors
+    /// <c>CampChipsParityTests.SoloCampedWorld</c>'s technique (built directly, never driven through
+    /// a real Expedition tick) but parameterized on which floor the party is pressing for, so the
+    /// wrong-floor/wrong-hero scenarios above can vary exactly one axis at a time.</summary>
+    private static GameState CampedWorld(HeroId hero, string name, int targetFloor, int checkpointFloor)
+    {
+        var heroRecord = new Hero(
+            hero, name, ClassRegistry.VanguardId, Level: 2, MaxHp: 30, Gold: 20,
+            GearSet.Empty, ImmutableList<ItemMemory>.Empty, Alive: true,
+            DeepestFloorReached: checkpointFloor, DiedOnDay: null);
+
+        return GameFactory.NewGame(9001) with
+        {
+            Phase = DayPhase.Camp,
+            Heroes = ImmutableSortedDictionary<int, Hero>.Empty.Add(heroRecord.Id.Value, heroRecord),
+            InFlight = ImmutableList.Create(BuildInFlight(hero, targetFloor, checkpointFloor)),
+        };
+    }
+
+    private static InFlightExpedition BuildInFlight(HeroId hero, int targetFloor, int checkpointFloor) =>
+        new(
+            Party: ImmutableList.Create(hero),
+            TargetFloor: targetFloor,
+            CheckpointFloor: checkpointFloor,
+            VenueId: VenueRegistry.MineId,
+            Hp: ImmutableSortedDictionary<int, int>.Empty.Add(hero.Value, 20),
+            Packs: ImmutableSortedDictionary<int, ImmutableList<ItemId>>.Empty.Add(hero.Value, ImmutableList<ItemId>.Empty),
+            Gold: ImmutableSortedDictionary<int, int>.Empty,
+            Dead: ImmutableSortedSet<int>.Empty,
+            Floors: ImmutableList<FloorOutcome>.Empty,
+            Loot: ImmutableList<OreLoot>.Empty,
+            DeepestFloorCleared: checkpointFloor);
 
     // ── helpers: never clobber a real campaign (the CampaignSaveTests idiom) ────────────────
 

@@ -207,12 +207,13 @@ public static class ArcScenes
     /// screen, never a new row, because the whole point is that <b>the same sentence on the same
     /// board becomes a different sentence</b> after somebody tells you something.
     ///
-    /// <para><b>One rule, three readers.</b> The muster board's Target line, the Mine's depth-record
-    /// standings, and the legends wall's copy of the same standings all read this — a caption
-    /// re-derived per panel is a caption three panels will eventually disagree about.
-    /// <c>P2-PEOPLE-04</c> generalizes this into the read-back table every arc's durable fact will
-    /// use; until then it is deliberately the one hard-wired instance, and honest about being so
-    /// rather than a general mechanism with a single row in it.</para>
+    /// <para><b>One rule, four readers.</b> The muster board's Target line, the Mine's depth-record
+    /// standings, the legends wall's copy of the same standings, and the vigil slate's "pressing
+    /// for floor N" header (<see cref="GodotClient.Panels.CampPanel.HalvarsFloorCaption"/>) all read
+    /// this — a caption re-derived per panel is a caption four panels will eventually disagree
+    /// about. <c>P2-PEOPLE-04</c> generalizes this into the read-back table every arc's durable fact
+    /// will use; until then it is deliberately the one hard-wired instance, and honest about being
+    /// so rather than a general mechanism with a single row in it.</para>
     ///
     /// <para>Returns nothing until <see cref="HalvarsFloor"/> is granted, so the fact can never leak
     /// ahead of the man it belongs to. It keeps returning it after he dies — that is what a durable
