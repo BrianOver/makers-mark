@@ -169,9 +169,11 @@ public partial class HeroPanel : SimPanel
         var className = ClassRegistry.Require(hero.ClassId).DisplayName;
         AddHeader(body, $"{hero.Name} — {className}");
 
-        var band = RelationshipBands.For(hero.Id, state);
+        // P2-PEOPLE-16: the Standing chip (and its tone) is now built by HeroChips.StandingChip,
+        // not inline here — CampPanel's camped rows call the same method for the same hero, so
+        // the two surfaces can never quietly disagree about one hero's band.
         var chipRow = AddRow(body);
-        chipRow.AddChild(StatChip("Standing", RelationshipBands.Label(band), MoodTone(hero.MoodPermille)));
+        chipRow.AddChild(HeroChips.StandingChip(hero.Id, state, hero.MoodPermille));
         chipRow.AddChild(StatChip("Deepest", DepthCopy.Deepest(hero.DeepestFloorReached)));
         chipRow.AddChild(StatChip("XP", $"{hero.Xp}"));
 
@@ -203,16 +205,10 @@ public partial class HeroPanel : SimPanel
         AddLabel(body, $"  deeds: {kills} kills, {saves} saves");
 
         // B2 (traits with shop teeth): one chip per derived trait (StableHash(HeroId, Name), 2/hero) —
-        // mirrors the CLI `hero <name>` card. Derived on read, never stored.
-        var traits = GameSim.Heroes.TraitRegistry.TraitsFor(hero.Id, hero.Name);
-        if (!traits.IsDefaultOrEmpty)
-        {
-            var traitRow = AddRow(body);
-            foreach (var traitId in traits)
-            {
-                traitRow.AddChild(StatChip("Trait", GameSim.Heroes.TraitRegistry.Definition(traitId).DisplayName));
-            }
-        }
+        // mirrors the CLI `hero <name>` card. Derived on read, never stored. P2-PEOPLE-16 extracted
+        // this row (and the Standing chip above) into HeroChips so CampPanel's camped rows render
+        // the identical chips for the same hero — never a second copy that can drift from this one.
+        HeroChips.AddTraitChips(body, hero.Id, hero.Name);
 
         // B3 (relationships, the other legibility gap this unit closes): the pair(s) this hero
         // has the strongest derived standing with, by name — RelationshipSystem.EdgeFor had zero
@@ -348,15 +344,6 @@ public partial class HeroPanel : SimPanel
 
         return string.Join(" or ", names);
     }
-
-    /// <summary>Chip tone for the Standing chip, echoing <see cref="HeroesPanel"/>'s mood-word
-    /// bands (warm/friendly/sour/neutral) at the tone level instead of a separate label.</summary>
-    private static UiKit.ChipTone MoodTone(int moodPermille) => moodPermille switch
-    {
-        >= RelationshipBands.PatronMinMood => UiKit.ChipTone.Positive,
-        <= -80 => UiKit.ChipTone.Negative,
-        _ => UiKit.ChipTone.Neutral,
-    };
 
     private void EnsureBuilt()
     {

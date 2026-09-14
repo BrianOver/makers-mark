@@ -53,6 +53,17 @@ namespace GodotClient.Panels;
 /// and <see cref="GameSim.Venues.VenueRegistry"/> data the header and the "Still ahead, in the
 /// dark" line below it already render — this is a line ADDED above the existing facts, never a
 /// replacement, and the vigil still waits indefinitely on the same three verbs.</para>
+///
+/// <para>P2-PEOPLE-16 ("the camped rows carry the trait and band chips the roster already
+/// shows"): before this unit, a camped row showed hp and little else — the hero the player is
+/// deciding about here was not visibly the same person <see cref="HeroPanel"/>'s roster card shows
+/// them. Each member row now also carries that hero's Standing and Trait chips
+/// (<see cref="GodotClient.Ui.HeroChips"/>, read through the exact same functions the roster card
+/// calls, never a second copy) plus the one fact unique to the vigil — whether the hero is
+/// currently wearing at least one piece of the player's own marked work
+/// (<see cref="GodotClient.Ui.HeroChips.GearMarkChip"/>). Chips only, never survival math: no
+/// danger rating and no "this one is at risk" ever renders here — <c>docs/design/THE-GAME.md</c>
+/// is explicit the game never tells the player who will survive.</para>
 /// </summary>
 public partial class CampPanel : SimPanel
 {
@@ -239,7 +250,8 @@ public partial class CampPanel : SimPanel
         foreach (var member in party.Party)
         {
             var hp = party.Hp.TryGetValue(member.Value, out var value) ? value : 0;
-            var maxHp = state.Heroes.TryGetValue(member.Value, out var hero) ? hero.MaxHp : 0;
+            state.Heroes.TryGetValue(member.Value, out var hero);
+            var maxHp = hero?.MaxHp ?? 0;
             var heals = PartyVoice.HealsLeft(state, party, member);
             var yours = PartyVoice.YoursHealsLeft(state, party, member);
             var gold = party.Gold.TryGetValue(member.Value, out var goldSoFar) ? goldSoFar : 0;
@@ -258,6 +270,21 @@ public partial class CampPanel : SimPanel
             // death, so the number changes a decision the player is making at THIS stop, not just
             // at the one tonight.
             AddLabel(row, $"{HeroName(member)} — hp {hp}/{maxHp}, {heals} heals left (of which yours: {yours}), {gold}g so far");
+
+            // P2-PEOPLE-16 ("the camped rows carry the trait and band chips the roster already
+            // shows", decision 6/link3): the SAME Standing and Trait chips HeroPanel's roster card
+            // renders for this hero, read through the shared HeroChips helper so neither surface
+            // can drift from the other, plus the one fact unique to this stop — whether the hero
+            // is currently wearing at least one piece of the player's own marked work. Chips only
+            // (this unit's own condition): nothing here computes or implies a chance of death — see
+            // HeroChips's own doc for why survival math never belongs on this row.
+            if (hero is not null)
+            {
+                var chipRow = AddRow(cardBody);
+                chipRow.AddChild(HeroChips.StandingChip(member, state, hero.MoodPermille));
+                chipRow.AddChild(HeroChips.GearMarkChip(hero, state));
+                HeroChips.AddTraitChips(cardBody, member, hero.Name);
+            }
 
             var to = member;
             var send = new Button
