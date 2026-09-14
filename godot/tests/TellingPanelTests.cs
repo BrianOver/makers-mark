@@ -254,6 +254,213 @@ public class TellingPanelTests
         }
     }
 
+    // ── Shared fixtures for the no-credit shapes (also driven reflectively below) ───────────────
+
+    private static (GameState State, ExpeditionResult Result, AttributionBeatEvent BeatEvent, AttributionBeat Beat, ImmutableSortedDictionary<int, Item> Items) ProvisionedNight()
+    {
+        var itemId = new ItemId(9102);
+        var item = new Item(
+            itemId, "recipe-test-salve", "Field Salve", ItemSlot.Consumable, QualityGrade.Common,
+            new ItemStats(0, 0, 0), new MakersMark("You", 1), ImmutableList<ItemHistoryEntry>.Empty,
+            new ConsumableEffect(ConsumableKind.Heal, 5));
+        var departure = new HeroAtDeparture(Hero, "Elowen", "vanguard", Level: 2, MaxHp: 30, Weapon: null, Shield: null, Armor: null);
+        var use = new ConsumableUse(itemId, Round: 1, HpBefore: 20, HpAfter: 25);
+        var round1 = new CombatEvent(Floor, Hero, "Deep Ghoul", ImmutableList.Create(3, 2), DamageDealt: 3, DamageTaken: 2, MonsterKilled: false, KillingItem: null)
+        {
+            Uses = ImmutableList.Create(use),
+        };
+        var round2 = new CombatEvent(Floor, Hero, "Deep Ghoul", ImmutableList.Create(6), DamageDealt: 20, DamageTaken: 0, MonsterKilled: true, KillingItem: null);
+        var floorOutcome = new FloorOutcome(Floor, Cleared: true, ImmutableList.Create(round1, round2));
+        var beat = new AttributionBeat(BeatType.Provisioned, itemId, Hero, Floor, "Field Salve kept her fighting");
+        var result = new ExpeditionResult(
+            ImmutableList.Create(Hero), Floor, Floor, ImmutableList.Create(floorOutcome),
+            ImmutableList.Create(Hero), ImmutableList<HeroId>.Empty, ImmutableList.Create(beat),
+            ImmutableList<OreLoot>.Empty, ImmutableSortedDictionary<int, int>.Empty)
+        {
+            PartyAtDeparture = ImmutableList.Create(departure),
+        };
+        var items = ImmutableSortedDictionary<int, Item>.Empty.Add(itemId.Value, item);
+
+        var beatEvent = new AttributionBeatEvent(beat.Beat, beat.Item, beat.Hero, beat.Floor, beat.Detail) with { Id = new EventId(80101), Day = Day };
+        var baseState = GameFactory.NewGame(9002);
+        var state = baseState with
+        {
+            Items = items,
+            EventLog = baseState.EventLog.Add(beatEvent),
+            LastNightExpeditions = ImmutableList.Create(result),
+        };
+
+        return (state, result, beatEvent, beat, items);
+    }
+
+    private static (GameState State, ExpeditionResult Result, AttributionBeatEvent BeatEvent, AttributionBeat Beat, ImmutableSortedDictionary<int, Item> Items) KillingBlowNight()
+    {
+        var itemId = new ItemId(9103);
+        var item = new Item(
+            itemId, "recipe-test-sword", "Fine Shortsword", ItemSlot.Weapon, QualityGrade.Fine,
+            new ItemStats(40, 0, 4), new MakersMark("You", 1), ImmutableList<ItemHistoryEntry>.Empty);
+        var departure = new HeroAtDeparture(Hero, "Brannis", "vanguard", Level: 3, MaxHp: 20, Weapon: itemId, Shield: null, Armor: null);
+        var round1 = new CombatEvent(Floor, Hero, "Deep Ghoul", ImmutableList.Create(4), DamageDealt: 50, DamageTaken: 0, MonsterKilled: true, KillingItem: itemId);
+        var floorOutcome = new FloorOutcome(Floor, Cleared: true, ImmutableList.Create(round1));
+        var beat = new AttributionBeat(BeatType.KillingBlow, itemId, Hero, Floor, "Fine Shortsword turned the killing blow");
+        var result = new ExpeditionResult(
+            ImmutableList.Create(Hero), Floor, Floor, ImmutableList.Create(floorOutcome),
+            ImmutableList.Create(Hero), ImmutableList<HeroId>.Empty, ImmutableList.Create(beat),
+            ImmutableList<OreLoot>.Empty, ImmutableSortedDictionary<int, int>.Empty)
+        {
+            PartyAtDeparture = ImmutableList.Create(departure),
+        };
+        var items = ImmutableSortedDictionary<int, Item>.Empty.Add(itemId.Value, item);
+
+        var beatEvent = new AttributionBeatEvent(beat.Beat, beat.Item, beat.Hero, beat.Floor, beat.Detail) with { Id = new EventId(80201), Day = Day };
+        var baseState = GameFactory.NewGame(9003);
+        var state = baseState with
+        {
+            Items = items,
+            EventLog = baseState.EventLog.Add(beatEvent),
+            LastNightExpeditions = ImmutableList.Create(result),
+        };
+
+        return (state, result, beatEvent, beat, items);
+    }
+
+    private static (GameState State, ExpeditionResult Result, AttributionBeatEvent BeatEvent, AttributionBeat Beat, ImmutableSortedDictionary<int, Item> Items) MarginOnlyNight()
+    {
+        var itemId = new ItemId(9104);
+        var laterItemId = new ItemId(9105);
+        var item = new Item(
+            itemId, "recipe-test-salve", "Field Salve", ItemSlot.Consumable, QualityGrade.Common,
+            new ItemStats(0, 0, 0), new MakersMark("You", 1), ImmutableList<ItemHistoryEntry>.Empty,
+            new ConsumableEffect(ConsumableKind.Heal, 8));
+        var laterItem = item with { Id = laterItemId };
+        var departure = new HeroAtDeparture(Hero, "Selwyn", "vanguard", Level: 2, MaxHp: 20, Weapon: null, Shield: null, Armor: null);
+
+        var use1 = new ConsumableUse(itemId, Round: 1, HpBefore: 10, HpAfter: 18);
+        var round1 = new CombatEvent(Floor, Hero, "Deep Ghoul", ImmutableList.Create(2, 5), DamageDealt: 2, DamageTaken: 10, MonsterKilled: false, KillingItem: null)
+        {
+            Uses = ImmutableList.Create(use1),
+        };
+        var use2 = new ConsumableUse(laterItemId, Round: 2, HpBefore: 4, HpAfter: 16);
+        var round2 = new CombatEvent(Floor, Hero, "Deep Ghoul", ImmutableList.Create(3, 6), DamageDealt: 3, DamageTaken: 12, MonsterKilled: false, KillingItem: null)
+        {
+            Uses = ImmutableList.Create(use2),
+        };
+        var round3 = new CombatEvent(Floor, Hero, "Deep Ghoul", ImmutableList.Create(7), DamageDealt: 20, DamageTaken: 0, MonsterKilled: true, KillingItem: null);
+        var floorOutcome = new FloorOutcome(Floor, Cleared: true, ImmutableList.Create(round1, round2, round3));
+        var beat = new AttributionBeat(BeatType.PotionLifesave, itemId, Hero, Floor, "Field Salve kept her alive");
+        var result = new ExpeditionResult(
+            ImmutableList.Create(Hero), Floor, Floor, ImmutableList.Create(floorOutcome),
+            ImmutableList.Create(Hero), ImmutableList<HeroId>.Empty, ImmutableList.Create(beat),
+            ImmutableList<OreLoot>.Empty, ImmutableSortedDictionary<int, int>.Empty)
+        {
+            PartyAtDeparture = ImmutableList.Create(departure),
+        };
+        var items = ImmutableSortedDictionary<int, Item>.Empty.Add(itemId.Value, item).Add(laterItemId.Value, laterItem);
+
+        var beatEvent = new AttributionBeatEvent(beat.Beat, beat.Item, beat.Hero, beat.Floor, beat.Detail) with { Id = new EventId(80301), Day = Day };
+        var baseState = GameFactory.NewGame(9004);
+        var state = baseState with
+        {
+            Items = items,
+            EventLog = baseState.EventLog.Add(beatEvent),
+            LastNightExpeditions = ImmutableList.Create(result),
+        };
+
+        return (state, result, beatEvent, beat, items);
+    }
+
+    /// <summary>
+    /// <see cref="TellingShape.BreakpointClearShape"/>'s own fixture (new for P2-PROOF-05 — the
+    /// original suite never exercised this shape at all). A gate-crossing is structural, not a
+    /// round replay, so the floor still carries one real factual round for <see cref="Hero"/>
+    /// (<see cref="TellingPanel.ShowFor"/> refuses to open when <c>FactualRounds</c> is empty) —
+    /// but the payload's own numbers come from <c>CombatMath.PartyAveragePower</c> over the
+    /// party's departure gear, computed by hand against the REAL Mine floor-3 gate (35, see
+    /// <c>VenueRegistry.BuildMine</c>): a level-3 vanguard with no gear reads EffectivePower 13
+    /// (4 base + 3*2 level attack + 3 level defense); with a 50-attack weapon it reads 63
+    /// (63+13)/2 = 38, over the gate. Remove the weapon and both read 13 -- (13+13)/2 = 13, under it.
+    /// </summary>
+    private static (GameState State, ExpeditionResult Result, AttributionBeatEvent BeatEvent, AttributionBeat Beat, ImmutableSortedDictionary<int, Item> Items) BreakpointClearNight()
+    {
+        var weaponId = new ItemId(9106);
+        var partner = new HeroId(9011);
+        var weapon = new Item(
+            weaponId, "recipe-test-blade", "Gatebreaker", ItemSlot.Weapon, QualityGrade.Fine,
+            new ItemStats(50, 0, 4), new MakersMark("You", 1), ImmutableList<ItemHistoryEntry>.Empty);
+        var departure = new HeroAtDeparture(Hero, "Halvar", "vanguard", Level: 3, MaxHp: 30, Weapon: weaponId, Shield: null, Armor: null);
+        var partnerDeparture = new HeroAtDeparture(partner, "Rowena", "vanguard", Level: 3, MaxHp: 30, Weapon: null, Shield: null, Armor: null);
+
+        // One real fought round so the floor has a factual round to open on -- the gate check
+        // itself replays no rounds (BreakpointClearPayload carries no per-round data).
+        var round1 = new CombatEvent(Floor, Hero, "Deep Ghoul", ImmutableList.Create(4), DamageDealt: 42, DamageTaken: 0, MonsterKilled: true, KillingItem: null);
+        var floorOutcome = new FloorOutcome(Floor, Cleared: true, ImmutableList.Create(round1));
+        var beat = new AttributionBeat(BeatType.BreakpointClear, weaponId, Hero, Floor, "Gatebreaker carried the party past the floor 3 gate");
+        var result = new ExpeditionResult(
+            ImmutableList.Create(Hero, partner), Floor, Floor, ImmutableList.Create(floorOutcome),
+            ImmutableList.Create(Hero, partner), ImmutableList<HeroId>.Empty, ImmutableList.Create(beat),
+            ImmutableList<OreLoot>.Empty, ImmutableSortedDictionary<int, int>.Empty)
+        {
+            PartyAtDeparture = ImmutableList.Create(departure, partnerDeparture),
+        };
+        var items = ImmutableSortedDictionary<int, Item>.Empty.Add(weaponId.Value, weapon);
+
+        var beatEvent = new AttributionBeatEvent(beat.Beat, beat.Item, beat.Hero, beat.Floor, beat.Detail) with { Id = new EventId(80401), Day = Day };
+        var baseState = GameFactory.NewGame(9005);
+        var state = baseState with
+        {
+            Items = items,
+            EventLog = baseState.EventLog.Add(beatEvent),
+            LastNightExpeditions = ImmutableList.Create(result),
+        };
+
+        return (state, result, beatEvent, beat, items);
+    }
+
+    /// <summary>
+    /// <see cref="TellingShape.PotionLifesaveShape"/>'s own REAL fixture (new for P2-PROOF-05):
+    /// unlike <see cref="MarginOnlyNight"/>, this hero drinks exactly one quaff and no LATER
+    /// independent one exists to keep them up without it, so the strict replay
+    /// (<c>TellingQuery.ReplayWithoutHeal</c>) genuinely crosses zero at the quaff round instead
+    /// of downgrading -- the true counterfactual life-saved shape, with a real Fork/Fall pass.
+    /// </summary>
+    private static (GameState State, ExpeditionResult Result, AttributionBeatEvent BeatEvent, AttributionBeat Beat, ImmutableSortedDictionary<int, Item> Items) PotionLifesaveNight()
+    {
+        var itemId = new ItemId(9107);
+        var item = new Item(
+            itemId, "recipe-test-salve", "Field Salve", ItemSlot.Consumable, QualityGrade.Common,
+            new ItemStats(0, 0, 0), new MakersMark("You", 1), ImmutableList<ItemHistoryEntry>.Empty,
+            new ConsumableEffect(ConsumableKind.Heal, 6));
+        var departure = new HeroAtDeparture(Hero, "Wyn", "vanguard", Level: 1, MaxHp: 13, Weapon: null, Shield: null, Armor: null);
+
+        var round1 = new CombatEvent(Floor, Hero, "Deep Ghoul", ImmutableList.Create(2, 4), DamageDealt: 5, DamageTaken: 8, MonsterKilled: false, KillingItem: null);
+        var round2 = new CombatEvent(Floor, Hero, "Deep Ghoul", ImmutableList.Create(2, 4), DamageDealt: 5, DamageTaken: 8, MonsterKilled: false, KillingItem: null)
+        {
+            Uses = ImmutableList.Create(new ConsumableUse(itemId, Round: 2, HpBefore: 5, HpAfter: 11)),
+        };
+        var round3 = new CombatEvent(Floor, Hero, "Deep Ghoul", ImmutableList.Create(4), DamageDealt: 5, DamageTaken: 0, MonsterKilled: true, KillingItem: null);
+        var floorOutcome = new FloorOutcome(Floor, Cleared: true, ImmutableList.Create(round1, round2, round3));
+        var beat = new AttributionBeat(BeatType.PotionLifesave, itemId, Hero, Floor, "Field Salve kept her standing");
+        var result = new ExpeditionResult(
+            ImmutableList.Create(Hero), Floor, Floor, ImmutableList.Create(floorOutcome),
+            ImmutableList.Create(Hero), ImmutableList<HeroId>.Empty, ImmutableList.Create(beat),
+            ImmutableList<OreLoot>.Empty, ImmutableSortedDictionary<int, int>.Empty)
+        {
+            PartyAtDeparture = ImmutableList.Create(departure),
+        };
+        var items = ImmutableSortedDictionary<int, Item>.Empty.Add(itemId.Value, item);
+
+        var beatEvent = new AttributionBeatEvent(beat.Beat, beat.Item, beat.Hero, beat.Floor, beat.Detail) with { Id = new EventId(80501), Day = Day };
+        var baseState = GameFactory.NewGame(9006);
+        var state = baseState with
+        {
+            Items = items,
+            EventLog = baseState.EventLog.Add(beatEvent),
+            LastNightExpeditions = ImmutableList.Create(result),
+        };
+
+        return (state, result, beatEvent, beat, items);
+    }
+
     // ── No credit / honest downgrade shapes — three fixtures, one TestCase (census budget) ──────
 
     [TestCase]
@@ -261,39 +468,9 @@ public class TellingPanelTests
     {
         // Provisioned: no counterfactual pass at all -- "it would have run the same without it".
         {
-            var itemId = new ItemId(9102);
-            var item = new Item(
-                itemId, "recipe-test-salve", "Field Salve", ItemSlot.Consumable, QualityGrade.Common,
-                new ItemStats(0, 0, 0), new MakersMark("You", 1), ImmutableList<ItemHistoryEntry>.Empty,
-                new ConsumableEffect(ConsumableKind.Heal, 5));
-            var departure = new HeroAtDeparture(Hero, "Elowen", "vanguard", Level: 2, MaxHp: 30, Weapon: null, Shield: null, Armor: null);
-            var use = new ConsumableUse(itemId, Round: 1, HpBefore: 20, HpAfter: 25);
-            var round1 = new CombatEvent(Floor, Hero, "Deep Ghoul", ImmutableList.Create(3, 2), DamageDealt: 3, DamageTaken: 2, MonsterKilled: false, KillingItem: null)
-            {
-                Uses = ImmutableList.Create(use),
-            };
-            var round2 = new CombatEvent(Floor, Hero, "Deep Ghoul", ImmutableList.Create(6), DamageDealt: 20, DamageTaken: 0, MonsterKilled: true, KillingItem: null);
-            var floorOutcome = new FloorOutcome(Floor, Cleared: true, ImmutableList.Create(round1, round2));
-            var beat = new AttributionBeat(BeatType.Provisioned, itemId, Hero, Floor, "Field Salve kept her fighting");
-            var result = new ExpeditionResult(
-                ImmutableList.Create(Hero), Floor, Floor, ImmutableList.Create(floorOutcome),
-                ImmutableList.Create(Hero), ImmutableList<HeroId>.Empty, ImmutableList.Create(beat),
-                ImmutableList<OreLoot>.Empty, ImmutableSortedDictionary<int, int>.Empty)
-            {
-                PartyAtDeparture = ImmutableList.Create(departure),
-            };
-            var items = ImmutableSortedDictionary<int, Item>.Empty.Add(itemId.Value, item);
+            var (state, result, beatEvent, beat, items) = ProvisionedNight();
             var script = TellingQuery.Build(result, beat, items, VenueRegistry.Mine);
             var payload = (ProvisionedPayload)script.Payload;
-
-            var beatEvent = new AttributionBeatEvent(beat.Beat, beat.Item, beat.Hero, beat.Floor, beat.Detail) with { Id = new EventId(80101), Day = Day };
-            var baseState = GameFactory.NewGame(9002);
-            var state = baseState with
-            {
-                Items = items,
-                EventLog = baseState.EventLog.Add(beatEvent),
-                LastNightExpeditions = ImmutableList.Create(result),
-            };
 
             var panel = new TellingPanel();
             try
@@ -317,34 +494,10 @@ public class TellingPanelTests
 
         // KillingBlow: a recorded fact, never a counterfactual -- one honest epilogue number.
         {
-            var itemId = new ItemId(9103);
-            var item = new Item(
-                itemId, "recipe-test-sword", "Fine Shortsword", ItemSlot.Weapon, QualityGrade.Fine,
-                new ItemStats(40, 0, 4), new MakersMark("You", 1), ImmutableList<ItemHistoryEntry>.Empty);
-            var departure = new HeroAtDeparture(Hero, "Brannis", "vanguard", Level: 3, MaxHp: 20, Weapon: itemId, Shield: null, Armor: null);
-            var round1 = new CombatEvent(Floor, Hero, "Deep Ghoul", ImmutableList.Create(4), DamageDealt: 50, DamageTaken: 0, MonsterKilled: true, KillingItem: itemId);
-            var floorOutcome = new FloorOutcome(Floor, Cleared: true, ImmutableList.Create(round1));
-            var beat = new AttributionBeat(BeatType.KillingBlow, itemId, Hero, Floor, "Fine Shortsword turned the killing blow");
-            var result = new ExpeditionResult(
-                ImmutableList.Create(Hero), Floor, Floor, ImmutableList.Create(floorOutcome),
-                ImmutableList.Create(Hero), ImmutableList<HeroId>.Empty, ImmutableList.Create(beat),
-                ImmutableList<OreLoot>.Empty, ImmutableSortedDictionary<int, int>.Empty)
-            {
-                PartyAtDeparture = ImmutableList.Create(departure),
-            };
-            var items = ImmutableSortedDictionary<int, Item>.Empty.Add(itemId.Value, item);
+            var (state, result, beatEvent, beat, items) = KillingBlowNight();
             var script = TellingQuery.Build(result, beat, items, VenueRegistry.Mine);
             var payload = (KillingBlowPayload)script.Payload;
             AssertThat(script.CounterfactualTail.IsEmpty).IsTrue(); // no second pass for this shape
-
-            var beatEvent = new AttributionBeatEvent(beat.Beat, beat.Item, beat.Hero, beat.Floor, beat.Detail) with { Id = new EventId(80201), Day = Day };
-            var baseState = GameFactory.NewGame(9003);
-            var state = baseState with
-            {
-                Items = items,
-                EventLog = baseState.EventLog.Add(beatEvent),
-                LastNightExpeditions = ImmutableList.Create(result),
-            };
 
             var panel = new TellingPanel();
             try
@@ -369,48 +522,10 @@ public class TellingPanelTests
         // with THIS one removed -- the strict replay never crosses zero, so this must NEVER stage a
         // death the replay itself disproves.
         {
-            var itemId = new ItemId(9104);
-            var laterItemId = new ItemId(9105);
-            var item = new Item(
-                itemId, "recipe-test-salve", "Field Salve", ItemSlot.Consumable, QualityGrade.Common,
-                new ItemStats(0, 0, 0), new MakersMark("You", 1), ImmutableList<ItemHistoryEntry>.Empty,
-                new ConsumableEffect(ConsumableKind.Heal, 8));
-            var laterItem = item with { Id = laterItemId };
-            var departure = new HeroAtDeparture(Hero, "Selwyn", "vanguard", Level: 2, MaxHp: 20, Weapon: null, Shield: null, Armor: null);
-
-            var use1 = new ConsumableUse(itemId, Round: 1, HpBefore: 10, HpAfter: 18);
-            var round1 = new CombatEvent(Floor, Hero, "Deep Ghoul", ImmutableList.Create(2, 5), DamageDealt: 2, DamageTaken: 10, MonsterKilled: false, KillingItem: null)
-            {
-                Uses = ImmutableList.Create(use1),
-            };
-            var use2 = new ConsumableUse(laterItemId, Round: 2, HpBefore: 4, HpAfter: 16);
-            var round2 = new CombatEvent(Floor, Hero, "Deep Ghoul", ImmutableList.Create(3, 6), DamageDealt: 3, DamageTaken: 12, MonsterKilled: false, KillingItem: null)
-            {
-                Uses = ImmutableList.Create(use2),
-            };
-            var round3 = new CombatEvent(Floor, Hero, "Deep Ghoul", ImmutableList.Create(7), DamageDealt: 20, DamageTaken: 0, MonsterKilled: true, KillingItem: null);
-            var floorOutcome = new FloorOutcome(Floor, Cleared: true, ImmutableList.Create(round1, round2, round3));
-            var beat = new AttributionBeat(BeatType.PotionLifesave, itemId, Hero, Floor, "Field Salve kept her alive");
-            var result = new ExpeditionResult(
-                ImmutableList.Create(Hero), Floor, Floor, ImmutableList.Create(floorOutcome),
-                ImmutableList.Create(Hero), ImmutableList<HeroId>.Empty, ImmutableList.Create(beat),
-                ImmutableList<OreLoot>.Empty, ImmutableSortedDictionary<int, int>.Empty)
-            {
-                PartyAtDeparture = ImmutableList.Create(departure),
-            };
-            var items = ImmutableSortedDictionary<int, Item>.Empty.Add(itemId.Value, item).Add(laterItemId.Value, laterItem);
+            var (state, result, beatEvent, beat, items) = MarginOnlyNight();
             var script = TellingQuery.Build(result, beat, items, VenueRegistry.Mine);
             AssertThat(script.Shape).IsEqual(TellingShape.MarginOnly); // the fixture actually hits the downgrade
             var payload = (MarginOnlyPayload)script.Payload;
-
-            var beatEvent = new AttributionBeatEvent(beat.Beat, beat.Item, beat.Hero, beat.Floor, beat.Detail) with { Id = new EventId(80301), Day = Day };
-            var baseState = GameFactory.NewGame(9004);
-            var state = baseState with
-            {
-                Items = items,
-                EventLog = baseState.EventLog.Add(beatEvent),
-                LastNightExpeditions = ImmutableList.Create(result),
-            };
 
             var panel = new TellingPanel();
             try
@@ -431,6 +546,113 @@ public class TellingPanelTests
                 MainUi.DrainDetachedPanelsForTests();
             }
         }
+    }
+
+    // ── Reflective completeness: every TellingShape is staged or downgraded, not hand-listed ────
+
+    private static (GameState State, ExpeditionResult Result, AttributionBeatEvent BeatEvent) Trim(
+        (GameState State, ExpeditionResult Result, AttributionBeatEvent BeatEvent, AttributionBeat Beat, ImmutableSortedDictionary<int, Item> Items) full) =>
+        (full.State, full.Result, full.BeatEvent);
+
+    /// <summary>
+    /// P2-PROOF-05: every test above proves one <see cref="TellingShape"/> renders correctly, BY
+    /// NAME -- which is exactly the shape of coverage <see cref="TellingShape"/>'s own doc comment
+    /// warns about ("a later unit reflectively enumerates every member to prove it is staged or
+    /// downgraded"). Six hand-written cases stay green forever, including the month a seventh
+    /// shape joins the enum with no fixture and no renderer case at all. This drives the walk off
+    /// <see cref="Enum.GetValues{TellingShape}"/> itself, so a member missing from
+    /// <c>fixtures</c> below fails HERE rather than nowhere.
+    ///
+    /// <para><b>"Covered" means the shape has its OWN copy, not merely that nothing crashed.</b>
+    /// <c>TellingPanel.VerdictLines</c>'s own switch falls back to
+    /// <c>("The record is unclear.", string.Empty)</c> for any <see cref="TellingPayload"/> case it
+    /// does not name -- a renderer with a `default` arm can pass a bare "did a Verdict render"
+    /// check while saying nothing about the beat. So every shape's headline+detail is asserted
+    /// non-fallback AND distinct from every other shape's copy -- proof of a real per-shape case,
+    /// never a shared generic line silently covering more than one member.</para>
+    /// </summary>
+    [TestCase]
+    public void EveryTellingShape_IsReflectivelyEnumerated_StagedWithOwnCopyOrExplicitlyDowngraded()
+    {
+        const string FallbackHeadline = "The record is unclear.";
+
+        // One fixture per CURRENTLY KNOWN shape, keyed by the enum value itself -- a shape with no
+        // entry here is caught by the ContainsKey assertion below, never by an unhandled exception.
+        var fixtures = new Dictionary<TellingShape, (Func<(GameState State, ExpeditionResult Result, AttributionBeatEvent BeatEvent)> Night, int AdvanceToVerdict, bool ExpectsStamp)>
+        {
+            [TellingShape.KillingBlowShape] = (() => Trim(KillingBlowNight()), 2, true),
+            [TellingShape.LethalSaveShape] = (LethalSaveNight, 6, true),
+            [TellingShape.BreakpointClearShape] = (() => Trim(BreakpointClearNight()), 2, false),
+            [TellingShape.ProvisionedShape] = (() => Trim(ProvisionedNight()), 3, false),
+            [TellingShape.PotionLifesaveShape] = (() => Trim(PotionLifesaveNight()), 6, true),
+            [TellingShape.MarginOnly] = (() => Trim(MarginOnlyNight()), 4, false),
+        };
+
+        var shapes = Enum.GetValues<TellingShape>();
+        AssertThat(shapes.Length)
+            .OverrideFailureMessage(
+                $"TellingShape carries {shapes.Length} members but this test's fixture table carries " +
+                $"{fixtures.Count} -- a member joined (or left) the enum with no matching entry added here.")
+            .IsEqual(fixtures.Count);
+
+        var seenCopy = new HashSet<string>();
+        foreach (var shape in shapes)
+        {
+            AssertThat(fixtures.ContainsKey(shape))
+                .OverrideFailureMessage(
+                    $"TellingShape.{shape} has no reflective coverage fixture in " +
+                    $"{nameof(EveryTellingShape_IsReflectivelyEnumerated_StagedWithOwnCopyOrExplicitlyDowngraded)} -- " +
+                    "six hand-written tests can stay green while this new member renders nothing at all.")
+                .IsTrue();
+
+            var (night, advance, expectsStamp) = fixtures[shape];
+            var (state, result, beatEvent) = night();
+
+            var panel = new TellingPanel();
+            try
+            {
+                panel.ShowFor(state, result, beatEvent);
+                panel.Dev_Advance(advance);
+                AssertThat(panel.CurrentStage)
+                    .OverrideFailureMessage(
+                        $"TellingShape.{shape}'s own fixture did not reach Verdict in {advance} Dev_Advance calls -- " +
+                        "its round count or counterfactual shape drifted from this test's assumption.")
+                    .IsEqual(TellingPanel.TellingStage.Verdict);
+
+                var headline = Find<Label>(panel, "TellingVerdictHeadline").Text;
+                var detail = Find<Label>(panel, "TellingVerdictDetail").Text;
+
+                AssertThat(headline)
+                    .OverrideFailureMessage(
+                        $"TellingShape.{shape} rendered the generic fallback headline -- VerdictLines has no " +
+                        "case naming this shape's own payload type, so it fell through to the default arm.")
+                    .IsNotEqual(FallbackHeadline);
+                AssertThat(detail)
+                    .OverrideFailureMessage($"TellingShape.{shape} rendered an empty detail line -- no real copy.")
+                    .IsNotEqual(string.Empty);
+
+                var copyKey = headline + "|" + detail;
+                AssertThat(seenCopy.Add(copyKey))
+                    .OverrideFailureMessage(
+                        $"TellingShape.{shape}'s verdict copy duplicates an earlier shape's -- each shape must " +
+                        "carry its own line, never a generic one two shapes could both fall into.")
+                    .IsTrue();
+
+                var stamped = RenderedText(panel).Contains("MAKER'S MARK");
+                AssertThat(stamped)
+                    .OverrideFailureMessage(
+                        $"TellingShape.{shape}: expected MAKER'S MARK stamp = {expectsStamp}, rendered = {stamped}.")
+                    .IsEqual(expectsStamp);
+            }
+            finally
+            {
+                panel.Free();
+                MainUi.DrainDetachedPanelsForTests();
+            }
+        }
+
+        // Every shape's copy was unique -- six distinct entries in the set, not fewer.
+        AssertThat(seenCopy.Count).IsEqual(shapes.Length);
     }
 
     // ── Availability: no telling when the query can't stage it ─────────────────────────────────
