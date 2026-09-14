@@ -58,7 +58,7 @@ public class TownLifeTests
         }
         finally
         {
-            npc.QueueFree();
+            npc.Free();
         }
     }
 
@@ -99,7 +99,7 @@ public class TownLifeTests
         }
         finally
         {
-            npc.QueueFree();
+            npc.Free();
         }
     }
 
@@ -132,7 +132,7 @@ public class TownLifeTests
         }
         finally
         {
-            npc.QueueFree();
+            npc.Free();
         }
     }
 
@@ -161,8 +161,8 @@ public class TownLifeTests
         }
         finally
         {
-            a.QueueFree();
-            b.QueueFree();
+            a.Free();
+            b.Free();
         }
     }
 
@@ -219,7 +219,7 @@ public class TownLifeTests
         }
         finally
         {
-            actor.QueueFree();
+            actor.Free();
         }
     }
 
@@ -259,7 +259,7 @@ public class TownLifeTests
         }
         finally
         {
-            actor.QueueFree();
+            actor.Free();
         }
     }
 
@@ -292,7 +292,7 @@ public class TownLifeTests
         }
         finally
         {
-            actor.QueueFree();
+            actor.Free();
         }
     }
 
@@ -321,8 +321,8 @@ public class TownLifeTests
         }
         finally
         {
-            a.QueueFree();
-            b.QueueFree();
+            a.Free();
+            b.Free();
         }
     }
 
@@ -371,8 +371,8 @@ public class TownLifeTests
         }
         finally
         {
-            frozen.QueueFree();
-            walking.QueueFree();
+            frozen.Free();
+            walking.Free();
         }
     }
 
@@ -607,7 +607,7 @@ public class TownLifeTests
         }
         finally
         {
-            life.QueueFree();
+            life.Free();
         }
     }
 
@@ -628,7 +628,7 @@ public class TownLifeTests
         }
         finally
         {
-            life.QueueFree();
+            life.Free();
         }
     }
 
@@ -657,7 +657,7 @@ public class TownLifeTests
         }
         finally
         {
-            life.QueueFree();
+            life.Free();
         }
     }
 
@@ -991,7 +991,7 @@ public class TownLifeTests
                 }
                 finally
                 {
-                    actor.QueueFree();
+                    actor.Free();
                 }
             }
         }

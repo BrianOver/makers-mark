@@ -580,6 +580,172 @@ public class HudBoundsTests
         }
     }
 
+    // -- The day-timeline strip keeps its own room (2026-09-14) --------------------------------
+    //
+    // Three separate red builds in one night, all reporting the same clipped word ("Night", the
+    // strip's rightmost segment), and two merged PRs that each shaved a width constant INSIDE the
+    // strip without moving the clipped edge by a pixel. The arithmetic nobody had written down:
+    // the strip measures 336px, its clipping wrapper (MainUi's TimelineWrap) reserved a hand-typed
+    // 280px, and a Control with ClipContents simply cuts off whatever its reservation does not
+    // cover. The wrapper was the bug; the segments were innocent.
+    //
+    // These two cases pin the invariant instead of the numbers, so the NEXT thing that widens this
+    // row fails at the PR that widens it rather than the one after.
+
+    /// <summary>
+    /// The strip's content fits the container that clips it, with real slack, at every phase word
+    /// it can ever show -- in both clock modes, and including the engaged-wait dot, which is hidden
+    /// most of the time and so was never counted by anything before.
+    ///
+    /// <para>Also pins the DERIVATION, which is the half that actually stops this recurring: the
+    /// wrapper's reserved width must come from <see cref="GodotClient.Ui.DayTimeline.ContentMinWidth"/>
+    /// and must cover what the strip really measures. Re-typing a literal into that
+    /// <c>CustomMinimumSize</c>, or adding a child to the strip that the reservation does not know
+    /// about, is red here immediately -- not three PRs later, in a clipped word.</para>
+    /// </summary>
+    [TestCase]
+    public async Task DayTimelineStrip_FitsItsClippingWrap_WithSlack_AtEveryPhaseWord()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            await SettleLayout(ui);
+
+            void AssertFits(string label)
+            {
+                var wrap = Find<Control>(ui, "TimelineWrap");
+                var strip = ui.Timeline;
+                var reserved = GodotClient.Ui.DayTimeline.ContentMinWidth();
+
+                // 1. The reservation covers what the strip actually measures right now. (The live
+                //    minimum omits the hidden wait dot; the reservation counts it always, so this
+                //    is a >=, and it is what catches a new strip child nobody reserved room for.)
+                AssertThat(reserved)
+                    .OverrideFailureMessage(
+                        $"{label}: DayTimeline.ContentMinWidth() reserves {reserved}px but the strip " +
+                        $"measures {strip.GetCombinedMinimumSize().X}px -- something in the strip is not " +
+                        "in that arithmetic, so TimelineWrap will clip it.")
+                    .IsGreaterEqual(strip.GetCombinedMinimumSize().X);
+
+                // 2. The wrapper RESERVES that width plus slack -- the derivation itself, checked
+                //    independently of how much stretch the row happened to hand out today.
+                AssertThat(wrap.CustomMinimumSize.X)
+                    .OverrideFailureMessage(
+                        $"{label}: TimelineWrap reserves {wrap.CustomMinimumSize.X}px for a strip that " +
+                        $"needs {reserved}px + {MainUi.TimelineSlackPx}px slack. This wrapper clips its " +
+                        "children, so anything past its reservation is silently cut off -- which is " +
+                        "exactly how the rightmost phase word stayed clipped through two fixes. Derive " +
+                        "the number from DayTimeline.ContentMinWidth(); never hand-type it.")
+                    .IsGreaterEqual(reserved + MainUi.TimelineSlackPx);
+
+                // 3. And the laid-out result honours it.
+                AssertThat(wrap.Size.X)
+                    .OverrideFailureMessage(
+                        $"{label}: TimelineWrap laid out {wrap.Size.X}px wide for {reserved}px of content.")
+                    .IsGreaterEqual(reserved + MainUi.TimelineSlackPx);
+
+                // 4. The literal thing the red build reported: every segment inside the clip rect.
+                var wrapRight = wrap.GetGlobalRect().End.X;
+                foreach (var segmentPhase in System.Enum.GetValues<GameSim.Contracts.DayPhase>())
+                {
+                    var segment = Find<Control>(ui, $"TimelinePhase_{segmentPhase}");
+                    AssertThat(segment.GetGlobalRect().End.X)
+                        .OverrideFailureMessage(
+                            $"{label}: segment {segmentPhase} ends at x={segment.GetGlobalRect().End.X}, " +
+                            $"past TimelineWrap's clipped right edge {wrapRight} -- its word is cut off.")
+                        .IsLessEqual(wrapRight);
+                }
+            }
+
+            foreach (var phase in System.Enum.GetValues<GameSim.Contracts.DayPhase>())
+            {
+                AdvanceToPhase(ui, phase);
+                ui.RefreshAll();
+                await SettleLayout(ui);
+                AssertFits($"{phase}, manual clock");
+            }
+
+            // Auto mode mounts two more controls in the same row (play/pause + speed), so it is a
+            // different width budget, not a repeat of the loop above.
+            PressEnabled(ui, "AutoAdvance");
+            foreach (var phase in System.Enum.GetValues<GameSim.Contracts.DayPhase>())
+            {
+                AdvanceToPhase(ui, phase);
+                ui.RefreshAll();
+                await SettleLayout(ui);
+                AssertFits($"{phase}, auto clock");
+            }
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>
+    /// The root the strip's clipping grew from: the HUD header's own minimum width must fit the
+    /// smallest supported window.
+    ///
+    /// <para>It did not. The day/phase caption is a full SENTENCE, it used to sit inside one of the
+    /// three zones of the header's control row, and it therefore SET that zone's width -- 513px at a
+    /// fresh mount, 717px one tick later. The row's combined minimum came to 1305px inside a 1152px
+    /// window: the timeline (the row's only ExpandFill child) got zero stretch and collapsed onto
+    /// its floor, and the Books Tray's right half sat 165px off the screen with no test looking. The
+    /// caption has its own full-width line now.</para>
+    ///
+    /// <para>When this goes red, the fix is NOT another point off a padding constant -- that has been
+    /// tried twice and the clipping came back bigger both times. Take the thing that grew out of the
+    /// row, or bound the zone that holds it.</para>
+    /// </summary>
+    [TestCase]
+    public async Task HudHeader_MinimumWidth_FitsTheSmallestSupportedWindow()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            await SettleLayout(ui);
+            var viewport = ui.GetViewportRect().Size.X;
+            AssertThat(viewport)
+                .OverrideFailureMessage("this test pins the SMALLEST supported window (project.godot)")
+                .IsEqual(1152f);
+
+            void AssertFits(string label)
+            {
+                var measured = ui.HudHeader.GetCombinedMinimumSize().X;
+                AssertThat(measured)
+                    .OverrideFailureMessage(
+                        $"{label}: the HUD header demands {measured}px inside a {viewport}px window. " +
+                        "Everything in it that cannot shrink gets its width first, so the overflow " +
+                        "lands on whatever is elastic (the day-timeline strip, which then clips a " +
+                        "phase word) and on whatever is rightmost (the Books Tray, which walks off " +
+                        "screen). Do not pay for this with another point of padding; move the thing " +
+                        "that grew out of the row.")
+                    .IsLessEqual(viewport);
+            }
+
+            foreach (var phase in System.Enum.GetValues<GameSim.Contracts.DayPhase>())
+            {
+                AdvanceToPhase(ui, phase);
+                ui.RefreshAll();
+                await SettleLayout(ui);
+                AssertFits($"{phase}, manual clock");
+            }
+
+            PressEnabled(ui, "AutoAdvance");
+            foreach (var phase in System.Enum.GetValues<GameSim.Contracts.DayPhase>())
+            {
+                AdvanceToPhase(ui, phase);
+                ui.RefreshAll();
+                await SettleLayout(ui);
+                AssertFits($"{phase}, auto clock");
+            }
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
     // ── U2 (shell-and-audio plan, R1/KTD-C): structural HUD/world non-occlusion ─────────────────
 
     [TestCase]
