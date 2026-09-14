@@ -121,14 +121,29 @@ public partial class MainUi : Control
     /// docking above.</summary>
     private const float ObjectiveDockMinBottomGap = 40f;
 
-    /// <summary>Menu-sizing fix (review): fixed floor for header row 2's PHASE DIAL zone (the
-    /// day-timeline) — named here rather than left as an inline literal at its
-    /// <c>CustomMinimumSize</c> call site, matching the ObjectiveDock consts above. (The stat-chip
-    /// row is row 1 now — its own full width, no floor needed. UI-4's VERB/TRAY zones no longer
-    /// need a matching floor: shrunk to a 36px button + three 24px icon buttons and seven 28px
-    /// tray icons, their natural minimum is small and stable — HBoxContainer reserves it before
-    /// handing the rest to this ExpandFill zone regardless.)</summary>
-    private const float TimelineMinWidth = 280f;
+    /// <summary>Fixed floor for row 1's stat-chip zone. It only has to be non-zero and smaller
+    /// than the row: <c>StatChipsWrap</c> is the row's only child and ExpandFill, so it takes the
+    /// whole width at run time. (It used to share <c>TimelineMinWidth</c> by coincidence; that
+    /// constant is a measured reservation now, and the two have nothing to do with each other.)</summary>
+    private const float StatChipsMinWidth = 280f;
+
+    /// <summary>Slack held above <see cref="Ui.DayTimeline.ContentMinWidth"/> in
+    /// <c>TimelineWrap</c>'s reservation, so the strip has visible breathing room rather than
+    /// ending exactly on its own clip edge.</summary>
+    public const float TimelineSlackPx = 12f;
+
+    /// <summary>
+    /// Width reserved for header row 2's PHASE DIAL zone (the day timeline).
+    ///
+    /// <para>This was a hand-typed 280px while the strip it wraps measured 336px, and
+    /// <c>TimelineWrap</c> has <c>ClipContents</c> — so the wrapper told <c>HudHeaderRow</c> the
+    /// timeline needed 280, was handed 280–307, and silently cut the rightmost phase word off. Two
+    /// PRs shaved constants INSIDE the strip trying to fix that and neither moved this number by a
+    /// pixel, because a clipping wrapper's reservation is what decides how much of its child is
+    /// visible, not the child's own contents. It is DERIVED now: widen a phase word, a pill margin
+    /// or the strip's separation and the reservation widens with it.</para>
+    /// </summary>
+    private static float TimelineMinWidth => Ui.DayTimeline.ContentMinWidth() + TimelineSlackPx;
 
     /// <summary>U23: the tutorial-flow overlay docks in the same top-right column, stacked below
     /// the objective chip rather than sharing its box (keeps the chip's own layout untouched).</summary>
@@ -3413,7 +3428,7 @@ public partial class MainUi : Control
             // Day/Gold/Heroes/rent/slot-pips vanish from the HUD — an information regression far
             // worse than the clipping this wrapper exists to fix. 68px is the height the row measured
             // before it was wrapped.
-            CustomMinimumSize = new Vector2(TimelineMinWidth, StatRowHeight),
+            CustomMinimumSize = new Vector2(StatChipsMinWidth, StatRowHeight),
             ClipContents = true,
         };
         statRow.AddChild(statWrap);
@@ -3427,7 +3442,27 @@ public partial class MainUi : Control
         // PARENT sees, while the child still fills the wrapper and renders normally.
         _statChips.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
 
-        // Row 2 (UI-4): the day-timeline PHASE DIAL (ExpandFill left) + the PRIMARY VERB cluster
+        // Row 2: the day/phase CAPTION, on its own full-width line.
+        //
+        // It used to live inside VerbCluster, one of the three zones of row 3 below — and it is a
+        // SENTENCE ("Quest - the gate stands quiet today - nobody marching today bought anything
+        // off your shelf"), which measured 513px at a fresh mount and 717px one tick later. Since
+        // VerbCluster is Fill, that sentence set the zone's width, and row 3's combined minimum
+        // came to 1305px inside a 1152px window: the timeline (the row's only ExpandFill child)
+        // got no stretch at all and collapsed onto its floor, and the Books Tray's right half sat
+        // 165px off the screen with nothing to notice it. Every "the timeline strip is clipped"
+        // fix that shaved a constant inside the strip was paying a bill this label ran up.
+        //
+        // On its own line it has the header's full 1128px, competes with nothing, and keeps the
+        // same node name, text, dim styling and centring it had before — UpdateClockLabel is
+        // untouched. The header is no taller for it: row 3 loses exactly the height this label
+        // used to add to VerbCluster.
+        _clockLabel = new Label { Name = "ClockLabel", HorizontalAlignment = HorizontalAlignment.Center };
+        _clockLabel.AddThemeColorOverride("font_color", GameTheme.TextDim);
+        _clockLabel.AddThemeFontSizeOverride("font_size", GameTheme.LegibilityFloor);
+        headerColumn.AddChild(_clockLabel);
+
+        // Row 3 (UI-4): the day-timeline PHASE DIAL (ExpandFill left) + the PRIMARY VERB cluster
         // (center) + the BOOKS TRAY (right, icon-only, recessed) — 3 zones, 16px apart.
         var headerRow = new HBoxContainer { Name = "HudHeaderRow" };
         headerRow.AddThemeConstantOverride("separation", GameTheme.Space16);
@@ -3455,15 +3490,11 @@ public partial class MainUi : Control
         // --- UI-4 Zone 2: PRIMARY VERB (center) — the contextual bell verb is now ONE large
         // button carrying the call-to-action weight; Auto/Pause/Speed collapse to small 24px
         // icon-only buttons beside it (full words moved to TooltipText). The clock-label caption
-        // (day/phase banner) sits above, small and dim — it used to compete visually with the
-        // button it now defers to; its Text-setting logic in UpdateClockLabel is untouched. -----
+        // (day/phase banner) still sits above it, small and dim, but on its own full-width line
+        // now (see its own remark above) rather than inside this zone, where its sentence length
+        // was setting the whole row's width. -------------------------------------------------
         var verbCluster = new VBoxContainer { Name = "VerbCluster", Alignment = BoxContainer.AlignmentMode.Center };
         headerRow.AddChild(verbCluster);
-
-        _clockLabel = new Label { Name = "ClockLabel", HorizontalAlignment = HorizontalAlignment.Center };
-        _clockLabel.AddThemeColorOverride("font_color", GameTheme.TextDim);
-        _clockLabel.AddThemeFontSizeOverride("font_size", GameTheme.LegibilityFloor);
-        verbCluster.AddChild(_clockLabel);
 
         var verbRow = new HBoxContainer { Name = "VerbRow" };
         verbRow.AddThemeConstantOverride("separation", GameTheme.Space8);
