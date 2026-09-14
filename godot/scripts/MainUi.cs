@@ -5903,6 +5903,14 @@ public partial class MainUi : Control
         // what using `engaged` here cost.
         Town.SetWorldInputEnabled(!worldInputBlocked);
 
+        // P2-SCREEN-21: DrawerHost is a MainUi sibling of Town2D, not a child of it (it slides in
+        // over the same full-width viewport Town2D renders into — see DrawerHost's own class doc),
+        // so Town2D cannot see it open or measure it itself. UpdateEngaged already fires on every
+        // drawer open/close (OpenPanel, Drawer.Closed) and station-click open (OnStationActivated →
+        // OnInteriorHotspotActivated → OpenPanel), so this is the one place to hand the measurement
+        // across — Town2D.ApplyDrawerBiasedRoomClamp reads it every frame and no-ops at 0.
+        Town.OpenDrawerWidthPx = Drawer.IsOpen ? DrawerHost.DrawerWidth : 0f;
+
         // U18: the engaged latch flips on this discrete event (drawer open/close / modal
         // open-close), not only on a phase tick — the waiting indicator must track it here too,
         // still never per frame. P2-SCREEN-25: live word, see DayTimeline.Refresh's own remark.
