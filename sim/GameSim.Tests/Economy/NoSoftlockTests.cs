@@ -9,9 +9,14 @@ using GameSim.Professions;
 namespace GameSim.Tests.Economy;
 
 // LAW:skipping-stays-legal
-// A player who does nothing must still have a game tomorrow — the mechanical half of the law.
-// The other half ("its cost is named in copy, never engineered") is judgment and is deliberately
-// not mechanized; see ConstitutionTests (CLAUDE.md rule 12).
+// A player who does nothing must still have a game tomorrow — the mechanical half of the law,
+// covered below. The other half ("its cost is named in copy, never engineered") was judgment
+// with no tripwire of its own until P2-HONEST-23: MarketShareSystem's idle-day charge now names
+// itself on the ticker the same evening it is applied (godot/scripts/ui/AdventureTicker.cs's
+// idle-direction MarketShareShifted case, pinned by godot/tests/UnsilencedEventTests.cs). See
+// ConstitutionTests (CLAUDE.md rule 12) for why this file alone still carries the tag: the
+// mechanical half — skipping stays LEGAL — is what the law's tripwire enforces here; the naming
+// half is a client-side presentation concern with no sim state left to pin in this file.
 
 /// <summary>
 /// The un-losability proof (Playable Core R5/KD3): <see cref="DestitutionRecoverySystem"/> must
