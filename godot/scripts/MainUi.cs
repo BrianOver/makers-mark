@@ -2289,6 +2289,27 @@ public partial class MainUi : Control
         // exists to prevent, just for CampaignAct instead of DayPhase. One spelling now.
         actChip.TooltipText =
             $"Campaign arc: {ArcActRoman(state.Arc.Act)}. Advances on the deepest floor your heroes reach; Act III is the climax, then the ending chronicle.";
+
+        // visfix3 (GPU-capture defect pass): StatChipCompact's shared 4px content margin
+        // (UiKit's private CompactChipMarginX) is correct arithmetic — PanelContainer really does
+        // inset its content by exactly that much — but this chip renders at EXACTLY its own
+        // computed minimum width (measured live: a 41px chip with a 41px minimum, zero slack), so
+        // the roman-numeral value sits only ~3px from the chip's own border pixel instead of a
+        // comfortable 4+: "Act I" reads as "Act |", the numeral touching its border, the moment
+        // the value is a single bare stroke rather than a wider word. Every OTHER consumer of the
+        // shared compact style is the hero-roster row, which is already over its 140px card
+        // budget (see BuildHeroCard's own doc) — widening UiKit's shared margin constant would
+        // re-break that budget elsewhere, so this ONE chip gets an extra 2px on each side via a
+        // per-node override instead (the same duplicate-and-tweak idiom UiKit.CompactChipStyle
+        // already uses on GameTheme.PanelStyle(), one level further in).
+        if (actChip.GetThemeStylebox("panel") is StyleBoxFlat actChipStyle)
+        {
+            var roomier = (StyleBoxFlat)actChipStyle.Duplicate();
+            roomier.ContentMarginLeft += 2f;
+            roomier.ContentMarginRight += 2f;
+            actChip.AddThemeStyleboxOverride("panel", roomier);
+        }
+
         calendar.AddChild(actChip);
 
         // ── WEALTH + HANDS cluster: gold (the bar's biggest value), heroes, action-slot pips ─────
