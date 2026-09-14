@@ -80,6 +80,9 @@ public partial class ForgePanel : SimPanel
 
     private Label? _feedback;
     private Label? _materialsLabel;
+
+    /// <summary>P2-PEOPLE-21: the pinned "who is waiting" line — see the build site's own doc.</summary>
+    private Label? _waitingCustomerLine;
     private OptionButton? _materialSelect;
 
     // Phase C U-C1 slice 2: craft-modifier composition selectors (oil / rune / fitting). "(none)" is
@@ -604,6 +607,7 @@ public partial class ForgePanel : SimPanel
         }
 
         var state = _devStagedState ?? Adapter.CurrentState;
+        _waitingCustomerLine!.Text = WaitingCustomerLine(state);
         // UI-5: the running materials list is now redundant with each vendor ListRow's own
         // "owned" column below — this line stays only as the empty-inventory hint (no full
         // "copper x4, iron x2" prose dump once there IS stock to read off the rows instead).
@@ -2151,6 +2155,29 @@ public partial class ForgePanel : SimPanel
         return idx - 1 < ids.Count ? ids[idx - 1] : null;
     }
 
+    /// <summary>
+    /// P2-PEOPLE-21 ("Forge it — Torvald waits"): what the pinned header says, derived fresh every
+    /// Refresh straight off <see cref="CounterState"/> rather than carried as a payload on
+    /// <see cref="RaidForecastBoard.ForgeOneRequested"/>-shaped events (<see
+    /// cref="CounterPanel.OpenForgeRequested"/> is bare, same as those) — the counter session opened
+    /// by "Forge something for them" is still open (no timer ever closes it, THE-GAME.md §3.1), so
+    /// reading it live means this line can never go stale, and it renders identically whether the
+    /// player arrived here via that button or opened the Forge some other way while a customer
+    /// happens to be waiting. Empty (no line) whenever the counter is closed or has no active
+    /// customer — never invents a wait that isn't real.
+    /// </summary>
+    private static string WaitingCustomerLine(GameState state)
+    {
+        if (state.Counter is not { Closed: false, Active: { } activeId }
+            || !state.Heroes.TryGetValue(activeId.Value, out var hero))
+        {
+            return string.Empty;
+        }
+
+        return $"{hero.Name}, at the counter — wants {CustomerVoice.WantNoun(hero, state)}, " +
+               $"{hero.Gold}g on hand. Still there when you're done here.";
+    }
+
     private void EnsureBuilt()
     {
         if (_recipeRows is not null)
@@ -2209,6 +2236,17 @@ public partial class ForgePanel : SimPanel
         var root = new VBoxContainer { Name = "ForgeRoot" };
         root.SetAnchorsPreset(LayoutPreset.FullRect);
         AddChild(root);
+
+        // P2-PEOPLE-21 ("Forge it — Torvald waits"): who is still waiting, read live off the SAME
+        // counter session the "Forge something for them" button (CounterPanel.OpenForgeRequested)
+        // left open — see WaitingCustomerLine's own doc for why this is derived every Refresh
+        // rather than carried as a snapshot on that event. Above ForgeFeedback: this is context the
+        // player needs BEFORE reading anything below, the same "speaks first" ordering CampPanel's
+        // own narrator line uses. Empty text collapses to zero height (same CampPanel precedent),
+        // so a Forge open with no one waiting costs no space.
+        _waitingCustomerLine = AddLabel(root, string.Empty);
+        _waitingCustomerLine.Name = "ForgeWaitingCustomer";
+        _waitingCustomerLine.AddThemeColorOverride("font_color", GameTheme.AccentColor);
 
         _feedback = AddLabel(root, string.Empty);
         _feedback.Name = "ForgeFeedback";
