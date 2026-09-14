@@ -3836,8 +3836,20 @@ public partial class MainUi : Control
         // stacks). Dim-under (LedgerModal precedent) + click-out/Esc close; the click-out consumes
         // the input event structurally (the dim veil's default Stop mouse filter), so it never
         // reaches the 3D world's own click-to-move/interact input underneath. -------------------
+        //
+        // fix/visfix1: parented under `worldSlot`, NOT added straight to `this` (MainUi) — the
+        // exact same KTD-C move Town2D got (see WorldSlot's own remarks above): a FullRect Control
+        // added as a MainUi-root sibling AFTER `layout` spans the header's own rows too (both
+        // occupy y=0), and since a later sibling paints over an earlier one, the drawer's opaque
+        // panel — and whatever it currently shows, e.g. MineWatch parked inside Depths — drew
+        // straight over the persistent HudHeader's right edge (measured: the action-slot pip row
+        // clipped from 5 pips to 3, and the rejection toast cut off mid-sentence, both exactly at
+        // the drawer's left edge). WorldSlot's rect already excludes the header by construction
+        // (occlusion is impossible, not merely unlikely — see HudBoundsTests
+        // .WorldRegion_NeverIntersects_TheHudHeader); anchoring the drawer to that SAME region
+        // gives it the identical guarantee instead of a second, parallel z-order rule.
         Drawer = new DrawerHost();
-        AddChild(Drawer);
+        worldSlot.AddChild(Drawer);
         Drawer.Build();
         Drawer.Register("Forge", Forge);
         Drawer.Register("Shop", Shop);
