@@ -65,6 +65,14 @@ namespace GodotClient.Panels;
 /// (<see cref="GodotClient.Ui.HeroChips.GearMarkChip"/>). Chips only, never survival math: no
 /// danger rating and no "this one is at risk" ever renders here — <c>docs/design/THE-GAME.md</c>
 /// is explicit the game never tells the player who will survive.</para>
+///
+/// <para>P2-PEOPLE-04 ("Halvar's floor" reaches the vigil slate): the "PARTY CAMPED — below floor
+/// N, pressing for floor M" header now carries the same durable-fact caption the muster board's
+/// Target line already does — see <see cref="HalvarsFloorCaption"/> and <see
+/// cref="ArcScenes.FloorCaption"/>'s own doc. This is the shipped call wired onto a fourth reader,
+/// not the read-back table <c>ArcScenes.FloorCaption</c>'s own doc says P2-PEOPLE-04 will
+/// eventually generalize into — that table is a bigger unit than one caption on one line, and
+/// wiring the existing call here is honest about not being it.</para>
 /// </summary>
 public partial class CampPanel : SimPanel
 {
@@ -210,7 +218,7 @@ public partial class CampPanel : SimPanel
         anchorLine.Name = $"CampAnchorLine_{lead.Value}";
         anchorLine.AddThemeColorOverride("font_color", GameTheme.AccentColor);
 
-        AddHeader(cardBody, $"PARTY CAMPED — below floor {party.CheckpointFloor}, pressing for floor {party.TargetFloor}");
+        AddHeader(cardBody, $"PARTY CAMPED — below floor {party.CheckpointFloor}, pressing for floor {party.TargetFloor}{HalvarsFloorCaption(party)}");
 
         // Hero-facing-day H1 §3.3 V-1: name what is actually still down there, read straight off
         // the SAME venue data ExpeditionResolver/ExpeditionDeepSystem will roll against — never a
@@ -335,6 +343,22 @@ public partial class CampPanel : SimPanel
             new Verdict(!party.Recalled, "The recall bell has already rung for this party."),
             () => Adapter!.Queue(new RecallPartyAction(lead)));
     }
+
+    /// <summary>
+    /// P2-PEOPLE-04, the durable-fact read-back on the vigil slate: once Torvald has told you whose
+    /// floor the third one is, "pressing for floor 3" becomes "pressing for floor 3 — Halvar's
+    /// floor" for a camped party he is in. The rule itself lives in <see cref="ArcScenes.FloorCaption"/>,
+    /// the SAME function the muster board's Target line and the two depth-record boards already
+    /// read (<see cref="RaidForecastBoard.HalvarsFloorCaption"/>), so this stop can never disagree
+    /// with the board that named tomorrow's target. Checks every member's name against the rule,
+    /// mirroring that board's own party-wide check rather than assuming the lead is the one who
+    /// carries the fact.
+    /// </summary>
+    private string HalvarsFloorCaption(InFlightExpedition party) =>
+        party.Party
+            .Select(member => ArcScenes.FloorCaption(HeroName(member), party.TargetFloor))
+            .FirstOrDefault(caption => caption.Length > 0)
+        ?? string.Empty;
 
     private void OnSend(OptionButton pick, HeroId to)
     {
