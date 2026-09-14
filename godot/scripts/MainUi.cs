@@ -551,8 +551,37 @@ public partial class MainUi : Control
             state = StageGateHeldStreakReceipt(state);
         }
 
+        // P2-MEMORY-22 receipt seam ONLY, same contract as the four above: the memorial wall's
+        // lantern row needs real recorded deaths, which a fresh day-1 campaign has none of and a
+        // screenshot has no business scripting via real play. SHOT_MEMORIAL_DEATHS=<n> plants n
+        // Memorial records (DramaState.Memorials) and nothing else — Town2D's own
+        // RefreshMemorialWallLanterns then decides for itself how many lanterns to draw, exactly
+        // as it would in play. Never reads in real play.
+        var memorialDeaths = System.Environment.GetEnvironmentVariable("SHOT_MEMORIAL_DEATHS");
+        if (!string.IsNullOrEmpty(memorialDeaths) && int.TryParse(memorialDeaths, out var memorialDeathCount) && memorialDeathCount > 0)
+        {
+            state = StageMemorialDeathsReceipt(state, memorialDeathCount);
+        }
+
         return new SimAdapter(state);
     }
+
+    /// <summary>
+    /// Dev/receipt tool only (never called from real play): plants <paramref name="count"/>
+    /// synthetic <see cref="Memorial"/> records — same shape <c>ExpeditionRevealSystem</c> writes
+    /// on a real hero death, just staged directly rather than driving a whole fight — so
+    /// <see cref="Town2D"/>'s memorial wall has something real to count when a screenshot needs
+    /// one without scripting several real campaigns' worth of losses first.
+    /// </summary>
+    private static GameState StageMemorialDeathsReceipt(GameState state, int count) => state with
+    {
+        Drama = state.Drama with
+        {
+            Memorials = Enumerable.Range(1, count)
+                .Select(i => new Memorial(new HeroId(9000 + i), $"Fallen {i}", state.Day, "a worn blade"))
+                .ToImmutableList(),
+        },
+    };
 
     /// <summary>
     /// Dev/receipt tool only (never called from real play): puts one player-marked piece in
@@ -3875,6 +3904,7 @@ public partial class MainUi : Control
         Town.HeroClicked += OnTownHeroClicked;
         Town.BuildingClicked += OnTownBuildingClicked;
         Town.AssessorClicked += OnAssessorClicked;
+        Town.MemorialWallClicked += OnMemorialWallClicked;
         // U3 (painted-interiors plan): a station's Picked now carries its WHOLE StationSpec
         // (Action/Focus/HoverLine/FlavorLine), so it routes through its own OnStationActivated
         // rather than straight onto OnInteriorHotspotActivated.
@@ -4833,6 +4863,12 @@ public partial class MainUi : Control
     /// Show method, never through <see cref="OpenPanel"/>'s scene-panel string switch), not gated
     /// behind a HUD tray button.</summary>
     private void OnAssessorClicked() => Pledge.ShowPledge(Adapter.CurrentState);
+
+    /// <summary>P2-MEMORY-22 ("the east field remembers", link 5): the outdoor memorial wall's own
+    /// entry point — opens the SAME <see cref="LegendsWall"/> the tavern's "storywall" interior
+    /// station and the "OpenLegends" HUD button already open (<see cref="Dev_ShowLegendsWallLive"/>
+    /// is the same call), never a second book.</summary>
+    private void OnMemorialWallClicked() => Legends.ShowWall(Adapter.CurrentState);
 
     /// <summary>
     /// Town building click/interact (R20, T8, U1 painted-interiors plan): <see cref="Town2D"/>'s

@@ -25,9 +25,9 @@
 #   Counter, Demand, DepthsPanel, Docket, ForgeAnvil, ForgeAnvilEmpty, ForgeEcho, ForgeExit,
 #   ForgeFlavor, ForgeLadder, ForgePanel, ForgeShelf, ForgeTrinket, GatedCounterEmptyShelf,
 #   GateHeldStreak, GateNight, Graduation, HeroCandidateOpen, HeroCards, HeroErrand, HeroTrinket,
-#   Ledger, LedgerProvenance, Lessons, MemoryRow, MineGateFocus, Mirror, OccupancyCorner, Primer,
-#   Provenance, ReturnAtNight, ReturnEmerge, ReturnQuestEmpty, SendOff, ShopPanel, ShopTrinket,
-#   SplitLessons, Storied, StoriedCard, StoriedRefusal, SystemMenu, TavernPanel, TavernScene,
+#   Ledger, LedgerProvenance, Lessons, Memorial, MemoryRow, MineGateFocus, Mirror, OccupancyCorner,
+#   Primer, Provenance, ReturnAtNight, ReturnEmerge, ReturnQuestEmpty, SendOff, ShopPanel,
+#   ShopTrinket, SplitLessons, Storied, StoriedCard, StoriedRefusal, SystemMenu, TavernPanel, TavernScene,
 #   TavernSceneAtBar, Telling, TellingFall, TellingFork, TellingVerdict, TownOverview,
 #   TutorialLookIn, TutorialOffCamera, Watch, WarrantFirstMorning
 # END KNOWN_STATES
@@ -62,6 +62,10 @@ Write-Host $stamp -ForegroundColor DarkGray
 $env:SHOT_OUT = $Out
 $env:SHOT_STATE = $State
 $env:SHOT_WATCH_FIGHT = if ($State -eq "Watch") { "1" } else { "" }
+# P2-MEMORY-22: the outdoor memorial wall's own lantern row needs real recorded deaths, which a
+# fresh day-1 campaign has none of (MainUi.StageMemorialDeathsReceipt) -- 3 is enough to show a
+# real, non-trivial row without implying a specific "how many is normal" count.
+$env:SHOT_MEMORIAL_DEATHS = if ($State -eq "Memorial") { "3" } else { "" }
 # P2-PEOPLE-01: TavernScene / TavernSceneAtBar need one FACT planted before the tavern is opened --
 # a player-marked piece in Torvald's hands (MainUi.StageArcSceneReceipt). The scene engine then
 # decides for itself whether to offer, so the capture still proves the real eligibility rule rather
