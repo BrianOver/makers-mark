@@ -430,17 +430,29 @@ public static class UiKit
 
     /// <summary>
     /// The single fallback-safe art-loader bridge (KTD3): on a manifest hit, a
-    /// <see cref="TextureRect"/> (<see cref="TextureRect.StretchModeEnum.KeepAspectCentered"/>,
+    /// <see cref="TextureRect"/> (<paramref name="stretchMode"/>,
     /// <see cref="TextureRect.ExpandModeEnum.IgnoreSize"/> so <paramref name="size"/> — not the
     /// source texture's own pixel dimensions — governs the minimum size) carrying the generated
     /// texture, stacked over a centered caption <see cref="Label"/> when <paramref name="caption"/>
     /// is non-null; on any miss, a theme-styled placeholder — a framed panel holding
     /// <paramref name="fallbackIcon"/> (default: a generic rune glyph via
     /// <see cref="IconRegistry.Glyph"/>) plus a caption label. Never null, never throws.
+    ///
+    /// <para><paramref name="stretchMode"/> (visfix4): every existing caller wants the ORIGINAL
+    /// letterbox-and-center behavior (portraits/icons/item art are roughly square, so
+    /// <see cref="TextureRect.StretchModeEnum.KeepAspectCentered"/> never crops anything worth
+    /// keeping), which is why it stays the default. A wide banner-shaped source — e.g. a
+    /// 1024x260 venue backdrop dropped into a square-ish box — is the one shape that default
+    /// mishandles: scaled to fit, its height already matches the box before its width does, so it
+    /// renders as a thin centered sliver with dead space above and below. Pass
+    /// <see cref="TextureRect.StretchModeEnum.KeepAspectCovered"/> for that shape instead — it
+    /// scales to fully cover the box and crops the overflow, so the box always shows a real,
+    /// full-bleed slice of the art rather than advertising empty space as a broken load.</para>
     /// </summary>
     public static Control ArtRect(
         string artKey, Vector2 size, Texture2D? fallbackIcon = null, string? caption = null,
-        bool ellipsizeCaption = false)
+        bool ellipsizeCaption = false,
+        TextureRect.StretchModeEnum stretchMode = TextureRect.StretchModeEnum.KeepAspectCentered)
     {
         if (IconRegistry.TryArt(artKey, out var texture))
         {
@@ -449,7 +461,7 @@ public static class UiKit
                 Name = "ArtRect",
                 Texture = texture,
                 CustomMinimumSize = size,
-                StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
+                StretchMode = stretchMode,
                 // Central fix for the class of bug LW5 first hit and patched locally (DepthsPanel,
                 // PR #119): ExpandMode defaults to KeepSize, whose GetMinimumSize() reports the
                 // TEXTURE'S OWN pixel size — every generated asset ships ~1024px square — so
@@ -512,6 +524,10 @@ public static class UiKit
             Name = "FallbackIcon",
             Texture = fallbackIcon ?? IconRegistry.Glyph(DefaultFallbackGlyph),
             CustomMinimumSize = size * 0.5f,
+            // P2-SCREEN-29: same LW5/PR #119 class as the real-art branch above — without this,
+            // KeepSize's GetMinimumSize() reports the fallback glyph's own pixel size instead of
+            // `size * 0.5f`.
+            ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
             StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
             MouseFilter = Control.MouseFilterEnum.Ignore,
         };
@@ -636,6 +652,9 @@ public static class UiKit
             Name = "Icon",
             Texture = icon,
             CustomMinimumSize = new Vector2(IconChipIconSize, IconChipIconSize),
+            // P2-SCREEN-29: without ExpandMode, KeepSize's GetMinimumSize() reports the icon
+            // texture's own pixel size instead of IconChipIconSize (18px) — see UiKit.ArtRect.
+            ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
             StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
             MouseFilter = Control.MouseFilterEnum.Ignore,
         };
@@ -704,6 +723,9 @@ public static class UiKit
             Name = "Icon",
             Texture = icon,
             CustomMinimumSize = new Vector2(ListRowIconSize, ListRowIconSize),
+            // P2-SCREEN-29: without ExpandMode, KeepSize's GetMinimumSize() reports the icon
+            // texture's own pixel size instead of ListRowIconSize (24px) — see UiKit.ArtRect.
+            ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
             StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
             MouseFilter = Control.MouseFilterEnum.Ignore,
         };
@@ -861,6 +883,17 @@ public static class UiKit
             Texture = icon,
             CustomMinimumSize = new Vector2(DrawerHeaderIconSize, DrawerHeaderIconSize),
             StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
+            // Same LW5/PR#119 class as ArtRect above (P2-SCREEN-24): ExpandMode defaults to KeepSize,
+            // whose GetMinimumSize() reports the glyph's own pixel size, not DrawerHeaderIconSize.
+            // Measured: every glyph under res://assets/icons is authored 64x64 (svg width="64"
+            // height="64", svg/scale=1.0 on import — e.g. gold.svg) against a 56px DrawerHeaderHeight
+            // strip. GetCombinedMinimumSize() was max(24, 64) = 64, so the tile ran 8px taller than
+            // the strip on every drawer, and whatever sits right below at zero inset (SceneBanner, a
+            // tab bar) drew over its overhang. The strip is already sized for the title face (see
+            // DrawerHeaderHeight's own comment) and 24px clears it with room to spare, so the honest
+            // fix is the tile, not a taller strip: IgnoreSize lets DrawerHeaderIconSize alone govern
+            // layout, same as ArtRect.
+            ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
             MouseFilter = Control.MouseFilterEnum.Ignore,
         };
         row.AddChild(iconRect);

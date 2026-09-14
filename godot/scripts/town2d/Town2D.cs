@@ -1042,6 +1042,10 @@ public partial class Town2D : Control
             var color = ClassColors.RoleColor(hero.ClassId);
             var sprite = TownAssets2D.ForHero(hero.ClassId, hero.Id.Value);
             actor.Init(hero.Id.Value, hero.ClassId, color, sprite, HomeFor(hero.Id.Value, state.Phase), hero.Name);
+            // P2-PEOPLE-23: seed the mark glyph at spawn (same gate _Process refreshes every frame
+            // below) so a freshly-reconciled actor never shows one stale frame of "no mark" for a
+            // hero who was already wearing one the moment they entered the square.
+            actor.SetWearsPlayerMark(HeroChips.WearsPlayerMark(hero, state));
             // U-T3-8: same venue-door pool townsfolk errand toward (see _errandTargets' own doc) —
             // gives a wandering hero a real destination instead of the frozen-below-threshold
             // lissajous drift alone.
@@ -1248,6 +1252,20 @@ public partial class Town2D : Control
             foreach (var actor in _heroActors.Values)
             {
                 actor.SetPhase(Adapter.CurrentState.Phase);
+            }
+
+            // P2-PEOPLE-23 ("your mark on the walker"): refreshed every frame, same cheap per-actor
+            // cadence as the phase gate just above, so a hero who re-equips mid-day (forge counter,
+            // commission hand-off) shows the mark change immediately rather than waiting on the next
+            // ReconcileHeroes (which never re-runs for a hero who already has a live actor). Reads
+            // the SAME HeroChips.WearsPlayerMark gate the vigil's own Gear chip reads — link1's one
+            // axiom, one reader.
+            foreach (var actor in _heroActors.Values)
+            {
+                if (Adapter.CurrentState.Heroes.TryGetValue(actor.HeroIdValue, out var hero))
+                {
+                    actor.SetWearsPlayerMark(HeroChips.WearsPlayerMark(hero, Adapter.CurrentState));
+                }
             }
 
             // P2-LONG-19: the rival's one spoken line, checked the same cheap per-frame way.

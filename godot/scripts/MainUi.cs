@@ -947,6 +947,11 @@ public partial class MainUi : Control
         // stays armed — SyncCampModal reopens it the instant a real action lands) and jumps
         // straight to the forge, so the discoverable verb is one click, not "go find it yourself".
         Camp.OpenForgeRequested += () => OpenPanel("Forge");
+        // P2-PEOPLE-21 ("Forge it — Torvald waits"): same forwarded-bare-event shape as
+        // Camp.OpenForgeRequested above — Shop forwards CounterPanel's own event (the counter is
+        // nested inside Shop, see ShopPanel's own doc). ForgePanel reads who is still waiting
+        // straight off the still-open counter session's live state, never a snapshot carried here.
+        Shop.OpenForgeRequested += () => OpenPanel("Forge");
         Watch.Refresh(Adapter.CurrentState, Adapter.LastEvents); // U9: not a SimPanel — no Bind() auto-refresh
         MaybeSeedWatchReceipt();
         Mirror.Bind(Adapter);
@@ -2627,6 +2632,10 @@ public partial class MainUi : Control
             Name = "GoldIcon",
             Texture = IconRegistry.Glyph("gold"),
             CustomMinimumSize = new Vector2(20, 20),
+            // P2-SCREEN-29: ExpandMode defaults to KeepSize, whose GetMinimumSize() reports the
+            // glyph's own (64px) pixel size, not the 20px requested here. IgnoreSize lets
+            // CustomMinimumSize alone govern layout — see UiKit.ArtRect for the full history.
+            ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
             StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
             MouseFilter = MouseFilterEnum.Ignore,
         });

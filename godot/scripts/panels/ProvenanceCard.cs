@@ -195,6 +195,9 @@ public partial class ProvenanceCard : Control
         {
             Texture = AssetCatalog.ItemIcon(item.RecipeId) ?? IconRegistry.Slot(item.Slot),
             CustomMinimumSize = new Vector2(40, 40),
+            // P2-SCREEN-29: without ExpandMode, KeepSize's GetMinimumSize() reports the source
+            // texture's own pixel size instead of the requested 40px — see UiKit.ArtRect.
+            ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
             StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
             MouseFilter = MouseFilterEnum.Ignore,
         };
