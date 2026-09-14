@@ -4,6 +4,7 @@ using System.Collections.Immutable;
 using System.Linq;
 using GameSim;
 using GameSim.Contracts;
+using GameSim.Expedition;
 using GameSim.Kernel;
 using GdUnit4;
 using Godot;
@@ -28,7 +29,11 @@ public class CampPanelTests
     // Seed 6 parks a strong vanguard party at the floor-1 checkpoint (CampHandlersTests precedent).
     private const ulong CampSeed = 6;
     private const int SalveId = 50;
-    private const int Floor1Fee = 9; // SupplyFeeBase 6 + SupplyFeePerFloor 3 × checkpoint 1 (CampHandlers)
+
+    // P2-HONEST-22: derived from the sim's own formula rather than hand-typed, so a retune of
+    // SupplyFeeBase/SupplyFeePerFloor moves this expectation with it instead of silently drifting
+    // from what the slate actually renders.
+    private static readonly int Floor1Fee = CampHandlers.SupplyFee(1);
 
     // ── Fixtures (mirror CampHandlersTests) ─────────────────────────────────────────────────
 
@@ -138,6 +143,41 @@ public class CampPanelTests
         finally
         {
             Unmount(ui);
+        }
+    }
+
+    // ── 1a. P2-HONEST-22: the slate's quoted fee equals the sim's charged fee at EVERY ────────
+    // checkpoint floor the Mine can produce — not just the floor-1 fixture the test above already
+    // covers. Before this unit the client held its own hand-typed copy of the formula, so a floor-1
+    // pin alone could not have caught a divergence that only showed up deeper in the Mine.
+
+    [TestCase]
+    public void CampSlate_QuotesExactlyTheSimsSupplyFeeFormula_AtEveryCheckpointFloorTheMineProduces()
+    {
+        foreach (var floor in new[] { 1, 2, 3, 4 }) // the Mine's 5 registered floors (VenueRegistry)
+        {
+            var ui = MountAtCampWith(state => state with
+            {
+                InFlight = ImmutableList.Create(state.InFlight[0] with
+                {
+                    CheckpointFloor = floor,
+                    TargetFloor = floor + 1,
+                }),
+            });
+            try
+            {
+                var text = RenderedText(ui.Camp);
+                var expectedFee = CampHandlers.SupplyFee(floor);
+                AssertThat(text)
+                    .OverrideFailureMessage(
+                        $"Checkpoint floor {floor}: slate did not quote {expectedFee}g — the "
+                        + "client has drifted from CampHandlers.SupplyFee again.")
+                    .Contains($"Runner: {expectedFee}g");
+            }
+            finally
+            {
+                Unmount(ui);
+            }
         }
     }
 

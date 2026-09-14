@@ -25,11 +25,20 @@ public sealed class CampHandlers : IActionHandler
     // 9g — deliberately priced just ABOVE the pinned 8g salve sale price
     // (SalveProvisioningBalanceTests.SalvePrice), so sending a salve always costs more than selling
     // one: the rationing tension the camp window exists to create.
-    internal const int SupplyFeeBase = 6;
-    internal const int SupplyFeePerFloor = 3;
+    //
+    // Public (P2-HONEST-22): the winch-house slate (godot/scripts/panels/CampPanel.cs) quotes this
+    // exact fee to the player before they pay it, so it calls SupplyFee directly rather than
+    // re-declaring the constants — same shape as ForgeTierHandlers.CurrentTierIndex, the working
+    // precedent for "the handler exposes the formula, the caller calls it." Before this the two
+    // consts and the formula were `internal` and GodotClient held its own hand-typed copy; changing
+    // SupplyFeePerFloor moved what the sim charged without moving what the slate said out loud.
+    public const int SupplyFeeBase = 6;
+    public const int SupplyFeePerFloor = 3;
 
-    /// <summary>The runner's charge to reach a party camped below <paramref name="checkpointFloor"/>.</summary>
-    internal static int SupplyFee(int checkpointFloor) => SupplyFeeBase + SupplyFeePerFloor * checkpointFloor;
+    /// <summary>The runner's charge to reach a party camped below <paramref name="checkpointFloor"/>.
+    /// The ONE home for this formula — <c>GodotClient.Panels.CampPanel</c> calls this directly, it
+    /// does not restate it.</summary>
+    public static int SupplyFee(int checkpointFloor) => SupplyFeeBase + SupplyFeePerFloor * checkpointFloor;
 
     public bool CanHandle(PlayerAction action, DayPhase phase) =>
         (action is SendSupplyAction or RecallPartyAction) && phase == DayPhase.Camp;
