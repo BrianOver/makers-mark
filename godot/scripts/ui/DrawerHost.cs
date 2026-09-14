@@ -59,6 +59,13 @@ public partial class DrawerHost : Control
     private double _slideElapsed = -1; // -1 idle; >=0 while a slide is in flight
     private bool _opening;
 
+    /// <summary>The slide-progress <c>t</c> last passed to <see cref="ApplySlide"/> — replayed by
+    /// <see cref="_Notification"/> whenever this host's own size changes (see that method's doc for
+    /// why: <see cref="ApplySlide"/> bakes its geometry from <c>Size.X</c> at the instant it runs,
+    /// and a resize landing after the slide has already settled must not leave the panel's
+    /// geometry stuck at a stale width).</summary>
+    private float _lastAppliedT;
+
     /// <summary>Best-effort <see cref="IconRegistry.Glyph"/> name per registered panel id (UI-5) —
     /// only the ids with a real hand-authored HUD glyph get one; every other id falls back to
     /// <see cref="DefaultHeaderGlyph"/> rather than probing the resource filesystem for a
@@ -297,6 +304,7 @@ public partial class DrawerHost : Control
     /// cref="UiKit.DrawerHeaderHeight"/> px; the content slot fills the rest.</summary>
     private void ApplySlide(float t)
     {
+        _lastAppliedT = t;
         var hostWidth = Size.X;
         var size = new Vector2(DrawerWidth, Size.Y);
         var restX = hostWidth - DrawerWidth;
@@ -315,6 +323,36 @@ public partial class DrawerHost : Control
         var contentSize = new Vector2(DrawerWidth, Mathf.Max(0f, Size.Y - UiKit.DrawerHeaderHeight));
         _slot.Position = contentPosition;
         _slot.Size = contentSize;
+    }
+
+    /// <summary>
+    /// fix/visfix1 (CI regression on this same PR): <see cref="ApplySlide"/> bakes its geometry from
+    /// <c>Size.X</c> at the instant it runs, then is never called again once a slide settles (<see
+    /// cref="Tick"/> goes idle at <c>t=1</c>). That was safe while this host was a FullRect child of
+    /// <c>MainUi</c> itself — the root Control's size is correct from frame one, no container
+    /// involved. Now that <see cref="MainUi.BuildUi"/> parents this host under <c>WorldSlot</c> (a
+    /// <c>VBoxContainer</c> child whose real rect is only known after that container's deferred
+    /// <c>queue_sort</c> lands), <c>Open()</c>'s own synchronous first <see cref="ApplySlide"/> call
+    /// can fire while <c>WorldSlot</c> — and therefore this FullRect-anchored host — still reads its
+    /// PRE-sort size. On a slow first frame (measured on CI's xvfb-backed run, never reproduced
+    /// locally on a real GPU window) the slide's own 0.22s timer can already read <c>t=1</c> by the
+    /// time the deferred sort finally lands, so the wrong width is the LAST one ever applied — "Work
+    /// the forge" measured at x=1299 in a 1154-wide viewport, ~145px past the right edge, 65 of 108
+    /// Forge buttons off screen.
+    ///
+    /// <para>Anchors already re-flow this host's OWN rect correctly the moment <c>WorldSlot</c>
+    /// resizes (that part was never broken); the bug is purely that nothing told the SLIDING content
+    /// to re-measure against it. Re-running <see cref="ApplySlide"/> at the last slide progress every
+    /// time this host's own size actually changes closes that gap for good — not just the one race CI
+    /// happened to hit, but any future resize (a real window resize while the drawer is open
+    /// included) that used to leave the panel's geometry stale forever.</para>
+    /// </summary>
+    public override void _Notification(int what)
+    {
+        if (what == NotificationResized && _panel is not null)
+        {
+            ApplySlide(_lastAppliedT);
+        }
     }
 
     /// <summary>
