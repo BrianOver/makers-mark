@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Immutable;
 using System.Linq;
+using System.Threading.Tasks;
 using GameSim;
 using GameSim.Contracts;
 using GameSim.Expedition;
@@ -265,6 +266,146 @@ public class CampPanelTests
             var text = RenderedText(ui.Camp);
             AssertThat(text).Contains("No party is camped below the checkpoint.");
             AssertThat(text).NotContains("g so far");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    // ── 1b3. visfix5 (link2): the slate stops arguing with itself when nobody is camped — the
+    // title used to keep asserting a camp existed ("They've made camp...") in the SAME frame the
+    // body said "No party is camped below the checkpoint", and "Send them deeper" stayed pressable
+    // for a party that was not there. Guarded against the PROPERTY (no live action control, the
+    // title's own claim), not the two button names that happen to exist today.
+
+    [TestCase]
+    public void EmptySlate_TitleStopsClaimingACampExists_AndOffersNoActionControlItCannotHonour()
+    {
+        // Same forced-empty-render technique as NoCampedParty_RendersNoGoldSoFarLine above.
+        var ui = MountMainUi(new SimAdapter(ExpeditionWorld()));
+        try
+        {
+            AssertThat(ui.Adapter.CurrentState.InFlight.IsEmpty).IsTrue();
+            ui.Camp.ShowModal();
+
+            var title = Find<Label>(ui.Camp, "CampTitle");
+            AssertThat(title.Text)
+                .OverrideFailureMessage($"The empty-slate title still asserts a camp exists: \"{title.Text}\"")
+                .NotContains("made camp");
+
+            var player = new HumanPlayer(ui);
+            var clickable = player.ClickableButtons(ui.Camp);
+            AssertThat(clickable.Select(b => b.Name.ToString()).ToList())
+                .OverrideFailureMessage(
+                    "An empty vigil slate (nobody camped) still offers a live action control it cannot " +
+                    "honour — a verb aimed at no one changes no outcome and reveals no stake (law 3).")
+                .IsEmpty();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    // ── 1b4. visfix5 (link2): the card's own height tracks its content, never a fixed window figure.
+    //
+    // BuildFittedModalCard's own anti-softlock fix anchors the card to the window (a hard ceiling,
+    // still enforced below) — but before this unit that ALSO meant the slate was exactly
+    // window-minus-margin tall regardless of how little was inside it: measured 1024x520 (exactly
+    // that figure) with ~330px of dead space under a one-line empty-slate body. Checked both ways —
+    // empty must be shorter than the ceiling, populated must track past it, and neither may ever
+    // exceed the ceiling BuildFittedModalCard already guaranteed.
+
+    [TestCase]
+    public async Task CampCard_HeightTracksItsOwnContent_ShorterEmptyThanPopulated_NeverPastTheWindow()
+    {
+        float emptyHeight;
+        float ceiling;
+        var empty = MountMainUi(new SimAdapter(ExpeditionWorld()));
+        try
+        {
+            AssertThat(empty.Adapter.CurrentState.InFlight.IsEmpty).IsTrue();
+            empty.Camp.ShowModal();
+            await SettleLayout(empty);
+
+            var card = Find<PanelContainer>(empty.Camp, "CampCard");
+            ceiling = empty.GetViewportRect().Size.Y - card.OffsetTop; // BuildFittedModalCard's own window-derived ceiling
+            emptyHeight = card.Size.Y;
+
+            AssertThat(emptyHeight)
+                .OverrideFailureMessage(
+                    $"An empty vigil (nobody camped) is {emptyHeight}px tall against a {ceiling}px ceiling — " +
+                    "the card is still sizing itself to the WINDOW instead of to its own (nearly empty) content.")
+                .IsLess(ceiling);
+        }
+        finally
+        {
+            Unmount(empty);
+        }
+
+        var populated = MountAtCamp();
+        try
+        {
+            await SettleLayout(populated);
+
+            var card = Find<PanelContainer>(populated.Camp, "CampCard");
+            var populatedHeight = card.Size.Y;
+
+            AssertThat(populatedHeight)
+                .OverrideFailureMessage(
+                    $"A populated vigil slate ({populatedHeight}px) must never outgrow BuildFittedModalCard's " +
+                    $"own window-derived ceiling ({ceiling}px) — that guarantee is what this whole fix builds on.")
+                .IsLessEqual(ceiling);
+
+            AssertThat(populatedHeight)
+                .OverrideFailureMessage(
+                    $"A camped party ({populatedHeight}px) rendered no taller than an empty vigil " +
+                    $"({emptyHeight}px) — the card's height should track how much it actually has to " +
+                    "say, not stay pinned to one figure regardless of content.")
+                .IsGreater(emptyHeight);
+        }
+        finally
+        {
+            Unmount(populated);
+        }
+    }
+
+    // ── 1b5. visfix5 negative controls: the populated slate still renders everything the last few
+    // hours' work landed — P2-PEOPLE-15's anchor voice, P2-PEOPLE-16's chips, the hero-facing-day
+    // floor caption, and all four live verbs — none of that may regress just because the empty
+    // slate now behaves honestly.
+
+    [TestCase]
+    public void CampedParty_StillRendersAnchorVoiceChipsFloorCaptionAndLiveVerbs()
+    {
+        var ui = MountAtCamp();
+        try
+        {
+            var party = ui.Adapter.CurrentState.InFlight.Single();
+            var lead = party.Party[0];
+            var text = RenderedText(ui.Camp);
+
+            // P2-PEOPLE-15: the anchor's own opening line, rendered verbatim.
+            var expectedLine = PartyVoice.AnchorLine(ui.Adapter.CurrentState, party);
+            AssertThat(Find<Label>(ui.Camp, $"CampAnchorLine_{lead.Value}").Text).IsEqual(expectedLine);
+
+            // P2-PEOPLE-16: the Standing band and gear-mark chips (ExpeditionWorld's heroes are
+            // fresh Strangers wearing this player's own marked gear).
+            AssertThat(text).Contains("Stranger");
+            AssertThat(text).Contains("your mark");
+
+            // Hero-facing-day H1: the floor caption naming what's still ahead.
+            AssertThat(text).Contains("Still ahead, in the dark:");
+
+            // All four live verbs still respond to a real click — the fix only removes a verb when
+            // there is truly nobody to aim it at, never when a party is actually camped.
+            var player = new HumanPlayer(ui);
+            var clickable = player.ClickableButtons(ui.Camp).Select(b => b.Name.ToString()).ToList();
+            AssertThat(clickable).Contains($"CampSend_{lead.Value}");
+            AssertThat(clickable).Contains($"CampRecall_{lead.Value}");
+            AssertThat(clickable).Contains("CampForge");
+            AssertThat(clickable).Contains("CampDeeper");
         }
         finally
         {
