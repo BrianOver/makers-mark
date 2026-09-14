@@ -9,6 +9,7 @@ using GameSim.Economy;
 using GameSim.Kernel;
 using GdUnit4;
 using Godot;
+using GodotClient.Ui;
 using static GdUnit4.Assertions;
 using static GodotClient.Tests.UiTestSupport;
 
@@ -218,6 +219,7 @@ public class LayoutTests
                      })
             {
                 ui.Forge.FocusSection(section);
+                ExpandEveryDisclosure(ui.Forge);
                 await SettleLayout(ui);
                 AssertLabelsReadable(Find<Control>(ui.Forge, subtree));
             }
@@ -235,6 +237,7 @@ public class LayoutTests
         try
         {
             ui.OpenPanel("Shop");
+            ExpandEveryDisclosure(ui.Shop);
             await SettleLayout(ui);
 
             AssertLabelsReadable(Find<ScrollContainer>(ui.Shop, "Scroll"));
@@ -259,6 +262,7 @@ public class LayoutTests
         try
         {
             ui.OpenPanel("Shop");
+            ExpandEveryDisclosure(ui.Shop);
             await SettleLayout(ui);
 
             var shopText = RenderedText(ui.Shop);
@@ -304,6 +308,28 @@ public class LayoutTests
         for (var i = 0; i < 3; i++)
         {
             await node.ToSignal(tree, SceneTree.SignalName.ProcessFrame);
+        }
+    }
+
+    /// <summary>
+    /// Open every <see cref="UiKit.Disclosure"/> under <paramref name="root"/> before measuring.
+    ///
+    /// <para>Exactly the remedy <see cref="ForgeBody_Labels_RenderAtReadableWidth"/> already
+    /// applies one level up for the tab-hidden sections, and for the identical reason: Godot never
+    /// lays out a hidden container, so a folded disclosure's own prose reads as the collapsed 1px a
+    /// REAL R7 bug produces, for text no player is looking at. Opening the folds first measures
+    /// them the way a player sees them, which is strictly MORE coverage than before the 481px
+    /// re-lay folded them — these labels are now checked at the width they actually render at, and
+    /// they are found by <see cref="UiKit.DisclosureTogglePrefix"/> rather than a hand-listed set,
+    /// so a disclosure added anywhere in these panels is covered the day it appears.</para>
+    /// </summary>
+    private static void ExpandEveryDisclosure(Node root)
+    {
+        foreach (var toggle in root.FindChildren("*", nameof(Button), recursive: true, owned: false)
+                     .OfType<Button>()
+                     .Where(b => b.Name.ToString().StartsWith(UiKit.DisclosureTogglePrefix, StringComparison.Ordinal)))
+        {
+            toggle.ButtonPressed = true;
         }
     }
 

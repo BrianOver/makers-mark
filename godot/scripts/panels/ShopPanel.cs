@@ -158,11 +158,28 @@ public partial class ShopPanel : SimPanel
 
         var passesToday = PassesToday(state);
 
+        // 481px re-lay (owner ruling 2026-09-14). Order matters here for one reason and it is
+        // measured, not aesthetic: this panel's primary verb is drag-to-shelve (U5, "restock as
+        // placement"), and a drag needs its SOURCE (an unshelved card) and its TARGET (an empty
+        // shelf slot) on screen AT THE SAME TIME. "Who Would Buy This" used to render between them
+        // — one line per living hero — and in a 425px drawer body that is what made
+        // RealDragOntoShelfTests unperformable. It renders AFTER the unshelved cards now, and
+        // folded, so the two halves of the gesture are adjacent. (Putting Unshelved FIRST was tried
+        // before and reverted for the same co-visibility reason, from the other side — see
+        // HudBoundsTests' own note; the shelf stays first, the forecast moves, nothing else does.)
         BuildCounterHeaderSection(state);
         BuildShelfSection(state, passesToday);
-        BuildForecastSection(state);
         BuildUnshelvedSection(state);
+        BuildForecastSection(state);
         BuildRivalSection(state);
+    }
+
+    /// <summary>The one place this panel's confirmation line changes — and the one place it is made
+    /// visible. See <see cref="EnsureBuilt"/>'s note on why it starts hidden.</summary>
+    private void SetShopFeedback(string text)
+    {
+        _feedback!.Text = text;
+        _feedback.Visible = !string.IsNullOrEmpty(text);
     }
 
     /// <summary>
@@ -227,13 +244,23 @@ public partial class ShopPanel : SimPanel
     /// "would buy nothing — reason") with only the hero's name prefixed — two phrasings of one
     /// forecast is a drift bug waiting to happen.</para>
     /// </summary>
+    /// <para><b>481px re-lay (owner ruling 2026-09-14).</b> A <see cref="UiKit.Disclosure"/>, not a
+    /// Section. This block renders one line PER LIVING HERO — six of them on a full roster — and it
+    /// sits between "Your Shelf" and "Unshelved Crafts", i.e. between the drop TARGET and the drag
+    /// SOURCE of this panel's core verb. In a 481px drawer that is the whole reason
+    /// <c>RealDragOntoShelfTests</c> cannot get both ends of the gesture on screen at once. Folding
+    /// it keeps the forecast exactly where it is (moving it was tried and reverted — see
+    /// <c>HudBoundsTests</c>' own note) and returns ~5 rows of height to the two sections that
+    /// actually need to be co-visible. The header still counts the buyers, so the sell-or-hold
+    /// decision never depends on opening it.</para>
     private void BuildForecastSection(GameState state)
     {
-        var section = Section("Who Would Buy This");
+        var section = UiKit.Disclosure("Who Would Buy This");
         _content!.AddChild(section.Root);
 
         if (state.Player.Shelf.IsEmpty)
         {
+            section.Summary.Text = "nothing shelved yet";
             AddLabel(section.Body, "Nothing on the shelf to forecast — stock something first.");
             return;
         }
@@ -241,18 +268,29 @@ public partial class ShopPanel : SimPanel
         var aliveHeroes = state.Heroes.Values.Where(h => h.Alive).ToList();
         if (aliveHeroes.Count == 0)
         {
+            section.Summary.Text = "no heroes in town";
             AddLabel(section.Body, "  (no heroes in town to forecast for)");
             return;
         }
 
+        var wouldBuy = 0;
         foreach (var hero in aliveHeroes)
         {
             var forecast = HeroForecast.ForShelfAsItStands(state, hero.Id);
             var heroName = HeroName(hero.Id);
+            if (forecast.WouldBuy)
+            {
+                wouldBuy++;
+            }
+
             AddLabel(section.Body, forecast.WouldBuy
                 ? $"  {heroName} — as the shelf stands: would buy {forecast.ItemName} — {forecast.Reason}"
                 : $"  {heroName} — as the shelf stands: would buy nothing — {forecast.Reason}");
         }
+
+        // The one fact the fold may not eat: whether ANYONE would buy the shelf as it stands. That
+        // is the sell-or-hold call this section exists for; the per-hero reasons are the detail.
+        section.Summary.Text = $"{wouldBuy} of {aliveHeroes.Count} would buy as the shelf stands";
     }
 
     /// <summary>The day's pass-reasons, grouped per item (R8/AE4 — the legible half).</summary>
@@ -612,14 +650,21 @@ public partial class ShopPanel : SimPanel
             Bands.First(b => rivalMarketSharePermille < b.UpperBoundExclusive);
     }
 
+    /// <para><b>481px re-lay (owner ruling 2026-09-14).</b> A <see cref="UiKit.Disclosure"/>: the
+    /// rival's stall is a read-only comparison the player consults when pricing, not a verb, and it
+    /// renders a full art card per rival item at the BOTTOM of a 481px drawer. The header keeps the
+    /// one line that actually feeds the price-for-the-sale-or-the-relationship decision — the Rival
+    /// Edge phrase (P2-HONEST-17's meter) — so folding the cards away never costs the player a
+    /// fact they were pricing against.</para>
     private void BuildRivalSection(GameState state)
     {
-        var section = Section("Rival Shelf");
+        var section = UiKit.Disclosure("Rival Shelf");
         _content!.AddChild(section.Root);
 
         // P2-HONEST-17: the meter, not the number — see RivalEdgeGradient's own doc.
         var edge = RivalEdgeGradient.For(state.RivalMarketSharePermille);
         AddChip(section.Body, StatChip("Rival Edge", edge.Phrase, edge.Tone));
+        section.Summary.Text = edge.Phrase;
 
         if (state.RivalShelf.IsEmpty)
         {
@@ -770,6 +815,13 @@ public partial class ShopPanel : SimPanel
 
         _feedback = AddLabel(body, string.Empty);
         _feedback.Name = "ShopFeedback";
+        // 481px re-lay: an empty confirmation line still reserved a full text row at the very top of
+        // a 425px drawer body — the row a fresh open always shows blank. Godot's Container layout
+        // skips a Visible=false child entirely, so starting hidden (and toggling in SetShopFeedback,
+        // the only place this label's Text ever changes) reclaims that space until there is
+        // something to say. Exactly the fix ForgePanel's own ForgeFeedback already shipped
+        // (register #149).
+        _feedback.Visible = false;
 
         // PA7: the counter-service body sits ABOVE the shelf sections — built once here (never
         // torn down by this panel's own Clear(_content) cycle), bound to the same Adapter, and
@@ -837,7 +889,7 @@ public partial class ShopPanel : SimPanel
         var origin = Adapter.CurrentState.Items.TryGetValue(itemId, out var item)
             ? PriceOrigin(price, item)
             : "custom";
-        _feedback!.Text = $"queued: stock {id} — priced at {price}g — {origin}";
+        SetShopFeedback($"queued: stock {id} — priced at {price}g — {origin}");
     }
 
     /// <summary>
@@ -853,7 +905,7 @@ public partial class ShopPanel : SimPanel
 
         var id = new ItemId(itemId);
         Adapter.Queue(new UnstockAction(id));
-        _feedback!.Text = $"queued: unstock {id}";
+        SetShopFeedback($"queued: unstock {id}");
     }
 
     /// <summary>U6 (auto pricing): "suggested" when <paramref name="price"/> is exactly what
@@ -910,7 +962,7 @@ public partial class ShopPanel : SimPanel
 
         var id = new ItemId(itemId);
         Adapter.Queue(new SetPriceAction(id, price));
-        _feedback!.Text = $"queued: reprice {id} to {price}g";
+        SetShopFeedback($"queued: reprice {id} to {price}g");
         // U1 (§11.14.14 defect): the pricing lesson no longer fires from here. Reprice can only
         // ever touch an item that was stocked first (ActionLegality.SetPriceLegal requires the
         // item already be on Player.Shelf), so by the time a player reaches this button the shelf

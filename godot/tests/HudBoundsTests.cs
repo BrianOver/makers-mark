@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using GameSim;
+using GameSim.Contracts;
 using GdUnit4;
 using Godot;
 using GodotClient.Tools;
@@ -808,6 +809,99 @@ public class HudBoundsTests
                     "more room, raise MainUi.HeaderBudgetPx deliberately (and this test with it) rather " +
                     "than letting the header creep back toward eating the world it now merely sits above.")
                 .IsLessEqual(MainUi.HeaderBudgetPx);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    // ── fix/visfix1: the drawer must never draw over the persistent HUD header ─────────────────
+
+    /// <summary>
+    /// The MineWatch/Depths layering defect (GPU capture, Watch state, 2026-09-13): <c>DrawerHost</c>
+    /// used to be added straight to <c>MainUi</c> as a FullRect sibling AFTER `layout` — spanning the
+    /// header's own rows too (both started at y=0), so a later-painted drawer covered the header's
+    /// right edge wherever the two overlapped. Measured against the real capture: the action-slot
+    /// pip row clipped from 5 pips to 3, and the rejection toast was cut off mid-sentence, both
+    /// exactly at the drawer's left edge. <c>DrawerHost</c> now mounts inside <c>WorldSlot</c> —
+    /// this suite's own precedent (<see cref="WorldRegion_NeverIntersects_TheHudHeader"/>, U2/KTD-C,
+    /// gave <c>Town2D</c> the identical guarantee) — so occlusion is impossible by construction, not
+    /// merely unlikely. Proved here for EVERY registered drawer panel id via <see
+    /// cref="Ui.DrawerHost.RegisteredIds"/>, not hardcoded to "Depths" (the one the GPU capture
+    /// happened to catch) — a tenth panel joining the drawer is covered by this test the day it
+    /// registers, the same guarantee <see cref="Ui.DrawerHost.RegisteredIds"/>'s own doc names.
+    /// </summary>
+    [TestCase]
+    public async Task DrawerOpen_NeverIntersects_TheHudHeader_ForEveryRegisteredPanel()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            PressEnabled(ui, "AdvancePhase"); // full stat-chip row, same precondition as the header tests above
+            await SettleLayout(ui);
+
+            var header = ui.HudHeader.GetGlobalRect();
+            foreach (var id in ui.Drawer.RegisteredIds)
+            {
+                ui.OpenPanel(id);
+                await SettleLayout(ui);
+
+                var drawerRect = ui.Drawer.GetGlobalRect();
+                AssertThat(drawerRect.Intersects(header))
+                    .OverrideFailureMessage(
+                        $"Drawer panel '{id}' rect {drawerRect} intersects the HUD header's rect " +
+                        $"{header} — the drawer is painting over the persistent top bar again.")
+                    .IsFalse();
+            }
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>
+    /// Negative control — the regression that actually matters. The cheap way to satisfy the guard
+    /// above is to make the drawer (or the watch strip inside it) simply not show while a party is
+    /// live, which would pass the non-intersection check vacuously while quietly breaking the one
+    /// thing <c>MineWatch</c> exists to do. This pins the ORIGINAL reported scenario end to end:
+    /// with a party actually marching, opening "Depths" (the strip's resting host, <see
+    /// cref="Panels.DepthsPanel.MountWatch"/>) must still show <c>MineWatch</c> rendering its normal
+    /// content — AND, now, without overlapping the header either.
+    /// </summary>
+    [TestCase]
+    public async Task DepthsOpenWithLiveParty_WatchStrip_StillRendersNormally_AndNeverIntersectsHeader()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            // Camp, not Expedition. The first cut of this test borrowed MineWatchRehostTests'
+            // AdvanceToPhase(Expedition) — but that suite only ever asserts WHICH node hosts the
+            // strip, never that the strip drew anything, so it never depended on the party being
+            // known yet. Measured: at Expedition the strip is visible with FigureCount 0, exactly as
+            // MineWatch.FigureCount's own doc says it will be ("0 while ... the current party is not
+            // yet known (live phase, no PartyDeparted/InFlightExpedition seen yet this day)"). Camp
+            // is the phase that HAS an InFlightExpedition to render, so this is the negative
+            // control actually measuring what it claims to.
+            AdvanceToPhase(ui, DayPhase.Camp);
+            ui.OpenPanel("Depths");
+            await SettleLayout(ui);
+
+            AssertThat(ui.Watch.Visible)
+                .OverrideFailureMessage(
+                    "MineWatch is not showing with a live party and Depths (its resting host) open — " +
+                    "the anti-overlap fix must not also hide the strip's own real content.")
+                .IsTrue();
+            AssertThat(ui.Watch.FigureCount)
+                .OverrideFailureMessage("MineWatch is visible but drew zero party figures — not really 'rendering normally'.")
+                .IsGreater(0);
+
+            var watchRect = ui.Watch.GetGlobalRect();
+            var header = ui.HudHeader.GetGlobalRect();
+            AssertThat(watchRect.Intersects(header))
+                .OverrideFailureMessage($"MineWatch's own rect {watchRect} still intersects the HUD header's rect {header}.")
+                .IsFalse();
         }
         finally
         {
