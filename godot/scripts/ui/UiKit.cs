@@ -873,6 +873,17 @@ public static class UiKit
             Texture = icon,
             CustomMinimumSize = new Vector2(DrawerHeaderIconSize, DrawerHeaderIconSize),
             StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
+            // Same LW5/PR#119 class as ArtRect above (P2-SCREEN-24): ExpandMode defaults to KeepSize,
+            // whose GetMinimumSize() reports the glyph's own pixel size, not DrawerHeaderIconSize.
+            // Measured: every glyph under res://assets/icons is authored 64x64 (svg width="64"
+            // height="64", svg/scale=1.0 on import — e.g. gold.svg) against a 56px DrawerHeaderHeight
+            // strip. GetCombinedMinimumSize() was max(24, 64) = 64, so the tile ran 8px taller than
+            // the strip on every drawer, and whatever sits right below at zero inset (SceneBanner, a
+            // tab bar) drew over its overhang. The strip is already sized for the title face (see
+            // DrawerHeaderHeight's own comment) and 24px clears it with room to spare, so the honest
+            // fix is the tile, not a taller strip: IgnoreSize lets DrawerHeaderIconSize alone govern
+            // layout, same as ArtRect.
+            ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
             MouseFilter = Control.MouseFilterEnum.Ignore,
         };
         row.AddChild(iconRect);
