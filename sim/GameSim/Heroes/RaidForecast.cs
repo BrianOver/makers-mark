@@ -39,6 +39,15 @@ public sealed record WornSlot(
 /// ranking of one party against another. The advisor never orders: naming what a slot holds is a
 /// fact, "you should upgrade Kael's dagger" is an order, and this type has no field for the second
 /// one.</para>
+///
+/// <para>P2-LONG-28 ("the muster names the record the party is pressing past"): <see
+/// cref="BestRecordedFloor"/> and <see cref="RecordHolderName"/> carry the SAME fact <see
+/// cref="GameSim.Expedition.ExpeditionSystem.TargetFloorFor"/> already computed to pick <see
+/// cref="TargetFloor"/> in the first place — <c>party.Max(h => h.DeepestFloorReached)</c> — recomputed
+/// here rather than threaded through as a new field on <c>PartyPlan</c>, since a Godot board has no
+/// other honest way to say WHY floor 4 is the target instead of merely that it is. Still a fact, never
+/// a verdict (link 3, "the hero carries it into the dark on their own judgment") — the record a party
+/// is pressing past, or the ground it is walking again, never an opinion about whether it should.</para>
 /// </summary>
 public sealed record ForecastParty(
     ImmutableList<string> HeroNames,
@@ -46,7 +55,9 @@ public sealed record ForecastParty(
     string VenueId,
     ImmutableList<ForecastThreat> Threats,
     ImmutableList<string> GearGaps,
-    ImmutableList<WornSlot> WornGear);
+    ImmutableList<WornSlot> WornGear,
+    int BestRecordedFloor,
+    string RecordHolderName);
 
 /// <summary>
 /// Game-Feel Plan G4 ("Tomorrow's Telegraph", docs/design/2026-07-21-game-feel-plan.md §G4): the
@@ -79,7 +90,17 @@ public static class RaidForecast
             // not always the Mine — otherwise a Gloomwood-routed party's threat list would name Mine
             // monsters it never actually faces.
             var venue = VenueRegistry.Require(plan.VenueId);
-            var names = plan.Roster.Select(id => state.Heroes[id.Value].Name).ToImmutableList();
+            var partyHeroes = plan.Roster.Select(id => state.Heroes[id.Value]).ToImmutableList();
+            var names = partyHeroes.Select(h => h.Name).ToImmutableList();
+
+            // P2-LONG-28: the exact fact ExpeditionSystem.TargetFloorFor's own default rule reads
+            // off this same party — "one past the party's best recorded floor" — so the board can
+            // name whose record floor 4 presses past instead of showing a bare, arbitrary-looking
+            // number. First-in-roster-order on a tie, matching every other deterministic-pick idiom
+            // in this file (roster order is already HeroId order, so this can never reshuffle
+            // between two identical builds).
+            var bestRecordedFloor = partyHeroes.Max(h => h.DeepestFloorReached);
+            var recordHolderName = partyHeroes.First(h => h.DeepestFloorReached == bestRecordedFloor).Name;
 
             var threats = ImmutableList.CreateBuilder<ForecastThreat>();
             for (var floor = 1; floor <= plan.TargetFloor; floor++)
@@ -89,9 +110,8 @@ public static class RaidForecast
 
             var gaps = ImmutableList.CreateBuilder<string>();
             var worn = ImmutableList.CreateBuilder<WornSlot>();
-            foreach (var id in plan.Roster)
+            foreach (var hero in partyHeroes)
             {
-                var hero = state.Heroes[id.Value];
                 var missing = MissingItemSlots(hero.Gear);
                 if (missing.Count > 0)
                 {
@@ -113,7 +133,8 @@ public static class RaidForecast
             }
 
             forecast.Add(new ForecastParty(
-                names, plan.TargetFloor, plan.VenueId, threats.ToImmutable(), gaps.ToImmutable(), worn.ToImmutable()));
+                names, plan.TargetFloor, plan.VenueId, threats.ToImmutable(), gaps.ToImmutable(), worn.ToImmutable(),
+                bestRecordedFloor, recordHolderName));
         }
 
         return forecast.ToImmutable();

@@ -232,6 +232,90 @@ public class RaidForecastTests
         Assert.Equal(expected, names);
     }
 
+    /// <summary>
+    /// P2-LONG-28 ("the muster names the record the party is pressing past", link 3 — "the hero
+    /// carries it into the dark on their own judgment"): <see cref="ForecastParty.BestRecordedFloor"/>
+    /// and <see cref="ForecastParty.RecordHolderName"/> exist so the Godot muster board can name
+    /// WHOSE record a target floor presses past instead of showing a bare, arbitrary-looking number.
+    /// Phrased against the property, never one hand-picked shape (this repo has paid for that four
+    /// times) — iterates several <see cref="Hero.DeepestFloorReached"/> distributions across the
+    /// fixed starting six, including a full tie at the party's own maximum, and checks every FORMED
+    /// party (not just the first) against a fact re-derived independently from <c>state.Heroes</c>
+    /// rather than the production code under test.
+    /// </summary>
+    [Fact]
+    public void BestRecordedFloor_AndRecordHolderName_MatchThePartysOwnHeroes_AcrossVariedDepthShapes()
+    {
+        // Values stay small (max 3) so no shape can bump a target floor past ANY live venue's
+        // FloorCount and trip the clamp — that clamp is a real branch, but it belongs to a
+        // different unit, not this one.
+        var shapes = new List<Dictionary<int, int>>
+        {
+            new(), // every starting hero still at 0 — the "never delved" edge DepthCopy names "not yet"
+            new() { [1] = 0, [2] = 1, [3] = 2, [4] = 3, [5] = 1, [6] = 2 }, // varied, no two parties alike
+            new() { [1] = 3, [2] = 2, [3] = 1, [4] = 0, [5] = 3, [6] = 1 }, // the mirror shape
+            new() { [1] = 2, [2] = 2, [3] = 2, [4] = 2, [5] = 2, [6] = 2 }, // every hero tied at the max
+            new() { [4] = 3 }, // one spike, everyone else stays at 0
+        };
+
+        for (var i = 0; i < shapes.Count; i++)
+        {
+            var state = HeroRoster.InstallStartingRoster(GameFactory.NewGame(seed: 5000 + (ulong)i));
+            foreach (var (heroId, depth) in shapes[i])
+            {
+                var hero = state.Heroes[heroId] with { DeepestFloorReached = depth };
+                state = state with { Heroes = state.Heroes.SetItem(heroId, hero) };
+            }
+
+            var forecast = RaidForecast.ForTomorrow(state);
+            Assert.NotEmpty(forecast); // setup check: the fixed starting six always musters someone
+
+            foreach (var party in forecast)
+            {
+                var members = party.HeroNames.Select(name => state.Heroes.Values.First(h => h.Name == name)).ToList();
+                var expectedBest = members.Max(h => h.DeepestFloorReached);
+                var expectedHolder = members.First(h => h.DeepestFloorReached == expectedBest).Name;
+
+                Assert.Equal(expectedBest, party.BestRecordedFloor);
+                Assert.Equal(expectedHolder, party.RecordHolderName);
+
+                // No bounty in any of these fixtures, so the default rule alone decides the target —
+                // the identical arithmetic ExpeditionSystem.TargetFloorFor uses.
+                Assert.Equal(expectedBest + 1, party.TargetFloor);
+            }
+        }
+    }
+
+    /// <summary>
+    /// P2-LONG-28's OTHER branch: a bounty can send a party back to a floor at or below its own
+    /// best recorded depth ("known ground"), never past it — <see
+    /// cref="GameSim.Bounties.BountyRules.Judge"/> only ever accepts a bounty at or below
+    /// <c>hero.DeepestFloorReached + 1</c>, so <see cref="ForecastParty.TargetFloor"/> can never
+    /// exceed <see cref="ForecastParty.BestRecordedFloor"/> by more than the default rule's own one
+    /// floor. <see cref="ForecastParty.BestRecordedFloor"/> itself must stay the party's actual
+    /// record regardless — the override changes the TARGET, never the record it is measured
+    /// against.
+    /// </summary>
+    [Fact]
+    public void BestRecordedFloor_StaysThePartysActualRecord_WhenABountyOverridesTheTargetToKnownGround()
+    {
+        var state = HeroRoster.InstallStartingRoster(GameFactory.NewGame(seed: 6001));
+        var torvald = state.Heroes[1] with { DeepestFloorReached = 3 };
+        state = state with
+        {
+            Heroes = state.Heroes.SetItem(1, torvald),
+            Bounties = ImmutableList.Create(new Bounty(
+                new BountyId(1), TargetFloor: 2, RewardGold: 500, PostedOnDay: 1, AcceptedBy: new HeroId(1), Paid: false)),
+        };
+
+        var party = RaidForecast.ForTomorrow(state).Single(p => p.HeroNames.Contains("Torvald"));
+
+        Assert.Equal(3, party.BestRecordedFloor); // the record itself is untouched by the override
+        Assert.Equal("Torvald", party.RecordHolderName);
+        Assert.Equal(2, party.TargetFloor); // the bounty's own floor, not best + 1
+        Assert.True(party.TargetFloor <= party.BestRecordedFloor); // the "known ground" branch's own gate
+    }
+
     [Fact]
     public void ForTomorrow_IsDeterministic()
     {
