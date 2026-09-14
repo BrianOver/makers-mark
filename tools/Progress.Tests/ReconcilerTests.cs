@@ -515,16 +515,27 @@ public class ReconcilerTests
         Assert.Empty(result.MissingFiles);
     }
 
-    private static Dictionary<string, IReadOnlyList<string>> Sites(params (string Id, string Path)[] hits)
+    /// <summary>Builds a fake <c>sourceTagSites</c> map without touching git, same shape
+    /// <c>GitShell.ListSourceTagSites</c> would hand back after classification.</summary>
+    private static Dictionary<string, IReadOnlyList<SourceTagHit>> Sites(
+        params (string Id, string Path, int Line, bool IsComment)[] hits)
     {
-        var map = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
-        foreach (var (id, path) in hits)
+        var map = new Dictionary<string, IReadOnlyList<SourceTagHit>>(StringComparer.Ordinal);
+        foreach (var (id, path, line, isComment) in hits)
         {
-            map[id] = map.TryGetValue(id, out var existing) ? existing.Append(path).ToList() : new List<string> { path };
+            var hit = new SourceTagHit(path, line, isComment);
+            map[id] = map.TryGetValue(id, out var existing)
+                ? existing.Append(hit).ToList()
+                : new List<SourceTagHit> { hit };
         }
 
         return map;
     }
+
+    /// <summary>Convenience for the common case: a single CODE hit (not a comment) at line 1 —
+    /// what most of this file's pre-existing fixtures mean by "named in this file".</summary>
+    private static Dictionary<string, IReadOnlyList<SourceTagHit>> CodeSite(string id, string path) =>
+        Sites((id, path, 1, false));
 
     [Fact]
     public void WarnsWhenAnUnbuiltUnitsIdIsAlreadyWrittenIntoTrackedSource()
@@ -537,11 +548,14 @@ public class ReconcilerTests
 
         var result = Reconciler.Reconcile(
             Plan(units), new Dictionary<string, LandedUnit>(), new Dictionary<string, OpenUnit>(), new HashSet<string>(),
-            sourceTagSites: Sites(("P2-PROOF-04", "godot/scripts/panels/TellingPanel.cs")));
+            sourceTagSites: CodeSite("P2-PROOF-04", "godot/scripts/panels/TellingPanel.cs"));
 
         var finding = Assert.Single(result.SourceTaggedUnbuilts);
         Assert.Equal("P2-PROOF-04", finding.UnitId);
-        Assert.Equal(new[] { "godot/scripts/panels/TellingPanel.cs" }, finding.Paths);
+        Assert.Equal(
+            new[] { new SourceTagHit("godot/scripts/panels/TellingPanel.cs", 1, false) },
+            finding.Hits);
+        Assert.True(finding.HasCodeHit);
     }
 
     [Fact]
@@ -555,7 +569,7 @@ public class ReconcilerTests
 
         var result = Reconciler.Reconcile(
             Plan(units), new Dictionary<string, LandedUnit>(), new Dictionary<string, OpenUnit>(), new HashSet<string>(),
-            sourceTagSites: Sites(("P2-ONBOARD-09", "godot/scripts/ui/TutorialFlow.cs")));
+            sourceTagSites: CodeSite("P2-ONBOARD-09", "godot/scripts/ui/TutorialFlow.cs"));
 
         var row = Assert.Single(result.Domains.SelectMany(d => d.Rows));
         Assert.Equal(UnitStatus.Unbuilt, row.Status);
@@ -576,7 +590,7 @@ public class ReconcilerTests
 
         var result = Reconciler.Reconcile(
             Plan(units), landed, new Dictionary<string, OpenUnit>(), new HashSet<string>(),
-            sourceTagSites: Sites(("P2-PROOF-03", "godot/scripts/panels/TellingPanel.cs")));
+            sourceTagSites: CodeSite("P2-PROOF-03", "godot/scripts/panels/TellingPanel.cs"));
 
         Assert.Empty(result.SourceTaggedUnbuilts);
     }
@@ -590,5 +604,39 @@ public class ReconcilerTests
             Plan(units), new Dictionary<string, LandedUnit>(), new Dictionary<string, OpenUnit>(), new HashSet<string>());
 
         Assert.Empty(result.SourceTaggedUnbuilts);
+    }
+
+    [Fact]
+    public void ACommentOnlyHit_StillAppearsInSection9ButNotAsACodeHit()
+    {
+        // U33's real shape: every hit is a doc-comment, several of them forward references
+        // deferring U33's own work ("U33 gives her a graduation line; this unit ships the
+        // mechanism…"). Section 9 must still list it — a human still benefits from the pointer —
+        // but HasCodeHit must read false so Frontier never refuses on this alone.
+        var units = new[] { Row(UnitTable.P2, "P2-PEOPLE-08") };
+
+        var result = Reconciler.Reconcile(
+            Plan(units), new Dictionary<string, LandedUnit>(), new Dictionary<string, OpenUnit>(), new HashSet<string>(),
+            sourceTagSites: Sites(("P2-PEOPLE-08", "godot/scripts/ui/TutorialFlow.cs", 2924, true)));
+
+        var finding = Assert.Single(result.SourceTaggedUnbuilts);
+        Assert.False(finding.HasCodeHit);
+        Assert.All(finding.Hits, h => Assert.True(h.IsComment));
+    }
+
+    [Fact]
+    public void AMixOfCommentAndCodeHits_ReportsHasCodeHitTrue()
+    {
+        var units = new[] { Row(UnitTable.P2, "P2-PEOPLE-08") };
+
+        var result = Reconciler.Reconcile(
+            Plan(units), new Dictionary<string, LandedUnit>(), new Dictionary<string, OpenUnit>(), new HashSet<string>(),
+            sourceTagSites: Sites(
+                ("P2-PEOPLE-08", "godot/scripts/ui/TutorialFlow.cs", 2924, true),
+                ("P2-PEOPLE-08", "godot/scripts/ui/TutorialFlow.cs", 3010, false)));
+
+        var finding = Assert.Single(result.SourceTaggedUnbuilts);
+        Assert.True(finding.HasCodeHit);
+        Assert.Equal(2, finding.Hits.Count);
     }
 }

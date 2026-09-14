@@ -2455,7 +2455,7 @@ changes when it is done. A regression pin now holds that.
 | U29 | The voice budget arms instead of queueing | `godot/scripts/ui/MentorBanner.cs`, `godot/scripts/ui/TutorialFlow.cs` | U10 |
 | U30 | The proof gets a row | `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/panels/LedgerModal.cs` | U21, U29 |
 | U32 | The memory gets a row, and graduation is event-shaped | `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/panels/LegendsWall.cs` | U21, U30 |
-| U33 | Her five arc lines | `godot/scripts/ui/MentorVoice.cs`, `godot/scripts/ui/TutorialFlow.cs` | U29, U30, U32 |
+| U33 | Her graduation goodbye (zero code today), and re-ranking the cold-open + greedy-rule lines from Lesson to Act (4 of 6 lines already shipped; proof and death nights are already right) | `godot/scripts/ui/MentorVoice.cs`, `godot/scripts/ui/TutorialFlow.cs` | U29, U30, U32 |
 | U34 | She says what she's seen | `godot/scripts/ui/MentorVoice.cs` | U4, U33 |
 | U35 | She leaves | `godot/scripts/town2d/InteriorLayout2D.cs`, `godot/scripts/ui/MentorVoice.cs` | U32, U33 |
 | U36 | She has a body and a face | `art/specs/`, `godot/scripts/ui/MentorBanner.cs` | U33 |
@@ -4641,7 +4641,7 @@ name (§11.6 rule 4).
 | ⚑ P2-MEMORY-20 | The forecast gets a face (research M3) | `godot/scripts/ui/ArcScenes.cs`, `godot/scripts/panels/RaidForecastBoard.cs` | — | [G] |
 | ⚑ P2-MEMORY-21 | The reforge row previews the lineage it will write, from the one template that writes it | `sim/GameSim/Crafting/HeirloomHandlers.cs`, `godot/scripts/panels/LegendsWall.cs` | — | [S] |
 | ⚑ P2-MEMORY-22 | The east field remembers — the town gets an outdoor memory, one lantern per fallen hero | `godot/scripts/town2d/TownLayout2D.cs`, `godot/scripts/town2d/Town2D.cs` | — | [G] |
-| P2-PEOPLE-02 | The register gate — a lint that fails on a planted violation of each rule | `godot/tests/`, scene corpus | — | [G] |
+| P2-PEOPLE-02 | The register gate's remaining two rules — trigger-id taxonomy validation and no-punchline-on-death scenes (the jargon rule already shipped under P2-PEOPLE-01) | `godot/tests/`, scene corpus | — | [G] |
 | P2-PEOPLE-03 | The remaining arcs — Torvald 4–8, Brunhilde, Kael, Sable, Elowen, Moss | scene corpus | P2-PEOPLE-02 + the probe's verdict | [G] |
 | P2-PEOPLE-04 | Durable-fact read-back on the VIGIL (the muster board's own half landed) | `godot/scripts/panels/MineWatch.cs`, `godot/scripts/panels/CampPanel.cs` | — | [G] |
 | P2-PEOPLE-05 | Wake contracts — `Memorial.MarkerItem`, remembrance action | `sim/GameSim/Contracts/` | — | [S][C] |
