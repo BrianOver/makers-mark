@@ -411,11 +411,58 @@ public class CampPanelTests
             // All four live verbs still respond to a real click — the fix only removes a verb when
             // there is truly nobody to aim it at, never when a party is actually camped.
             var player = new HumanPlayer(ui);
+
+            // CampForge/CampDeeper live in the card's fixed chrome/action row, never inside the
+            // scrollable party list, so they are reachable at whatever scroll position the card
+            // opens at. CampSend_{lead} sits at the TOP of the (only) camped member's content and is
+            // reachable there too.
             var clickable = player.ClickableButtons(ui.Camp).Select(b => b.Name.ToString()).ToList();
             AssertThat(clickable).Contains($"CampSend_{lead.Value}");
-            AssertThat(clickable).Contains($"CampRecall_{lead.Value}");
             AssertThat(clickable).Contains("CampForge");
             AssertThat(clickable).Contains("CampDeeper");
+
+            // CampRecall_{lead} is the LAST control in the card, after both members' anchor line,
+            // floor caption, hp/heals row and Standing/Trait/GearMark chips (P2-PEOPLE-16) — for this
+            // fixture's real two-hero party (ExpeditionWorld's own PartyFormation grouping, confirmed
+            // via InFlight.Single().Party.Count == 2), that content is measured taller than the
+            // card's own scroll viewport (measured: 512px of party content in a ~309px scroll body —
+            // the SAME "real content taller than the scroll body" shape HumanPlaytestTests.
+            // ForgeRecipeBelowTheVendorList_IsReachableByScrollingTheWheel already exercises for the
+            // Forge's vendor list), so Recall sits below the fold at rest. A real player reaches it by
+            // scrolling the wheel — checking it in ITS OWN scrolled position (rather than folding it
+            // into the snapshot above) is required, not stylistic: Send's row and Recall's button are
+            // far enough apart (top of the first member's row to the button after the last, ~317px)
+            // that no single scroll offset fits both inside the ~309px scroll body at once.
+            //
+            // HumanPlayer.ScrollIntoView stops as soon as the control is inside the VIEWPORT, not
+            // inside every clipping ancestor — a real gap for a ScrollContainer that (like this one)
+            // occupies only part of the window, since "inside the window" stops well short of "inside
+            // the scroll body" here. Scrolling directly against the SAME condition ClickableButtons
+            // itself uses avoids relying on that gap.
+            var recallButton = Find<Button>(ui.Camp, $"CampRecall_{lead.Value}");
+            var scrollBox = (ScrollContainer)Find<VBoxContainer>(ui.Camp, "CampParties").GetParent()!;
+            var scrollCenter = scrollBox.GetGlobalRect().GetCenter();
+            var reachedRecall = false;
+            for (var notch = 0; notch < 40; notch++)
+            {
+                if (player.ClickableButtons(ui.Camp).Any(b => b == recallButton))
+                {
+                    reachedRecall = true;
+                    break;
+                }
+
+                if (!await player.ScrollDown(scrollCenter, notches: 1))
+                {
+                    break; // bottom reached — nothing left to try
+                }
+            }
+
+            AssertThat(reachedRecall)
+                .OverrideFailureMessage(
+                    $"Scrolling the wheel over the camp card's party list never brought \"{recallButton.Name}\" " +
+                    "fully inside the scroll body — either the scroll stopped responding to the wheel, or " +
+                    "Recall is genuinely unreachable, not merely below an unscrolled fold.")
+                .IsTrue();
         }
         finally
         {
