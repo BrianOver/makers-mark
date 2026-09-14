@@ -2184,11 +2184,13 @@ public partial class MainUi : Control
         }
     }
 
-    /// <summary>Clearance (px) the interact-prompt chip's bottom edge keeps above the true window
-    /// bottom — the AdventureTicker's own reserved band (28px, <c>tickerWrap.CustomMinimumSize</c>
-    /// in <see cref="BuildUi"/>) plus one <see cref="GameTheme.Space16"/> gap, so the marquee's
-    /// full-width scrolling line never runs under the chip's text.</summary>
-    private const float InteractPromptBottomMargin = 28f + GameTheme.Space16;
+    /// <summary>P2-SCREEN-22: world-px clearance the chip's bottom edge keeps above the nametag it
+    /// floats over (see <see cref="UpdateInteractPrompt"/>) — small on purpose, the same "clear of
+    /// the roof, centered above" gap <see cref="Town2d.Building2D.BuildLabel"/> already keeps
+    /// between the nametag and the sprite it labels, not a screen-space margin (this value is added
+    /// to a WORLD position before <see cref="Town2d.Town2D.WorldToScreen"/> runs, so it scales with
+    /// <see cref="Town2d.Town2D.CanvasShrink"/> exactly like the nametag itself does).</summary>
+    private const float InteractPromptWorldGap = 4f;
 
     /// <summary>
     /// U12 (§11.14.14, R13): "the core interaction verb of this game has no on-screen affordance"
@@ -2201,21 +2203,34 @@ public partial class MainUi : Control
     ///
     /// <para>Called every <see cref="_Process"/> frame (unlike <see cref="UpdateObjectiveDock"/>'s
     /// once-per-tick contract): the target a player is nearest to can change on ANY physics frame,
-    /// not just a phase boundary. The early-return below keeps a steady-state frame (no target
-    /// change) to a single string comparison — the Label write and re-dock only happen the frame
-    /// the text actually changes.</para>
+    /// not just a phase boundary.</para>
+    ///
+    /// <para><b>P2-SCREEN-22:</b> a design capture found "E · Forge" rendered on the TAVERN's roof
+    /// while the player stood at the forge door — the chip was anchored CenterBottom, a fixed
+    /// screen point, so it named one building while sitting wherever the camera happened to frame
+    /// the bottom of the screen. It also persisted through a Send-Off/mine-gate camera pan (<see
+    /// cref="Town2d.Town2D.IsCameraOnPlayer"/> false): <see cref="Town2d.WorldInput2D"/> keeps
+    /// scanning while the player keeps walking during one of those (see <see
+    /// cref="Town2d.Town2D.FocusOn"/>'s own doc), so a target stayed active the whole time the
+    /// visible frame showed somewhere else entirely. Fixed on both counts: the chip now floats
+    /// above <see cref="Town2d.WorldInput2D.ActiveTarget"/>'s OWN nametag (<see
+    /// cref="Town2d.Building2D.NameLabel"/> — the same world-space anchor the nametag itself
+    /// already uses, projected through <see cref="Town2d.Town2D.WorldToScreen"/> rather than a
+    /// second, independent anchoring scheme), re-read every frame since the camera can move the
+    /// target's screen position even while the target itself never changes; and it is hidden
+    /// outright while the camera is off the player, since a target-relative chip cannot honestly
+    /// point at anything while the target is not where the screen says it is.</para>
     /// </summary>
     private void UpdateInteractPrompt()
     {
         var text = Town.WorldInputNode.PromptText;
-        if (text == _interactPromptLabel.Text)
+        if (text != _interactPromptLabel.Text)
         {
-            return;
+            _interactPromptLabel.Text = text;
         }
 
-        _interactPromptLabel.Text = text;
-        _interactPrompt.Visible = !string.IsNullOrEmpty(text);
-
+        var target = Town.WorldInputNode.ActiveTarget;
+        _interactPrompt.Visible = target is not null && Town.IsCameraOnPlayer;
         if (!_interactPrompt.Visible)
         {
             return;
@@ -2223,13 +2238,19 @@ public partial class MainUi : Control
 
         // Hug the text rather than a fixed dock width (Objective/Tutorial's own DockWidth exists
         // for a multi-line reading column; a one-line "E · Forge" chip should not claim 320px of
-        // the world view) — re-centered here since the string, and so the chip's own minimum
-        // width, just changed.
+        // the world view).
         var size = _interactPrompt.GetCombinedMinimumSize();
-        _interactPrompt.OffsetLeft = -size.X / 2f;
-        _interactPrompt.OffsetRight = size.X / 2f;
-        _interactPrompt.OffsetBottom = -InteractPromptBottomMargin;
-        _interactPrompt.OffsetTop = _interactPrompt.OffsetBottom - size.Y;
+
+        // Anchor over the target's OWN nametag — the same world-space point BuildLabel already
+        // centers above the sprite for every building AND interior station alike, so the chip and
+        // the name it carries can never independently drift apart. Lifted one small world-px gap
+        // clear of the nametag (see InteractPromptWorldGap) rather than drawn on top of it.
+        var nameplateTopCenter = target!.NameLabel.GlobalPosition
+            + new Vector2(target.NameLabel.Size.X / 2f, -InteractPromptWorldGap);
+        var anchorScreen = Town.WorldToScreen(nameplateTopCenter);
+
+        _interactPrompt.Size = size;
+        _interactPrompt.GlobalPosition = new Vector2(anchorScreen.X - size.X / 2f, anchorScreen.Y - size.Y);
     }
 
     /// <summary>U18/U15: the day-timeline's engaged-wait indicator mirrors <see cref="
@@ -4185,13 +4206,16 @@ public partial class MainUi : Control
         //     PanelContainer + Label — no dedicated class, mirroring _toastBanner's own inline
         //     shape (this chip's whole job is "mirror one string, show/hide"; ObjectiveTracker's
         //     heavier Refresh/Expand-button contract has nothing here to earn its own class for).
-        //     Anchored CenterBottom and re-centered on every text change in UpdateInteractPrompt
-        //     (called from _Process, tracking Town.WorldInputNode.PromptText's own per-physics-
-        //     frame updates) rather than docked to a fixed width like Objective/Tutorial, since a
-        //     one-line prompt ("E · Forge") should hug its own text, not a 320px reading column. --
+        //     P2-SCREEN-22: TopLeft anchors, positioned every frame in UpdateInteractPrompt via
+        //     GlobalPosition over whatever Town.WorldInputNode.ActiveTarget actually is (projected
+        //     through Town.WorldToScreen) — it used to sit CenterBottom, a fixed screen point that
+        //     named one building while sitting over whichever OTHER building the camera happened
+        //     to frame at the bottom of the screen. Still sized to hug its own text, not a fixed
+        //     dock width like Objective/Tutorial ("E · Forge" should hug its own text, not a
+        //     320px reading column). --
         _interactPrompt = new PanelContainer { Name = "InteractPrompt", Visible = false, MouseFilter = MouseFilterEnum.Ignore };
         AddChild(_interactPrompt);
-        _interactPrompt.SetAnchorsPreset(LayoutPreset.CenterBottom);
+        _interactPrompt.SetAnchorsPreset(LayoutPreset.TopLeft);
         _interactPromptLabel = new Label
         {
             Name = "InteractPromptText",

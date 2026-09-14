@@ -130,6 +130,16 @@ public partial class Town2D : Control
     /// Accumulated-delta, matching every other timer in this file — no engine Tween anywhere here.</summary>
     private float _focusRemaining;
 
+    /// <summary>P2-SCREEN-22: true exactly when <see cref="Cam"/> is centred on the player, false
+    /// for as long as a <see cref="FocusOn"/>/<see cref="FocusOnMineGate"/> timed borrow (a Send-Off
+    /// departure pan, the Reask camera peek) has the screen showing somewhere else. <see
+    /// cref="GodotClient.MainUi.UpdateInteractPrompt"/> reads this to hide the "E · {name}" chip
+    /// during a focus beat — the player keeps walking and <see cref="WorldInputNode"/> keeps
+    /// scanning throughout one (see <see cref="FocusOn"/>'s own doc), so a target can stay active
+    /// the whole time; without this gate the chip kept floating over whatever the player was last
+    /// standing next to while the visible frame showed a different part of the town entirely.</summary>
+    public bool IsCameraOnPlayer => _focusRemaining <= 0f;
+
     public SubViewportContainer ViewportContainer { get; private set; } = null!;
     /// <summary>Named <c>WorldViewport</c> rather than <c>Viewport</c> to avoid shadowing the
     /// Godot <see cref="Godot.Viewport"/> TYPE (needed unqualified below for <see
