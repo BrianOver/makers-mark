@@ -146,7 +146,7 @@ public partial class RaidForecastBoard : Control
     private void RenderParty(ForecastParty party, int ordinal)
     {
         AddHeader(_body!, $"Party {ordinal}: {string.Join(", ", party.HeroNames)}");
-        AddLabel(_body!, $"Target: floor {party.TargetFloor}{HalvarsFloorCaption(party)}");
+        AddLabel(_body!, $"Target: floor {party.TargetFloor}{HalvarsFloorCaption(party)}{RecordCaption(party)}");
 
         // Threats floor-ascending, exactly as RaidForecast built them (floor 1..TargetFloor).
         if (!party.Threats.IsEmpty)
@@ -225,6 +225,36 @@ public partial class RaidForecastBoard : Control
             .Select(name => ArcScenes.FloorCaption(name, party.TargetFloor))
             .FirstOrDefault(caption => caption.Length > 0)
         ?? string.Empty;
+
+    /// <summary>
+    /// P2-LONG-28 ("the muster names the record the party is pressing past", link 3 — "the hero
+    /// carries it into the dark on their own judgment"): before this unit "Target: floor 4" was a
+    /// bare number, arbitrary-looking unless the player already carried <c>ExpeditionSystem
+    /// .TargetFloorFor</c>'s own rule around in their head — one floor past the party's best
+    /// recorded depth (<c>sim/GameSim/Expedition/ExpeditionSystem.cs</c>). This names the record
+    /// instead of restating the rule: whose deepest floor 4 presses past, or, when a bounty sends
+    /// the party back over ground it has already cleared, that the ground is known rather than
+    /// new.
+    ///
+    /// <para>Two laws this sits closest to, both held by construction rather than by care. (1)
+    /// "show only what the sim decided" — <see cref="ForecastParty.BestRecordedFloor"/> and <see
+    /// cref="ForecastParty.RecordHolderName"/> are read straight off the party (<see
+    /// cref="RaidForecast.ForTomorrow"/> computes them with the exact <c>party.Max(h =>
+    /// h.DeepestFloorReached)</c> expression <c>TargetFloorFor</c> itself uses), never recomputed or
+    /// second-guessed here — this method can only ever restate a fact the sim already holds. (2)
+    /// "the forecast does not tell you who will survive" — this names a record, never a risk:
+    /// "one past Kael's deepest" is a fact about a floor number, "deeper than they should go" is an
+    /// opinion the sim never formed, and there is no branch below that can produce it.</para>
+    ///
+    /// <para><see cref="DepthCopy.Deepest"/> renders the record's own floor rather than a raw int
+    /// (P2-HONEST family, <c>ChronicleFloorCopyTests</c>'s census), so a party that has genuinely
+    /// never delved (<c>BestRecordedFloor == 0</c>) reads "not yet" instead of fabricating a floor
+    /// zero that does not exist.</para>
+    /// </summary>
+    private static string RecordCaption(ForecastParty party) =>
+        party.TargetFloor > party.BestRecordedFloor
+            ? $" — one past {party.RecordHolderName}'s deepest ({DepthCopy.Deepest(party.BestRecordedFloor)})"
+            : " — ground they have all walked before";
 
     /// <summary>
     /// U-T2 Wave D (§11.14.4, Act III, "the forecast board taught"): names the forecast board

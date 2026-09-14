@@ -1,9 +1,12 @@
 #if GDUNIT_TESTS
+using System;
 using System.Collections.Immutable;
 using System.Linq;
+using System.Text.RegularExpressions;
 using GameSim;
 using GameSim.Contracts;
 using GameSim.Drama;
+using GameSim.Heroes;
 using GameSim.Kernel;
 using GameSim.Professions;
 using GdUnit4;
@@ -132,6 +135,117 @@ public class RaidForecastBoardTests
         }
     }
 
+    /// <summary>
+    /// P2-LONG-28 ("the muster names the record the party is pressing past"): the DEFAULT branch —
+    /// a brand-new roster's very first muster, where every hero still reads <see
+    /// cref="Hero.DeepestFloorReached"/> == 0 ("never delved"). <see
+    /// cref="ForecastParty.BestRecordedFloor"/> is 0 for every party and <see
+    /// cref="ForecastParty.TargetFloor"/> presses one past it (1 &gt; 0) — the rarest edge of the
+    /// branch AND the one register #166's family exists to guard: <see cref="DepthCopy.Deepest"/>
+    /// must read "not yet" here, never a fabricated "floor 0".
+    /// </summary>
+    [TestCase]
+    public void RecordCaption_NamesTheRecordHolder_ThroughDepthCopy_WhenTheTargetPressesPastThePartysBest()
+    {
+        var state = HeroRoster.InstallStartingRoster(GameFactory.NewGame(seed: 9101));
+        var expected = RaidForecast.ForTomorrow(state);
+        AssertThat(expected.IsEmpty).IsFalse();
+
+        var ui = MountMainUi(new SimAdapter(state));
+        try
+        {
+            ui.Forecast.ShowForTomorrow(state);
+            var text = RenderedText(ui.Forecast);
+
+            foreach (var party in expected)
+            {
+                AssertThat(party.TargetFloor > party.BestRecordedFloor)
+                    .OverrideFailureMessage(
+                        "setup check: a fresh roster's default target must press past its own record.")
+                    .IsTrue();
+                AssertThat(text)
+                    .OverrideFailureMessage(
+                        $"never fabricate \"floor 0\" for a party that has never delved: \"{text}\"")
+                    .Contains($"one past {party.RecordHolderName}'s deepest (not yet)");
+            }
+        }
+        finally { Unmount(ui); }
+    }
+
+    /// <summary>
+    /// P2-LONG-28's OTHER branch: a bounty sends the party back to a floor at or below its own
+    /// record — "ground they have all walked before", never "one past". Scoped to the ONE party
+    /// carrying the bounty (<see cref="TargetLineForParty"/>), because the sibling party in this
+    /// same six-hero roster still musters under the plain default rule and legitimately renders
+    /// "one past" on its own Target line — asserting <c>NotContains</c> over the whole board would
+    /// fail on that unrelated party, not on a regression in this one.
+    /// </summary>
+    [TestCase]
+    public void RecordCaption_NamesKnownGround_NotPressingPast_WhenABountySendsThePartyBackOverGround()
+    {
+        var state = KnownGroundWorld(seed: 9102);
+        var expected = RaidForecast.ForTomorrow(state);
+        var ordinal = expected.ToList().FindIndex(p => p.HeroNames.Contains("Torvald")) + 1;
+        AssertThat(ordinal)
+            .OverrideFailureMessage("setup check: Torvald never mustered at all.")
+            .IsGreater(0);
+
+        var ui = MountMainUi(new SimAdapter(state));
+        try
+        {
+            ui.Forecast.ShowForTomorrow(state);
+            var targetLine = TargetLineForParty(RenderedText(ui.Forecast), ordinal);
+
+            AssertThat(targetLine).Contains("ground they have all walked before");
+            AssertThat(targetLine)
+                .OverrideFailureMessage(
+                    $"a party sent back over known ground must never read as pressing past a record: \"{targetLine}\"")
+                .NotContains("one past");
+        }
+        finally { Unmount(ui); }
+    }
+
+    /// <summary>
+    /// The law this unit is closest to breaking: "the forecast does not tell you who will
+    /// survive." Guarded as a PATTERN over the Target line specifically (mirroring <see
+    /// cref="ScarcityHudTests.ForecastBoard_WornGearBlock_NeverNamesASurvivalEstimateOrPowerScore"/>'s
+    /// own scoping choice) — the board's first-touch teaching elsewhere on this same screen
+    /// legitimately narrates "it does not tell you who will survive" as meta-commentary ABOUT the
+    /// rule, which would false-positive a whole-board scan. Runs both branches (pressing past AND
+    /// known ground) so neither one gets a pass the other would catch.
+    /// </summary>
+    [TestCase]
+    public void RecordCaption_TargetLines_NeverNameARiskOrOddsOrASurvivalEstimate()
+    {
+        var suspect = new Regex(
+            @"\d+%|\bsurvive[sd]?\b|\bchance\b|\bpower\b|\bwill (win|lose|die)\b|\brisk(y)?\b|\bodds\b|\bdanger",
+            RegexOptions.IgnoreCase);
+
+        foreach (var state in new[]
+                 {
+                     HeroRoster.InstallStartingRoster(GameFactory.NewGame(seed: 9103)),
+                     KnownGroundWorld(seed: 9104),
+                 })
+        {
+            var forecast = RaidForecast.ForTomorrow(state);
+            var ui = MountMainUi(new SimAdapter(state));
+            try
+            {
+                ui.Forecast.ShowForTomorrow(state);
+                var text = RenderedText(ui.Forecast);
+
+                for (var i = 0; i < forecast.Count; i++)
+                {
+                    var targetLine = TargetLineForParty(text, i + 1);
+                    AssertThat(suspect.IsMatch(targetLine))
+                        .OverrideFailureMessage($"the Target line must name a record, never a risk: \"{targetLine}\"")
+                        .IsFalse();
+                }
+            }
+            finally { Unmount(ui); }
+        }
+    }
+
     // ── fixtures ─────────────────────────────────────────────────────────────────────────────
 
     /// <summary>A fresh (blacksmith-default) campaign with its lowest-HeroId hero's gear cleared —
@@ -151,6 +265,43 @@ public class RaidForecastBoardTests
         var hero = baseState.Heroes.Values.First();
         var bare = hero with { Gear = GearSet.Empty };
         return baseState with { Heroes = baseState.Heroes.SetItem(bare.Id.Value, bare) };
+    }
+
+    /// <summary>P2-LONG-28's "known ground" fixture: Torvald (HeroId 1) carries a real floor-3
+    /// record, then holds a bounty for floor 2 — at or below that record — so his party's Target
+    /// line takes the "ground they have all walked before" branch instead of the default "one
+    /// past" rule <see cref="GameSim.Bounties.BountyRules.Judge"/> would otherwise let him press
+    /// past.</summary>
+    private static GameState KnownGroundWorld(ulong seed)
+    {
+        var state = HeroRoster.InstallStartingRoster(GameFactory.NewGame(seed));
+        var torvald = state.Heroes[1] with { DeepestFloorReached = 3 };
+        return state with
+        {
+            Heroes = state.Heroes.SetItem(1, torvald),
+            Bounties = ImmutableList.Create(new Bounty(
+                new BountyId(1), TargetFloor: 2, RewardGold: 500, PostedOnDay: 1, AcceptedBy: new HeroId(1), Paid: false)),
+        };
+    }
+
+    /// <summary>The "Target: floor ..." line rendered for the party at 1-based <paramref
+    /// name="ordinal"/> (<see cref="RaidForecastBoard.RenderParty"/> always emits it as the line
+    /// immediately following that party's "Party {ordinal}: ..." header, with nothing rendered
+    /// between them) — scopes an assertion to one party's own Target line instead of the whole
+    /// board, the same way <c>ScarcityHudTests.ExtractBlock</c> scopes to one section.</summary>
+    private static string TargetLineForParty(string renderedText, int ordinal)
+    {
+        var marker = $"Party {ordinal}: ";
+        var start = renderedText.IndexOf(marker, StringComparison.Ordinal);
+        if (start < 0)
+        {
+            throw new InvalidOperationException($"'{marker}' was never rendered:\n{renderedText}");
+        }
+
+        var lineStart = renderedText.IndexOf('\n', start) + 1;
+        var lineEnd = renderedText.IndexOf('\n', lineStart);
+        var line = lineEnd < 0 ? renderedText[lineStart..] : renderedText[lineStart..lineEnd];
+        return line.TrimEnd('\r');
     }
 }
 #endif
