@@ -481,6 +481,18 @@ public sealed partial class DayTimeline : HBoxContainer
     /// <summary>Segment-pill underline thickness (px) — the "current phase" marker (UI-4).</summary>
     private const float UnderlineHeight = 2f;
 
+    /// <summary>Gap between the strip's flow children (5 phase segments + the engaged-wait dot).
+    /// Pinned >= 6 by <c>MenuSizingTests.DayTimeline_HasNonZeroSeparation</c>; read by both
+    /// <see cref="Build"/> and <see cref="ContentMinWidth"/> so the width this strip RESERVES can
+    /// never drift from the width it LAYS OUT.</summary>
+    internal const int SeparationPx = 6;
+
+    /// <summary>The engaged-wait dot's reserved width (<see cref="Build"/>'s own
+    /// <c>CustomMinimumSize</c>). It is hidden most of the time — but a reservation that only
+    /// holds while it is hidden is not a reservation, so <see cref="ContentMinWidth"/> counts it
+    /// unconditionally.</summary>
+    private const float WaitingDotPx = 10f;
+
     /// <summary>Pulsing-dot period (seconds) — accumulated-delta only (no engine Tween in this
     /// codebase; mirrors <c>TabFade</c>/the HUD gold-chip pop).</summary>
     private const double PulsePeriodSeconds = 1.2;
@@ -506,20 +518,15 @@ public sealed partial class DayTimeline : HBoxContainer
         // Menu-sizing fix (gate-b): LOCAL override only (this node's own theme-constant
         // stack) — never theme.SetConstant("separation", "HBoxContainer", ...), which would
         // restyle every HBoxContainer in the app. Without this the 5 phase segments + the
-        // waiting dot sat with zero gap and read as run-on text. Kept >= 6 (MenuSizingTests) —
-        // this is now AT that pinned floor, so the next squeeze on this strip needs a real
-        // width fix elsewhere, not another point off this constant.
-        //
-        // Trimmed from 12 (tutorial-revamp wave, §11.13) to 8 (Books Tray's eighth icon), then
-        // to 6 here (P2-SCREEN-26): the Dawn badge's "N heroes ready in the square" runs a few
-        // characters longer than the retired "...at the gate" it replaced. That badge is part
-        // of VerbCluster's clock label, a sibling of TimelineWrap (ExpandFill) in the same
-        // HudHeaderRow — a wider label leaves the timeline less room, and "Night", the
-        // last/rightmost segment, is the first one clipped once the strip is squeezed
-        // (HudBoundsTests.ObjectiveChip_TextNeverOverflowsItsOwnContainer measured the overflow
-        // at 6px). Reclaiming 2px/gap * 5 gaps = 10px here covers it without touching the
-        // sentence, which is the whole point of P2-SCREEN-26.
-        AddThemeConstantOverride("separation", 6);
+        // waiting dot sat with zero gap and read as run-on text. Pinned >= 6 by MenuSizingTests
+        // and AT that floor, so nothing further can be taken from it. Two merged PRs in one
+        // night each shaved a width constant on this strip (this one 8 -> 6, and the Morning
+        // pill's own margin 4 -> 1) and the clipping came back BIGGER, because neither touched
+        // the thing that actually decides how much room the strip gets:
+        // MainUi.TimelineWrap's reserved width. That reservation is derived from
+        // ContentMinWidth() below now, so a word or a margin that grows here grows the
+        // reservation with it instead of quietly overflowing a clip rect.
+        AddThemeConstantOverride("separation", SeparationPx);
 
         // UI-4 (menu-sizing/cozy redesign): a connected segment strip — past dim, current a
         // filled Arcane pill with an Ember underline, future outlined — replacing the 5 loose
@@ -543,17 +550,16 @@ public sealed partial class DayTimeline : HBoxContainer
             var label = new Label { Text = text, HorizontalAlignment = HorizontalAlignment.Center };
             label.AddThemeFontSizeOverride("font_size", GameTheme.LegibilityFloor);
 
-            // P2-SCREEN-25: Morning is the one segment whose label Refresh can repaint at runtime
-            // (see Refresh's own remark — it swaps between "Dawn" and the live "Prepare" to match
-            // the HUD's Phase chip). Every other segment's text never changes after Build, so only
-            // this one needs its width reserved up front against BOTH words it can ever hold —
-            // otherwise flipping between them would resize just this pill and shove every segment
-            // after it sideways, the identical reflow bug one level down from the HUD chip's own.
-            if (phase == DayPhase.Morning)
-            {
-                label.CustomMinimumSize = new Vector2(
-                    UiKit.WidestTextWidth(PhaseVocab.LiveWordsFor(DayPhase.Morning), GameTheme.LegibilityFloor), 0f);
-            }
+            // P2-SCREEN-25: Refresh can repaint the CURRENT segment's label at runtime (see its
+            // own remark — Morning swaps between "Dawn" and the live "Prepare" to match the HUD's
+            // Phase chip), so every segment reserves its width up front against every word it can
+            // ever hold. Otherwise flipping the live word resizes that pill and shoves every
+            // segment after it sideways — the identical reflow bug one level down from the HUD
+            // chip's own. Only Morning has two words today, so this is a no-op for the other four;
+            // stating it for all five is what lets ContentMinWidth() below compute the strip's
+            // reserved width from the SAME arithmetic that lays it out, instead of a hand-kept
+            // copy that drifts the next time a phase grows a sub-state word.
+            label.CustomMinimumSize = new Vector2(LabelWidth(phase), 0f);
 
             pill.AddChild(label);
 
@@ -579,7 +585,7 @@ public sealed partial class DayTimeline : HBoxContainer
         {
             Name = "TimelineWaiting",
             Color = GameTheme.EmberColor,
-            CustomMinimumSize = new Vector2(10, 10),
+            CustomMinimumSize = new Vector2(WaitingDotPx, WaitingDotPx),
             Visible = false,
         };
         AddChild(_waiting);
@@ -619,19 +625,12 @@ public sealed partial class DayTimeline : HBoxContainer
             var isCurrent = i == currentIndex;
             var isPast = i < currentIndex;
 
-            // P2-SCREEN-25 overflow fix: Morning is the one segment Build() reserves extra label
-            // width on (see Build's own remark) so it never resizes when the live word swaps
-            // Dawn<->Prepare. That reservation makes Morning's pill wider than any other
-            // single-word segment, and this row has no slack to absorb it — proved by measuring
-            // it on clean origin/main, where the identical 5 segments fit with zero pixels to
-            // spare (HudBoundsTests.ObjectiveChip_TextNeverOverflowsItsOwnContainer went red the
-            // moment this reservation shipped). `separation` (Build's own theme override) is a
-            // shared, pinned floor another in-flight PR is also drawing on, so it is not this
-            // fix's to spend; SegmentStyle's own content margin, trimmed ONLY for the one pill
-            // this fix widened, claws back exactly enough of that pill's own padding for "Night"
-            // to clear TimelineWrap's right edge again, without touching any other segment's size.
-            var isMorning = KernelOrder[i].Phase == DayPhase.Morning;
-            _segmentPills[i].AddThemeStyleboxOverride("panel", SegmentStyle(isCurrent, isPast, isMorning));
+            // Every pill's own padding comes from HorizontalMarginFor (one place, shared with
+            // ContentMinWidth). P2-SCREEN-25 read the 'no slack in this row' symptom correctly and
+            // then spent the wrong budget on it: it shaved the Morning pill's padding, which is
+            // not what decides how much of this strip is visible. TimelineWrap's reservation is,
+            // and it now comes from ContentMinWidth() — so this strip can widen without clipping.
+            _segmentPills[i].AddThemeStyleboxOverride("panel", SegmentStyle(isCurrent, isPast, KernelOrder[i].Phase));
             _phaseLabels[i].AddThemeColorOverride(
                 "font_color", isCurrent ? GameTheme.BoneColor : isPast ? GameTheme.TextDim : GameTheme.BodyTextColor);
             _phaseLabels[i].Text = isCurrent && liveLabel is not null ? liveLabel : KernelOrder[i].Label;
@@ -664,21 +663,62 @@ public sealed partial class DayTimeline : HBoxContainer
         _waiting.Color = new Color(GameTheme.EmberColor, alpha);
     }
 
-    /// <summary>P2-SCREEN-25 overflow fix: the horizontal content margin for the ONE pill whose
-    /// label <see cref="Build"/> reserves extra width on (Morning, against "Prepare") — see
-    /// <see cref="Refresh"/>'s own remark for why this pill's own padding, and not the shared
-    /// <c>separation</c> constant or any other segment's margin, is what pays for that
-    /// reservation. Vertical margin is untouched (height was never the constrained axis).</summary>
+    /// <summary>P2-SCREEN-25 shaved the Morning pill's horizontal content margin from
+    /// <see cref="GameTheme.Space4"/> to this, to pay for the extra label width that pill reserves
+    /// against "Prepare". It is a cosmetic wart — one pill padded differently from its four
+    /// siblings — and it did not work: the strip still overflowed, because the overflow was never
+    /// about this pill's padding (see <see cref="ContentMinWidth"/>). It is kept only because the
+    /// header row has no 6px to give back today; restoring it to Space4 is a free change the
+    /// moment <c>MainUi.HudHeaderRow</c> has room, and <c>HudBoundsTests</c> will say so.</summary>
     private const int MorningPillHorizontalMargin = 1;
+
+    /// <summary>The horizontal content margin <see cref="SegmentStyle"/> gives
+    /// <paramref name="phase"/>'s pill, in px — one place, so <see cref="ContentMinWidth"/> and
+    /// the stylebox that actually draws it can never disagree.</summary>
+    private static int HorizontalMarginFor(DayPhase phase) =>
+        phase == DayPhase.Morning ? MorningPillHorizontalMargin : GameTheme.Space4;
+
+    /// <summary>The width this segment's label reserves — every word
+    /// <see cref="PhaseVocab.Display(GameState)"/> can ever render for
+    /// <paramref name="phase"/>, measured against the font it actually renders with.</summary>
+    private static float LabelWidth(DayPhase phase) =>
+        UiKit.WidestTextWidth(PhaseVocab.LiveWordsFor(phase), GameTheme.LegibilityFloor);
+
+    /// <summary>
+    /// The width this strip needs to draw all five phase words, at every word each of them can
+    /// ever show, plus the engaged-wait dot — <see cref="Build"/>'s own layout arithmetic, stated
+    /// once so a caller can RESERVE it instead of guessing.
+    ///
+    /// <para>Why this exists: <c>MainUi.TimelineWrap</c> is a plain <see cref="Control"/> with
+    /// <c>ClipContents</c>, and its <c>CustomMinimumSize</c> was a hand-typed 280px that had
+    /// nothing to do with what this strip measures (336px). The wrapper therefore told its row the
+    /// timeline needed 280, got handed 280–307, and silently CLIPPED the difference — which is why
+    /// two separate PRs shaving constants INSIDE the strip never moved the container's width by a
+    /// pixel and the rightmost word ("Night") stayed cut off. The number is derived now; anything
+    /// that widens a phase word, a pill margin or the separation widens the reservation with
+    /// it.</para>
+    /// </summary>
+    public static float ContentMinWidth()
+    {
+        var total = 0f;
+        foreach (var (phase, _) in KernelOrder)
+        {
+            total += LabelWidth(phase) + (2f * HorizontalMarginFor(phase));
+        }
+
+        // 6 flow children (5 segments + the dot) => 5 gaps.
+        return total + WaitingDotPx + (KernelOrder.Length * SeparationPx);
+    }
 
     /// <summary>Fresh <see cref="StyleBoxFlat"/> per call (StyleBox is a mutable Resource — never
     /// share one instance across segments/calls, same rule <c>GameTheme</c>'s own builders
     /// follow): filled Arcane for the current phase, a faint Arcane outline for a future phase,
-    /// and a dim, borderless fill for a past one. <paramref name="reservedWidth"/> is true only
-    /// for the Morning segment (see <see cref="MorningPillHorizontalMargin"/>).</summary>
-    private static StyleBoxFlat SegmentStyle(bool isCurrent, bool isPast, bool reservedWidth = false)
+    /// and a dim, borderless fill for a past one. The horizontal content margin comes from
+    /// <see cref="HorizontalMarginFor"/> so <see cref="ContentMinWidth"/> measures the same pill
+    /// this draws.</summary>
+    private static StyleBoxFlat SegmentStyle(bool isCurrent, bool isPast, DayPhase phase)
     {
-        var horizontalMargin = reservedWidth ? MorningPillHorizontalMargin : GameTheme.Space4;
+        var horizontalMargin = HorizontalMarginFor(phase);
 
         if (isCurrent)
         {
@@ -689,10 +729,8 @@ public sealed partial class DayTimeline : HBoxContainer
                 CornerRadiusBottomRight = GameTheme.RadiusChip,
                 CornerRadiusTopLeft = GameTheme.RadiusChip,
                 CornerRadiusTopRight = GameTheme.RadiusChip,
-                // Trimmed from Space8 (tutorial-revamp wave, §11.13) — see this timeline's own
-                // Build()/AddThemeConstantOverride("separation", ...) doc for why: reclaiming
-                // width here (5 pills * 2 sides * 4px = 40px) is the other half of what stopped
-                // the "Night" segment clipping once the Books Tray grew an eighth icon.
+                // Space8 -> Space4 (tutorial-revamp wave, §11.13). ContentMinWidth() measures
+                // whatever this is, so it is a look decision now, not a width budget.
                 ContentMarginLeft = horizontalMargin,
                 ContentMarginRight = horizontalMargin,
                 ContentMarginTop = GameTheme.Space4,
@@ -709,10 +747,8 @@ public sealed partial class DayTimeline : HBoxContainer
                 CornerRadiusBottomRight = GameTheme.RadiusChip,
                 CornerRadiusTopLeft = GameTheme.RadiusChip,
                 CornerRadiusTopRight = GameTheme.RadiusChip,
-                // Trimmed from Space8 (tutorial-revamp wave, §11.13) — see this timeline's own
-                // Build()/AddThemeConstantOverride("separation", ...) doc for why: reclaiming
-                // width here (5 pills * 2 sides * 4px = 40px) is the other half of what stopped
-                // the "Night" segment clipping once the Books Tray grew an eighth icon.
+                // Space8 -> Space4 (tutorial-revamp wave, §11.13). ContentMinWidth() measures
+                // whatever this is, so it is a look decision now, not a width budget.
                 ContentMarginLeft = horizontalMargin,
                 ContentMarginRight = horizontalMargin,
                 ContentMarginTop = GameTheme.Space4,
@@ -733,7 +769,7 @@ public sealed partial class DayTimeline : HBoxContainer
             CornerRadiusBottomRight = GameTheme.RadiusChip,
             CornerRadiusTopLeft = GameTheme.RadiusChip,
             CornerRadiusTopRight = GameTheme.RadiusChip,
-            // Trimmed from Space8 — see the isCurrent/isPast branches' own doc above.
+            // Space8 -> Space4 — see the isCurrent/isPast branches' own doc above.
             ContentMarginLeft = horizontalMargin,
             ContentMarginRight = horizontalMargin,
             ContentMarginTop = GameTheme.Space4,
