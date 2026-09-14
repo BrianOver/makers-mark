@@ -73,6 +73,23 @@ namespace GodotClient.Panels;
 /// not the read-back table <c>ArcScenes.FloorCaption</c>'s own doc says P2-PEOPLE-04 will
 /// eventually generalize into — that table is a bigger unit than one caption on one line, and
 /// wiring the existing call here is honest about not being it.</para>
+///
+/// <para>visfix5: the three-verbs description above holds for the one shape this modal is meant to
+/// be seen in — a real, non-empty <see cref="GameState.InFlight"/>. A caller that forces <see
+/// cref="ShowModal"/> open anyway (a dev bridge, a screenshot harness) OUTSIDE <see
+/// cref="DayPhase.Camp"/> entirely gets none of those verbs and a title that says so — see <see
+/// cref="Render"/>'s own empty-branch remarks — rather than the old contradiction of a title
+/// claiming a camp existed, a body saying none did, and "Send them deeper" still live for a party
+/// that was not there. <see cref="SizeCardToContent"/> is the other half: the card itself now tracks
+/// how much of the above it actually has to say, rather than always being exactly
+/// window-minus-margin tall.</para>
+///
+/// <para>visfix5-fix823: "Send them deeper" is the one exception to "presupposes a camped party" —
+/// see <see cref="Render"/>'s own remarks on why it is gated on <see cref="DayPhase.Camp"/> rather
+/// than on <see cref="GameState.InFlight"/>, so a Camp day that resolved with nobody actually
+/// stopping at the checkpoint (<c>RaidConductor.Beat.DeepTick</c>, the common case) still lets the
+/// player answer/close the stop instead of leaving the tutorial's last verb permanently
+/// Disabled.</para>
 /// </summary>
 public partial class CampPanel : SimPanel
 {
@@ -91,6 +108,27 @@ public partial class CampPanel : SimPanel
     private Label? _narratorLine;
     private VBoxContainer? _parties;
     private Label? _rejection;
+
+    /// <summary>visfix5: the Forge hint/button presuppose a camped party exists (there is no "them"
+    /// to forge for otherwise) — hidden (never merely disabled-and-visible) whenever <see
+    /// cref="GameState.InFlight"/> is empty, so the slate stops offering a verb it cannot honour for
+    /// nobody. See <see cref="Render"/>.</summary>
+    private Label? _forgeHint;
+    private Button? _forgeButton;
+
+    /// <summary>visfix5-fix823: gated on <see cref="DayPhase.Camp"/>, NOT on <see
+    /// cref="GameState.InFlight"/> — see <see cref="Render"/>'s own remarks for why "Send them
+    /// deeper" is the one verb that must not presuppose an actual camped party.</summary>
+    private Button? _deeperButton;
+
+    /// <summary>visfix5: the card's own bounded region (<see cref="BuildFittedModalCard"/>'s
+    /// <c>Panel</c>) and the two children whose live content height drives <see
+    /// cref="SizeCardToContent"/> — <c>_body</c> for everything ABOVE the action row, <c>_scroll</c>
+    /// so its own (deliberately small) reported minimum can be swapped out for <see cref="_parties"/>'
+    /// real one.</summary>
+    private Control? _cardPanel;
+    private VBoxContainer? _body;
+    private ScrollContainer? _scroll;
 
     /// <summary>U1 (KTD-A): the third verb — "Send them deeper" closes this slate AND raises this
     /// event. <c>MainUi</c> wires it to <see cref="RaidConductor.ResolveVigil"/>, the only path that
@@ -151,6 +189,25 @@ public partial class CampPanel : SimPanel
     /// the window, and Escape did nothing either.</summary>
     public override void _Input(InputEvent @event) => ModalEscape.TryClose(@event, GetViewport(), Visible, CloseModal);
 
+    /// <summary>
+    /// visfix5: re-fit the card's own height every frame the slate is up. <c>_parties</c> is torn
+    /// down and rebuilt from scratch on every <see cref="Render"/> (Clear + re-add), and a freshly
+    /// re-added Container child's minimum size is not reliably settled until its own parent's
+    /// deferred sort has run (<c>UiTestSupport.SettleLayout</c>'s own doc: "a container's
+    /// <c>queue_sort()</c> is deferred... read immediately after a mutation can still show stale —
+    /// often zero — values without this pump"). Computing in <see cref="_Process"/> rather than
+    /// inline at the end of <see cref="Render"/> means the fit always runs at least one real frame
+    /// after the content it measures, the same guarantee every geometry-reading engine test gets by
+    /// awaiting a few process frames, so this never has to guess.
+    /// </summary>
+    public override void _Process(double delta)
+    {
+        if (Visible)
+        {
+            SizeCardToContent();
+        }
+    }
+
     private void Render()
     {
         if (Adapter is null)
@@ -198,6 +255,40 @@ public partial class CampPanel : SimPanel
             .Select(r => r.Reason)
             .ToArray();
         _rejection!.Text = reasons.Length == 0 ? string.Empty : "The runner reports: " + string.Join(" | ", reasons);
+
+        // visfix5 (link2 — the vigil runner is one of the four honest channels a hero can be
+        // reached through; law 3 — every verb changes an outcome or reveals the player's stake):
+        // Send/Recall's own per-member GateButton calls already refuse honestly when there is
+        // nobody to send to or recall (they are built per camped party, inside the loop above, so
+        // an empty InFlight already renders none of them). The title and Forge below presuppose a
+        // camped party exists (there is no "them" to forge for otherwise), so neither may render
+        // live for an empty vigil. The title itself must stop asserting a camp that is not there,
+        // not just go quiet about the verbs.
+        var partyCamped = !state.InFlight.IsEmpty;
+        _title!.Text = partyCamped
+            ? "They've made camp above the deep floors. Send supplies, bring them home — or send them deeper."
+            : "The checkpoint is quiet tonight.";
+        _forgeHint!.Visible = partyCamped;
+        _forgeButton!.Visible = partyCamped;
+        _forgeButton!.Disabled = !partyCamped;
+
+        // visfix5-fix823: "Send them deeper" is NOT the same claim as "a party is camped" — it is
+        // the one control that answers RaidConductor.Beat.VigilStop, and VigilStop is deliberately
+        // the UNCOMMON reason Camp is reached (RaidConductor.cs: DayPhase.Camp maps to VigilStop
+        // only when InFlight is non-empty; an empty-InFlight Camp auto-advances to DeepTick without
+        // ever pausing). Gating this button on InFlight instead of on actually BEING at Camp made it
+        // Disabled the moment a day's parties all resolved without a checkpoint stop — reproduced by
+        // TutorialFlowTests.Step7_Completes_OnSendDeeper (a real day-2 Camp phase, confirmed empty
+        // InFlight — sim/GameSim.Expedition.ExpeditionSystem: a fresh roster's own target floor 1
+        // needs no checkpoint) — silently blocking the tutorial's last step. The panel never enforces
+        // a rule (AE4, this class's own doc): CampPanel.SendDeeperRequested carries no precondition
+        // of its own, and RaidConductor.ResolveVigil already no-ops safely when Current isn't
+        // VigilStop, so gating on the phase and letting the conductor decide is the same "submit and
+        // let the kernel/conductor answer" shape as every verb below it — never a second copy of
+        // VigilStop's own condition.
+        var vigilPhaseOpen = state.Phase == DayPhase.Camp;
+        _deeperButton!.Visible = vigilPhaseOpen;
+        _deeperButton!.Disabled = !vigilPhaseOpen;
     }
 
     private void RenderParty(GameState state, InFlightExpedition party, ImmutableList<Item> held)
@@ -447,6 +538,16 @@ public partial class CampPanel : SimPanel
         // the identical bug, which is why the pattern now lives in one place.
         var card = BuildFittedModalCard("CampCard");
         var box = card.Body;
+        _body = box;
+
+        // visfix5: BuildFittedModalCard anchors the card to the WINDOW (AnchorBottom=1, a fixed
+        // margin off the viewport's own bottom edge) — the anti-softlock ceiling this fix keeps,
+        // unchanged. Flipping AnchorBottom to 0 turns OffsetBottom from "a margin off the viewport
+        // bottom" into "an absolute Y coordinate", the same switch MainUi.UpdateObjectiveDock's own
+        // dock relies on — SizeCardToContent then owns OffsetBottom every frame the slate is up,
+        // computing it FROM the card's own content instead of the constant BuildFittedModalCard set.
+        _cardPanel = card.Panel;
+        _cardPanel.AnchorBottom = 0;
 
         // U-T5-6 (register #159, owner's standing direction R3: "no important information without a
         // face"): the winch-house slate had no narrator at all before this unit — the camp now speaks
@@ -468,11 +569,11 @@ public partial class CampPanel : SimPanel
         // to the forge, craft, come back, send" was mechanically real (CampPanelTests'
         // VigilRoundTrip proves it) but never once stated on screen — the design's own diagnosis:
         // "today a player has no way to discover this." This line and the button below are the fix.
-        var forgeHint = AddLabel(box,
+        _forgeHint = AddLabel(box,
             "Nothing to send yet? You can leave this stop, work the forge, and come back — the vigil holds until you answer it.");
-        forgeHint.Name = "CampForgeHint";
+        _forgeHint.Name = "CampForgeHint";
 
-        AddButton(box, "CampForge", "Forge something for them", Verdict.Ok, () =>
+        _forgeButton = AddButton(box, "CampForge", "Forge something for them", Verdict.Ok, () =>
         {
             CloseModal();
             OpenForgeRequested?.Invoke();
@@ -480,18 +581,18 @@ public partial class CampPanel : SimPanel
 
         // Horizontal scroll disabled (U7/R7): the slate column follows the box's 640px width
         // so autowrap labels wrap on real width instead of collapsing to 1 char per line.
-        var scroll = new ScrollContainer
+        _scroll = new ScrollContainer
         {
             SizeFlagsVertical = SizeFlags.ExpandFill,
             HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled,
         };
-        box.AddChild(scroll);
+        box.AddChild(_scroll);
         _parties = new VBoxContainer
         {
             Name = "CampParties",
             SizeFlagsHorizontal = SizeFlags.ExpandFill,
         };
-        scroll.AddChild(_parties);
+        _scroll.AddChild(_parties);
 
         _rejection = AddLabel(box, string.Empty);
         _rejection.Name = "CampRejection";
@@ -505,11 +606,75 @@ public partial class CampPanel : SimPanel
         // verb: closing the slate AND raising SendDeeperRequested in the same press, the only way the
         // vigil stop ever ends. Same anchored-action-row position, same softlock-proof structure
         // (BuildFittedModalCard) — only what pressing it DOES changed.
-        AddButton(card.ActionRow, "CampDeeper", "Send them deeper", Verdict.Ok, () =>
+        _deeperButton = AddButton(card.ActionRow, "CampDeeper", "Send them deeper", Verdict.Ok, () =>
             {
                 CloseModal();
                 SendDeeperRequested?.Invoke();
-            })
-            .SizeFlagsHorizontal = SizeFlags.ExpandFill;
+            });
+        _deeperButton.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+
+        // First-frame safety net: Render() (called separately, right after EnsureBuilt returns)
+        // is what actually fills _parties/sets the title, so this call sees only the static chrome
+        // above — enough to give the card a sane, non-inverted height immediately rather than
+        // leaning on _Process's next tick to fix an AnchorBottom=0 flip that just landed on the
+        // OLD (viewport-relative) OffsetBottom value.
+        SizeCardToContent();
+    }
+
+    /// <summary>
+    /// visfix5 (link2 — the vigil runner is one of the four honest channels a hero can be reached
+    /// through): <see cref="BuildFittedModalCard"/>'s own fix pins the card's height to the WINDOW
+    /// (AnchorBottom=1, a fixed margin off the viewport's own bottom edge) so it can never outgrow
+    /// the screen — but that also means the slate was ALWAYS exactly window-minus-margin tall,
+    /// empty vigil or not. Measured: 1024x520 (exactly window-minus-margin) with ~330px of dead
+    /// space below a one-line "No party is camped below the checkpoint" body.
+    ///
+    /// <para>Mirrors <see cref="MainUi.UpdateObjectiveDock"/>'s own technique rather than inventing
+    /// a second one: read the card's live content height (<see cref="Control.GetCombinedMinimumSize"/>)
+    /// and dock <see cref="_cardPanel"/>'s <c>OffsetBottom</c> to it, clamped so it can never pass
+    /// the SAME ceiling <see cref="BuildFittedModalCard"/> already enforced. The floor moved; the
+    /// ceiling did not — a slate with several camped parties still cannot outgrow the window, and
+    /// <see cref="_scroll"/> still takes over exactly where the ceiling bites, because <see
+    /// cref="_body"/> and the action row stay anchored to <see cref="_cardPanel"/>'s own rect
+    /// (BuildFittedModalCard's existing structure, untouched) rather than to the viewport
+    /// directly.</para>
+    ///
+    /// <para><see cref="_scroll"/>'s own <see cref="Control.GetCombinedMinimumSize"/> is
+    /// deliberately small — that is what lets it scroll instead of forcing every ancestor to grow —
+    /// so <see cref="_body"/>'s combined minimum under-counts however many camped-party cards <see
+    /// cref="_parties"/> actually holds. The one substitution below (swap the scroll's own tiny
+    /// contribution for <see cref="_parties"/>' real natural height) corrects exactly that, and only
+    /// that; every other chrome element (title, narrator, forge hint/button, rejection line) is
+    /// still counted through <see cref="_body"/>'s own combined minimum, unchanged.</para>
+    ///
+    /// <para><see cref="_cardPanel"/> itself is a <c>PanelContainer</c> whose own "panel" stylebox
+    /// (<c>GameTheme.PanelStyle</c>) reserves top+bottom content margin around <see cref="_body"/> —
+    /// read off the LIVE stylebox rather than a second hand-typed copy of the theme's constant, the
+    /// same "one source, never a hand-kept copy" reasoning the fee/HealsLeft moves in this same file
+    /// already follow.</para>
+    ///
+    /// <para>A single camped hero's own card — anchor line, floor caption, picker, hp/heals/gold
+    /// row, Standing/Gear/Trait chips, Recall — measures taller on its own than this whole modal's
+    /// window-derived budget (confirmed against a live capture: <see cref="_parties"/>'s natural
+    /// height alone runs to several hundred px past the ceiling below). That is <see
+    /// cref="_scroll"/>'s job, unchanged by this fix: the ceiling still bites, and the excess still
+    /// scrolls, exactly as it did before this unit — this method only stops the ceiling being the
+    /// answer EVERY time regardless of how little is inside it.</para>
+    /// </summary>
+    private void SizeCardToContent()
+    {
+        if (_cardPanel is null || _body is null || _scroll is null || _parties is null)
+        {
+            return;
+        }
+
+        var chromeHeight = _body.GetCombinedMinimumSize().Y - _scroll.GetCombinedMinimumSize().Y;
+        var panelPadding = _cardPanel.GetThemeStylebox("panel") is { } style
+            ? style.ContentMarginTop + style.ContentMarginBottom
+            : 0f;
+        var contentHeight = chromeHeight + _parties.GetCombinedMinimumSize().Y + ModalActionRowHeight + panelPadding;
+
+        var ceiling = GetViewportRect().Size.Y - _cardPanel.OffsetTop; // the same symmetric margin OffsetTop already uses
+        _cardPanel.OffsetBottom = Mathf.Min(_cardPanel.OffsetTop + contentHeight, ceiling);
     }
 }
