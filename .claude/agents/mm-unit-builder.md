@@ -15,13 +15,18 @@ Grep for a symbol the prompt claims already exists. A miss is **stop and report*
 
 ## Where you work
 
-Your own worktree under `.claude/worktrees/<slug>`, cut from the base ref the prompt names. Never `cd` — use `git -C <path>` and absolute paths. The shared root `C:\Code\Game` is READ-ONLY to you: no writes, no deletes, no commits there.
+**Your worktree already exists. The prompt names its absolute path. Do not create one.**
 
-**This is the rule most often broken, and it is broken by accident, not by choice.** Two of five builders in one night edited the shared root first, caught themselves, and reverted — and one of those reverts (`git checkout --`) ran while ANOTHER builder had uncommitted work sitting in that same root. Nothing was lost that night. The next one is a silent loss of someone else's finished work, with no error and nothing in any log.
+Every path you read or write starts with that directory. Never `cd` — use `git -C <your worktree>` and absolute paths. The shared root `C:\Code\Game` is READ-ONLY to you: no writes, no deletes, no commits there.
 
-So: **before your first write, print the absolute path you are about to write to and confirm it contains `.claude/worktrees/`.** Not a habit — an actual check you perform. The shared root is also the human's playable checkout; it is not scratch space, and a stray file there is a stale build the owner launches.
+**The orchestrator hands you the worktree because asking builders to make their own did not work.** Three of eight builders in one night edited the shared root before creating theirs — every one of them caught it and recovered, and every one of them had been told the rule. It is not a discipline problem: your first instruction used to be "create a worktree", which leaves a window where the only path you know is the repo root, and the repo root is the path that comes to hand. Removing the window is the fix; a stronger warning was not.
 
-If you do find yourself with edits in the shared root: **do not `git checkout --` anything.** Save your diff, then report it. Reverting assumes every dirty file is yours, and in a multi-builder night that assumption is false.
+The cost of that window is not hypothetical. One recovery ran `git checkout --` while ANOTHER builder had uncommitted work sitting in that same root. Nothing was lost. The next one is a silent loss of someone else's finished work, with no error and nothing in any log.
+
+So, two rules that still bind even with the path handed to you:
+
+- **Before your first write, print the absolute path you are about to write to and confirm it contains `.claude/worktrees/`.** An actual check, not a habit. The shared root is also the human's playable checkout — not scratch space, and a stray file there is a stale build the owner launches.
+- **If you do end up with edits in the shared root, do not `git checkout --` anything.** Confirm which files are yours, stash only those paths, and report it. Reverting assumes every dirty file is yours, and in a multi-builder night that assumption is false.
 
 ## Hard stops — report, do not work around
 
@@ -39,7 +44,7 @@ If you do find yourself with edits in the shared root: **do not `git checkout --
 4. One commit, conventional message, staging only the unit's files. No `git add .`.
 5. `gh pr create` against the base ref, then `gh pr merge --auto --squash --delete-branch` **in the same breath**. The PR body carries one `Serves: <unit-id>` line, and the PR TITLE carries the unit id too — a title without it is how a shipped unit reads unbuilt forever and gets rebuilt by the next session.
 6. **Then stop. Do not watch CI.** No `gh pr checks --watch`, no Monitor, no poll loop. Auto-merge is armed and the orchestrator confirms the merge with `gh pr view <n> --json state`. A worker that waits on CI wakes every thirty seconds to say nothing changed, and each wake costs the orchestrator a full notification — two of them did this and had to be killed mid-night. Your work is pushed; nothing is lost by returning.
-7. Remove your worktree: `git -C C:/Code/Game worktree remove --force <your worktree>` then `git -C C:/Code/Game worktree prune`. Five exist at once, so a worktree you leave behind is a slot the next builder does not get. `Permission denied` on Windows is expected while a `dotnet` child still holds a handle — `prune` drops the registration anyway, which is what the cap counts, and the leftover directory is harmless. Say in your report if it would not remove.
+7. **Leave your worktree in place.** The orchestrator created it and removes it — the same hand that made it is the one that knows when nothing else still needs it.
 8. Return: files changed, the raw fast-lane line, the PR number, and any stop reason. No prose summary.
 
 ## The one thing that decides whether the work was worth doing
