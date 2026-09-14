@@ -2248,9 +2248,24 @@ public partial class MainUi : Control
         var nameplateTopCenter = target!.NameLabel.GlobalPosition
             + new Vector2(target.NameLabel.Size.X / 2f, -InteractPromptWorldGap);
         var anchorScreen = Town.WorldToScreen(nameplateTopCenter);
+        var wanted = new Vector2(anchorScreen.X - size.X / 2f, anchorScreen.Y - size.Y);
+
+        // HudBoundsTests (ObjectiveChip_TextNeverOverflowsItsOwnContainer, reproduced on a fresh
+        // Day-1 mount that spawns the player right next to the Forge): the nametag this chip floats
+        // above can itself sit close enough to a screen edge — here, the TOP — that lifting the chip
+        // one more chip-height clear of it pushes the chip itself off-window. Neither existing guard
+        // catches this: there IS a target, and the camera IS on the player. A prompt anchored to a
+        // world object will sometimes point at something near an edge, so the chip is clamped fully
+        // inside the viewport rather than left to follow its target off-screen — the same contract
+        // Objective/Tutorial already keep (see UpdateTutorialSize's own viewport-relative clamp
+        // above) — not a return to the old fixed CenterBottom anchor this PR replaced.
+        var viewport = GetViewportRect().Size;
+        var clamped = new Vector2(
+            Mathf.Clamp(wanted.X, 0f, Mathf.Max(0f, viewport.X - size.X)),
+            Mathf.Clamp(wanted.Y, 0f, Mathf.Max(0f, viewport.Y - size.Y)));
 
         _interactPrompt.Size = size;
-        _interactPrompt.GlobalPosition = new Vector2(anchorScreen.X - size.X / 2f, anchorScreen.Y - size.Y);
+        _interactPrompt.GlobalPosition = clamped;
     }
 
     /// <summary>U18/U15: the day-timeline's engaged-wait indicator mirrors <see cref="
