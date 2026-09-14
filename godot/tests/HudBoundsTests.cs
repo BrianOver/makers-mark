@@ -529,7 +529,15 @@ public class HudBoundsTests
         var ui = MountMainUi();
         try
         {
-            AdvanceToPhase(ui, DayPhase.Expedition); // same recipe MineWatchRehostTests uses for a live party
+            // Camp, not Expedition. The first cut of this test borrowed MineWatchRehostTests'
+            // AdvanceToPhase(Expedition) — but that suite only ever asserts WHICH node hosts the
+            // strip, never that the strip drew anything, so it never depended on the party being
+            // known yet. Measured: at Expedition the strip is visible with FigureCount 0, exactly as
+            // MineWatch.FigureCount's own doc says it will be ("0 while ... the current party is not
+            // yet known (live phase, no PartyDeparted/InFlightExpedition seen yet this day)"). Camp
+            // is the phase that HAS an InFlightExpedition to render, so this is the negative
+            // control actually measuring what it claims to.
+            AdvanceToPhase(ui, DayPhase.Camp);
             ui.OpenPanel("Depths");
             await SettleLayout(ui);
 

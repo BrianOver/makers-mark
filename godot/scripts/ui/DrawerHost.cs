@@ -141,6 +141,31 @@ public partial class DrawerHost : Control
     /// cref="Close"/>) — MainUi uses this to keep the Engaged latch in sync.</summary>
     public event Action? Closed;
 
+    /// <summary>
+    /// The persistent HUD header this drawer must never paint over (<c>MainUi</c>'s <c>HudHeader</c>).
+    /// Its measured BOTTOM edge is this host's top edge; everything below that, to the window's own
+    /// bottom-right corner, is the drawer's. Null leaves the host filling its parent, the pre-fix
+    /// behaviour.
+    ///
+    /// <para><b>Why the host measures the window rather than inheriting its parent's.</b> Measured on
+    /// this branch, the two rects are not the same box in EITHER dimension.
+    /// <c>WorldSlot</c> is <c>Layout</c>'s ExpandFill row, and <c>Layout</c> is a
+    /// <see cref="VBoxContainer"/>: its combined minimum width is the HUD header's own
+    /// (<b>1501px</b> measured with a full stat-chip row), so an anchor-driven FullRect
+    /// <see cref="VBoxContainer"/> is clamped UP to 1501 in a 1152 window and every row it owns —
+    /// <c>WorldSlot</c> included — is 349px wider than the screen. <c>Town2D</c> never noticed; a
+    /// RIGHT-anchored drawer taking <c>restX = Size.X - DrawerWidth</c> lands its whole 600px panel at
+    /// x 901..1501, entirely past the window's right edge. And vertically, <c>WorldSlot</c> stops at
+    /// the ticker row (y=616 of 648) and starts below the toast band (y=222, though the header itself
+    /// ends at 167) — 87px of usable drawer height given away for nothing.</para>
+    ///
+    /// <para>So the host takes the WINDOW's width and the window's bottom, and only its TOP from the
+    /// header. Staying a child of <c>WorldSlot</c> is still what keeps the drawer out of the header's
+    /// paint order structurally; inheriting <c>WorldSlot</c>'s RECT was the part that was never
+    /// right.</para>
+    /// </summary>
+    public Control? HeaderToClear { get; set; }
+
     /// <summary>Build the host chrome (dim + sliding panel + content slot). Idempotent-guarded like
     /// every other code-built node on this project.</summary>
     public void Build()
@@ -184,6 +209,48 @@ public partial class DrawerHost : Control
 
         _slot = new Control { Name = "DrawerSlot" };
         AddChild(_slot);
+
+        // The host's rect is the WINDOW below the header, not this parent's rect — see
+        // HeaderToClear's own remark for the two measured reasons. Re-synced on every event that can
+        // move either edge: the parent's own re-sort, and a real window resize.
+        if (!IsInsideTree())
+        {
+            return; // mounted-then-built is the only supported order; nothing to measure against yet
+        }
+
+        if (GetParent() is Control parent)
+        {
+            parent.Resized += SyncHostRect;
+        }
+
+        GetViewport().SizeChanged += SyncHostRect;
+        SyncHostRect();
+    }
+
+    /// <summary>
+    /// Pin this host to the window's own rect below <see cref="HeaderToClear"/>, expressed in the
+    /// parent's local space. Anchors go to top-left so a parent re-sort cannot drag the rect back to
+    /// the parent's own box between syncs; the <see cref="Control.Resized"/> hooks in <see
+    /// cref="Build"/> are what keep it current instead.
+    /// </summary>
+    private void SyncHostRect()
+    {
+        if (GetParent() is not Control parent || !IsInsideTree())
+        {
+            return;
+        }
+
+        var window = GetViewportRect().Size;
+        var headerBottom = HeaderToClear is null ? 0f : HeaderToClear.GetGlobalRect().End.Y;
+        var origin = parent.GlobalPosition;
+
+        SetAnchor(Side.Left, 0f, false);
+        SetAnchor(Side.Top, 0f, false);
+        SetAnchor(Side.Right, 0f, false);
+        SetAnchor(Side.Bottom, 0f, false);
+
+        Position = new Vector2(-origin.X, headerBottom - origin.Y);
+        Size = new Vector2(window.X, Mathf.Max(0f, window.Y - headerBottom));
     }
 
     /// <summary>Register one panel Control under a stable id — called once per panel at boot
@@ -215,6 +282,7 @@ public partial class DrawerHost : Control
             _current.Visible = false;
         }
 
+        SyncHostRect(); // cheap, and the header's height can have changed since the last open
         content.Visible = true;
         _current = content;
         CurrentPanelId = id;

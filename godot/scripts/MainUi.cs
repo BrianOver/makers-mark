@@ -3850,6 +3850,7 @@ public partial class MainUi : Control
         // gives it the identical guarantee instead of a second, parallel z-order rule.
         Drawer = new DrawerHost();
         worldSlot.AddChild(Drawer);
+        Drawer.HeaderToClear = header; // its bottom edge is the drawer's top — see DrawerHost.HeaderToClear
         Drawer.Build();
         Drawer.Register("Forge", Forge);
         Drawer.Register("Shop", Shop);
