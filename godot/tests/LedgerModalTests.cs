@@ -1,5 +1,6 @@
 #if GDUNIT_TESTS
 using System.Collections.Immutable;
+using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
@@ -1555,6 +1556,38 @@ public class LedgerModalTests
         finally
         {
             Unmount(ui);
+        }
+    }
+
+    /// <summary>
+    /// P2-PROOF-07 (Rule 8 — "the code is deleted, not disabled"): the "Full tale" toggle this unit
+    /// removed must not grow a "kept for reference" corpse back into source, in <c>LedgerModal</c>
+    /// itself or anywhere else — a compile error only catches a literal re-reference to the deleted
+    /// <c>_showFullTale</c> field, never a copy-pasted second toggle wearing the same names. Scans
+    /// every script and test source file rather than one path, so the guard survives the file
+    /// getting split or the toggle getting reintroduced somewhere other than LedgerModal.cs. Checks
+    /// the field and button-name tokens only, not the "Full tale" prose label itself — several doc
+    /// comments (this test's own included) legitimately quote that label to explain the history.
+    /// </summary>
+    [TestCase]
+    public void SourceCensus_FullTaleToggleStaysDeleted()
+    {
+        var roots = new[] { ProjectSettings.GlobalizePath("res://scripts"), ProjectSettings.GlobalizePath("res://tests") };
+        var files = roots
+            .SelectMany(root => Directory.GetFiles(root, "*.cs", SearchOption.AllDirectories))
+            // This test's own file names both deleted tokens on purpose (the messages below) —
+            // exclude it rather than have the census fail itself.
+            .Where(file => !file.EndsWith("LedgerModalTests.cs"))
+            .ToList();
+        // Same broken-GlobalizePath guard TellingPanelTests' own source census uses: a bad path
+        // scans zero files and would make every NotContains check below pass by finding nothing.
+        AssertThat(files.Count).IsGreaterEqual(100);
+
+        foreach (var file in files)
+        {
+            var text = File.ReadAllText(file);
+            AssertThat(text).OverrideFailureMessage($"{file} reintroduces the deleted _showFullTale field").NotContains("_showFullTale");
+            AssertThat(text).OverrideFailureMessage($"{file} reintroduces the deleted ToggleTale button").NotContains("ToggleTale");
         }
     }
 }

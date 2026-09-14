@@ -329,7 +329,7 @@ Morning-hold toasts when the bell is pressed with a counter open: "Close the cou
 
 ### 3.5 The expedition retelling — NarratorPack
 
-`NarratorPack` (sim/GameSim/Narrative/NarratorPack.cs) is the four-voice template pack behind the Ledger's "THE RETELLING" section (`ExpeditionNarrator`, sim/GameSim/Narrative/ExpeditionNarrator.cs; rendered by LedgerModal.cs:684 under the header "── THE RETELLING ──", with a "Show less"/"Full tale" toggle at LedgerModal.cs:715) and the departure line the CLI prints (sim/GameSim.Cli/EventNarration.cs:31). 14 base keys × 4 voices, ≥12 variants per key — 645 committed template lines plus 14 fallbacks (NarratorPack.cs:99-843). Death lines are prefixed "† " and beat lines rendered as `★ {hero} — {beat.Detail}` by the narrator itself (ExpeditionNarrator.cs:139,252).
+`NarratorPack` (sim/GameSim/Narrative/NarratorPack.cs) is the four-voice template pack behind the Ledger's "THE RETELLING" section (`ExpeditionNarrator`, sim/GameSim/Narrative/ExpeditionNarrator.cs; rendered by LedgerModal.cs under the header "── THE RETELLING ──", collapsed to the pride payload only — P2-PROOF-07 removed the "Full tale" toggle once `TellingPanel`'s per-beat counterfactual replay superseded it) and the departure line the CLI prints (sim/GameSim.Cli/EventNarration.cs:31). 14 base keys × 4 voices, ≥12 variants per key — 645 committed template lines plus 14 fallbacks (NarratorPack.cs:99-843). Death lines are prefixed "† " and beat lines rendered as `★ {hero} — {beat.Detail}` by the narrator itself (ExpeditionNarrator.cs:139,252).
 
 Slots per key (NarratorPack.cs:81-96): depart {hero}{floor}; floorEnter {floor}{monster}; combatKill {hero}{monster}; combatHurt {hero}{monster}{dmg}; combatQuaff {hero}{item}; combatFled {hero}{monster}; combatDied {hero}{monster}{floor}; campReport {hero}{floor}; closers targetReached / gateHeld / floorLost / partyWiped / tooHurt / recallSurface all {hero}{floor}.
 
@@ -365,7 +365,7 @@ The complete per-line inventory of this pack (645 template strings, every one pl
 | buy feedback: "queued: buy {N}x {mat} from {Hero} (applies when the Evening ticks)" | :571 | Buy pressed |
 | buy whyNot: "Ore changes hands in the Evening — reopen the ledger then." / "That offer is gone." / "{Hero} never made it home — the offer is void." / "You can't afford that yet." | :756-775 | gated Buy tooltip |
 | "The vendor trades in the evening." | :585 | disabled ore-row tooltip |
-| "── THE RETELLING ──", "Show less" / "Full tale" | :684,715 | the narrator section |
+| "── THE RETELLING ──" | narrator section | the collapsed pride payload (P2-PROOF-07 removed the "Full tale" toggle) |
 
 The night's attribution beats also lead the reveal: the beat-bearing card sorts first (`LeadWithAttribution`, :382), the narrator's line renders above the grid (`AddNarratorLine`, :393), and the ledger tip renders once ever (§1.4).
 
