@@ -550,10 +550,23 @@ public class CounterPanelTests
 
     // ── Meters (sim integers render 1:1 — no UI-side arithmetic) ────────────────────────────────
 
+    /// <summary>
+    /// The rule is that a number on this panel is the sim's own number, never one the client did
+    /// arithmetic on. Goodwill used to be one of the three examples — the fixture's -365 was
+    /// asserted verbatim — and P2-ONBOARD-09 removed it, because a raw permille is engine
+    /// vocabulary on a player surface and the band is the thing the game actually acts on.
+    ///
+    /// <para>So the goodwill case inverts rather than disappearing: the panel must NOT print the
+    /// permille, and must print that permille's own band instead. Dropping the assertion outright
+    /// would have been the easy edit and the wrong one — it would leave nothing proving the chip
+    /// says anything at all, and "the number is gone" is only half of what this unit promised.
+    /// Interest and the standing offer are unchanged and still pin the 1:1 rule they always did.</para>
+    /// </summary>
     [TestCase]
     public void Meters_RenderSimIntegers1To1_NoUiSideArithmetic()
     {
-        var state = CounterFixture(round: 3, interest: 275, patience: 1, goodwill: -365, standingOffer: 999, presented: ShopItemId);
+        const int Goodwill = -365;
+        var state = CounterFixture(round: 3, interest: 275, patience: 1, goodwill: Goodwill, standingOffer: 999, presented: ShopItemId);
         var ui = MountMainUi(new SimAdapter(state));
         try
         {
@@ -561,8 +574,18 @@ public class CounterPanelTests
             var text = RenderedText(ui.Shop);
 
             AssertThat(text).Contains("275");
-            AssertThat(text).Contains("-365");
             AssertThat(text).Contains("999g");
+
+            AssertThat(text)
+                .OverrideFailureMessage(
+                    $"the counter printed the raw goodwill permille ({Goodwill}) — that is engine vocabulary, "
+                    + $"and the band is what the game acts on. Rendered: \"{text}\"")
+                .NotContains(Goodwill.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+            var band = RelationshipBands.Label(RelationshipBands.For(new HeroId(1), state));
+            AssertThat(text)
+                .OverrideFailureMessage($"the counter named no standing band at all. Expected \"{band}\". Rendered: \"{text}\"")
+                .Contains(band);
         }
         finally
         {
