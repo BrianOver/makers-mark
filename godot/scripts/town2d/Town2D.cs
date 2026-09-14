@@ -387,6 +387,15 @@ public partial class Town2D : Control
     /// cref="TownsfolkRoot"/> rather than re-querying its children every frame.</summary>
     private readonly List<TownsfolkNpc2D> _townsfolk = new();
 
+    /// <summary>U-VISFIX2: each live nameplate's ORIGINAL local position (<see
+    /// cref="Building2D.BuildLabel"/>'s own fixed formula), captured the first frame <see
+    /// cref="DeclutterNameplates"/> sees that label. Never re-derived from the label's own current
+    /// <see cref="Label.Position"/> — that position is the one thing this system itself mutates
+    /// every frame, so treating it as the "base" would let last frame's stagger become this
+    /// frame's new starting point and ratchet a crowded label upward forever instead of
+    /// settling.</summary>
+    private readonly Dictionary<Label, Vector2> _nameplateBasePositions = new();
+
     /// <summary>U-T3-8 (register #150): every venue's own door anchor, resolved once <see
     /// cref="BuildBuildings"/> has run — the SAME pool <see cref="BuildTownsfolk"/> already builds
     /// its errand rotation from (that local var is replaced by this field so heroes and townsfolk
@@ -1018,7 +1027,65 @@ public partial class Town2D : Control
             var actor = _heroActors[heroId];
             _heroActors.Remove(heroId);
             HeroesRoot.RemoveChild(actor);
+            _nameplateBasePositions.Remove(actor.Nameplate); // U-VISFIX2: don't hold a dead hero's label forever
             PanelGraveyard.Bury(actor); // detached => parentless => nothing else would ever free it
+        }
+    }
+
+    /// <summary>
+    /// U-VISFIX2 (owner GPU capture of the town: two townsfolk standing near each other rendered
+    /// overlapping nameplates as unreadable mush, e.g. "Tor Kael" — two separate names stamped on
+    /// top of one another). Every frame, gathers every mobile nameplate owner currently in the
+    /// scene — heroes, the generic townsfolk pool, AND the named Rival Smith/Assessor (both are
+    /// <see cref="TownsfolkNpc2D"/> too, and either can end up standing beside a plain villager
+    /// exactly like the reported cluster) — and hands their live positions/label geometry to <see
+    /// cref="Building2D.ResolveNameplateStagger"/>, which nudges any colliding pair into separate
+    /// rows. This never moves an actor: only each <see cref="Label"/>'s own local offset changes,
+    /// so the fix stays a render concern rather than a placement one (this class's own "show only
+    /// what the sim decided" precedent — the wander drift/errand rotation already decided where
+    /// everyone stands).
+    /// </summary>
+    private void DeclutterNameplates()
+    {
+        var owners = new List<(Vector2 GlobalPosition, Label Label)>(_heroActors.Count + _townsfolk.Count + 2);
+
+        foreach (var actor in _heroActors.Values)
+        {
+            owners.Add((actor.GlobalPosition, actor.Nameplate));
+        }
+
+        foreach (var npc in _townsfolk)
+        {
+            owners.Add((npc.GlobalPosition, npc.Nameplate));
+        }
+
+        if (RivalSmith is not null)
+        {
+            owners.Add((RivalSmith.GlobalPosition, RivalSmith.Nameplate));
+        }
+
+        if (Assessor is not null)
+        {
+            owners.Add((Assessor.GlobalPosition, Assessor.Nameplate));
+        }
+
+        var entries = new (Vector2 GlobalPosition, Vector2 LabelLocalPosition, Vector2 LabelSize)[owners.Count];
+        for (var i = 0; i < owners.Count; i++)
+        {
+            var label = owners[i].Label;
+            if (!_nameplateBasePositions.TryGetValue(label, out var basePosition))
+            {
+                basePosition = label.Position;
+                _nameplateBasePositions[label] = basePosition;
+            }
+
+            entries[i] = (owners[i].GlobalPosition, basePosition, label.Size);
+        }
+
+        var offsets = Building2D.ResolveNameplateStagger(entries);
+        for (var i = 0; i < owners.Count; i++)
+        {
+            owners[i].Label.Position = entries[i].LabelLocalPosition + new Vector2(0f, offsets[i]);
         }
     }
 
@@ -1167,6 +1234,8 @@ public partial class Town2D : Control
         TickPendingMarchOut(delta);
         TickPendingReturns(delta);
         TickPendingReturnWalk(delta);
+
+        DeclutterNameplates();
     }
 
     /// <summary>U10 (KTD-5): every frame, every actor currently <see
