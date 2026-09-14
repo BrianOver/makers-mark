@@ -121,26 +121,31 @@ public class ForgeTwoActTests
     public void Assist_BarelyTouchesASkilledRun()
     {
         var act1 = new ForgeMinigame();
-        act1.Configure(DaggerRecipe, ScriptedSession.CraftMaterial, ProfessionRegistry.Blacksmith,
-            ImmutableSortedSet<string>.Empty, TestDay, demonstratedAccuracyPermille: 1000);
+        try
+        {
+            act1.Configure(DaggerRecipe, ScriptedSession.CraftMaterial, ProfessionRegistry.Blacksmith,
+                ImmutableSortedSet<string>.Empty, TestDay, demonstratedAccuracyPermille: 1000);
 
-        AssertThat(act1.AssistEngaged)
-            .OverrideFailureMessage("The assist was already engaged before a single strike landed.")
-            .IsFalse();
-        AssertThat(act1.AssistMultiplier).IsEqual(1.0);
+            AssertThat(act1.AssistEngaged)
+                .OverrideFailureMessage("The assist was already engaged before a single strike landed.")
+                .IsFalse();
+            AssertThat(act1.AssistMultiplier).IsEqual(1.0);
 
-        DriveAct1ToCompletion(act1, pumpUntilPermille: 900, strikeAbovePermille: 500);
+            DriveAct1ToCompletion(act1, pumpUntilPermille: 900, strikeAbovePermille: 500);
 
-        AssertThat(act1.Completed).IsTrue();
-        AssertThat(act1.AssistMultiplier)
-            .OverrideFailureMessage(
-                $"A skilled run finished with assist {act1.AssistMultiplier:0.00}x after " +
-                $"{act1.StrikesLanded} strikes against a budget of {act1.RequiredStrikes}. The assist " +
-                "is meant for a struggling player; paying a skilled one this much makes the skill " +
-                "curve meaningless.")
-            .IsLessEqual(1.0 + ForgeMinigame.AssistPerOverrunStrike);
-
-        act1.QueueFree();
+            AssertThat(act1.Completed).IsTrue();
+            AssertThat(act1.AssistMultiplier)
+                .OverrideFailureMessage(
+                    $"A skilled run finished with assist {act1.AssistMultiplier:0.00}x after " +
+                    $"{act1.StrikesLanded} strikes against a budget of {act1.RequiredStrikes}. The assist " +
+                    "is meant for a struggling player; paying a skilled one this much makes the skill " +
+                    "curve meaningless.")
+                .IsLessEqual(1.0 + ForgeMinigame.AssistPerOverrunStrike);
+        }
+        finally
+        {
+            act1.Free();
+        }
     }
 
     /// <summary>R6, "high metals are more precise": <see cref="QuenchMinigame"/>'s acceptable-plunge

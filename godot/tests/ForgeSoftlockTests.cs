@@ -40,6 +40,8 @@ public class ForgeSoftlockTests
     public void AWhiteHotPumpingBillet_CanStillBeStruckToCompletion()
     {
         var act1 = new ForgeMinigame();
+        try
+        {
         act1.Configure(DaggerRecipe, ScriptedSession.CraftMaterial, ProfessionRegistry.Blacksmith,
             ImmutableSortedSet<string>.Empty, day: 0, demonstratedAccuracyPermille: 500);
 
@@ -105,6 +107,11 @@ public class ForgeSoftlockTests
                 $"heat {act1.HeatYPermille}). This is Brian's literal reported softlock: " +
                 "\"Strike 24/21 -- Heat 1000 -- pumping -- the billet is yielding, keep going.\"")
             .IsTrue();
+        }
+        finally
+        {
+            act1.Free();
+        }
     }
 
     /// <summary>
@@ -118,6 +125,8 @@ public class ForgeSoftlockTests
     public void PumpingAtFullHeat_NeverUnwindsBankedShape()
     {
         var act1 = new ForgeMinigame();
+        try
+        {
         act1.Configure(DaggerRecipe, ScriptedSession.CraftMaterial, ProfessionRegistry.Blacksmith,
             ImmutableSortedSet<string>.Empty, day: 0, demonstratedAccuracyPermille: 1000);
 
@@ -165,6 +174,11 @@ public class ForgeSoftlockTests
                 "nothing -- a fully-shaped billet must not silently decay while the player holds " +
                 "the bellows at max heat.")
             .IsEqual(banked);
+        }
+        finally
+        {
+            act1.Free();
+        }
     }
 
     /// <summary>
@@ -176,6 +190,8 @@ public class ForgeSoftlockTests
     public void AWhiteHotPumpingBillet_TellsThePlayerToStrike_NeverToKeepPumping()
     {
         var act1 = new ForgeMinigame();
+        try
+        {
         act1.Configure(DaggerRecipe, ScriptedSession.CraftMaterial, ProfessionRegistry.Blacksmith,
             ImmutableSortedSet<string>.Empty, day: 0, demonstratedAccuracyPermille: 500);
 
@@ -218,6 +234,11 @@ public class ForgeSoftlockTests
         AssertThat(readout.Contains("swing") || readout.Contains("strike"))
             .OverrideFailureMessage($"Readout \"{act1.ReadoutText}\" never names swinging or striking even though the billet is white-hot and the strike budget is overrun.")
             .IsTrue();
+        }
+        finally
+        {
+            act1.Free();
+        }
     }
 }
 #endif

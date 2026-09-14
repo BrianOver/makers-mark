@@ -46,7 +46,7 @@ public class NameplateTests
         }
         finally
         {
-            actor.QueueFree();
+            actor.Free();
         }
     }
 
@@ -70,7 +70,7 @@ public class NameplateTests
         }
         finally
         {
-            actor.QueueFree();
+            actor.Free();
         }
     }
 
@@ -91,7 +91,7 @@ public class NameplateTests
         }
         finally
         {
-            npc.QueueFree();
+            npc.Free();
         }
     }
 
@@ -231,9 +231,9 @@ public class NameplateTests
         }
         finally
         {
-            hero.QueueFree();
-            npc.QueueFree();
-            building.QueueFree();
+            hero.Free();
+            npc.Free();
+            building.Free();
         }
     }
 
