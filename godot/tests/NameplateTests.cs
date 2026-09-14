@@ -305,5 +305,144 @@ public class NameplateTests
             .OverrideFailureMessage("a lone nameplate with nothing nearby must never be nudged")
             .IsEqual(0f);
     }
+
+    // ── Scenario 11: #816's own residue — a cluster whose members' names differ in length ──────
+
+    /// <summary>
+    /// #816 shipped <see cref="Building2D.ResolveNameplateStagger"/>, but its caller fed it each
+    /// owner's SPRITE-width placeholder (<see cref="Building2D.BuildLabel"/>'s Size.X) as that
+    /// owner's label size, never the label's own rendered text width. Scenario 10's own test never
+    /// caught this because every owner there shared one uniform <c>LabelSize</c> — a real town
+    /// cluster does not: names vary in length, and <see cref="Building2D.MeasureNameplateLocalRect"/>
+    /// (the fix) is what recovers each label's TRUE rect. This drives the full measure-then-resolve
+    /// pipeline across a table of cluster shapes with deliberately mixed name lengths (never this
+    /// game's own roster — a fresh campaign generates a different one every time) and requires every
+    /// pair's real rendered rect ends up clear, for clusters of three and up — the exact size the
+    /// shipped fix left one member of, unresolved.
+    /// </summary>
+    [TestCase]
+    public void MeasureAndResolve_FullyClearsEveryPair_ForClustersOfThreeOrMoreWithMixedNameLengths()
+    {
+        var root = ((SceneTree)Engine.GetMainLoop()).Root;
+
+        var clusterShapes = new[]
+        {
+            new[] { "Ax", "Wintermantleburyshire", "Bo" },                    // 3: one long name, flanked
+            new[] { "Grimtharionwyck", "El", "Cormoranthedale", "Zo" },       // 4: two long, two short
+            new[] { "Ux", "Ux", "Ux", "Ux", "Ux" },                           // 5: identical short names
+            new[] { "Aethelfrithstonebury", "Bramblewickenshire", "Do" },     // 3: two long, one short
+        };
+
+        foreach (var names in clusterShapes)
+        {
+            var labels = names.Select(n => Building2D.BuildLabel(n, new Vector2(16f, 24f))).ToList();
+            foreach (var label in labels)
+            {
+                root.AddChild(label);
+            }
+
+            try
+            {
+                // Shoulder-to-shoulder, 8 world-px apart (well inside one placeholder width), with
+                // a little Y jitter so an exact tie is never the only case exercised.
+                var owners = labels
+                    .Select((label, i) =>
+                    {
+                        var globalPosition = new Vector2(i * 8f, i % 2 == 0 ? 0f : 2f);
+                        var (localPosition, size) = Building2D.MeasureNameplateLocalRect(label, label.Position);
+                        return (GlobalPosition: globalPosition, LabelLocalPosition: localPosition, LabelSize: size);
+                    })
+                    .ToList();
+
+                var offsets = Building2D.ResolveNameplateStagger(owners);
+                var rects = owners
+                    .Select((o, i) => new Rect2(o.GlobalPosition + o.LabelLocalPosition + new Vector2(0f, offsets[i]), o.LabelSize))
+                    .ToList();
+
+                for (var i = 0; i < rects.Count; i++)
+                {
+                    for (var j = i + 1; j < rects.Count; j++)
+                    {
+                        AssertThat(rects[i].Intersects(rects[j]))
+                            .OverrideFailureMessage(
+                                $"cluster [{string.Join(", ", names)}]: owners {i} ('{names[i]}') and " +
+                                $"{j} ('{names[j]}') still have intersecting rendered rects ({rects[i]} " +
+                                $"vs {rects[j]}) after staggering — a 3+ cluster with mixed name " +
+                                "lengths must fully resolve.")
+                            .IsFalse();
+                    }
+                }
+            }
+            finally
+            {
+                foreach (var label in labels)
+                {
+                    label.QueueFree();
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// The specific mechanism isolated: a name long enough that its REAL rendered rect (<see
+    /// cref="Building2D.MeasureNameplateLocalRect"/>) extends well past its own sprite-width
+    /// placeholder (<see cref="Building2D.BuildLabel"/>'s Size.X), positioned so the OLD
+    /// placeholder-sized boxes do NOT collide (asserted below, so this is provably testing the
+    /// long-name defect and not just "stand them closer") while the real text does — the resolver
+    /// must still catch it.
+    /// </summary>
+    [TestCase]
+    public void MeasureNameplateLocalRect_ALongNameStillCollidesWithItsNeighbour_EvenThoughItsPlaceholderBoxWouldNotHave()
+    {
+        var root = ((SceneTree)Engine.GetMainLoop()).Root;
+        var shortLabel = Building2D.BuildLabel("Ux", new Vector2(16f, 24f));
+        var longLabel = Building2D.BuildLabel("VeryLongTestNameThatOverflows", new Vector2(16f, 24f));
+        root.AddChild(shortLabel);
+        root.AddChild(longLabel);
+
+        try
+        {
+            var shortGlobal = new Vector2(0f, 0f);
+            var longGlobal = new Vector2(20f, 0f);
+
+            var placeholderShort = new Rect2(shortGlobal + shortLabel.Position, shortLabel.Size);
+            var placeholderLong = new Rect2(longGlobal + longLabel.Position, longLabel.Size);
+            AssertThat(placeholderShort.Intersects(placeholderLong))
+                .OverrideFailureMessage(
+                    "test setup invalid: the placeholder-sized boxes must NOT already collide, or " +
+                    "this isn't isolating the long-name defect")
+                .IsFalse();
+
+            var (shortLocal, shortSize) = Building2D.MeasureNameplateLocalRect(shortLabel, shortLabel.Position);
+            var (longLocal, longSize) = Building2D.MeasureNameplateLocalRect(longLabel, longLabel.Position);
+
+            AssertThat(longSize.X)
+                .OverrideFailureMessage("a long name's measured rect must be wider than its own sprite-width placeholder")
+                .IsGreater(longLabel.Size.X);
+
+            var owners = new[]
+            {
+                (GlobalPosition: shortGlobal, LabelLocalPosition: shortLocal, LabelSize: shortSize),
+                (GlobalPosition: longGlobal, LabelLocalPosition: longLocal, LabelSize: longSize),
+            };
+
+            var offsets = Building2D.ResolveNameplateStagger(owners);
+            var rects = owners
+                .Select((o, i) => new Rect2(o.GlobalPosition + o.LabelLocalPosition + new Vector2(0f, offsets[i]), o.LabelSize))
+                .ToList();
+
+            AssertThat(rects[0].Intersects(rects[1]))
+                .OverrideFailureMessage(
+                    "a long name's real rendered rect still collides with its short neighbour after " +
+                    "staggering — the resolver was fed the sprite-width placeholder instead of the " +
+                    "real text width.")
+                .IsFalse();
+        }
+        finally
+        {
+            shortLabel.QueueFree();
+            longLabel.QueueFree();
+        }
+    }
 }
 #endif

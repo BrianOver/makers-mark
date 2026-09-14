@@ -1079,7 +1079,12 @@ public partial class Town2D : Control
                 _nameplateBasePositions[label] = basePosition;
             }
 
-            entries[i] = (owners[i].GlobalPosition, basePosition, label.Size);
+            // U-VISFIX3: label.Size is BuildLabel's sprite-width PLACEHOLDER, not this label's own
+            // rendered text width — feeding that straight in under-reports exactly the long names
+            // that overflow past it (see Building2D.MeasureNameplateLocalRect's own doc; #816's
+            // leftover defect).
+            var (localPosition, size) = Building2D.MeasureNameplateLocalRect(label, basePosition);
+            entries[i] = (owners[i].GlobalPosition, localPosition, size);
         }
 
         var offsets = Building2D.ResolveNameplateStagger(entries);

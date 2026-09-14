@@ -586,6 +586,45 @@ public partial class Building2D : Node2D
         return offsets;
     }
 
+    /// <summary>
+    /// U-VISFIX3 (#816 shipped a resolver that only half-worked: a three-townsfolk cluster left two
+    /// names — the longer of the three — still drawn on top of each other). <see
+    /// cref="ResolveNameplateStagger"/> itself is fine; the bug was one layer up, in what its caller
+    /// fed it as each owner's <c>LabelSize</c>. <see cref="BuildLabel"/> assigns a nametag's <see
+    /// cref="Control.Size"/> from the OWNER's sprite width (a layout placeholder, chosen only so the
+    /// label starts centered above the right sprite) — never from the text itself. A short name
+    /// renders inside that placeholder with room to spare; a long one overflows well past it, because
+    /// Godot draws centered <see cref="Label"/> text un-clipped regardless of the box's own declared
+    /// Size. Feeding the placeholder width into the resolver reports a long name's rect as narrower
+    /// than what actually lands on screen, so two names close enough to visually collide can pass the
+    /// resolver's own no-overlap check while still overlapping in the rendered frame — exactly the
+    /// residue #816 left behind.
+    ///
+    /// <para>This recovers the label's REAL rendered rect: <see cref="Control.GetMinimumSize"/> is
+    /// Godot's own text-metrics answer for this exact label's current text/font (not the assigned
+    /// placeholder <see cref="Control.Size"/>), and the result stays centered on the SAME point the
+    /// placeholder was centered on (so a short name's rect is unchanged) — only the width changes to
+    /// match what the glyphs actually draw. The vertical size is left at the placeholder's fixed 8px
+    /// (see <see cref="BuildLabel"/>'s own fixed row height) since every nameplate is one line and the
+    /// stagger only ever stacks rows, never resizes them.</para>
+    /// </summary>
+    /// <param name="label">The live nameplate (its current <see cref="Label.Text"/>/<see
+    /// cref="Label.LabelSettings"/> drive the measurement).</param>
+    /// <param name="baseLocalPosition"><see cref="BuildLabel"/>'s own UNMODIFIED local position for
+    /// this label (never the label's current, possibly-already-staggered <see
+    /// cref="Node2D.Position"/> — same "never the resolver's own previous output" rule <see
+    /// cref="ResolveNameplateStagger"/>'s own doc states).</param>
+    /// <returns>The label's real local position/size to feed <see cref="ResolveNameplateStagger"/>
+    /// as that owner's <c>LabelLocalPosition</c>/<c>LabelSize</c>.</returns>
+    public static (Vector2 LocalPosition, Vector2 Size) MeasureNameplateLocalRect(
+        Label label, Vector2 baseLocalPosition)
+    {
+        var textWidth = label.GetMinimumSize().X;
+        var placeholderCenterX = baseLocalPosition.X + label.Size.X / 2f;
+        return (new Vector2(placeholderCenterX - textWidth / 2f, baseLocalPosition.Y),
+            new Vector2(textWidth, label.Size.Y));
+    }
+
     /// <summary>One tile below the sprite's bottom edge (world +Y) — far enough that the
     /// footprint's own collision never contests whoever is standing there (mirrors
     /// <c>Building3D.BuildDoorAnchor</c>'s body-radius margin).</summary>
