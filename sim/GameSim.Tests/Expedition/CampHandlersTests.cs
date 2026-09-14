@@ -75,9 +75,29 @@ public class CampHandlersTests
         return s;
     }
 
-    private const int FloorOneFee = 9; // SupplyFeeBase 6 + SupplyFeePerFloor 3 × checkpoint 1 (D5 knobs)
+    // Derived from the sim's own formula (P2-HONEST-22), not hand-typed: these assertions below
+    // check that CampHandlers.ApplySend actually CHARGES what CampHandlers.SupplyFee computes —
+    // wiring, not the value itself. The value is pinned independently by
+    // SupplyFee_ValuePinnedAcrossCheckpointFloors below, in literals no production code feeds.
+    private static readonly int FloorOneFee = CampHandlers.SupplyFee(1);
 
     // ── Fee value ───────────────────────────────────────────────────────────────────────────
+
+    /// <summary>P2-HONEST-22: the fee VALUE, pinned in literals — deliberately never routed through
+    /// <see cref="CampHandlers.SupplyFee"/> itself, so this is the one test in the family that would
+    /// actually catch this unit's own refactor quietly retuning what it was only meant to unify (a
+    /// changed <see cref="CampHandlers.SupplyFeePerFloor"/> moves every OTHER assertion in this file
+    /// with it, because they all derive from the same call).</summary>
+    [Theory]
+    [InlineData(0, 6)]
+    [InlineData(1, 9)]
+    [InlineData(2, 12)]
+    [InlineData(3, 15)]
+    [InlineData(4, 18)]
+    public void SupplyFee_ValuePinnedAcrossCheckpointFloors(int checkpointFloor, int expectedFee)
+    {
+        Assert.Equal(expectedFee, CampHandlers.SupplyFee(checkpointFloor));
+    }
 
     [Fact]
     public void DeliveryFee_AtFloorOneCamp_IsNineGold_AbovePinnedSalvePrice()
@@ -87,7 +107,7 @@ public class CampHandlersTests
         var camp = ParkedAtCamp(kernel, World(new[] { Strong(1) }, Catalog(salve), seed: 6));
         var tick = kernel.Tick(camp, ImmutableList.Create<PlayerAction>(new SendSupplyAction(new HeroId(1), salve.Id)));
         var delivery = Assert.Single(tick.Events.OfType<SupplyDelivered>());
-        Assert.Equal(FloorOneFee, delivery.Fee);
+        Assert.Equal(9, delivery.Fee); // literal, not FloorOneFee — see SupplyFee_ValuePinnedAcrossCheckpointFloors
         Assert.True(delivery.Fee > 8, "the runner fee must sit above the 8g salve sale price (rationing tension)");
     }
 

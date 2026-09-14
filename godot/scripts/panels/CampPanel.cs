@@ -2,6 +2,7 @@ using System;
 using System.Collections.Immutable;
 using System.Linq;
 using GameSim.Contracts;
+using GameSim.Expedition;
 using GameSim.Venues;
 using Godot;
 using GodotClient.Ui;
@@ -56,21 +57,16 @@ namespace GodotClient.Panels;
 /// </summary>
 public partial class CampPanel : SimPanel
 {
-    // Runner fee mirror. Source of truth: sim/GameSim/Expedition/CampHandlers.cs —
-    // SupplyFee(checkpoint) = SupplyFeeBase (6) + SupplyFeePerFloor (3) * checkpointFloor
-    // (9g at the v1 floor-1 camp, deliberately above the 8g salve sale price). The consts are
-    // `internal` and GameSim exposes no InternalsVisibleTo to GodotClient, so the formula is
-    // mirrored here (not referenced) — the same duplication CampHandlersTests uses for its 9g pin.
-    private const int SupplyFeeBase = 6;
-    private const int SupplyFeePerFloor = 3;
-
     /// <summary>U17 (Wave 4, "signal retreat"): a camped hero at or below this hp% is "at flee
     /// threshold" — the moment the Recall button reframes into a dramatic, urgent interrupt.
     /// Mirrors <c>MineWatch.LowHpFraction</c> (0.4) in whole-percent terms, so the winch-house
     /// slate and the mine strip agree on what "fading" looks like.</summary>
     private const int FleeThresholdPercent = 40;
 
-    private static int SupplyFee(int checkpointFloor) => SupplyFeeBase + SupplyFeePerFloor * checkpointFloor;
+    // Runner fee (P2-HONEST-22): the slate quotes CampHandlers.SupplyFee directly — the formula's
+    // ONE home is sim/GameSim/Expedition/CampHandlers.cs. This used to be a hand-typed copy of the
+    // sim's two fee constants and its arithmetic, kept here only because the source was `internal`;
+    // it is public now, so the copy is deleted rather than kept in sync by hand.
 
     private Label? _title;
     private Label? _narratorLine;
@@ -188,7 +184,7 @@ public partial class CampPanel : SimPanel
     private void RenderParty(GameState state, InFlightExpedition party, ImmutableList<Item> held)
     {
         var lead = party.Party[0];
-        var fee = SupplyFee(party.CheckpointFloor);
+        var fee = CampHandlers.SupplyFee(party.CheckpointFloor);
 
         var card = Card($"CampPartyCard_{lead.Value}");
         _parties!.AddChild(card);

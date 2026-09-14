@@ -334,7 +334,7 @@ public class CampProvisioningBalanceTests
                 .Select(id => (HeroId?)id)
                 .FirstOrDefault();
 
-            var fee = 6 + 3 * inFlight.CheckpointFloor; // CampHandlers.SupplyFee (internal const mirror)
+            var fee = CampHandlers.SupplyFee(inFlight.CheckpointFloor); // P2-HONEST-22: was a hand-typed mirror, now calls the sim's own public formula
             if (target is { } to && held.Count > 0 && gold >= fee)
             {
                 gold -= fee;
