@@ -30,9 +30,13 @@ namespace GodotClient.Panels;
 public partial class LedgerModal : SimPanel
 {
     /// <summary>
-    /// Collapsed retelling shows the pride payload only — the attribution beats plus the Halt
-    /// closer — so it always fits the modal; the "Full tale" toggle expands to the whole retelling
-    /// (departure + every floor's tension beats). A fixed cap, not a per-run count (V7b req 2).
+    /// The retelling shows the pride payload only — the attribution beats plus the Halt closer —
+    /// so it always fits the modal without scrolling forever. A fixed cap, not a per-run count
+    /// (V7b req 2). P2-PROOF-07 deleted the "Full tale" toggle that used to expand this to the
+    /// whole retelling (departure + every floor's tension beats): <see cref="TellingPanel"/>'s
+    /// per-beat counterfactual replay is the proof surface now, and it stages every beat type the
+    /// resolver can actually emit (<see cref="TellingPanel.IsAvailable"/>) — the flat-prose escape
+    /// hatch had nothing left to prove that the Telling didn't already prove better.
     /// </summary>
     public const int MaxCollapsedTaleLines = 8;
 
@@ -72,7 +76,6 @@ public partial class LedgerModal : SimPanel
     /// added after this node.</summary>
     private HFlowContainer? _cardGrid;
     private Label? _feedback;
-    private bool _showFullTale;
 
     /// <summary>U7 (loop-legibility plan, R10): the Evening Ledger's own one-line tutorial
     /// explainer, non-null only for the render that follows the reveal that first supplied it
@@ -209,7 +212,6 @@ public partial class LedgerModal : SimPanel
     {
         EnsureBuilt();
         ShownDay = day;
-        _showFullTale = false; // each reveal opens on the compact pride payload
         _tutorialTip = tutorialTip;
         _firstLossBlock = firstLossBlock;
         _narratorLine = null; // MainUi sets this AFTER this call returns — see the field's own doc
@@ -886,8 +888,10 @@ public partial class LedgerModal : SimPanel
     /// (snapshotted in <see cref="SimAdapter.LastRevealedExpeditions"/> before the reveal tick
     /// cleared it), retell it with the CLI's inputs — party heroes + items from state, the campaign
     /// identity (<c>state.Rng.Inc</c>, KTD3), the shown day for the deterministic variant pick.
-    /// Collapsed shows the pride payload only (attribution ★ beats + the Halt closer); "Full tale"
-    /// expands to the whole retelling. Plain Labels only, so <c>RenderedText</c> reads every line.
+    /// <see cref="CollapsedTale"/> keeps the pride payload only (attribution ★ beats + the Halt
+    /// closer) — P2-PROOF-07 deleted the "Full tale" escape hatch to the whole retelling once
+    /// <see cref="TellingPanel"/>'s per-beat counterfactual replay took over the proof this toggle
+    /// used to stand in for. Plain Labels only, so <c>RenderedText</c> reads every line.
     /// </summary>
     private void RenderRetelling(int day)
     {
@@ -901,7 +905,6 @@ public partial class LedgerModal : SimPanel
         var state = Adapter.CurrentState;
         AddHeader(_cards!, "── THE RETELLING ──").Name = "RetellingHeader";
 
-        var anyLines = false;
         foreach (var result in Adapter.LastRevealedExpeditions)
         {
             var party = PartyHeroes(state, result.Party);
@@ -914,7 +917,7 @@ public partial class LedgerModal : SimPanel
             var tale = ExpeditionNarrator.Retell(
                 result, party, state.Items, NarratorPack.Pack, state.Rng.Inc, day);
 
-            foreach (var line in _showFullTale ? tale : CollapsedTale(tale))
+            foreach (var line in CollapsedTale(tale))
             {
                 var label = AddLabel(_cards!, line);
                 if (line.StartsWith('★'))
@@ -922,20 +925,7 @@ public partial class LedgerModal : SimPanel
                     // Attribution beats are the spine of the game (R11) — pride, highlighted.
                     label.AddThemeColorOverride("font_color", new Color(1f, 0.85f, 0.2f));
                 }
-
-                anyLines = true;
             }
-        }
-
-        if (anyLines)
-        {
-            AddButton(
-                _cards!, "ToggleTale", _showFullTale ? "Show less" : "Full tale", Verdict.Ok,
-                () =>
-                {
-                    _showFullTale = !_showFullTale;
-                    RenderCards(ShownDay);
-                });
         }
     }
 

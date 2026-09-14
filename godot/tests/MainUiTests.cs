@@ -409,9 +409,8 @@ public class MainUiTests
             var state = ui.Adapter.CurrentState;
             var ledgerText = RenderedText(ui.Ledger);
 
-            // The retelling section rendered, with a Full-tale expand toggle (V7b req 2).
+            // The retelling section rendered (V7b req 2).
             AssertThat(ledgerText).Contains("THE RETELLING");
-            AssertThat(ledgerText).Contains("Full tale");
 
             // Each revealed expedition's Halt closer — the pride payload — is on the ledger,
             // rendered with the same ExpeditionNarrator call shape the CLI uses.
@@ -423,6 +422,16 @@ public class MainUiTests
                     result.Halt, party, result.DeepestFloorCleared, result.TargetFloor,
                     NarratorPack.Pack, state.Rng.Inc, ui.Ledger.ShownDay);
                 AssertThat(ledgerText).Contains(closer);
+
+                // P2-PROOF-07 (negative control): deleting the "Full tale" toggle must not also
+                // delete the OTHER half of the pride payload — every proven beat still gets its
+                // ★ line (ExpeditionNarrator.BeatLine's own format), collapsed-view or not.
+                var heroesById = party.ToDictionary(h => h.Id.Value);
+                foreach (var beat in result.Beats)
+                {
+                    var heroName = heroesById.TryGetValue(beat.Hero.Value, out var hero) ? hero.Name : beat.Hero.ToString();
+                    AssertThat(ledgerText).Contains($"★ {heroName} — {beat.Detail}");
+                }
             }
         }
         finally
@@ -440,39 +449,6 @@ public class MainUiTests
         AssertThat(first.Length > 0).IsTrue();
         AssertThat(first).IsEqual(second);
         AssertThat(first).Contains("THE RETELLING");
-    }
-
-    [TestCase]
-    public void EveningLedger_FullTaleToggle_ExpandsBeyondPridePayload()
-    {
-        var ui = MountMainUi();
-        try
-        {
-            AdvanceDay(ui);
-            ui._Process(MainUi.ReturnRitualDelaySeconds + 0.1);
-            AssertThat(ui.Ledger.Visible).IsTrue();
-
-            var revealed = ui.Adapter.LastRevealedExpeditions;
-            AssertThat(revealed.IsEmpty).IsFalse();
-            var state = ui.Adapter.CurrentState;
-            var first = revealed[0];
-            var departure = ExpeditionNarrator.Departure(
-                PartyOf(state, first.Party), first.TargetFloor,
-                NarratorPack.Pack, state.Rng.Inc, ui.Ledger.ShownDay);
-
-            var collapsed = RenderedText(ui.Ledger);
-
-            // Expand: the full tale adds the departure + every floor's tension beats.
-            Press(ui.Ledger, "ToggleTale");
-            var expanded = RenderedText(ui.Ledger);
-
-            AssertThat(expanded.Length > collapsed.Length).IsTrue();
-            AssertThat(expanded).Contains(departure);
-        }
-        finally
-        {
-            Unmount(ui);
-        }
     }
 
     // ── LW6: drawer-swap fade (was the tab-switch fade pre-U21) ─────────────────────────────────
