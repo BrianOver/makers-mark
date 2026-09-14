@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Linq;
 using Godot;
 
 namespace GodotClient.Town2d;
@@ -533,6 +535,56 @@ public partial class Building2D : Node2D
             ShadowOffset = new Vector2(0f, 1.5f),
         },
     };
+
+    /// <summary>Extra clearance between two nameplates <see cref="ResolveNameplateStagger"/>
+    /// stacks into separate rows — beyond their own height, so the split itself doesn't read as a
+    /// fresh near-miss.</summary>
+    private const float NameplateStaggerGapPx = 2f;
+
+    /// <summary>
+    /// U-VISFIX2 (owner GPU capture of the town: two townsfolk standing near each other rendered
+    /// overlapping nameplates as unreadable mush — "Tor Kael" where the pixels are actually two
+    /// separate names stamped on top of one another). Presentation-only fix: this never moves an
+    /// owner (their <paramref name="owners"/> positions are the sim's/layout's, per this class's
+    /// own Y-sort precedent for why a nametag is a render concern, not a placement one) — it only
+    /// returns an ADDITIONAL vertical nudge per owner, in the SAME order as <paramref
+    /// name="owners"/>, so that any two whose label rects would otherwise overlap end up stacked
+    /// into separate rows instead of drawing on top of each other.
+    ///
+    /// <para>Processes owners ordered by world X (tie-broken by list position, for a stable,
+    /// non-flickering result frame to frame) and greedily nudges each one down past every
+    /// already-placed rect it would collide with — an owner never gets pushed by one that comes
+    /// later in this order, so two names in a small cluster settle into a short, readable ladder
+    /// rather than oscillating.</para>
+    /// </summary>
+    /// <param name="owners">Each owner's current world position, its nameplate's own UNMODIFIED
+    /// local position (<see cref="BuildLabel"/>'s fixed formula — never this method's own previous
+    /// output, or the nudge would compound frame over frame), and the label's size.</param>
+    /// <returns>One additional local Y offset per owner, same order/length as <paramref
+    /// name="owners"/> — 0 for an owner that never collided with anything.</returns>
+    public static IReadOnlyList<float> ResolveNameplateStagger(
+        IReadOnlyList<(Vector2 GlobalPosition, Vector2 LabelLocalPosition, Vector2 LabelSize)> owners)
+    {
+        var offsets = new float[owners.Count];
+        var placed = new List<Rect2>(owners.Count);
+
+        foreach (var i in Enumerable.Range(0, owners.Count).OrderBy(i => owners[i].GlobalPosition.X))
+        {
+            var (globalPosition, localPosition, size) = owners[i];
+            var origin = globalPosition + localPosition;
+            var rect = new Rect2(origin, size);
+
+            while (placed.Any(p => p.Intersects(rect)))
+            {
+                offsets[i] -= size.Y + NameplateStaggerGapPx;
+                rect = new Rect2(origin + new Vector2(0f, offsets[i]), size);
+            }
+
+            placed.Add(rect);
+        }
+
+        return offsets;
+    }
 
     /// <summary>One tile below the sprite's bottom edge (world +Y) — far enough that the
     /// footprint's own collision never contests whoever is standing there (mirrors

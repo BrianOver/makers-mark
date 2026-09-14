@@ -1,5 +1,6 @@
 #if GDUNIT_TESTS
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using GameSim;
@@ -79,6 +80,186 @@ public class HudBoundsTests
                 AssertThat(rect.End.Y)
                     .OverrideFailureMessage($"{name} bottom edge {rect.End.Y} > viewport height {viewport.Y}")
                     .IsLessEqual(viewport.Y);
+            }
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>
+    /// visfix3 (GPU-capture defect pass, 2026-09-13): the owner's own GPU captures showed the HUD's
+    /// "Act" chip reading "Act |" — the roman-numeral value sitting right against the chip's own
+    /// right border. Measured live against this build (a throwaway pixel/geometry probe, since
+    /// removed): the chip's <see cref="PanelContainer"/> was never squeezed — it rendered at
+    /// EXACTLY its own <see cref="Control.GetCombinedMinimumSize"/>, because that is what Godot's
+    /// container layout always gives a themed chip that no ancestor is externally constraining. A
+    /// chip can only ever be LITERALLY clipped by its container the way <c>ToastWrap</c>'s original
+    /// bug worked: a fixed-size wrapper (or some other external squeeze) forcing the panel smaller
+    /// than its own content demands. That is the general, mechanical version of "clipped by its
+    /// container" — checked here for every chip in the HUD's stat row, by property rather than by
+    /// name, so the next chip <c>MainUi.RefreshStatus</c> grows is covered the day it lands.
+    /// </summary>
+    [TestCase]
+    public async Task EveryHudStatChip_IsNeverSqueezedBelowItsOwnMinimumSize()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            // Same "chips fully mount after the first tick" precondition as
+            // AfterFirstTick_CoreHudControls_StayInsideViewport above.
+            PressEnabled(ui, "AdvancePhase");
+            await SettleLayout(ui);
+
+            var statChips = Find<HBoxContainer>(ui, "StatChips");
+            var chips = ScreenObservation.Descendants(statChips)
+                .OfType<PanelContainer>()
+                .Where(p => p.GetThemeStylebox("panel") is StyleBoxFlat)
+                .ToList();
+
+            // Negative control: the sweep actually found themed chips to examine.
+            AssertThat(chips.Count)
+                .OverrideFailureMessage("no themed stat chip was found under StatChips -- this test would pass vacuously")
+                .IsGreater(0);
+
+            var squeezed = chips
+                .Where(chip => chip.Size.X < chip.GetCombinedMinimumSize().X - 0.5f ||
+                               chip.Size.Y < chip.GetCombinedMinimumSize().Y - 0.5f)
+                .Select(chip => $"{chip.Name} rendered at {chip.Size} but its own content needs {chip.GetCombinedMinimumSize()}")
+                .ToList();
+
+            AssertThat(squeezed)
+                .OverrideFailureMessage(
+                    "A HUD stat chip is rendering smaller than its own content demands -- exactly the " +
+                    "ToastWrap-class bug (an external wrapper/CustomMinimumSize squeezing a themed " +
+                    "panel below what it needs):\n  " + string.Join("\n  ", squeezed))
+                .IsEmpty();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>
+    /// The general guard above cannot see the Act chip's actual defect — Godot's layout never
+    /// squeezed it; it rendered at exactly its own (correctly-computed) minimum, with zero slack
+    /// between the roman-numeral glyph and the chip's own border pixel. <c>UiKit</c>'s shared
+    /// compact-chip margin (4px, its private <c>CompactChipMarginX</c>) reads fine for a
+    /// multi-character value — the Heroes chip's "6/6" sits at that same 4px and is legible — but
+    /// reads as touching for a single bare stroke like "I". <c>MainUi.RefreshStatus</c> now gives
+    /// this ONE chip 2px more on each side (its own comment states the measured derivation); this
+    /// pins that specific fix as a value regression, so a future "simplify this override away"
+    /// pass fails immediately instead of waiting for the next GPU capture to notice.
+    /// </summary>
+    [TestCase]
+    public async Task ActChip_KeepsExtraMarginBeyondTheSharedCompactChipFloor()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            await SettleLayout(ui);
+
+            var actChip = Find<PanelContainer>(ui, "ActChip");
+            var style = actChip.GetThemeStylebox("panel") as StyleBoxFlat;
+            AssertThat(style).OverrideFailureMessage("ActChip has no themed panel stylebox to measure").IsNotNull();
+
+            const float SharedCompactChipMarginPx = 4f; // UiKit's private CompactChipMarginX -- every other compact chip's floor
+            AssertThat(style!.ContentMarginLeft)
+                .OverrideFailureMessage($"ActChip's left content margin fell to {style.ContentMarginLeft} -- must stay above the shared {SharedCompactChipMarginPx}px compact floor")
+                .IsGreater(SharedCompactChipMarginPx);
+            AssertThat(style.ContentMarginRight)
+                .OverrideFailureMessage($"ActChip's right content margin fell to {style.ContentMarginRight} -- must stay above the shared {SharedCompactChipMarginPx}px compact floor")
+                .IsGreater(SharedCompactChipMarginPx);
+
+            // Negative control: the chip still renders its value text at all.
+            var value = Find<Label>(actChip, "Value");
+            AssertThat(value.Text).OverrideFailureMessage("ActChip's value label is empty -- this test would pass vacuously").IsNotEmpty();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>
+    /// visfix3: the owner's captures showed "Tomorrow at the Counter" sitting at the extreme
+    /// bottom-left of the window. Pins the geometry side of that finding at the project's smallest
+    /// supported window: the always-available companion toggle, AND the card it expands into, must
+    /// stay fully on screen — a regression here (a future Margin/ChipHeight/CardHeight change)
+    /// would put the companion partially off the window for real, not just read that way.
+    /// </summary>
+    [TestCase]
+    public async Task CompanionDock_ChipAndExpandedCard_StayFullyInsideTheSmallestSupportedWindow()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            AssertThat(ui.GetViewportRect().Size)
+                .OverrideFailureMessage("this test pins the SMALLEST supported window (project.godot) -- update the fixture if that setting changes")
+                .IsEqual(new Vector2(1152f, 648f));
+
+            await SettleLayout(ui);
+            var window = new Rect2(Vector2.Zero, ui.GetViewportRect().Size);
+
+            var chip = Find<Button>(ui.Docket, "DocketToggle");
+            AssertThat(chip.Visible)
+                .OverrideFailureMessage("the companion toggle never renders -- this test would pass vacuously")
+                .IsTrue();
+            AssertThat(window.Encloses(chip.GetGlobalRect()))
+                .OverrideFailureMessage($"DocketToggle at {chip.GetGlobalRect()} is not fully inside the {window.Size} window")
+                .IsTrue();
+
+            // Negative control: the card actually appears when the player opens it, not just
+            // "the collapsed chip happens to fit" — and it too stays fully on screen.
+            ui.Docket.Open();
+            await SettleLayout(ui);
+
+            var card = Find<PanelContainer>(ui.Docket, "DocketCard");
+            AssertThat(card.Visible)
+                .OverrideFailureMessage("the companion card never opens -- this test would pass vacuously")
+                .IsTrue();
+            AssertThat(window.Encloses(card.GetGlobalRect()))
+                .OverrideFailureMessage($"DocketCard at {card.GetGlobalRect()} is not fully inside the {window.Size} window")
+                .IsTrue();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>
+    /// The geometry guard above cannot see the docket toggle's actual defect: Godot's layout never
+    /// moved this chip off screen, it painted transparently where it should have painted solid.
+    /// Measured live with three A/B captures (see <c>CompanionDock.Build</c>'s own comment): this
+    /// chip is the one control positioned inside a <c>CanvasLayer</c> right at the window's bottom
+    /// edge, and at that Y, Godot's <see cref="StyleBoxFlat"/> corner-radius anti-aliasing bled the
+    /// world through its "normal" background — the identical Button painted solid everywhere else
+    /// on screen, and a bare <see cref="ColorRect"/> at the SAME bottom-edge rect painted solid too.
+    /// Pinned directly here so a future "clean up this weird override" pass fails loudly instead of
+    /// silently reintroducing the bleed.
+    /// </summary>
+    [TestCase]
+    public async Task DocketToggle_KeepsAntiAliasingDisabled_SoItsBackgroundStaysOpaque()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            await SettleLayout(ui);
+            var chip = Find<Button>(ui.Docket, "DocketToggle");
+
+            foreach (var key in new[] { "normal", "hover", "pressed", "disabled", "focus" })
+            {
+                var style = chip.GetThemeStylebox(key) as StyleBoxFlat;
+                AssertThat(style).OverrideFailureMessage($"DocketToggle's '{key}' stylebox is not a StyleBoxFlat").IsNotNull();
+                AssertThat(style!.AntiAliasing)
+                    .OverrideFailureMessage(
+                        $"DocketToggle's '{key}' stylebox has AntiAliasing re-enabled -- this chip sits at " +
+                        "the window's bottom edge, where that bleeds the world through its background " +
+                        "(see CompanionDock.Build's own comment)")
+                    .IsFalse();
             }
         }
         finally

@@ -5,6 +5,8 @@ using System.IO;
 using System.Linq;
 using GameSim.Contracts;
 using GameSim.Expedition;
+using GameSim.Flavor;
+using GameSim.Flavor.Packs;
 using GameSim.Kernel;
 using GameSim.Venues;
 using GdUnit4;
@@ -231,6 +233,23 @@ public class TellingPanelTests
     public void LethalSave_VerdictStage_StampsAndPrintsTheMarginNumbers()
     {
         var (state, result, beatEvent) = LethalSaveNight();
+        var beat = result.Beats.Single();
+        var script = TellingQuery.Build(result, beat, state.Items, VenueRegistry.Mine);
+        var payload = (LethalSavePayload)script.Payload;
+
+        // P2-PROOF-06: VerdictLines now PICKS among several phrasings (TellingPackTests proves the
+        // pick is deterministic and every phrasing reachable) -- so the expected text is derived
+        // the same way TellingQuery's own numbers are elsewhere in this file, from the SAME
+        // computation the panel itself runs, never a hand-typed constant that only matched the one
+        // phrasing this fixture used to always render before this unit.
+        var (expectedHeadline, expectedDetail) = ExpectedVerdictCopy(
+            TellingPack.LethalSave,
+            FlavorEngine.Slots(
+                ("item", "Emberbite"), ("hero", "Torvald"), ("floor", "3"),
+                ("rawBlow", Digits(payload.RawBlow)), ("itemDefense", Digits(payload.ItemDefenseStat)),
+                ("heroHpAfter", Digits(payload.HeroHpAfterWithItem))),
+            state, beatEvent);
+
         var panel = new TellingPanel();
         try
         {
@@ -240,11 +259,8 @@ public class TellingPanelTests
             AssertThat(panel.CurrentStage).IsEqual(TellingPanel.TellingStage.Verdict);
             var text = RenderedText(panel);
             AssertThat(text).Contains("MAKER'S MARK");
-            AssertThat(text).Contains("Emberbite turned the killing blow on floor 3. Torvald lives.");
-            // The payload's own named margin numbers (RawBlow 24, ItemDefenseStat 6, HeroHpAfterWithItem 12).
-            AssertThat(text).Contains("The blow read 24");
-            AssertThat(text).Contains("Emberbite drank 6 of it");
-            AssertThat(text).Contains("Torvald stood at 12");
+            AssertThat(text).Contains(expectedHeadline);
+            AssertThat(text).Contains(expectedDetail);
             AssertThat(Find<Button>(panel, "TellingAdvance").Visible).IsFalse(); // terminal -- Close only
         }
         finally
@@ -253,6 +269,23 @@ public class TellingPanelTests
             MainUi.DrainDetachedPanelsForTests();
         }
     }
+
+    /// <summary>
+    /// Ground truth for a shape's Verdict copy, computed the exact same way
+    /// <see cref="TellingPanel.PickVerdictLine"/> does in production (campaign identity =
+    /// <c>state.Rng.Inc</c>, variant pick keyed on the beat's own stamped event id) -- so these
+    /// tests assert the panel is a faithful renderer of whatever the PACK decided, never a
+    /// hand-typed guess at which of several phrasings got picked.
+    /// </summary>
+    private static (string Headline, string Detail) ExpectedVerdictCopy(
+        string key, IReadOnlyDictionary<string, string> slots, GameState state, AttributionBeatEvent beatEvent)
+    {
+        var rendered = FlavorEngine.Render(TellingPack.Pack, key, slots, state.Rng.Inc, unchecked((ulong)beatEvent.Id.Value));
+        var parts = rendered.Split(TellingPack.Delim, 2);
+        return (parts[0], parts[1]);
+    }
+
+    private static string Digits(int value) => value.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
     // ── Shared fixtures for the no-credit shapes (also driven reflectively below) ───────────────
 
@@ -471,6 +504,13 @@ public class TellingPanelTests
             var (state, result, beatEvent, beat, items) = ProvisionedNight();
             var script = TellingQuery.Build(result, beat, items, VenueRegistry.Mine);
             var payload = (ProvisionedPayload)script.Payload;
+            var (expectedHeadline, expectedDetail) = ExpectedVerdictCopy(
+                TellingPack.Provisioned,
+                FlavorEngine.Slots(
+                    ("item", "Field Salve"), ("hero", "Elowen"), ("floor", "3"),
+                    ("quaffRound", Digits(payload.QuaffRound)), ("hpBefore", Digits(payload.HpBeforeQuaff)),
+                    ("hpAfter", Digits(payload.HpAfterQuaff)), ("naiveHp", Digits(payload.NaiveHpWithoutHeal))),
+                state, beatEvent);
 
             var panel = new TellingPanel();
             try
@@ -480,9 +520,12 @@ public class TellingPanelTests
 
                 AssertThat(panel.CurrentStage).IsEqual(TellingPanel.TellingStage.Verdict);
                 var text = RenderedText(panel);
-                AssertThat(text).Contains("but it would have run the same without it");
+                AssertThat(text).Contains(expectedHeadline);
+                AssertThat(text).Contains(expectedDetail);
+                // Every Provisioned phrasing says this out loud -- not just the one this fixture
+                // happens to pick (TellingPackTests' NoCreditShapes_EveryPhrasing_SaysNoCreditTaken
+                // sweeps the whole pack; this checks the real panel says it too).
                 AssertThat(text).Contains("No credit taken");
-                AssertThat(text).Contains($"{payload.NaiveHpWithoutHeal}");
                 AssertThat(text).NotContains("MAKER'S MARK"); // no stamp ceremony for the no-credit case
             }
             finally
@@ -498,6 +541,13 @@ public class TellingPanelTests
             var script = TellingQuery.Build(result, beat, items, VenueRegistry.Mine);
             var payload = (KillingBlowPayload)script.Payload;
             AssertThat(script.CounterfactualTail.IsEmpty).IsTrue(); // no second pass for this shape
+            var (expectedHeadline, expectedDetail) = ExpectedVerdictCopy(
+                TellingPack.KillingBlow,
+                FlavorEngine.Slots(
+                    ("item", "Fine Shortsword"), ("hero", "Brannis"), ("floor", "3"),
+                    ("heroRoll", Digits(payload.HeroRoll)), ("dealtWithout", Digits(payload.DamageDealtWithoutItem)),
+                    ("dealtWith", Digits(payload.DamageDealtWithItem)), ("monsterHpWithout", Digits(payload.MonsterHpWithoutItem))),
+                state, beatEvent);
 
             var panel = new TellingPanel();
             try
@@ -507,8 +557,8 @@ public class TellingPanelTests
 
                 AssertThat(panel.CurrentStage).IsEqual(TellingPanel.TellingStage.Verdict);
                 var text = RenderedText(panel);
-                AssertThat(text).Contains("There the record ends. No one rolled what comes next.");
-                AssertThat(text).Contains($"the beast still stands at {payload.MonsterHpWithoutItem}");
+                AssertThat(text).Contains(expectedHeadline);
+                AssertThat(text).Contains(expectedDetail);
                 AssertThat(text).Contains("MAKER'S MARK"); // a recorded kill still earns the stamp
             }
             finally
@@ -526,6 +576,12 @@ public class TellingPanelTests
             var script = TellingQuery.Build(result, beat, items, VenueRegistry.Mine);
             AssertThat(script.Shape).IsEqual(TellingShape.MarginOnly); // the fixture actually hits the downgrade
             var payload = (MarginOnlyPayload)script.Payload;
+            var (expectedHeadline, expectedDetail) = ExpectedVerdictCopy(
+                TellingPack.MarginOnly,
+                FlavorEngine.Slots(
+                    ("item", "Field Salve"), ("hero", "Selwyn"),
+                    ("minHp", Digits(payload.MinHpReached)), ("minHpRound", Digits(payload.MinHpRound))),
+                state, beatEvent);
 
             var panel = new TellingPanel();
             try
@@ -535,9 +591,9 @@ public class TellingPanelTests
 
                 AssertThat(panel.CurrentStage).IsEqual(TellingPanel.TellingStage.Verdict);
                 var text = RenderedText(panel);
-                AssertThat(text).Contains("the strict replay says otherwise");
+                AssertThat(text).Contains(expectedHeadline);
+                AssertThat(text).Contains(expectedDetail);
                 AssertThat(text).Contains("No credit taken");
-                AssertThat(text).Contains($"{payload.MinHpReached}");
                 AssertThat(text).NotContains("MAKER'S MARK");
             }
             finally
@@ -545,6 +601,69 @@ public class TellingPanelTests
                 panel.Free();
                 MainUi.DrainDetachedPanelsForTests();
             }
+        }
+    }
+
+    // ── The copy pack: deterministic pick (P2-PROOF-06) ─────────────────────────────────────────
+
+    /// <summary>
+    /// The determinism proof that matters most (CLAUDE.md hard rule 5): the SAME recorded fight
+    /// must read as the SAME phrasing, every time it is opened -- a brand-new panel instance
+    /// (a re-mount, as if the player closed the Ledger and asked again), and the SAME instance
+    /// re-shown from scratch. Never <see cref="System.Random"/>, never a counter tied to how many
+    /// times the panel has been opened -- a re-opened Telling that changed its own wording would
+    /// make the player doubt the proof itself.
+    /// </summary>
+    [TestCase]
+    public void Verdict_SameRecordedFight_RendersIdenticalPhrasing_AcrossARemountAndAcrossReopens()
+    {
+        var (state, result, beatEvent) = LethalSaveNight();
+
+        var first = new TellingPanel();
+        string firstHeadline, firstDetail;
+        try
+        {
+            first.ShowFor(state, result, beatEvent);
+            first.Dev_Advance(6);
+            firstHeadline = Find<Label>(first, "TellingVerdictHeadline").Text;
+            firstDetail = Find<Label>(first, "TellingVerdictDetail").Text;
+        }
+        finally
+        {
+            first.Free();
+            MainUi.DrainDetachedPanelsForTests();
+        }
+
+        // Re-mount: a brand-new panel instance, the SAME recorded state/result/beatEvent.
+        var second = new TellingPanel();
+        try
+        {
+            second.ShowFor(state, result, beatEvent);
+            second.Dev_Advance(6);
+            AssertThat(Find<Label>(second, "TellingVerdictHeadline").Text).IsEqual(firstHeadline);
+            AssertThat(Find<Label>(second, "TellingVerdictDetail").Text).IsEqual(firstDetail);
+        }
+        finally
+        {
+            second.Free();
+            MainUi.DrainDetachedPanelsForTests();
+        }
+
+        // Same instance, re-opened on the same night a second time (no fresh construction at all).
+        var third = new TellingPanel();
+        try
+        {
+            third.ShowFor(state, result, beatEvent);
+            third.Dev_Advance(6);
+            third.ShowFor(state, result, beatEvent); // re-open the SAME night from scratch
+            third.Dev_Advance(6);
+            AssertThat(Find<Label>(third, "TellingVerdictHeadline").Text).IsEqual(firstHeadline);
+            AssertThat(Find<Label>(third, "TellingVerdictDetail").Text).IsEqual(firstDetail);
+        }
+        finally
+        {
+            third.Free();
+            MainUi.DrainDetachedPanelsForTests();
         }
     }
 

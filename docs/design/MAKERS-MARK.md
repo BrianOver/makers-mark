@@ -2454,9 +2454,8 @@ changes when it is done. A regression pin now holds that.
 | U28 | The day's slots, and what they don't cost | `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/MainUi.cs` | — |
 | U29 | The voice budget arms instead of queueing | `godot/scripts/ui/MentorBanner.cs`, `godot/scripts/ui/TutorialFlow.cs` | U10 |
 | U30 | The proof gets a row | `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/panels/LedgerModal.cs` | U21, U29 |
-| U31 | The loss gets a voice | `godot/scripts/ui/TutorialFlow.cs` | U29 |
 | U32 | The memory gets a row, and graduation is event-shaped | `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/panels/LegendsWall.cs` | U21, U30 |
-| U33 | Her five arc lines | `godot/scripts/ui/MentorVoice.cs`, `godot/scripts/ui/TutorialFlow.cs` | U29, U30, U31, U32 |
+| U33 | Her graduation goodbye (zero code today), and re-ranking the cold-open + greedy-rule lines from Lesson to Act (4 of 6 lines already shipped; proof and death nights are already right) | `godot/scripts/ui/MentorVoice.cs`, `godot/scripts/ui/TutorialFlow.cs` | U29, U30, U32 |
 | U34 | She says what she's seen | `godot/scripts/ui/MentorVoice.cs` | U4, U33 |
 | U35 | She leaves | `godot/scripts/town2d/InteriorLayout2D.cs`, `godot/scripts/ui/MentorVoice.cs` | U32, U33 |
 | U36 | She has a body and a face | `art/specs/`, `godot/scripts/ui/MentorBanner.cs` | U33 |
@@ -2812,19 +2811,6 @@ changes when it is done. A regression pin now holds that.
 - Test scenarios: armed on the first beat only; `Done` on the beat card being opened; `Skipped` at window end;
   the anchor points at the way in while the ledger is closed; the copy names no hero.
 - Verification: a player is walked to the beat card on the night it lands.
-
-#### U31. The loss gets a voice
-
-- Goal: the dormant loss act is anchored, bounded and honest, and voiced by nobody.
-- Requirements: R14
-- Files: `godot/scripts/ui/TutorialFlow.cs`
-- Approach: give the act its row and keep the mechanism copy unattributed in the ledger — permadeath, and the
-  rite is the player's if they want it. That copy also needs rewriting: "this is permadeath: the roster
-  refills" sits on the most solemn beat in the game. If the fallen carried the player's work, the copy names
-  the name the player was told to remember, per KTD5.
-- Test scenarios: the act arms on the first death; the row is visible one night and one day then retires;
-  `Done` on the rite and `Skipped` otherwise; it still fires after graduation; the copy names no survival math.
-- Verification: the first death produces a row, and the roster-refills line is gone.
 
 #### U32. The memory gets a row, and graduation is event-shaped
 
@@ -4623,23 +4609,33 @@ name (§11.6 rule 4).
 | P2-SCREEN-17 | The save-replace press names the day it destroys | `godot/scripts/NewGameSelect.cs` | — | [G] |
 | ⚑ P2-SCREEN-18 | The muster names what the full slots already hold, not only the gaps | `sim/GameSim/Heroes/RaidForecast.cs`, `godot/scripts/panels/RaidForecastBoard.cs` | — | [S] |
 | ⚑ P2-SCREEN-20 | The day's thread survives being read late (research M5) | `godot/scripts/ui/AdventureTicker.cs`, `godot/scripts/panels/LegendsWall.cs` | P2-MEMORY-12 | [G] |
-| P2-ONBOARD-09 | Bryn's redemption beat keys on the band that pays, not the chip that doesn't | `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/panels/CounterPanel.cs` | — | [G] |
+| ⚑ P2-SCREEN-21 | The room you stand in stops being a sliver when a drawer is open | `godot/scripts/town2d/Town2D.cs`, `godot/scripts/town2d/InteriorLayout2D.cs` | — | [G] |
+| ⚑ P2-SCREEN-22 | The interact prompt anchors to what it names, not to the bottom of the screen | `godot/scripts/MainUi.cs` | — | [G] |
+| ⚑ P2-SCREEN-23 | The forge's Day-1 card stops reading as four error messages | `godot/scripts/panels/ForgePanel.cs` | — | [G] |
+| ⚑ P2-SCREEN-24 | The drawer header's icon tile stops being clipped by its own banner | `godot/scripts/ui/UiKit.cs` | — | [G] |
+| ⚑ P2-SCREEN-25 | One phase vocabulary — the HUD and the tab strip stop disagreeing in the same frame | `godot/scripts/ui/PhaseVocab.cs`, `godot/scripts/MainUi.cs` | — | [G] |
+| ⚑ P2-SCREEN-26 | The gate line becomes true — heroes muster where the HUD says they are | `godot/scripts/town2d/Town2D.cs` | — | [G] |
+| ⚑ P2-SCREEN-27 | Small placements: the wandering caption, the orphan spinner, the floating class sprite, the loose shelf label | `godot/scripts/town2d/`, `godot/scripts/panels/` | — | [G] |
+| ⚑ P2-SCREEN-28 | The capture harness's own usage header stops naming states it does not have | `tools/shoot.ps1` | — | [G] |
+| ⚑ P2-SCREEN-29 | A sized `TextureRect` cannot silently claim its texture's size | `sim/GameSim.Tests/Hygiene/TextureRectExpandModeCensusTests.cs`, `godot/scripts/MainUi.cs`, `godot/scripts/panels/MineWatch.cs`, `godot/scripts/panels/ProvenanceCard.cs`, `godot/scripts/panels/SimPanel.cs`, `godot/scripts/ui/UiKit.cs` | — | [S] |
+| P2-ONBOARD-09 | The Goodwill chip speaks the band or dies (the beat's own half landed) | `godot/scripts/panels/CounterPanel.cs` | — | [G] |
 | P2-ONBOARD-10 | The seed becomes enterable at New Game | `godot/scripts/NewGameSelect.cs` | — | [G] |
 | P2-PROOF-03 | The stage, pass one — one duel, recorded rolls | new `godot/scripts/panels/TellingPanel.cs` (+`.uid`) | — | [G] |
-| P2-PROOF-04 | The fork — rewind, desaturation, the fall that stays down, the stamp | `godot/scripts/panels/TellingPanel.cs` | P2-PROOF-03 | [G] |
-| P2-PROOF-05 | The other shapes — every `TellingScript.Shape` staged or downgraded, reflectively enumerated | `godot/scripts/panels/TellingPanel.cs`, `godot/tests/` | P2-PROOF-04 | [G] |
-| P2-PROOF-06 | The copy pack — deterministic pick, tone guards | `godot/scripts/panels/TellingPanel.cs` corpus | P2-PROOF-04 | [G] |
-| P2-PROOF-07 | The wiring and the deletion — "Ask how it happened", Full-tale dies | `godot/scripts/panels/LedgerModal.cs`, `docs/debugging.md` | P2-PROOF-05, P2-PROOF-06 | [G] |
+| P2-PROOF-05 | The reflective enumeration (every shape is already staged; nothing proves a SEVENTH would be) | `godot/tests/` | — | [G] |
+| P2-PROOF-06 | The copy pack — deterministic pick, tone guards | `godot/scripts/panels/TellingPanel.cs` corpus | — | [G] |
+| P2-PROOF-07 | Full-tale dies (the "Ask how it happened" wiring landed) | `godot/scripts/panels/LedgerModal.cs`, `docs/debugging.md` | — | [G] |
 | ⚑ P2-PROOF-11 | Legible defeat — the death names its margin (research M4) | `godot/scripts/panels/LedgerModal.cs`, `sim/GameSim/Expedition/TellingQuery.cs` (read-only) | — | [G] |
 | ⚑ P2-PROOF-13 | The maker names the signed work — the glossary's own sentence becomes true | `sim/GameSim/Contracts/Actions.cs`, `sim/GameSim/Crafting/CraftingHandlers.cs`, `godot/scripts/panels/ForgePanel.cs` | P4 | [S][C] |
 | ⚑ P2-PROOF-14 | The counterfactual reaches the ledger — the beat carries its own arithmetic | `sim/GameSim/Expedition/AttributionEngine.cs`, `godot/scripts/panels/LedgerModal.cs` | — | [S][GOLD] |
+| ⚑ P2-PROOF-15 | The night opens on the beat that proves the most | `godot/scripts/ui/BeatVocab.cs`, `godot/scripts/panels/LedgerModal.cs` | — | [G] |
+| ⚑ P2-PROOF-16 | The beat remembers the hand that made it | `godot/scripts/panels/LedgerModal.cs` | — | [G] |
 | P2-MEMORY-02 | The death card reads the pack and the last blow | `godot/scripts/panels/LedgerModal.cs` | — | [G] |
 | P2-MEMORY-05 | The Signed Work speaks; the idle line varies | `godot/scripts/panels/ForgePanel.cs`, advisor idle copy | — | [G] |
 | P2-MEMORY-06 | Provenance derives sales instead of omitting them | `godot/scripts/panels/ProvenanceCard.cs` | — | [G] |
 | P2-MEMORY-07 | The commendation — three reasons at the bar | scene-engine client registration | — | [G] |
 | P2-MEMORY-08 | The death-pool rewrite in place + the `{cause}` grammar contract | `sim/GameSim/Flavor/Packs/TavernPack.cs`, pack tests | — | [S] |
 | P2-MEMORY-10 | The book shell — `LegendsWall` refit, verbs and anchors migrated | `godot/scripts/panels/LegendsWall.cs` | — | [G] |
-| P2-MEMORY-11 | The fallen's pages and the item pages | `godot/scripts/panels/LegendsWall.cs`, `godot/scripts/panels/ProvenanceCard.cs` | P2-MEMORY-10 | [G] |
+| P2-MEMORY-11 | The item pages (the fallen's page is P2-MEMORY-10's shell, already shipped) | `godot/scripts/panels/LegendsWall.cs`, `godot/scripts/panels/ProvenanceCard.cs` | — | [G] |
 | P2-MEMORY-12 | Day pages absorb the ticker's composer; the marquee dies (P2-OQ3) | `godot/scripts/ui/AdventureTicker.cs` (`FormatLine` survives), `godot/scripts/MainUi.cs` | P2-MEMORY-10 | [G] |
 | P2-MEMORY-13 | `ChronicleComposer` and the fifteen predicates | new `sim/GameSim/Chronicle/ChronicleComposer.cs`, `sim/GameSim.Tests/` | — | [S] |
 | P2-MEMORY-14 | The bind and the export; `ChronicleScroll.cs` deleted (P2-OQ4) | `godot/scripts/panels/LegendsWall.cs`, `godot/scripts/panels/ChronicleScroll.cs` (deleted) | P2-MEMORY-11, P2-MEMORY-13 | [G] |
@@ -4647,9 +4643,10 @@ name (§11.6 rule 4).
 | P2-MEMORY-16 | `Fleeced` on the close event; fleece and pinned gossip | `sim/GameSim/Contracts/Events.cs`, `sim/GameSim/Counter/HaggleResolver.cs`, `sim/GameSim/Drama/GossipGenerator.cs` | P2-MEMORY-15 (serialize) | [S][C][GOLD] |
 | ⚑ P2-MEMORY-20 | The forecast gets a face (research M3) | `godot/scripts/ui/ArcScenes.cs`, `godot/scripts/panels/RaidForecastBoard.cs` | — | [G] |
 | ⚑ P2-MEMORY-21 | The reforge row previews the lineage it will write, from the one template that writes it | `sim/GameSim/Crafting/HeirloomHandlers.cs`, `godot/scripts/panels/LegendsWall.cs` | — | [S] |
-| P2-PEOPLE-02 | The register gate — a lint that fails on a planted violation of each rule | `godot/tests/`, scene corpus | — | [G] |
+| ⚑ P2-MEMORY-22 | The east field remembers — the town gets an outdoor memory, one lantern per fallen hero | `godot/scripts/town2d/TownLayout2D.cs`, `godot/scripts/town2d/Town2D.cs` | — | [G] |
+| P2-PEOPLE-02 | The register gate's remaining two rules — trigger-id taxonomy validation and no-punchline-on-death scenes (the jargon rule already shipped under P2-PEOPLE-01) | `godot/tests/`, scene corpus | — | [G] |
 | P2-PEOPLE-03 | The remaining arcs — Torvald 4–8, Brunhilde, Kael, Sable, Elowen, Moss | scene corpus | P2-PEOPLE-02 + the probe's verdict | [G] |
-| P2-PEOPLE-04 | Durable-fact read-back — "Halvar's floor" on the muster board | `godot/scripts/panels/RaidForecastBoard.cs`, vigil slate | — | [G] |
+| P2-PEOPLE-04 | Durable-fact read-back on the VIGIL (the muster board's own half landed) | `godot/scripts/panels/MineWatch.cs`, `godot/scripts/panels/CampPanel.cs` | — | [G] |
 | P2-PEOPLE-05 | Wake contracts — `Memorial.MarkerItem`, remembrance action | `sim/GameSim/Contracts/` | — | [S][C] |
 | P2-PEOPLE-06 | The fallen's page and the three verbs, on the death night | `sim/GameSim/Drama/`, `sim/GameSim/Heroes/` | P2-PEOPLE-05 | [S] |
 | P2-PEOPLE-07 | Death-night staging | `godot/scripts/panels/LegendsWall.cs`, `godot/scripts/panels/LedgerModal.cs` | P2-PEOPLE-06 | [G] |
@@ -4665,6 +4662,10 @@ name (§11.6 rule 4).
 | ⚑ P2-PEOPLE-17 | Stocking a piece names the morning queue that will reach it first | `godot/scripts/panels/ShopPanel.cs`, `sim/GameSim/Heroes/CommissionHandlers.cs` | — | [S] |
 | ⚑ P2-PEOPLE-18 | The morning pass's fixed hero order is a standing bias — measured, then ruled | `sim/GameSim/Heroes/HeroShoppingSystem.cs`, Balance suite | P4 | [S][BAL] |
 | ⚑ P2-PEOPLE-19 | A counter sale can fulfil the commission the customer came to collect | `sim/GameSim/Counter/HaggleResolver.cs`, `sim/GameSim/Heroes/CommissionHandlers.cs` | P4 | [S][BAL] |
+| ⚑ P2-PEOPLE-21 | "Forge it — Torvald waits" — the counter stops dead-ending on an empty shelf | `godot/scripts/panels/CounterPanel.cs` | — | [G] |
+| ⚑ P2-PEOPLE-22 | The recipe card names the marcher it would arm | `godot/scripts/panels/ForgePanel.cs`, `sim/GameSim/Advisor/HeroForecast.cs` (read-only) | — | [G] |
+| ⚑ P2-PEOPLE-23 | Your mark on the walker — a hero carrying your work shows it in the street | `godot/scripts/town2d/HeroActor2D.cs` | — | [G] |
+| ⚑ P2-PEOPLE-24 | The tracker knows the vigil is the moment, not a shut vendor | `godot/scripts/ui/TutorialFlow.cs` | — | [G] |
 | ⚑ P2-PEOPLE-20 | The Patron (research M1) | `sim/GameSim/Contracts/Player.cs`, `sim/GameSim/Chronicle/`, `godot/scripts/` | P4 | [S][C] |
 | ⚑ P2-LONG-01 | Re-date the wall on the current build | `sim/GameSim.Cli/`, one instrumented sweep | — | [S] |
 | P2-LONG-02 | Typed consumable kinds; hazard type on `VenueDefinition` | `sim/GameSim/Contracts/`, `sim/GameSim/Venues/VenueDefinition.cs` | P2-LONG-01, P4 | [S][C][GOLD] |
@@ -4680,8 +4681,7 @@ name (§11.6 rule 4).
 | P2-LONG-12 | The four outcomes, written and reachable | `godot/scripts/`, copy corpus | P2-LONG-11 | [G] |
 | P2-LONG-13 | The Chronicle Night — the coda becomes the composition | `sim/GameSim/Chronicle/ChronicleComposer.cs`, `godot/scripts/` | P2-MEMORY-13, P2-LONG-12 | [G] |
 | P2-LONG-14 | A harness policy plays the commission; the ending stays ≤36, two-sided | `sim/GameSim/Harness/`, Balance suite | P2-LONG-11 | [S][BAL] |
-| P2-LONG-15 | The failure gradient renders — 400 and 200 get faces | `godot/scripts/town2d/`, `godot/scripts/panels/TavernPanel.cs` | — | [G] |
-| P2-LONG-16 | The latch lands — the Quiet Morning and the Rekindling | `sim/GameSim/Drama/`, `sim/GameSim/Heroes/PartyFormation.cs` | P2-LONG-15 | [S][GOLD][BAL] |
+| P2-LONG-16 | The latch lands — the Quiet Morning and the Rekindling | `sim/GameSim/Drama/`, `sim/GameSim/Heroes/PartyFormation.cs` | — | [S][GOLD][BAL] |
 | P2-LONG-17 | Rent demoted; the assessor gets a face | `godot/scripts/MainUi.cs`, `godot/scripts/` | P2-SCREEN-11 | [G] |
 | P2-LONG-18 | The pledge — dues paid in proven work, the cost named | `sim/GameSim/Contracts/Actions.cs`, `sim/GameSim/Contracts/Events.cs`, `sim/GameSim/Economy/`, `godot/scripts/` | P2-LONG-17 | [S][C] |
 | P2-LONG-19 | The rival's face, and the spoken absence of proof | `godot/scripts/town2d/`, flavor packs | — | [G] |
@@ -4700,7 +4700,6 @@ name (§11.6 rule 4).
 | P2-HONEST-07 | The satisfiable-gate census | `sim/GameSim.Tests/` | — | [S] |
 | P2-HONEST-08 | The comment sweep and the comment census (the two known stale comments are `EmberfallFoundryVenue`'s "Mine-peer difficulty curve" and `World`'s own header) | `sim/GameSim/Venues/Emberfall/EmberfallFoundryVenue.cs`, `sim/GameSim/Contracts/World.cs`, `godot/scripts/`, `sim/GameSim.Tests/` | — | [S] |
 | P2-HONEST-09 | `SkilledSmithPlayer` and `SmithSkill` die — 123 lines held alive by their own tests | `sim/GameSim/Harness/` | — | [S] |
-| P2-HONEST-10 | Guards rephrase against the property — `RejectionUxTests` literals die | `godot/tests/`, `sim/GameSim.Tests/` | — | [S] |
 | P2-HONEST-13 | `TickResult.Traces` is ingested or deleted | `sim/GameSim/Kernel/GameKernel.cs`, `tools/Analytics/` or `sim/GameSim/Contracts/` | — | [S] |
 | P2-HONEST-14 | The CLI's own printed prose enters the vocabulary census's scope | `sim/GameSim.Cli/Program.cs`, `sim/GameSim.Tests/` (`PlayerVocabularyCensusTests`) | P2-HONEST-06 | [S] |
 | P2-HONEST-16 | `ConsumableEffect.Magnitude` gets a client reader — a potion's heal amount becomes legible | `godot/scripts/panels/ForgePanel.cs`, `godot/scripts/panels/ShopPanel.cs` | — | [G] |
@@ -4713,6 +4712,8 @@ name (§11.6 rule 4).
 | ⚑ P2-HONEST-23 | The idle day's cost is named, not only charged (law 7) | `sim/GameSim/Economy/MarketShareSystem.cs`, `godot/scripts/ui/AdventureTicker.cs` | — | [G] |
 | ⚑ P2-HONEST-24 | The advisor states the stake instead of giving the order (law 1) | `sim/GameSim/Advisor/ObjectiveAdvisor.cs`, `sim/GameSim.Tests/` | — | [S] |
 | ⚑ P2-HONEST-25 | Every ore row names the faction it feeds, not only the tariffed ones | `godot/scripts/panels/TavernPanel.cs`, `godot/scripts/panels/LedgerModal.cs` | — | [G] |
+| ⚑ P2-HONEST-26 | The night's narration is shown or stops being composed | `godot/scripts/panels/LedgerModal.cs`, `sim/GameSim/Drama/ExpeditionNarrator.cs` | — | [G] |
+| ⚑ P2-HONEST-27 | The ore row learns what the morning spent | `godot/scripts/panels/LedgerModal.cs` | — | [G] |
 
 The per-domain counts, the landed/unbuilt split, and which rows carry a Contracts micro-PR, a
 golden re-record or a balance re-baseline are **derived, not stated here**: run
@@ -5031,7 +5032,11 @@ Four ways to rule it, so the decision is a choice and not an essay:
    screen shows, which is the KTD2 side of the line this fix belongs on.
 2. **One beat per item per night**, naming its deepest kill, the rest folded into that row's own
    count. Keeps every fact, moves the aggregation into the sim where the event log can carry it.
-   Changes the event stream: `[GOLD]` re-record.
+   Changes the event stream: `[GOLD]` re-record **and `[BAL]`**. `HeroXp.Award` credits
+   `creditedBeats * PerBeatXp` (`sim/GameSim/Heroes/HeroXp.cs:26,30`), so folding a card's median
+   five beats into one cuts hero XP roughly fivefold — levels, combat and mortality all move.
+   Flagged `[GOLD]`-only until 2026-09-14, which would have let this ruling execute without a
+   balance re-baseline and reshape progression silently.
 3. **KillingBlow earns a beat only where the kill was load-bearing** — a floor boss, or the first of
    its kind. Smallest beat count, closest to "no participation credit" read literally, and the
    biggest behavioural change: `[S][GOLD][BAL]`.
@@ -6397,6 +6402,154 @@ other games.
 - Behind **P4** and carrying [BAL]: this moves gold and changes which hero ends up with which piece,
   so it re-baselines. It also interacts with `P2-PEOPLE-18` — the two touch the same unfairness from
   opposite ends, and §11.7's own rule about sequencing interacting rulings applies.
+
+#### The visual wave (P2-SCREEN-21..29), and how it was found
+
+Every row below came from **looking at the running game** rather than from reading code. Eight GPU
+captures were taken with `tools/shoot.ps1` and read as images; the defects are described by what is
+visibly wrong in a named frame, and each cites the file most likely responsible. This is the method
+`docs/debugging.md` and this repo's own history both insist on for anything visual: a test suite
+cannot see that two surfaces are drawing in the same pixels.
+
+P2-SCREEN-29 has a different provenance from the rest of this wave: it was found by grepping
+`godot/scripts/` for every `new TextureRect` construction site while fixing P2-SCREEN-24, not by
+reading a capture — the pattern had already shipped twice as a one-off fix (PR #119, P2-SCREEN-24)
+before anyone counted the remaining sites. Captures came after the fix, to confirm each corrected
+icon renders at its intended size rather than distorted or cropped.
+
+Three defects from the same pass are already in flight and deliberately have no row here — the watch
+strip drawing through open drawers, nameplates colliding into unreadable text, and the `Act I` chip
+clipping its own label.
+
+- **P2-SCREEN-21.** The interior room is a ~360px sliver: the camera clamps to the room rect and
+  ignores the open drawer, so the player stands underneath the panel with the room's own art
+  half-hidden and its station nametags floating over dark floor. Bias the clamp by the drawer's
+  width. Serves link 2 — the four honest channels are rooms the player is supposed to be IN.
+- **P2-SCREEN-22.** `E · Forge` renders on the tavern's roof, beside the Tavern nametag, while the
+  player stands 200px away at the forge door — it is screen-anchored bottom-centre and persists
+  through Vigil and while the camera is off-player entirely. Anchor it to what it names.
+- **P2-SCREEN-23.** The Day-1 recipe card is a wall of four refused verbs, each carrying its refusal
+  as button text ("Requires Forge Tier 2 or higher", "Not enough copper — need 4, have 0"), per
+  recipe. A first-time player's first screen at the anvil reads as four error messages. The gate
+  reasons are honest and must stay honest; what changes is that tier-gated verbs are not presented
+  as available buttons before their tier exists.
+- **P2-SCREEN-24.** The drawer header's ~60px icon tile overruns its 56px strip, so the scene banner
+  and the Forge tab bar draw over its lower fifth on every drawer.
+- **P2-SCREEN-25.** The HUD says "Phase Prepare" while the tab strip says "Dawn", in the same frame,
+  for the same phase — and the whole HUD row reflows when the words swap. One vocabulary.
+- **P2-SCREEN-26.** The HUD says "6 heroes ready at the gate" while every hero stands in the plaza
+  by the well and the gate is empty. Serves link 3: the sentence and the screen disagree about where
+  the people are, on the one beat that is about them leaving.
+- **P2-SCREEN-27.** Four small placements in one sweep: the rival smith's nameplate rendered at
+  overview zoom as an unreadable dash hanging past the map's east edge; the vendor quantity spinner
+  orphaned on its own row; a 56px class sprite floating in a 138×110 frame; and the
+  "First at the counter" line sitting outside the card it describes.
+- **P2-SCREEN-28.** `tools/shoot.ps1`'s own usage header advertises `-State Forge | Shop | Tavern |
+  Gate`, none of which the harness has known for some time — it errors with its real list. Rule 8
+  applies to a tool's own docs: the first thing a session does with the capture harness is read that
+  header and be wrong.
+- **P2-SCREEN-29.** Godot's `TextureRect` defaults `ExpandMode` to `KeepSize`, whose
+  `GetMinimumSize()` returns the bound texture's own pixel size and ignores `CustomMinimumSize`
+  entirely — a 20px icon request silently becomes a 64px minimum, because every glyph under
+  `res://assets/icons` is authored 64×64. This shipped three times: PR #119 (`UiKit.ArtRect`),
+  P2-SCREEN-24 (PR #826, `UiKit.DrawerHeader`'s icon overhanging its 56px strip), and a grep of
+  `godot/scripts/` turned up 8 more live sites carrying the identical shape — `MainUi.BuildGoldChip`,
+  `MineWatch`'s two empty-manifest icons, `ProvenanceCard.ItemIcon`, `SimPanel.AddIcon`, and three
+  more in `UiKit` (`ArtRect`'s fallback icon, `IconChip`, `ListRow`). All 8 now set `ExpandMode`
+  explicitly (`IgnoreSize`, matching `ArtRect`'s already-correct real-art path). `UiKit.DrawerHeader`
+  itself was left untouched — P2-SCREEN-24 already carries the identical fix on its own open branch,
+  and editing the same lines from two PRs is how one silently reverts the other.
+
+  The fix-one-at-a-time approach had already failed twice, so the deliverable is a deny-by-default
+  census (`sim/GameSim.Tests/Hygiene/TextureRectExpandModeCensusTests.cs`, same pinned-exception
+  idiom as `GearWornCheckCensusTests`): any `new TextureRect` initializer that sets
+  `CustomMinimumSize` without also setting `ExpandMode` is a red build, with a single cited exception
+  for `UiKit.DrawerHeader`'s icon (dropped once P2-SCREEN-24 merges). A `TextureRect` that claims no
+  size of its own — sized instead by a direct runtime `Size`, e.g. `DelveStage.SpawnSparkle`'s
+  free-floating VFX sprite outside any layout container — is out of scope by construction rather than
+  exempted, since it sets no `CustomMinimumSize` for `ExpandMode` to defend.
+
+#### P2-HONEST-26. The night's narration is shown or stops being composed
+
+- `ExpeditionNarrator.Retell` is still called every evening (`LedgerModal.cs`), and since
+  `P2-PROOF-07` deleted the Full-tale toggle, `CollapsedTale` keeps only the attribution beats and
+  the closer. The departure line, the floor-enter descriptions and the quaff/kill/hurt prose for
+  combats that earned no beat are now **composed and discarded** with no Godot surface at all.
+- This is the shape `P2-HONEST-13` ("`TickResult.Traces` is ingested or deleted") was written for,
+  and the answer is the same: give it a screen or stop generating it. Both are honest; generating
+  prose nobody can ever read is not.
+- Note for whoever takes it: the prose still renders in the CLI, which is **not** an argument that
+  it is shipped — this repo's own standard is that the Godot client is the game.
+
+#### P2-PEOPLE-21..24, P2-MEMORY-22 — what the frames showed was missing
+
+- **P2-PEOPLE-21.** The counter dead-ends on an empty shelf: the customer states a want and a
+  budget, and the only guidance is "present an item from the shelf" when there is nothing to
+  present. One button opens the Forge with his want pinned. The day holds while the counter is open,
+  so nothing is rushed and no timer is added; he still decides at the present.
+- **P2-PEOPLE-22.** Decisions 1 and 3 are asked at the forge and answered in the shop: the recipe
+  card reads no hero at all, while `HeroForecast` already answers "who would buy this" shelf-side.
+  One line under the stats naming who marches today without this slot filled.
+- **P2-PEOPLE-23.** A hero carrying the player's work looks identical in the street to one carrying
+  a rival's. The tavern can say "bare-handed — nothing from your forge yet"; the town cannot. A mark
+  glyph on the nameplate, read-only, never a buff.
+- **P2-PEOPLE-24.** At the vigil — decision 6's one moment, party parked below the checkpoint — the
+  objective tracker says "Nothing to do here until then", because a shut vendor's phase excuse wins
+  over the vigil step. The tracker should name the three things that can be done and pick none.
+- **P2-MEMORY-22.** The east third of the map is grass, two crates and two trees; the Legends book
+  is a tavern station only, so the town has no outdoor memory at all. A wall in the field, one
+  lantern lit per fallen hero, `E · Legends` opening the book that already exists.
+
+#### P2-PROOF-15/16 and P2-HONEST-27 — link 4 is the weakest link, and why
+
+A design pass on 2026-09-14 read the five links against the running tree and judged **link 4 the
+weakest as an experience**: the proof engine is sound, and what reaches the screen is not. Three
+facts, all cited in the tree, and none of them a matter of taste:
+
+- **Volume.** The 2026-09-11 sweep: 45,105 beats over 20 seeds × 100 days, **97.5% KillingBlow**,
+  median **30 beats a night** and **5 per hero card**, 81.8% of cards carrying exactly five. That is
+  the pending owner ruling above, not a unit, and nothing here pre-empts it.
+- **Flat weight.** Nothing on any surface separates a rat killed on floor 1 from a life saved on
+  floor 5. `BeatVocab` has labels (`BeatVocab.cs:33-41`) and no rank; the legends wall makes an item
+  a legend at three beats; XP credits a kill and a save identically at 15.
+- **The epigraph's own shape is the rarest beat.** *"Emberbite turned the killing blow on floor 3.
+  Torvald lives"* is a LethalSave, and LethalSave is **0.87%** of beats, because AE2 only recognises
+  a save when one recorded hit alone would have been fatal (`AttributionEngine.cs:101`).
+
+`P2-PROOF-15` and `P2-PROOF-16` are the two `[G]` fixes that need no ceremony. The third finding —
+crediting a save across the whole fight rather than one blow, which the consumable branch already
+does at `AttributionEngine.cs:241-265` — is `[S][GOLD][BAL]` and is **owner-gated**: it moves hero XP
+through `ExpeditionRevealSystem.cs:253`. It is deliberately not booked as a runnable row.
+
+- **P2-PROOF-15.** `LeadWithAttribution` sorts cards on `!card.Beats.IsEmpty` and nothing else
+  (`LedgerModal.cs:453-454`); within a card, beats render in emission order (`:691`), which is
+  floor-1 first. With five beats on every card every card ties, the stable sort falls to `HeroId`,
+  and **the night's opening sentence is structurally hero #1's first floor-1 kill** — the one beat
+  `TellingQuery` cannot even give a second pass. No engine test pins the current order. Give
+  `BeatVocab` a rank (it is exhaustive with no discard arm, so a new `BeatType` fails to compile),
+  order cards by their best beat then deepest floor then `HeroId`, and render a card's best beat
+  first at the fate-line size `LedgerModal.cs:631` already uses. Law 4 does not bend: every beat
+  still renders and the sim's `Detail` is untouched — only the order changes.
+- **P2-PROOF-16.** The forge minigame writes its earned moments onto the item at craft time
+  (`CraftingHandlers.cs:240,275-286`), and the night card never reads `Item.History`. `ItemForge.cs:32`
+  and `Actions.cs:49` both promise "Evening ledger flavor ('edge quenched brittle')" that no Evening
+  surface delivers — a rule-8 comment. Append the `"forged"` entry's moment clause to the beat row,
+  so link 1's hand and link 4's proof meet in one sentence. Read-only over data already on the item.
+- **P2-HONEST-27.** The client's `BuyOreLegal` (`LedgerModal.cs:960-990`) omits the
+  `ActionSlotsRemaining` guard the sim's mirror ends on (`ActionLegality.cs:508`) and the kernel
+  enforces. Nothing renders `SimAdapter.LastRejections`. So at the one moment decision 4 bites —
+  Torvald's mithril on offer, the budget already spent at the forge — the Buy button is live, the
+  click is silently refused, and law 7's "its cost is named in copy" goes unmet. Same family as #742,
+  where the legality mirror was only ever checked on one of 19 materials. Distinct from `U47`, which
+  teaches the Morning half in `TutorialFlow`; this is the Night half, and it is a lying button.
+
+**Also found, and deliberately not booked here:** decision 5 ("buy the ore or buy the goodwill") has
+no fork for the whole first rung — `FactionRegistry.Deepvein` supplies all five Mine ores, so every
+pre-Gloomwood purchase raises the same faction and the choice collapses into "which material do I
+need". And `DirectorSystem` (434 lines, one RNG draw a morning) fires five authored incidents and a
+lockdown latch that by their own contract change no combat, routing or economy rule
+(`Events.cs:267,274-275`) — a candidate cut, `[S][C][GOLD]` because removing a draw moves the golden.
+Both need an owner ruling before anything is built.
 
 #### What this round says NOT to build
 

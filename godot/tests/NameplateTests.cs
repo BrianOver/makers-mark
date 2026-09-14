@@ -236,5 +236,74 @@ public class NameplateTests
             building.QueueFree();
         }
     }
+
+    // ── Scenario 10: crowded nameplates never end up sharing the same rect (U-VISFIX2) ─────────
+
+    /// <summary>
+    /// The defect itself, made general rather than pinned to the two names a GPU capture happened
+    /// to catch ("Tor Kael" — two townsfolk standing near each other, their nametags rendered as
+    /// one merged word). Phrased against the property (ANY two owners within colliding distance),
+    /// not against those two specific names — the roster is generated per campaign, so a test
+    /// naming "Torvald"/"Kael" would stop covering the very defect it exists to catch the moment
+    /// a fresh seed generates a different pair. Checked pairwise across a whole crowded cluster, so
+    /// a third or fourth close neighbour can't slip through a check that only ever looked at one
+    /// pair.
+    /// </summary>
+    [TestCase]
+    public void ResolveNameplateStagger_NoTwoOwnersWithinCollidingDistance_EndUpWithIntersectingLabelRects()
+    {
+        var size = new Vector2(20f, 8f); // Building2D.BuildLabel's own fixed Size shape (width, 8f)
+        var localPosition = new Vector2(-size.X / 2f, -18f); // a representative BuildLabel offset
+
+        // Four owners packed shoulder-to-shoulder — exactly the "several townsfolk standing near
+        // each other" crowding the reported capture showed, each within one label-width of its
+        // neighbour.
+        var owners = new[]
+        {
+            (GlobalPosition: new Vector2(0f, 0f), LabelLocalPosition: localPosition, LabelSize: size),
+            (GlobalPosition: new Vector2(8f, 0f), LabelLocalPosition: localPosition, LabelSize: size),
+            (GlobalPosition: new Vector2(16f, 2f), LabelLocalPosition: localPosition, LabelSize: size),
+            (GlobalPosition: new Vector2(24f, -2f), LabelLocalPosition: localPosition, LabelSize: size),
+        };
+
+        var offsets = Building2D.ResolveNameplateStagger(owners);
+
+        var rects = owners
+            .Select((o, i) => new Rect2(o.GlobalPosition + o.LabelLocalPosition + new Vector2(0f, offsets[i]), o.LabelSize))
+            .ToList();
+
+        for (var i = 0; i < rects.Count; i++)
+        {
+            for (var j = i + 1; j < rects.Count; j++)
+            {
+                AssertThat(rects[i].Intersects(rects[j]))
+                    .OverrideFailureMessage(
+                        $"owners {i} and {j} stand within colliding distance but their resolved " +
+                        $"nameplate rects still intersect ({rects[i]} vs {rects[j]}) — this is the " +
+                        "exact 'Tor Kael' merged-text defect, just with different owners.")
+                    .IsFalse();
+            }
+        }
+    }
+
+    /// <summary>Negative control: a single isolated owner has nothing to collide with, so its
+    /// label must land EXACTLY where <see cref="Building2D.BuildLabel"/> already put it — proves
+    /// the decluttering system is inert until there is real crowding, not a blanket nudge applied
+    /// to every nameplate in town regardless of whether anyone stands nearby.</summary>
+    [TestCase]
+    public void ResolveNameplateStagger_ForASingleIsolatedOwner_LeavesItsLabelUnchanged()
+    {
+        var owners = new[]
+        {
+            (GlobalPosition: new Vector2(100f, 40f), LabelLocalPosition: new Vector2(-10f, -18f), LabelSize: new Vector2(20f, 8f)),
+        };
+
+        var offsets = Building2D.ResolveNameplateStagger(owners);
+
+        AssertThat(offsets.Count).IsEqual(1);
+        AssertThat(offsets[0])
+            .OverrideFailureMessage("a lone nameplate with nothing nearby must never be nudged")
+            .IsEqual(0f);
+    }
 }
 #endif

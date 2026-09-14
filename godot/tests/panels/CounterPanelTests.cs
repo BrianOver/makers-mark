@@ -7,6 +7,7 @@ using System.Linq;
 using GameSim;
 using GameSim.Classes;
 using GameSim.Contracts;
+using GameSim.Heroes;
 using GameSim.Kernel;
 using GdUnit4;
 using Godot;
@@ -55,11 +56,66 @@ public class CounterPanelTests
             AssertThat(text).Contains(ClassRegistry.Striker.DisplayName);
             AssertThat(text).Contains("Test Blade"); // the presented item
             AssertThat(text).Contains("12g");        // the standing offer
-            AssertThat(text).Contains("-40");        // Goodwill
+            // P2-ONBOARD-09: CounterFixture's hero has no mood/purchases recorded, so the Standing
+            // chip reads Stranger — the raw -40 goodwill this test used to assert on no longer
+            // renders anywhere on the counter (see BandChip tests below for the full property).
+            AssertThat(text).Contains(RelationshipBands.Label(RelationshipBand.Stranger));
         }
         finally
         {
             Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void Refresh_EveryRelationshipBand_StandingChipShowsThatBandsOwnVocabulary()
+    {
+        // P2-ONBOARD-09: the counter used to print CounterState.GoodwillPermille raw. Iterate
+        // RelationshipBand's own values (not two hand-picked cases) — for every band the sim can
+        // produce, the Standing chip must carry that exact band's Label, never a number.
+        foreach (RelationshipBand band in Enum.GetValues(typeof(RelationshipBand)))
+        {
+            var state = CounterFixtureForBand(band);
+            var ui = MountMainUi(new SimAdapter(state));
+            try
+            {
+                ui.OpenPanel("Shop");
+                var text = RenderedText(ui.Shop);
+
+                AssertThat(text).Contains(RelationshipBands.Label(band))
+                    .OverrideFailureMessage($"Standing chip did not show {band}'s own vocabulary.");
+            }
+            finally
+            {
+                Unmount(ui);
+            }
+        }
+    }
+
+    [TestCase]
+    public void Refresh_AcrossASpreadOfGoodwillMagnitudes_NeverRendersTheRawPermilleNumber()
+    {
+        // P2-ONBOARD-09: guard the PROPERTY (no raw CounterState.GoodwillPermille ever reaches the
+        // counter surface), not one instance — a spread of distinctive magnitudes, none of which
+        // collide with any other number this fixture legitimately renders (round/interest/patience/
+        // standing offer/hero gold/item stats).
+        foreach (var goodwill in new[] { -999, -365, -777, 137, 555, 901 })
+        {
+            var state = CounterFixture(
+                round: 2, interest: 150, patience: 2, goodwill: goodwill, standingOffer: 12, presented: ShopItemId);
+            var ui = MountMainUi(new SimAdapter(state));
+            try
+            {
+                ui.OpenPanel("Shop");
+                var text = RenderedText(ui.Shop);
+
+                AssertThat(text).NotContains($"{goodwill}")
+                    .OverrideFailureMessage($"Goodwill {goodwill} leaked onto the counter surface as a raw number.");
+            }
+            finally
+            {
+                Unmount(ui);
+            }
         }
     }
 
@@ -494,10 +550,23 @@ public class CounterPanelTests
 
     // ── Meters (sim integers render 1:1 — no UI-side arithmetic) ────────────────────────────────
 
+    /// <summary>
+    /// The rule is that a number on this panel is the sim's own number, never one the client did
+    /// arithmetic on. Goodwill used to be one of the three examples — the fixture's -365 was
+    /// asserted verbatim — and P2-ONBOARD-09 removed it, because a raw permille is engine
+    /// vocabulary on a player surface and the band is the thing the game actually acts on.
+    ///
+    /// <para>So the goodwill case inverts rather than disappearing: the panel must NOT print the
+    /// permille, and must print that permille's own band instead. Dropping the assertion outright
+    /// would have been the easy edit and the wrong one — it would leave nothing proving the chip
+    /// says anything at all, and "the number is gone" is only half of what this unit promised.
+    /// Interest and the standing offer are unchanged and still pin the 1:1 rule they always did.</para>
+    /// </summary>
     [TestCase]
     public void Meters_RenderSimIntegers1To1_NoUiSideArithmetic()
     {
-        var state = CounterFixture(round: 3, interest: 275, patience: 1, goodwill: -365, standingOffer: 999, presented: ShopItemId);
+        const int Goodwill = -365;
+        var state = CounterFixture(round: 3, interest: 275, patience: 1, goodwill: Goodwill, standingOffer: 999, presented: ShopItemId);
         var ui = MountMainUi(new SimAdapter(state));
         try
         {
@@ -505,8 +574,18 @@ public class CounterPanelTests
             var text = RenderedText(ui.Shop);
 
             AssertThat(text).Contains("275");
-            AssertThat(text).Contains("-365");
             AssertThat(text).Contains("999g");
+
+            AssertThat(text)
+                .OverrideFailureMessage(
+                    $"the counter printed the raw goodwill permille ({Goodwill}) — that is engine vocabulary, "
+                    + $"and the band is what the game acts on. Rendered: \"{text}\"")
+                .NotContains(Goodwill.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+            var band = RelationshipBands.Label(RelationshipBands.For(new HeroId(1), state));
+            AssertThat(text)
+                .OverrideFailureMessage($"the counter named no standing band at all. Expected \"{band}\". Rendered: \"{text}\"")
+                .Contains(band);
         }
         finally
         {
@@ -850,6 +929,136 @@ public class CounterPanelTests
 
             // The customer's own spoken reply to the Buy verdict (CustomerVoice.PresentReply).
             AssertThat(text).Contains("Test Blade? I could use that.");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    // ── Forge handoff (P2-PEOPLE-21, "Forge it — Torvald waits") ────────────────────────────────
+    // The frame that named this gap (runs/shots-2026-09-13/Counter.png): a customer states a want
+    // and a budget over an EMPTY shelf, and the only guidance was "present an item from the shelf"
+    // when there is nothing to present. Every assertion below reads visible on-screen text and
+    // live sim state, the same style the rest of this file already uses.
+
+    [TestCase]
+    public void ForgeItButton_AppearsWhenTheShelfCannotServeTheWaitingCustomer()
+    {
+        var ui = MountMainUi(new SimAdapter(EmptyShelfCounterFixture()));
+        try
+        {
+            ui.OpenPanel("Shop");
+
+            // Exists and reachable — throws if missing.
+            var button = Find<Button>(ui.Shop, "CounterForgeIt");
+            AssertThat(button.Text).IsEqual("Forge something for them");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void ForgeItButton_AbsentWhenTheShelfCanServeTheWaitingCustomer()
+    {
+        // SingleHeroGuaranteedBuyState's own shelf item is a proven Buy for this exact hero —
+        // PresentingTheWantedSlot_AtAFairPrice_OpensARound_NotAWalk_AndSpeaksInterest (above)
+        // already proves presenting it opens a round rather than a walk.
+        var ui = MountMainUi(new SimAdapter(SingleHeroGuaranteedBuyState()));
+        try
+        {
+            ui.OpenPanel("Shop");
+            PressEnabled(ui.Shop, "OpenCounter");
+
+            var missing = ui.Shop.FindChild("CounterForgeIt", recursive: true, owned: false);
+            AssertThat(missing)
+                .OverrideFailureMessage("Forge It button rendered even though the shelf can serve this customer.")
+                .IsNull();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void ForgeItButton_OpensTheForgeDrawer_NamingWhoIsWaitingAndWhatTheyWant()
+    {
+        var ui = MountMainUi(new SimAdapter(EmptyShelfCounterFixture()));
+        try
+        {
+            ui.OpenPanel("Shop");
+            Press(ui.Shop, "CounterForgeIt");
+
+            AssertThat(ui.Drawer.CurrentPanelId)
+                .OverrideFailureMessage("Pressing Forge It must open the Forge drawer, not merely raise an event.")
+                .IsEqual("Forge");
+
+            // The card the player lands on must name WHO is waiting and WHAT they said — not
+            // merely that a panel opened (the whole point of P2-PEOPLE-21's handoff).
+            var text = RenderedText(ui.Forge);
+            AssertThat(text).Contains("Buyer1");
+            AssertThat(text).Contains("at the counter");
+            AssertThat(text).Contains("a weapon"); // Buyer1's empty Gear -> Weapon is the missing slot
+            AssertThat(text).Contains("500g");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void ForgeItButton_PressedTwice_TheCounterSessionItselfIsUntouched()
+    {
+        // Law: no timers on decisions — the day holds while the counter is open (THE-GAME.md
+        // §3.1), so opening the forge from here must spend nothing: no patience round, no
+        // interest movement, no queued action of any kind.
+        var ui = MountMainUi(new SimAdapter(EmptyShelfCounterFixture()));
+        try
+        {
+            ui.OpenPanel("Shop");
+            var before = ui.Adapter.CurrentState.Counter;
+
+            Press(ui.Shop, "CounterForgeIt");
+            ui.OpenPanel("Shop");
+            Press(ui.Shop, "CounterForgeIt");
+
+            var after = ui.Adapter.CurrentState.Counter;
+            AssertThat(after!.Round).IsEqual(before!.Round);
+            AssertThat(after.PatienceRounds).IsEqual(before.PatienceRounds);
+            AssertThat(after.InterestPermille).IsEqual(before.InterestPermille);
+            AssertThat(after.Active).IsEqual(before.Active);
+            AssertThat(ui.Adapter.AppliedThisPhase.Count).IsEqual(0);
+            AssertThat(ui.Adapter.PendingActions.Count).IsEqual(0);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void ForgeHandoffCopy_NeverOrdersThePlayer()
+    {
+        // Law: influence never orders — same register AdvisorNeverOrdersTests pins for the sim's
+        // own advisor voice: no second-person directive, no bare command verb opening a clause.
+        var ui = MountMainUi(new SimAdapter(EmptyShelfCounterFixture()));
+        try
+        {
+            ui.OpenPanel("Shop");
+            Press(ui.Shop, "CounterForgeIt");
+
+            var pinnedLine = Find<Label>(ui.Forge, "ForgeWaitingCustomer").Text;
+            var lowered = pinnedLine.ToLowerInvariant();
+            AssertThat(pinnedLine).IsNotEmpty();
+            AssertThat(lowered).NotContains("you should");
+            AssertThat(lowered).NotContains("you must");
+            AssertThat(lowered).NotContains("you need to");
+            AssertThat(pinnedLine).NotContains("!");
+            AssertThat(lowered).NotContains("hurry");
         }
         finally
         {
@@ -1309,6 +1518,31 @@ public class CounterPanelTests
         };
     }
 
+    /// <summary>P2-PEOPLE-21: an active counter session over a genuinely EMPTY shelf (no Items, no
+    /// ShelfEntry at all) — the exact frame that named the gap (runs/shots-2026-09-13/Counter.png):
+    /// a customer stating a want and a budget with nothing to present. The shelf-can't-serve gated
+    /// surfaces (the "Forge It" button) must appear here.</summary>
+    private static GameState EmptyShelfCounterFixture()
+    {
+        var hero = MakeHero(1, ClassRegistry.StrikerId, gold: 500);
+        var heroes = ImmutableSortedDictionary<int, Hero>.Empty.Add(hero.Id.Value, hero);
+        var baseState = GameFactory.NewGame(7099, heroes); // Items/Shelf empty by construction
+
+        var counter = new CounterState(
+            Queue: ImmutableList.Create(hero.Id),
+            Active: hero.Id,
+            Round: 0,
+            InterestPermille: 0,
+            PatienceRounds: 3,
+            GoodwillPermille: 0,
+            Presented: null,
+            StandingOfferGold: null,
+            Served: ImmutableSortedSet<int>.Empty,
+            Closed: false);
+
+        return baseState with { Counter = counter };
+    }
+
     /// <summary>A world with a live, mid-haggle <see cref="CounterState"/> already installed —
     /// for Bind/meter/face rendering scenarios that don't need to drive the haggle themselves.</summary>
     private static GameState CounterFixture(
@@ -1332,6 +1566,49 @@ public class CounterPanelTests
 
         return baseState with
         {
+            Items = ImmutableSortedDictionary<int, Item>.Empty.Add(ShopItemId.Value, TestBlade()),
+            Player = baseState.Player with { Shelf = ImmutableList.Create(new ShelfEntry(ShopItemId, 8)) },
+            Counter = counter,
+        };
+    }
+
+    /// <summary>A live mid-haggle world whose active hero's mood/shelf-purchase history reaches
+    /// EXACTLY the given <see cref="RelationshipBand"/> — driven off <see cref="RelationshipBands"/>'
+    /// own threshold constants (P2-ONBOARD-09), never a hand-picked pair of magic numbers, so this
+    /// helper tracks the sim's own definition of each band rather than a second copy of it.</summary>
+    private static GameState CounterFixtureForBand(RelationshipBand band)
+    {
+        var mood = band switch
+        {
+            RelationshipBand.Sworn => RelationshipBands.SwornMinMood,
+            RelationshipBand.Patron => RelationshipBands.PatronMinMood,
+            RelationshipBand.Regular => RelationshipBands.RegularMinMood,
+            _ => 0,
+        };
+        var purchases = band == RelationshipBand.Sworn ? RelationshipBands.SwornMinPurchases : 0;
+
+        var hero = MakeHero(1, ClassRegistry.StrikerId, gold: 500) with { MoodPermille = mood };
+        var heroes = ImmutableSortedDictionary<int, Hero>.Empty.Add(hero.Id.Value, hero);
+        var baseState = GameFactory.NewGame(7011, heroes);
+
+        var log = ImmutableList.CreateRange<GameEvent>(
+            Enumerable.Range(0, purchases).Select(_ => new ItemSold(ShopItemId, hero.Id, Price: 10, FromPlayerShop: true)));
+
+        var counter = new CounterState(
+            Queue: ImmutableList.Create(hero.Id),
+            Active: hero.Id,
+            Round: 1,
+            InterestPermille: 100,
+            PatienceRounds: 3,
+            GoodwillPermille: 0,
+            Presented: null,
+            StandingOfferGold: null,
+            Served: ImmutableSortedSet<int>.Empty,
+            Closed: false);
+
+        return baseState with
+        {
+            EventLog = log,
             Items = ImmutableSortedDictionary<int, Item>.Empty.Add(ShopItemId.Value, TestBlade()),
             Player = baseState.Player with { Shelf = ImmutableList.Create(new ShelfEntry(ShopItemId, 8)) },
             Counter = counter,

@@ -17,11 +17,11 @@ public static class Reconciler
         IReadOnlyList<MergedPrReceipt>? mergedReceipts = null,
         IReadOnlyDictionary<string, FileOrigin>? fileOrigins = null,
         DateTimeOffset? receiptRuleEffectiveSince = null,
-        IReadOnlyDictionary<string, IReadOnlyList<string>>? sourceTagSites = null)
+        IReadOnlyDictionary<string, IReadOnlyList<SourceTagHit>>? sourceTagSites = null)
     {
         mergedReceipts ??= Array.Empty<MergedPrReceipt>();
         fileOrigins ??= new Dictionary<string, FileOrigin>();
-        sourceTagSites ??= new Dictionary<string, IReadOnlyList<string>>();
+        sourceTagSites ??= new Dictionary<string, IReadOnlyList<SourceTagHit>>();
 
         var units = plan.Units;
 
@@ -49,23 +49,25 @@ public static class Reconciler
     /// <summary>
     /// Units this run calls UNBUILT whose exact id is already written into tracked source. Reported,
     /// never promoted: see <see cref="SourceTaggedUnbuilt"/> for why a comment mentioning an id is
-    /// ambiguous evidence and a Landed status must never be derived from it.
+    /// ambiguous evidence and a Landed status must never be derived from it. Every hit (code and
+    /// comment) is carried through here — the code/comment split only matters to
+    /// <c>Frontier</c>'s dispatch decision, not to whether section 9 lists the unit at all.
     /// </summary>
     private static List<SourceTaggedUnbuilt> FindSourceTaggedUnbuilts(
         IReadOnlyList<DomainStatus> domains,
-        IReadOnlyDictionary<string, IReadOnlyList<string>> sourceTagSites)
+        IReadOnlyDictionary<string, IReadOnlyList<SourceTagHit>> sourceTagSites)
     {
         var findings = new List<SourceTaggedUnbuilt>();
         foreach (var row in domains.SelectMany(d => d.Rows))
         {
             if (row.Status != UnitStatus.Unbuilt
-                || !sourceTagSites.TryGetValue(row.Unit.Id, out var paths)
-                || paths.Count == 0)
+                || !sourceTagSites.TryGetValue(row.Unit.Id, out var hits)
+                || hits.Count == 0)
             {
                 continue;
             }
 
-            findings.Add(new SourceTaggedUnbuilt(row.Unit.Id, paths));
+            findings.Add(new SourceTaggedUnbuilt(row.Unit.Id, hits));
         }
 
         return findings

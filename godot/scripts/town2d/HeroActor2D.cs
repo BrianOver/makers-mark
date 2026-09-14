@@ -183,6 +183,36 @@ public partial class HeroActor2D : Node2D
     /// directly.</summary>
     public Label Nameplate { get; private set; } = null!;
 
+    /// <summary>
+    /// P2-PEOPLE-23 ("your mark on the walker" — link1 made visible in the street): a small badge
+    /// riding the nameplate, shown only while this hero currently wears a piece bearing the
+    /// player's own <see cref="MakersMark"/>. Set every frame by <see cref="Town2D"/> via <see
+    /// cref="SetWearsPlayerMark"/>, reading the SAME <see
+    /// cref="GodotClient.Ui.HeroChips.WearsPlayerMark"/> gate the vigil's own Gear chip reads —
+    /// link1's one axiom, one reader, never a second "is this mine" check re-derived here.
+    ///
+    /// <para>Added as Nameplate's own CHILD (not a sibling of this actor) so it rides along with
+    /// whatever local Y-nudge <see cref="Town2D.DeclutterNameplates"/> applies to <see
+    /// cref="Nameplate"/>'s Position for free, and — the actual point — so it can never widen the
+    /// collision rect that method measures: <c>DeclutterNameplates</c> only ever reads
+    /// <c>Nameplate</c>'s own Text/Size (see <see cref="Building2D.BuildLabel"/>/<c>
+    /// ResolveNameplateStagger</c>), and this glyph touches neither, so it cannot reintroduce the
+    /// overlap #816 fixed. Public for the same "tests can inspect it directly" reason <see
+    /// cref="Sprite"/>/<see cref="Nameplate"/> are.</para>
+    ///
+    /// <para><b>Read-only, never a buff (this unit's own law).</b> <see cref="SetWearsPlayerMark"/>
+    /// only flips this node's own <see cref="CanvasItem.Visible"/> — it never touches <see
+    /// cref="State"/>, walk speed, errand targets, or any field <see cref="_Process"/> reads to
+    /// decide where this actor goes or how fast. A test that makes hero behaviour change with this
+    /// flag is asserting a defect, not a feature.</para>
+    /// </summary>
+    public TextureRect MarkGlyph { get; private set; } = null!;
+
+    /// <summary>Whether <see cref="MarkGlyph"/> is currently showing — mirrors its own <see
+    /// cref="Control.Visible"/>, exposed as a plain bool so a test can assert intent without
+    /// reaching into the node.</summary>
+    public bool WearsPlayerMark { get; private set; }
+
     /// <summary>Raised by <see cref="RaisePick"/> (test seam) or a real click on <see
     /// cref="Pick"/> — <c>Town2D</c> forwards this into its own <c>HeroClicked</c> event,
     /// unchanged (KTD2: presentation-only).</summary>
@@ -308,6 +338,12 @@ public partial class HeroActor2D : Node2D
         Nameplate = Building2D.BuildLabel(heroName, new Vector2(_spriteWidth, _spriteHeight), tint: classColor);
         AddChild(Nameplate);
 
+        // P2-PEOPLE-23: child of Nameplate, not of this actor — see MarkGlyph's own doc for why.
+        // Starts hidden; SetWearsPlayerMark (driven every frame by Town2D, which alone has the live
+        // GameState) is the only thing that ever shows it.
+        MarkGlyph = BuildMarkGlyph();
+        Nameplate.AddChild(MarkGlyph);
+
         // M2: cache the base/step textures + construct the pose driver now that heroId/classId
         // are known — same id + "_step" suffix, resolved through the same IconRegistry.Art ladder
         // TownAssets2D.ForHero used for the base (null-tolerant: no _step art until M4 lands it).
@@ -375,6 +411,17 @@ public partial class HeroActor2D : Node2D
         }
 
         _phase = phase;
+    }
+
+    /// <summary>P2-PEOPLE-23: shows or hides <see cref="MarkGlyph"/> — call every frame (mirrors
+    /// <see cref="SetPhase"/>'s own "cheap, call every frame" contract; <see cref="Town2D"/> calls
+    /// both from the same <c>_Process</c> tick) so a mid-campaign re-equip shows up without waiting
+    /// for <see cref="Town2D.ReconcileHeroes"/> to rebuild this actor. Idempotent: calling it with
+    /// the current value repeatedly is a no-op on the rendered frame.</summary>
+    public void SetWearsPlayerMark(bool wearsMark)
+    {
+        WearsPlayerMark = wearsMark;
+        MarkGlyph.Visible = wearsMark;
     }
 
     /// <summary>"Daytime" for errand purposes — the same two phases <see
@@ -712,6 +759,25 @@ public partial class HeroActor2D : Node2D
         Texture = sprite,
         Modulate = Colors.White,
         Offset = new Vector2(0, -_spriteHeight / 2f),
+    };
+
+    /// <summary>P2-PEOPLE-23's badge texture — reuses the "rune" glyph <see
+    /// cref="GodotClient.Panels.MineWatch"/>'s own DeepStakesSlate already draws beside "carries
+    /// anything you forged" text, rather than commissioning a second asset for one small dot.
+    /// Positioned just left of <see cref="Nameplate"/>'s own text origin, sized independent of the
+    /// texture's native pixel size (<c>ExpandMode.IgnoreSize</c> — <see cref="GodotClient.Ui.UiKit"/>'s
+    /// own fix for the same "1024px source art balloons a small icon rect" class of bug). Hidden by
+    /// default; only <see cref="SetWearsPlayerMark"/> ever shows it.</summary>
+    private static TextureRect BuildMarkGlyph() => new()
+    {
+        Name = "MarkGlyph",
+        Texture = IconRegistry.Glyph("rune"),
+        Position = new Vector2(-12f, -1f),
+        Size = new Vector2(8f, 8f),
+        ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
+        StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
+        MouseFilter = Control.MouseFilterEnum.Ignore,
+        Visible = false,
     };
 
     /// <summary>Real-click pick zone — layer 2 (mirrors <c>HeroActor3D.BuildPick</c>'s layer

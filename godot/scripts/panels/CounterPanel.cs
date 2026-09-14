@@ -45,6 +45,21 @@ public partial class CounterPanel : SimPanel
     private Label? _feedback;
     private VBoxContainer? _body;
 
+    /// <summary>P2-PEOPLE-21 ("Forge it — Torvald waits"): the counter's own discoverable route off
+    /// an empty-shelf dead end — <see cref="ShelfCanServe"/> gates the button that raises this both
+    /// directions, live, per hero. Bare event, the SAME shape <see cref="CampPanel.OpenForgeRequested"/>
+    /// and <see cref="RaidForecastBoard.ForgeOneRequested"/> already use: <c>ShopPanel</c> forwards
+    /// it (this panel is nested inside that one — PA7), <c>MainUi</c> wires the forward straight to
+    /// <c>OpenPanel("Forge")</c>. No payload: the counter session (<see cref="CounterState.Active"/>)
+    /// stays open across the navigation — <b>no timers on decisions</b> (THE-GAME.md §3.1, the day
+    /// holds while the counter is open, so nothing here starts a countdown or frames a hurry) — so
+    /// <see cref="ForgePanel"/> reads who is still waiting straight off live state instead of a
+    /// snapshot this event would otherwise have to carry and could go stale the moment the counter
+    /// advances. This is a route, never an order — <b>influence never orders</b>: the button opens
+    /// the forge and names nothing to craft or charge, and the customer still decides at the present
+    /// exactly as before.</summary>
+    public event Action? OpenForgeRequested;
+
     /// <summary>U25 (§11.14.14, KTD2): the counter's own fleece dormant act needs a way to speak —
     /// set by <see cref="ShopPanel"/> right alongside its own <see cref="ShopPanel.Bind"/>-time
     /// re-wire (the same "hand the collaborator in after construction" pattern that class's own
@@ -113,7 +128,7 @@ public partial class CounterPanel : SimPanel
 
         BuildActiveCustomerCard(state, hero);
         BuildNextStep(counter, hero);
-        BuildMeters(counter);
+        BuildMeters(state, counter, hero);
         BuildDesk(state, counter, hero);
         BuildPresentedAndOffer(state, counter);
         BuildPresentReplyBubble(counter);
@@ -165,6 +180,41 @@ public partial class CounterPanel : SimPanel
         // (CustomerVoice.WantLine) — never a second rule set, so Present can never contradict what
         // is spoken here.
         cardBody.AddChild(BuildSpeechBubble($"{hero.Name}: \"{CustomerVoice.WantLine(hero, state)}\""));
+
+        // P2-PEOPLE-21: the frame that named this gap (runs/shots-2026-09-13/Counter.png) showed a
+        // customer stating a want over an empty shelf with nowhere to send the player — "present an
+        // item from the shelf" when there is nothing to present. ShelfCanServe is the real fact
+        // (not merely "the shelf is empty": a shelf stocked with the wrong slot, or priced past this
+        // hero's own afford/upgrade gate, reads exactly the same dead end), checked both directions
+        // — the button is gone the instant something on the shelf would actually land as a Buy.
+        if (!ShelfCanServe(state, hero))
+        {
+            AddButton(cardBody, "CounterForgeIt", "Forge something for them", Verdict.Ok,
+                () => OpenForgeRequested?.Invoke());
+        }
+    }
+
+    /// <summary>P2-PEOPLE-21: is there anything on <see cref="PlayerState.Shelf"/> RIGHT NOW that
+    /// would land as a genuine Buy if presented to this hero? Mirrors <see
+    /// cref="GameSim.Drama.CounterForecast.Wants"/>'s own shelf-scan branch — the SAME
+    /// <see cref="ShoppingAi.EvaluateItem"/> gate, never a second guess at fit — but answers a
+    /// different question: <c>Wants</c> reports an EMPTY gear slot first even when nothing on the
+    /// shelf could fill it, so it can't tell "the shelf is empty" from "the shelf is full and
+    /// wrong." This can, which is exactly what deciding whether to send the player to the forge
+    /// needs.</summary>
+    private static bool ShelfCanServe(GameState state, Hero hero)
+    {
+        var heroClass = ClassRegistry.Require(hero.ClassId);
+        foreach (var entry in state.Player.Shelf)
+        {
+            if (state.Items.TryGetValue(entry.Item.Value, out var item)
+                && ShoppingAi.EvaluateItem(hero, heroClass, item, entry.Price, state.Items).Kind == ShoppingVerdictKind.Buy)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>The customer's spoken reply once a round is actually open — a pure function of
@@ -238,17 +288,30 @@ public partial class CounterPanel : SimPanel
         label.Name = "CounterNextStep";
     }
 
-    /// <summary>Interest/Patience/Goodwill/Round — the sim's own integers rendered 1:1, no
-    /// UI-side arithmetic (CounterPanelTests pins this).</summary>
-    private void BuildMeters(CounterState counter)
+    /// <summary>Interest/Patience/Standing/Round — the sim's own integers rendered 1:1, no
+    /// UI-side arithmetic (CounterPanelTests pins this). Standing replaces the raw
+    /// <see cref="CounterState.GoodwillPermille"/> reading this used to print (P2-ONBOARD-09):
+    /// Goodwill is a per-session fleece-memory number nothing else reads for player-facing
+    /// purposes, while the value that actually pays off — <see cref="RelationshipBands.For"/>,
+    /// fed by <see cref="Hero.MoodPermille"/> and shelf purchases — is what
+    /// <see cref="GameSim.Heroes.CommissionSystem"/>'s premium bonus and Bryn's own redemption
+    /// beat (<c>TutorialFlow.RuleRevisedFactLanded</c>) both key on. Decision 2 ("price for the
+    /// sale, or price for the relationship") only reads as a real choice if the counter names the
+    /// fact the sim actually acts on, not an internal counter the player can't act on. Reuses
+    /// <see cref="HeroChips.StandingChip"/> — the same chip HeroPanel/CampPanel already render for
+    /// this hero, so the band is never toned or worded two different ways.</summary>
+    private void BuildMeters(GameState state, CounterState counter, Hero? hero)
     {
         var row = AddRow(_body!);
         row.AddChild(StatChip("Interest", $"{counter.InterestPermille}",
             counter.InterestPermille > 0 ? UiKit.ChipTone.Positive : UiKit.ChipTone.Neutral));
         row.AddChild(StatChip("Patience", $"{counter.PatienceRounds}",
             counter.PatienceRounds <= 1 ? UiKit.ChipTone.Negative : UiKit.ChipTone.Neutral));
-        row.AddChild(StatChip("Goodwill", $"{counter.GoodwillPermille}",
-            counter.GoodwillPermille < 0 ? UiKit.ChipTone.Negative : UiKit.ChipTone.Neutral));
+        if (hero is not null)
+        {
+            row.AddChild(HeroChips.StandingChip(hero.Id, state, hero.MoodPermille));
+        }
+
         row.AddChild(StatChip("Round", $"{counter.Round}", UiKit.ChipTone.Accent));
     }
 

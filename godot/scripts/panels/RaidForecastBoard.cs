@@ -146,6 +146,12 @@ public partial class RaidForecastBoard : Control
     private void RenderParty(ForecastParty party, int ordinal)
     {
         AddHeader(_body!, $"Party {ordinal}: {string.Join(", ", party.HeroNames)}");
+
+        // P2-MEMORY-20 ("the forecast gets a face"): the party's own voice, ahead of the board's
+        // typeset rows — see MusterVoice's own doc for why this rides CustomerVoice/PartyVoice's
+        // derivation precedent rather than ArcScenes' authored-scene one.
+        AddLabel(_body!, MusterVoice.AnchorLine(party));
+
         AddLabel(_body!, $"Target: floor {party.TargetFloor}{HalvarsFloorCaption(party)}{RecordCaption(party)}");
 
         // Threats floor-ascending, exactly as RaidForecast built them (floor 1..TargetFloor).

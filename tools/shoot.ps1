@@ -8,7 +8,30 @@
 # headless failure mode is an infinite hang, so we never wait forever.
 #
 # Usage: powershell -File tools/shoot.ps1 -Out C:\tmp\town.png [-State Tavern]
-#   -State: "" (town, default) | Forge | Shop | Tavern | Gate | Counter | Watch
+#   -State: "" (town, default) | PhaseN (N=1..5, day-phase tint captures) | one of the states in the
+#   BEGIN/END KNOWN_STATES block below.
+#
+#   P2-SCREEN-28: this line used to hand-list Forge | Shop | Tavern | Gate | Counter | Watch as the
+#   valid values -- but the harness has never recognised Forge, Shop, Tavern, or Gate (only the more
+#   specific ForgeAnvil, ShopPanel, TavernPanel, GateNight/GateHeldStreak, etc.), because a hand-copy
+#   of shot_harness.gd's real state list rots the moment that list changes and nobody notices. It
+#   cannot rot silently anymore: the block below is meant to be a verbatim copy of KNOWN_STATES, and
+#   ShootScriptKnownStatesCensusTests (sim/GameSim.Tests/Hygiene) fails the fast lane the moment this
+#   comment and that const disagree in either direction -- a state added to the harness without a
+#   matching header update is a red build, not a stale doc.
+#
+# BEGIN KNOWN_STATES
+#   BellTray, Bestiary, BrynGreedyRule, BrynRuleRevised, Camp, CommissionDilemma, Chronicle,
+#   Counter, Demand, DepthsPanel, Docket, ForgeAnvil, ForgeAnvilEmpty, ForgeEcho, ForgeExit,
+#   ForgeFlavor, ForgeLadder, ForgePanel, ForgeShelf, ForgeTrinket, GatedCounterEmptyShelf,
+#   GateHeldStreak, GateNight, Graduation, HeroCandidateOpen, HeroCards, HeroErrand, HeroTrinket,
+#   Ledger, LedgerProvenance, Lessons, Memorial, MemoryRow, MineGateFocus, Mirror, OccupancyCorner,
+#   Primer, Provenance, ReturnAtNight, ReturnEmerge, ReturnQuestEmpty, SendOff, ShopPanel,
+#   ShopTrinket, SplitLessons, Storied, StoriedCard, StoriedRefusal, SystemMenu, TavernPanel, TavernScene,
+#   TavernSceneAtBar, Telling, TellingFall, TellingFork, TellingVerdict, TownOverview,
+#   TutorialLookIn, TutorialOffCamera, Watch, WarrantFirstMorning
+# END KNOWN_STATES
+#
 #   -State TavernScene / TavernSceneAtBar (P2-PEOPLE-01): the arc-scene row on a patron's card, and
 #   the scene itself once pursued. Both set SHOT_ARC_SCENE below.
 #   -State Watch (§11.14.7): a hand-built, already-resolved two-floor fight staged straight into
@@ -39,6 +62,10 @@ Write-Host $stamp -ForegroundColor DarkGray
 $env:SHOT_OUT = $Out
 $env:SHOT_STATE = $State
 $env:SHOT_WATCH_FIGHT = if ($State -eq "Watch") { "1" } else { "" }
+# P2-MEMORY-22: the outdoor memorial wall's own lantern row needs real recorded deaths, which a
+# fresh day-1 campaign has none of (MainUi.StageMemorialDeathsReceipt) -- 3 is enough to show a
+# real, non-trivial row without implying a specific "how many is normal" count.
+$env:SHOT_MEMORIAL_DEATHS = if ($State -eq "Memorial") { "3" } else { "" }
 # P2-PEOPLE-01: TavernScene / TavernSceneAtBar need one FACT planted before the tavern is opened --
 # a player-marked piece in Torvald's hands (MainUi.StageArcSceneReceipt). The scene engine then
 # decides for itself whether to offer, so the capture still proves the real eligibility rule rather

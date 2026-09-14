@@ -3,9 +3,11 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using GameSim.Advisor;
+using GameSim.Classes;
 using GameSim.Contracts;
 using GameSim.Crafting;
 using GameSim.Economy;
+using GameSim.Heroes;
 using GameSim.Materials;
 using GameSim.Professions;
 using Godot;
@@ -80,6 +82,9 @@ public partial class ForgePanel : SimPanel
 
     private Label? _feedback;
     private Label? _materialsLabel;
+
+    /// <summary>P2-PEOPLE-21: the pinned "who is waiting" line — see the build site's own doc.</summary>
+    private Label? _waitingCustomerLine;
     private OptionButton? _materialSelect;
 
     // Phase C U-C1 slice 2: craft-modifier composition selectors (oil / rune / fitting). "(none)" is
@@ -618,6 +623,7 @@ public partial class ForgePanel : SimPanel
         }
 
         var state = _devStagedState ?? Adapter.CurrentState;
+        _waitingCustomerLine!.Text = WaitingCustomerLine(state);
         // UI-5: the running materials list is now redundant with each vendor ListRow's own
         // "owned" column below — this line stays only as the empty-inventory hint (no full
         // "copper x4, iron x2" prose dump once there IS stock to read off the rows instead).
@@ -804,6 +810,10 @@ public partial class ForgePanel : SimPanel
         string? needsKey = null;
         var needsQuantity = 0;
         var needsRecipeName = string.Empty;
+        // P2-PEOPLE-22: one marcher per gap slot, computed once per Refresh (not once per card —
+        // every recipe of the same slot names the SAME sim-decided fact, so this is read once and
+        // looked up below, never recomputed per card).
+        var marcherBySlot = MarcherBySlot(state);
         foreach (var professionId in state.Player.SelectedProfessions)
         {
             if (!ProfessionRegistry.TryGet(professionId, out var profession))
@@ -928,6 +938,18 @@ public partial class ForgePanel : SimPanel
                 }
 
                 outputRow.AddChild(StatChip("Wt", $"{recipe.BaseStats.Weight}"));
+
+                // P2-PEOPLE-22: a fact, never an order (LAW:influence-never-orders) — states who
+                // marches with this slot empty today and leaves the decision (forge it now, forge
+                // something else, or leave the slot for tomorrow) entirely with the player. Renders
+                // only when the sim actually decided someone marches today with THIS slot open —
+                // Trinket/Consumable recipes never match (RaidForecast.MissingItemSlots only tracks
+                // Weapon/Shield/Armor, the same three decision 3 is about), and a quiet muster or a
+                // fully-geared roster renders nothing rather than manufacture a marcher (rule 8).
+                if (marcherBySlot.TryGetValue(recipe.Slot, out var marcherName))
+                {
+                    AddLabel(infoCol, $"{marcherName} marches today with an empty {ItemVocab.Display(recipe.Slot).ToLowerInvariant()} slot.");
+                }
 
                 // Affordability lighting (KTD5) is a VISUAL MIRROR ONLY, read off the same
                 // state.Player.Materials the gate below reads — the kernel's CraftAction stays
@@ -1209,6 +1231,80 @@ public partial class ForgePanel : SimPanel
                 AddLabel(_needsRows!, needsGate.WhyNot);
             }
         }
+    }
+
+    /// <summary>
+    /// P2-PEOPLE-22 ("the recipe card names the marcher it would arm"): decision 3 ("fill the
+    /// empty slot, or upgrade the full one") is asked at THIS panel but was, until this unit,
+    /// answerable only later at the shop, via <see cref="HeroForecast.ForShelfAsItStands"/>
+    /// (decision 1's own "who would buy this" answer). <see cref="HeroForecast"/> cannot itself
+    /// name an EMPTY slot — its whole domain is ranking items already sitting on a shelf, so it has
+    /// no way to answer "which slot is this hero missing" for a recipe that has not been forged
+    /// yet. The honest source for that fact is <see cref="MusterPlan.Compute"/> — already public,
+    /// already the SAME projection <see cref="RaidForecast.ForTomorrow"/> shows on the HUD's
+    /// Forecast board (that class's own doc: "today's muster... actually TODAY's, later this same
+    /// day" — <see cref="MusterSystem"/>'s registration note says the same) — crossed with <see
+    /// cref="RaidForecast.MissingItemSlots"/> (already public, already reused by
+    /// <c>CommissionSystem</c>). Both are pre-existing, sim-decided facts, only READ here, never
+    /// re-derived. <see cref="HeroForecast"/> IS still reused, as the tie-break: among several
+    /// marchers who all carry the same empty slot, the one <see cref="HeroForecast"/> already says
+    /// would buy something today (the shop-side signal decision 1 shows) is named first, falling
+    /// back to muster order so the pick stays deterministic either way. Never a survival estimate,
+    /// never a ranking of heroes against each other — one fact: this hero marches today with this
+    /// slot empty.
+    /// </summary>
+    private static Dictionary<ItemSlot, string> MarcherBySlot(GameState state)
+    {
+        // #838 fix, found by measuring HeroRosterTests against clean main (it passed there — this
+        // call site is the regression): MusterPlan.Compute -> PartyFormation.FormParties ->
+        // IsAnchor calls ClassRegistry.Require(hero.ClassId), which is documented to THROW for a
+        // malformed roster entry ("an unregistered id is a malformed-data defect that should fail
+        // loudly"). That contract is correct for the sim's own callers, but this panel's Refresh()
+        // runs unconditionally on every SimPanel.Bind (MainUi builds Forge before Heroes), so one
+        // hero with an unresolvable class anywhere in the roster used to crash the WHOLE MainUi
+        // build, not just this card's one fact — exactly what HeroRosterTests.
+        // UnregisteredClassHero_RendersPlaceholderPortrait_StillShowingNameOnCard's deliberately
+        // malformed fixture (testing the ROSTER CARD's own KTD3 fallback-portrait guarantee, never
+        // meant to reach this far) tripped. This is a display-only projection (class doc above), so
+        // excluding a hero MusterPlan's own routing cannot resolve is the same "renders nothing
+        // rather than manufacture a marcher" rule this method already applies to a quiet muster or
+        // a fully-geared roster — never a reason to bring down a panel that has nothing to do with
+        // hero classes.
+        var musterableHeroes = state.Heroes.Values
+            .Where(h => ClassRegistry.IsRegistered(h.ClassId))
+            .ToImmutableSortedDictionary(h => h.Id.Value, h => h);
+
+        var candidatesBySlot = new Dictionary<ItemSlot, List<Hero>>();
+        foreach (var plan in MusterPlan.Compute(musterableHeroes, state.Bounties, state.Items))
+        {
+            foreach (var heroId in plan.Roster)
+            {
+                if (!state.Heroes.TryGetValue(heroId.Value, out var hero))
+                {
+                    continue;
+                }
+
+                foreach (var slot in RaidForecast.MissingItemSlots(hero.Gear))
+                {
+                    if (!candidatesBySlot.TryGetValue(slot, out var marchers))
+                    {
+                        candidatesBySlot[slot] = marchers = new List<Hero>();
+                    }
+
+                    marchers.Add(hero);
+                }
+            }
+        }
+
+        var marcherBySlot = new Dictionary<ItemSlot, string>();
+        foreach (var (slot, marchers) in candidatesBySlot)
+        {
+            var chosen = marchers.FirstOrDefault(h => HeroForecast.ForShelfAsItStands(state, h.Id).WouldBuy)
+                ?? marchers[0];
+            marcherBySlot[slot] = chosen.Name;
+        }
+
+        return marcherBySlot;
     }
 
     /// <summary>
@@ -2210,6 +2306,29 @@ public partial class ForgePanel : SimPanel
             : string.Join(", ", chosen);
     }
 
+    /// <summary>
+    /// P2-PEOPLE-21 ("Forge it — Torvald waits"): what the pinned header says, derived fresh every
+    /// Refresh straight off <see cref="CounterState"/> rather than carried as a payload on
+    /// <see cref="RaidForecastBoard.ForgeOneRequested"/>-shaped events (<see
+    /// cref="CounterPanel.OpenForgeRequested"/> is bare, same as those) — the counter session opened
+    /// by "Forge something for them" is still open (no timer ever closes it, THE-GAME.md §3.1), so
+    /// reading it live means this line can never go stale, and it renders identically whether the
+    /// player arrived here via that button or opened the Forge some other way while a customer
+    /// happens to be waiting. Empty (no line) whenever the counter is closed or has no active
+    /// customer — never invents a wait that isn't real.
+    /// </summary>
+    private static string WaitingCustomerLine(GameState state)
+    {
+        if (state.Counter is not { Closed: false, Active: { } activeId }
+            || !state.Heroes.TryGetValue(activeId.Value, out var hero))
+        {
+            return string.Empty;
+        }
+
+        return $"{hero.Name}, at the counter — wants {CustomerVoice.WantNoun(hero, state)}, " +
+               $"{hero.Gold}g on hand. Still there when you're done here.";
+    }
+
     private void EnsureBuilt()
     {
         if (_recipeRows is not null)
@@ -2268,6 +2387,17 @@ public partial class ForgePanel : SimPanel
         var root = new VBoxContainer { Name = "ForgeRoot" };
         root.SetAnchorsPreset(LayoutPreset.FullRect);
         AddChild(root);
+
+        // P2-PEOPLE-21 ("Forge it — Torvald waits"): who is still waiting, read live off the SAME
+        // counter session the "Forge something for them" button (CounterPanel.OpenForgeRequested)
+        // left open — see WaitingCustomerLine's own doc for why this is derived every Refresh
+        // rather than carried as a snapshot on that event. Above ForgeFeedback: this is context the
+        // player needs BEFORE reading anything below, the same "speaks first" ordering CampPanel's
+        // own narrator line uses. Empty text collapses to zero height (same CampPanel precedent),
+        // so a Forge open with no one waiting costs no space.
+        _waitingCustomerLine = AddLabel(root, string.Empty);
+        _waitingCustomerLine.Name = "ForgeWaitingCustomer";
+        _waitingCustomerLine.AddThemeColorOverride("font_color", GameTheme.AccentColor);
 
         _feedback = AddLabel(root, string.Empty);
         _feedback.Name = "ForgeFeedback";

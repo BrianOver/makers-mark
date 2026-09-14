@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using GameSim.Contracts;
 
 namespace GodotClient.Ui;
@@ -34,6 +37,11 @@ public static class PhaseVocab
         _ => phase.ToString(),
     };
 
+    /// <summary>Morning's live sub-state word (see <see cref="Display(GameState)"/>) — named once
+    /// so <see cref="LiveWordsFor"/> can reserve room for it without re-typing the literal
+    /// somewhere it could drift from what the switch below actually renders.</summary>
+    private const string PrepareWord = "Prepare";
+
     /// <summary>
     /// The live HUD banner's word (was <c>MainUi.PlayerPhaseName</c>): the same table as <see
     /// cref="Display(DayPhase)"/>, except Morning splits into "Prepare" (a counter session is open
@@ -41,9 +49,31 @@ public static class PhaseVocab
     /// </summary>
     public static string Display(GameState state) => state.Phase switch
     {
-        DayPhase.Morning => state.Counter is { Closed: false } ? "Prepare" : "Dawn",
+        DayPhase.Morning => state.Counter is { Closed: false } ? PrepareWord : Display(DayPhase.Morning),
         _ => Display(state.Phase),
     };
+
+    /// <summary>
+    /// Every word <see cref="Display(GameState)"/> can ever render for <paramref name="phase"/> —
+    /// one, for every phase except Morning, which has two (its resting "Dawn" and, while a
+    /// counter session is open, "Prepare"). P2-SCREEN-25: a surface that shows a LIVE word for one
+    /// phase slot — the HUD's "Phase" chip, and the day-timeline's currently-highlighted segment —
+    /// must reserve that slot's width against every word it can ever hold, not just the one it
+    /// happens to be showing right now, or the slot resizes (and reflows every sibling after it)
+    /// the moment the live sub-state flips. Deriving this from the SAME switch above (rather than
+    /// a second hand-typed word list) is what keeps it from silently falling out of sync with what
+    /// actually renders.
+    /// </summary>
+    public static IReadOnlyList<string> LiveWordsFor(DayPhase phase) => phase == DayPhase.Morning
+        ? new[] { Display(DayPhase.Morning), PrepareWord }
+        : new[] { Display(phase) };
+
+    /// <summary>Every word <see cref="Display(GameState)"/> can ever render, across every <see
+    /// cref="DayPhase"/> the day can be in — the full set a caller sizing ONE slot that can show
+    /// ANY of them (the HUD's "Phase" chip cycles through all five phases plus Morning's two
+    /// sub-states over one day) must measure against. See <see cref="LiveWordsFor"/>'s own remark.</summary>
+    public static readonly IReadOnlyList<string> AllLiveWords =
+        Enum.GetValues<DayPhase>().SelectMany(LiveWordsFor).Distinct().ToArray();
 
     /// <summary>
     /// The save envelope's stored form (<c>CampaignSave.Envelope.Phase</c>, always
