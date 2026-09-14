@@ -35,8 +35,65 @@ public class ObjectiveAdvisorTests
         var first = suggestions[0];
         var buy = Assert.IsType<BuyMaterialAction>(first.Action);
         Assert.True(MaterialRegistry.IsPriced(buy.MaterialKey));
-        Assert.True(MaterialVendorHandlers.QuoteCost(buy.MaterialKey, buy.Quantity) <= state.Player.Gold);
+        var cost = MaterialVendorHandlers.QuoteCost(buy.MaterialKey, buy.Quantity);
+        Assert.True(cost <= state.Player.Gold);
         Assert.True(ActionLegality.IsLegal(state, buy, state.Phase));
+
+        // P2-HONEST-24: the rewrite from "Buy N material (cost) — ..." to a fact-phrased line must
+        // not have dropped any of the facts a player needs to act on it.
+        Assert.Contains($"{buy.Quantity}", first.Reason, StringComparison.Ordinal);
+        Assert.Contains(MaterialRegistry.Require(buy.MaterialKey).DisplayName.ToLowerInvariant(), first.Reason, StringComparison.Ordinal);
+        Assert.Contains($"{cost}g", first.Reason, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// P2-HONEST-24: the commission line used to open with "Accept {hero}'s commission" — an order.
+    /// The rewrite ("{hero}'s commission is open — ...") must still carry every fact a player needs
+    /// to judge it: who, the slot, the quality bar, the premium, and the deadline.
+    /// </summary>
+    [Fact]
+    public void OpenCommission_TopSuggestion_StillNamesHeroSlotQualityPremiumAndDeadline()
+    {
+        var state = GameComposition.NewCampaign(Seed);
+        var hero = state.Heroes.Values.First();
+        var deadline = state.Day + 5;
+        state = state with
+        {
+            Phase = DayPhase.Morning,
+            Commissions = ImmutableList.Create(new Commission(
+                hero.Id, ItemSlot.Weapon, QualityGrade.Common, DeadlineDay: deadline, PremiumGold: 15)),
+        };
+
+        var top = Assert.Single(ObjectiveAdvisor.Suggest(state), s => s.Action is AcceptCommissionAction);
+
+        Assert.Contains(hero.Name, top.Reason, StringComparison.Ordinal);
+        Assert.Contains("Weapon", top.Reason, StringComparison.Ordinal);
+        Assert.Contains("Common", top.Reason, StringComparison.Ordinal);
+        Assert.Contains("15g", top.Reason, StringComparison.Ordinal);
+        Assert.Contains($"{deadline}", top.Reason, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// P2-HONEST-24: the stockable-craft line used to open with "Shelve '{item}'" — an order. The
+    /// rewrite must still name the item and still say it is finished and not yet on the shelf.
+    /// </summary>
+    [Fact]
+    public void UnshelvedPlayerCraft_Suggestion_StillNamesTheItem()
+    {
+        var state = GameComposition.NewCampaign(Seed);
+        var item = new Item(
+            new ItemId(state.NextItemId), "longsword", "Fine Longsword", ItemSlot.Weapon, QualityGrade.Fine,
+            new ItemStats(Attack: 20, Defense: 0, Weight: 5), new MakersMark("Test Smith", state.Day),
+            ImmutableList<ItemHistoryEntry>.Empty);
+        state = state with
+        {
+            NextItemId = state.NextItemId + 1,
+            Items = state.Items.SetItem(item.Id.Value, item),
+        };
+
+        var match = Assert.Single(ObjectiveAdvisor.Suggest(state), s => s.Action is StockAction);
+
+        Assert.Contains(item.Name, match.Reason, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -1,5 +1,8 @@
 #if GDUNIT_TESTS
+using System.Collections.Immutable;
 using System.Linq;
+using System.Text.RegularExpressions;
+using GameSim.Advisor;
 using GameSim.Contracts;
 using GameSim.Kernel;
 using GameSim.Materials;
@@ -90,6 +93,69 @@ public class MentorIdleVoiceTests
         AssertThat(spoken)
             .OverrideFailureMessage($"\"{spoken}\" still reads the fixed RestingLine even though there is a live objective to speak.")
             .IsNotEqual(MentorVoice.CurrentLesson(null));
+    }
+
+    /// <summary>Fresh Morning with an open commission on the board — exercises the branch
+    /// P2-HONEST-24 rewrote from an imperative ("Accept {hero}'s commission") to a fact
+    /// ("{hero}'s commission is open").</summary>
+    private static GameState OpenCommissionState()
+    {
+        var state = GameFactory.NewGame(1);
+        var hero = state.Heroes.Values.First();
+        return state with
+        {
+            Commissions = ImmutableList.Create(new Commission(
+                hero.Id, ItemSlot.Weapon, QualityGrade.Common, DeadlineDay: state.Day + 5, PremiumGold: 15)),
+        };
+    }
+
+    /// <summary>The same three command shapes <c>AdvisorNeverOrdersTests</c> (sim-side) checks for,
+    /// mirrored here rather than shared across assemblies — this project has no reference to
+    /// <c>GameSim.Tests</c>. Deliberately smaller (this file only needs to catch a regression in the
+    /// handful of states it drives, not stand as the law's own tripwire — that is the sim-side
+    /// test's job).</summary>
+    private static bool IsImperative(string line) =>
+        Regex.IsMatch(line, @"\byou (should|must|need to)\b", RegexOptions.IgnoreCase)
+        || Regex.IsMatch(line, @"\b(accept|buy|craft|honor|shelve|stock|sell|post|send|unlock|upgrade|raise)\b[^.—;]*\bnow\b", RegexOptions.IgnoreCase)
+        || Regex.Split(line, @"(?:\. |; | — |—)")
+            .Select(clause => clause.TrimStart('*', ' ', '\'', '"').Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault())
+            .Any(firstWord => firstWord is not null && ImperativeVerbs.Contains(firstWord.TrimEnd('.', ',', ':', '\'')));
+
+    private static readonly HashSet<string> ImperativeVerbs =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            "Accept", "Buy", "Craft", "Honor", "Shelve", "Stock", "Sell", "Post", "Send", "Unlock",
+            "Upgrade", "Raise", "Go", "Take", "Use", "Equip", "Wear", "Pay", "Trade", "Visit", "Talk",
+        };
+
+    /// <summary>
+    /// P2-HONEST-24: Bryn's idle voice is a verbatim pass-through of the advisor's own <see
+    /// cref="GameSim.Advisor.Suggestion.Reason"/> (see <see cref="MentorIdleVoice"/>'s own class
+    /// doc) — proven here by equality against <see cref="MentorVoice.Speak"/> applied directly to
+    /// the same Reason, across states that exercise branches this unit rewrote (a fresh-game buy
+    /// fallback and an open commission). The direct imperative check is a local backstop only; the
+    /// law's own tripwire is the sim-side property test, which this file cannot reach.
+    /// </summary>
+    [TestCase]
+    public void Line_SpeaksTheAdvisorsReasonVerbatim_AndNeverOrdersThePlayer()
+    {
+        foreach (var state in new[] { FreshMorningState(), StockedMorningState(), OpenCommissionState() })
+        {
+            var top = ObjectiveAdvisor.Suggest(state).FirstOrDefault();
+            if (top is null)
+            {
+                continue;
+            }
+
+            var spoken = MentorIdleVoice.Line(state);
+            AssertThat(spoken).IsEqual(MentorVoice.Speak(top.Reason));
+
+            // Checked against the RAW reason, not the wrapped "Bryn: "..."" string — the wrapper's
+            // own "Bryn:" prefix would mask a leading command verb in the line it wraps.
+            AssertThat(IsImperative(top.Reason))
+                .OverrideFailureMessage($"Bryn's line reads as an order: \"{spoken}\"")
+                .IsFalse();
+        }
     }
 }
 #endif
