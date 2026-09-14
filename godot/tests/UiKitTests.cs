@@ -173,45 +173,78 @@ public class UiKitTests
     }
 
     [TestCase]
-    public void ArtRect_EllipsizedCaption_SizesToItsOwnTextWidth_NotAFlatFloor_ForHitAndMiss()
+    public void ArtRect_EllipsizedCaption_FitsItsOwnText_BoundedByTheColumnItSitsIn()
     {
         // P2-SCREEN-27 (owner GPU capture, Tavern hero rows): CaptionMinWidth (116px) is tuned
         // for the WordSmart wrap risk a NON-ellipsized caption carries — applying it
         // unconditionally to an ellipsized one (which never wraps) ballooned a compact 56px
         // portrait tile to roughly double its own art's width for nothing ("the frame is fixed
-        // while art varies"). Narrowing the floor to the bare art width alone then clipped real
-        // hero names ("Brunhilde" -> "Brunhi"). Phrased against the property: an ellipsized
-        // caption's frame must fit ITS OWN text — narrower for a short name, wider for a longer
-        // one, never narrower than the text actually needs — for both the real-art hit and the
-        // no-art fallback miss.
+        // while art varies").
+        //
+        // Phrased against the property, and against BOTH bounds, because the first attempt at
+        // this fix — the caption's measured width with no bounds at all — was worse than the flat
+        // constant in both directions (measured 2026-09-14 at GameTheme.BodyFontSize):
+        //   * "Dagger" needs 55px, so a 56px recipe tile's caption rendered 56px wide and
+        //     LayoutTests' R7 readability canary failed it. A caption must stay readable.
+        //   * "Hardened Leather Vest" needs 179px, so one long name in a LIST dragged its card's
+        //     art column to 179px while its neighbours sat at 56px. A caption must not drag the
+        //     column it sits in; that is what TrimEllipsis is for.
+        // So: fits its own text, never below the readable floor, never past the column — for the
+        // real-art hit and the no-art fallback miss alike.
         var size = new Vector2(56, 56);
+        const float column = 116f;   // UiKit.CaptionMinWidth — the flat column width
+        const float readable = 104f; // UiKit.CaptionReadableMinWidth
+
+        // "Kael" (~34px) sits below the readable floor; "Alchemical Robe" (~128px) sits past the
+        // column. One sample either side of the band, per art branch.
         var hitShort = UiKit.ArtRect(KnownArtKey, size, caption: "Kael", ellipsizeCaption: true);
-        var hitLong = UiKit.ArtRect(KnownArtKey, size, caption: "Brunhilde", ellipsizeCaption: true);
+        var hitLong = UiKit.ArtRect(KnownArtKey, size, caption: "Alchemical Robe", ellipsizeCaption: true);
         var missShort = UiKit.ArtRect(UnknownArtKey, size, caption: "Kael", ellipsizeCaption: true);
-        var missLong = UiKit.ArtRect(UnknownArtKey, size, caption: "Brunhilde", ellipsizeCaption: true);
+        var missLong = UiKit.ArtRect(UnknownArtKey, size, caption: "Alchemical Robe", ellipsizeCaption: true);
         try
         {
             foreach (var (control, caption) in new[]
                      {
-                         (hitShort, "Kael"), (hitLong, "Brunhilde"), (missShort, "Kael"), (missLong, "Brunhilde"),
+                         (hitShort, "Kael"), (hitLong, "Alchemical Robe"),
+                         (missShort, "Kael"), (missLong, "Alchemical Robe"),
                      })
             {
-                using var probe = new Label { Text = caption };
-                var needed = probe.GetMinimumSize().X;
+                var needed = MeasuredTextWidth(caption);
                 var actual = control.GetCombinedMinimumSize().X;
 
-                AssertThat(actual >= needed - 0.5f)
-                    .OverrideFailureMessage($"'{caption}' frame ({actual}) is narrower than its own text needs ({needed}) — it will clip")
+                // Never narrower than the text needs — up to the column, past which the caption
+                // ellipsizes by design rather than widening the frame.
+                AssertThat(actual >= Mathf.Min(needed, column) - 0.5f)
+                    .OverrideFailureMessage(
+                        $"'{caption}' frame ({actual}) is narrower than its own text needs ({needed}) "
+                        + "and narrower than the column — it clips for no reason")
                     .IsTrue();
+
+                // Never past the column: a long name must not drag its card's art column wider
+                // than every neighbouring card's.
                 AssertThat(actual)
-                    .OverrideFailureMessage($"'{caption}' frame ({actual}) still uses the flat CaptionMinWidth floor instead of its own text width")
-                    .IsLess(116f);
+                    .OverrideFailureMessage(
+                        $"'{caption}' frame ({actual}) is wider than the {column}px column, so a list of "
+                        + "these no longer lines up")
+                    .IsLessEqual(column);
+
+                // Never below the readable floor: a caption that hugs four characters is
+                // indistinguishable on screen from one the R7 collapse squeezed.
+                AssertThat(actual)
+                    .OverrideFailureMessage(
+                        $"'{caption}' frame ({actual}) is under the {readable}px readability floor — "
+                        + "LayoutTests' R7 canary cannot tell that from a collapsed label, and neither can a player")
+                    .IsGreaterEqual(readable);
             }
 
-            // The property this whole fix is FOR: a longer caption earns more room than a
-            // shorter one, never a fixed frame regardless of content.
-            AssertThat(hitLong.GetCombinedMinimumSize().X).IsGreater(hitShort.GetCombinedMinimumSize().X);
-            AssertThat(missLong.GetCombinedMinimumSize().X).IsGreater(missShort.GetCombinedMinimumSize().X);
+            // The property this whole fix is FOR: a caption that needs more room gets more room,
+            // rather than every frame reserving the same flat width regardless of content.
+            AssertThat(hitLong.GetCombinedMinimumSize().X)
+                .OverrideFailureMessage("a long caption earns no more room than a short one — the floor is still flat")
+                .IsGreater(hitShort.GetCombinedMinimumSize().X);
+            AssertThat(missLong.GetCombinedMinimumSize().X)
+                .OverrideFailureMessage("a long caption earns no more room than a short one — the floor is still flat")
+                .IsGreater(missShort.GetCombinedMinimumSize().X);
         }
         finally
         {
@@ -219,6 +252,24 @@ public class UiKitTests
             hitLong.Free();
             missShort.Free();
             missLong.Free();
+        }
+    }
+
+    /// <summary>The unclipped width <paramref name="text"/> needs at the theme's default font.
+    /// <see cref="GodotObject.Free"/>, never <c>using</c>/<c>Dispose</c>: disposing a C# wrapper
+    /// around a non-RefCounted Godot object releases the managed binding and leaves the native
+    /// node alive and parentless — an orphan by Godot's own counter. The production copy of this
+    /// probe stranded 1040 nodes across 50 panel rebuilds before it was written this way.</summary>
+    private static float MeasuredTextWidth(string text)
+    {
+        var probe = new Label { Text = text };
+        try
+        {
+            return probe.GetMinimumSize().X;
+        }
+        finally
+        {
+            probe.Free();
         }
     }
 

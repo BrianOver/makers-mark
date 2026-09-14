@@ -734,8 +734,8 @@ public class ForgeCraftTests
                 var buy = Find<Button>(ui.Forge, $"BuyMat_{key}");
                 var spin = Find<SpinBox>(ui.Forge, $"BuyMatQty_{key}");
 
-                var buyRow = NearestAncestorNamed(buy, "ListRow");
-                var spinRow = NearestAncestorNamed(spin, "ListRow");
+                var buyRow = NearestListRowAbove(buy);
+                var spinRow = NearestListRowAbove(spin);
 
                 AssertThat(spinRow)
                     .OverrideFailureMessage($"'{key}' quantity stepper is not inside the same ListRow as its Buy button")
@@ -745,19 +745,27 @@ public class ForgeCraftTests
         finally { Unmount(ui); }
     }
 
-    /// <summary>Walks up from <paramref name="node"/> to the nearest ancestor named <paramref
-    /// name="name"/> — used above to prove two controls share the same visual row regardless of
-    /// exactly how many containers sit between either one and that row.</summary>
-    private static Node NearestAncestorNamed(Node node, string name)
+    /// <summary>Walks up from <paramref name="node"/> to the <c>UiKit.ListRow</c> row it draws in
+    /// — identified by that row's own <c>ListRowContent</c> HBox, not by the outer row node.
+    ///
+    /// <para><b>Why not the row itself.</b> Every <c>UiKit.ListRow</c> asks to be named "ListRow"
+    /// and they are all added to ONE parent, so only the first of the nineteen keeps that name:
+    /// <c>AddChild</c> without <c>forceReadableName</c> resolves a sibling collision by rewriting
+    /// the name to <c>@&lt;ClassName&gt;@&lt;n&gt;</c> — measured 2026-09-14, and note it is the
+    /// CLASS name, so the rewritten name does not contain "ListRow" at all. This test's first
+    /// version walked for the literal name and failed on <c>BuyMat_iron</c> with "no ancestor
+    /// named 'ListRow'" while the defect it hunts was entirely absent. Each row's content HBox is
+    /// an only child of its own row, so no collision ever renames it.</para></summary>
+    private static Node NearestListRowAbove(Node node)
     {
         var current = node.GetParent();
-        while (current is not null && current.Name != name)
+        while (current is not null && current.Name.ToString() != "ListRowContent")
         {
             current = current.GetParent();
         }
 
         AssertThat(current)
-            .OverrideFailureMessage($"no ancestor named '{name}' above {node.Name}")
+            .OverrideFailureMessage($"no UiKit.ListRow ancestor above {node.Name}")
             .IsNotNull();
         return current!;
     }
