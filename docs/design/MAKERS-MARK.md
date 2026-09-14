@@ -2454,9 +2454,8 @@ changes when it is done. A regression pin now holds that.
 | U28 | The day's slots, and what they don't cost | `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/MainUi.cs` | — |
 | U29 | The voice budget arms instead of queueing | `godot/scripts/ui/MentorBanner.cs`, `godot/scripts/ui/TutorialFlow.cs` | U10 |
 | U30 | The proof gets a row | `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/panels/LedgerModal.cs` | U21, U29 |
-| U31 | The loss gets a voice | `godot/scripts/ui/TutorialFlow.cs` | U29 |
 | U32 | The memory gets a row, and graduation is event-shaped | `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/panels/LegendsWall.cs` | U21, U30 |
-| U33 | Her five arc lines | `godot/scripts/ui/MentorVoice.cs`, `godot/scripts/ui/TutorialFlow.cs` | U29, U30, U31, U32 |
+| U33 | Her five arc lines | `godot/scripts/ui/MentorVoice.cs`, `godot/scripts/ui/TutorialFlow.cs` | U29, U30, U32 |
 | U34 | She says what she's seen | `godot/scripts/ui/MentorVoice.cs` | U4, U33 |
 | U35 | She leaves | `godot/scripts/town2d/InteriorLayout2D.cs`, `godot/scripts/ui/MentorVoice.cs` | U32, U33 |
 | U36 | She has a body and a face | `art/specs/`, `godot/scripts/ui/MentorBanner.cs` | U33 |
@@ -2812,19 +2811,6 @@ changes when it is done. A regression pin now holds that.
 - Test scenarios: armed on the first beat only; `Done` on the beat card being opened; `Skipped` at window end;
   the anchor points at the way in while the ledger is closed; the copy names no hero.
 - Verification: a player is walked to the beat card on the night it lands.
-
-#### U31. The loss gets a voice
-
-- Goal: the dormant loss act is anchored, bounded and honest, and voiced by nobody.
-- Requirements: R14
-- Files: `godot/scripts/ui/TutorialFlow.cs`
-- Approach: give the act its row and keep the mechanism copy unattributed in the ledger — permadeath, and the
-  rite is the player's if they want it. That copy also needs rewriting: "this is permadeath: the roster
-  refills" sits on the most solemn beat in the game. If the fallen carried the player's work, the copy names
-  the name the player was told to remember, per KTD5.
-- Test scenarios: the act arms on the first death; the row is visible one night and one day then retires;
-  `Done` on the rite and `Skipped` otherwise; it still fires after graduation; the copy names no survival math.
-- Verification: the first death produces a row, and the roster-refills line is gone.
 
 #### U32. The memory gets a row, and graduation is event-shaped
 
@@ -4623,13 +4609,12 @@ name (§11.6 rule 4).
 | P2-SCREEN-17 | The save-replace press names the day it destroys | `godot/scripts/NewGameSelect.cs` | — | [G] |
 | ⚑ P2-SCREEN-18 | The muster names what the full slots already hold, not only the gaps | `sim/GameSim/Heroes/RaidForecast.cs`, `godot/scripts/panels/RaidForecastBoard.cs` | — | [S] |
 | ⚑ P2-SCREEN-20 | The day's thread survives being read late (research M5) | `godot/scripts/ui/AdventureTicker.cs`, `godot/scripts/panels/LegendsWall.cs` | P2-MEMORY-12 | [G] |
-| P2-ONBOARD-09 | Bryn's redemption beat keys on the band that pays, not the chip that doesn't | `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/panels/CounterPanel.cs` | — | [G] |
+| P2-ONBOARD-09 | The Goodwill chip speaks the band or dies (the beat's own half landed) | `godot/scripts/panels/CounterPanel.cs` | — | [G] |
 | P2-ONBOARD-10 | The seed becomes enterable at New Game | `godot/scripts/NewGameSelect.cs` | — | [G] |
 | P2-PROOF-03 | The stage, pass one — one duel, recorded rolls | new `godot/scripts/panels/TellingPanel.cs` (+`.uid`) | — | [G] |
-| P2-PROOF-04 | The fork — rewind, desaturation, the fall that stays down, the stamp | `godot/scripts/panels/TellingPanel.cs` | P2-PROOF-03 | [G] |
-| P2-PROOF-05 | The other shapes — every `TellingScript.Shape` staged or downgraded, reflectively enumerated | `godot/scripts/panels/TellingPanel.cs`, `godot/tests/` | P2-PROOF-04 | [G] |
-| P2-PROOF-06 | The copy pack — deterministic pick, tone guards | `godot/scripts/panels/TellingPanel.cs` corpus | P2-PROOF-04 | [G] |
-| P2-PROOF-07 | The wiring and the deletion — "Ask how it happened", Full-tale dies | `godot/scripts/panels/LedgerModal.cs`, `docs/debugging.md` | P2-PROOF-05, P2-PROOF-06 | [G] |
+| P2-PROOF-05 | The reflective enumeration (every shape is already staged; nothing proves a SEVENTH would be) | `godot/tests/` | — | [G] |
+| P2-PROOF-06 | The copy pack — deterministic pick, tone guards | `godot/scripts/panels/TellingPanel.cs` corpus | — | [G] |
+| P2-PROOF-07 | Full-tale dies (the "Ask how it happened" wiring landed) | `godot/scripts/panels/LedgerModal.cs`, `docs/debugging.md` | — | [G] |
 | ⚑ P2-PROOF-11 | Legible defeat — the death names its margin (research M4) | `godot/scripts/panels/LedgerModal.cs`, `sim/GameSim/Expedition/TellingQuery.cs` (read-only) | — | [G] |
 | ⚑ P2-PROOF-13 | The maker names the signed work — the glossary's own sentence becomes true | `sim/GameSim/Contracts/Actions.cs`, `sim/GameSim/Crafting/CraftingHandlers.cs`, `godot/scripts/panels/ForgePanel.cs` | P4 | [S][C] |
 | ⚑ P2-PROOF-14 | The counterfactual reaches the ledger — the beat carries its own arithmetic | `sim/GameSim/Expedition/AttributionEngine.cs`, `godot/scripts/panels/LedgerModal.cs` | — | [S][GOLD] |
@@ -4639,7 +4624,7 @@ name (§11.6 rule 4).
 | P2-MEMORY-07 | The commendation — three reasons at the bar | scene-engine client registration | — | [G] |
 | P2-MEMORY-08 | The death-pool rewrite in place + the `{cause}` grammar contract | `sim/GameSim/Flavor/Packs/TavernPack.cs`, pack tests | — | [S] |
 | P2-MEMORY-10 | The book shell — `LegendsWall` refit, verbs and anchors migrated | `godot/scripts/panels/LegendsWall.cs` | — | [G] |
-| P2-MEMORY-11 | The fallen's pages and the item pages | `godot/scripts/panels/LegendsWall.cs`, `godot/scripts/panels/ProvenanceCard.cs` | P2-MEMORY-10 | [G] |
+| P2-MEMORY-11 | The item pages (the fallen's page is P2-MEMORY-10's shell, already shipped) | `godot/scripts/panels/LegendsWall.cs`, `godot/scripts/panels/ProvenanceCard.cs` | — | [G] |
 | P2-MEMORY-12 | Day pages absorb the ticker's composer; the marquee dies (P2-OQ3) | `godot/scripts/ui/AdventureTicker.cs` (`FormatLine` survives), `godot/scripts/MainUi.cs` | P2-MEMORY-10 | [G] |
 | P2-MEMORY-13 | `ChronicleComposer` and the fifteen predicates | new `sim/GameSim/Chronicle/ChronicleComposer.cs`, `sim/GameSim.Tests/` | — | [S] |
 | P2-MEMORY-14 | The bind and the export; `ChronicleScroll.cs` deleted (P2-OQ4) | `godot/scripts/panels/LegendsWall.cs`, `godot/scripts/panels/ChronicleScroll.cs` (deleted) | P2-MEMORY-11, P2-MEMORY-13 | [G] |
@@ -4649,7 +4634,7 @@ name (§11.6 rule 4).
 | ⚑ P2-MEMORY-21 | The reforge row previews the lineage it will write, from the one template that writes it | `sim/GameSim/Crafting/HeirloomHandlers.cs`, `godot/scripts/panels/LegendsWall.cs` | — | [S] |
 | P2-PEOPLE-02 | The register gate — a lint that fails on a planted violation of each rule | `godot/tests/`, scene corpus | — | [G] |
 | P2-PEOPLE-03 | The remaining arcs — Torvald 4–8, Brunhilde, Kael, Sable, Elowen, Moss | scene corpus | P2-PEOPLE-02 + the probe's verdict | [G] |
-| P2-PEOPLE-04 | Durable-fact read-back — "Halvar's floor" on the muster board | `godot/scripts/panels/RaidForecastBoard.cs`, vigil slate | — | [G] |
+| P2-PEOPLE-04 | Durable-fact read-back on the VIGIL (the muster board's own half landed) | `godot/scripts/panels/MineWatch.cs`, `godot/scripts/panels/CampPanel.cs` | — | [G] |
 | P2-PEOPLE-05 | Wake contracts — `Memorial.MarkerItem`, remembrance action | `sim/GameSim/Contracts/` | — | [S][C] |
 | P2-PEOPLE-06 | The fallen's page and the three verbs, on the death night | `sim/GameSim/Drama/`, `sim/GameSim/Heroes/` | P2-PEOPLE-05 | [S] |
 | P2-PEOPLE-07 | Death-night staging | `godot/scripts/panels/LegendsWall.cs`, `godot/scripts/panels/LedgerModal.cs` | P2-PEOPLE-06 | [G] |
@@ -4680,8 +4665,7 @@ name (§11.6 rule 4).
 | P2-LONG-12 | The four outcomes, written and reachable | `godot/scripts/`, copy corpus | P2-LONG-11 | [G] |
 | P2-LONG-13 | The Chronicle Night — the coda becomes the composition | `sim/GameSim/Chronicle/ChronicleComposer.cs`, `godot/scripts/` | P2-MEMORY-13, P2-LONG-12 | [G] |
 | P2-LONG-14 | A harness policy plays the commission; the ending stays ≤36, two-sided | `sim/GameSim/Harness/`, Balance suite | P2-LONG-11 | [S][BAL] |
-| P2-LONG-15 | The failure gradient renders — 400 and 200 get faces | `godot/scripts/town2d/`, `godot/scripts/panels/TavernPanel.cs` | — | [G] |
-| P2-LONG-16 | The latch lands — the Quiet Morning and the Rekindling | `sim/GameSim/Drama/`, `sim/GameSim/Heroes/PartyFormation.cs` | P2-LONG-15 | [S][GOLD][BAL] |
+| P2-LONG-16 | The latch lands — the Quiet Morning and the Rekindling | `sim/GameSim/Drama/`, `sim/GameSim/Heroes/PartyFormation.cs` | — | [S][GOLD][BAL] |
 | P2-LONG-17 | Rent demoted; the assessor gets a face | `godot/scripts/MainUi.cs`, `godot/scripts/` | P2-SCREEN-11 | [G] |
 | P2-LONG-18 | The pledge — dues paid in proven work, the cost named | `sim/GameSim/Contracts/Actions.cs`, `sim/GameSim/Contracts/Events.cs`, `sim/GameSim/Economy/`, `godot/scripts/` | P2-LONG-17 | [S][C] |
 | P2-LONG-19 | The rival's face, and the spoken absence of proof | `godot/scripts/town2d/`, flavor packs | — | [G] |
@@ -4700,7 +4684,6 @@ name (§11.6 rule 4).
 | P2-HONEST-07 | The satisfiable-gate census | `sim/GameSim.Tests/` | — | [S] |
 | P2-HONEST-08 | The comment sweep and the comment census (the two known stale comments are `EmberfallFoundryVenue`'s "Mine-peer difficulty curve" and `World`'s own header) | `sim/GameSim/Venues/Emberfall/EmberfallFoundryVenue.cs`, `sim/GameSim/Contracts/World.cs`, `godot/scripts/`, `sim/GameSim.Tests/` | — | [S] |
 | P2-HONEST-09 | `SkilledSmithPlayer` and `SmithSkill` die — 123 lines held alive by their own tests | `sim/GameSim/Harness/` | — | [S] |
-| P2-HONEST-10 | Guards rephrase against the property — `RejectionUxTests` literals die | `godot/tests/`, `sim/GameSim.Tests/` | — | [S] |
 | P2-HONEST-13 | `TickResult.Traces` is ingested or deleted | `sim/GameSim/Kernel/GameKernel.cs`, `tools/Analytics/` or `sim/GameSim/Contracts/` | — | [S] |
 | P2-HONEST-14 | The CLI's own printed prose enters the vocabulary census's scope | `sim/GameSim.Cli/Program.cs`, `sim/GameSim.Tests/` (`PlayerVocabularyCensusTests`) | P2-HONEST-06 | [S] |
 | P2-HONEST-16 | `ConsumableEffect.Magnitude` gets a client reader — a potion's heal amount becomes legible | `godot/scripts/panels/ForgePanel.cs`, `godot/scripts/panels/ShopPanel.cs` | — | [G] |
