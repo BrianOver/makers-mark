@@ -48,7 +48,7 @@ var mergedReceipts = mergedPrs
 // id by definition, so grepping it would match all of them and say nothing).
 var sourceTagSites = GitShell
     .ListSourceTagSites(repoRoot, "origin/main", plan.Units.Select(u => u.Id))
-    .ToDictionary(kv => kv.Key, kv => (IReadOnlyList<string>)kv.Value, StringComparer.Ordinal);
+    .ToDictionary(kv => kv.Key, kv => (IReadOnlyList<SourceTagHit>)kv.Value, StringComparer.Ordinal);
 
 var result = Reconciler.Reconcile(
     plan, landed, open, trackedFiles, mergedReceipts, fileOrigins, receiptRuleSince, sourceTagSites);

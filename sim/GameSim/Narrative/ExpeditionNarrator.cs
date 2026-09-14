@@ -27,7 +27,11 @@ namespace GameSim.Narrative;
 /// <para><b>Staged drip.</b> The CLI renders the stage-1 slice + camp cliffhanger at the Camp
 /// reveal (no attribution beats exist yet — attribution runs at finalize, so stage-1 beats surface
 /// at the Evening ledger as today) and the stage-2 slice + the Halt-driven closer after the Deep
-/// tick. <see cref="Retell"/> is the whole-result convenience (unstaged path + tests).</para>
+/// tick. The Godot evening ledger does not stage the drip and never wanted the whole retelling —
+/// it wants only <see cref="AttributionRecap"/>'s pride payload (P2-HONEST-26: composing the
+/// departure line and every floor's tension prose, then discarding all but the beats and closer,
+/// was dead work — that prose already has a live surface by evening, MineWatch's
+/// <c>PresentationScheduler</c>-driven feed drawing on this same <see cref="NarratorPack"/>).</para>
 ///
 /// <para><b>Halt closers (D4).</b> The closer is disambiguated by the recorded
 /// <see cref="ExpeditionHalt"/> — the <c>GateHeld</c> vs <c>TooHurt</c> ambiguity is undecidable
@@ -45,23 +49,28 @@ public static class ExpeditionNarrator
     public const int HurtHitPercent = 40;
 
     /// <summary>
-    /// The full retelling of a finalized <see cref="ExpeditionResult"/>: the departure line, the
-    /// per-floor tension beats over EVERY floor with the result's attribution beats interleaved at
-    /// their proving floor, then the Halt-driven closer. Used for the unstaged path and the tests.
+    /// The Evening ledger's whole surface (P2-HONEST-26): every proven attribution beat, in the
+    /// floor order they proved, followed by the Halt-driven closer — and NOTHING else. Composes
+    /// neither the departure line nor the per-floor tension prose (floor-enter, quaff, kill, hurt,
+    /// flee) that <see cref="FloorBeats"/> builds for the CLI's staged drip: that prose has no
+    /// reader here (P2-PROOF-07 already reduced the ledger to the pride payload), so it is never
+    /// built rather than built and thrown away. <c>OrderBy</c> is a stable sort, so beats sharing a
+    /// floor keep their original relative order — the same order <see cref="FloorBeats"/> would
+    /// have interleaved them in.
     /// </summary>
-    public static ImmutableList<string> Retell(
+    public static ImmutableList<string> AttributionRecap(
         ExpeditionResult result,
         ImmutableList<Hero> party,
-        ImmutableSortedDictionary<int, Item> items,
         FlavorPack pack,
         ulong campaignId,
         int day)
     {
-        var lines = ImmutableList.CreateBuilder<string>();
-        lines.Add(Departure(party, result.TargetFloor, pack, campaignId, day));
-        lines.AddRange(FloorBeats(result.Floors, result.Beats, party, items, result.Deaths, pack, campaignId, day));
-        lines.Add(Closer(result.Halt, party, result.DeepestFloorCleared, result.TargetFloor, pack, campaignId, day));
-        return lines.ToImmutable();
+        var heroesById = party.ToDictionary(h => h.Id.Value);
+        var lines = result.Beats
+            .OrderBy(b => b.Floor)
+            .Select(b => BeatLine(b, heroesById))
+            .ToImmutableList();
+        return lines.Add(Closer(result.Halt, party, result.DeepestFloorCleared, result.TargetFloor, pack, campaignId, day));
     }
 
     /// <summary>

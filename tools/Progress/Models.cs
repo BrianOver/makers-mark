@@ -148,6 +148,12 @@ public sealed record MissingOrMalformedReceipt(int PrNumber, string PrTitle, Ser
 /// </summary>
 public sealed record FalseReceipt(string UnitId, int PrNumber, string Path, bool PathWasToBeDeleted = false);
 
+/// <summary>One tracked source line where a unit id appears, classified as a CODE hit (nothing
+/// precedes the id on the line that marks it a comment) or a COMMENT hit. See
+/// <see cref="GitShell.IsCommentHit"/> for the exact rule and why a missed marker fails safe
+/// (reads as code, keeps the conservative refusal).</summary>
+public sealed record SourceTagHit(string Path, int Line, bool IsComment);
+
 /// <summary>
 /// A unit this run reports UNBUILT whose exact id is nevertheless written into tracked source on
 /// origin/main — the shape that made a session re-derive four already-shipped units by hand before
@@ -166,8 +172,19 @@ public sealed record FalseReceipt(string UnitId, int PrNumber, string Path, bool
 /// five units under one <c>Serves: link4</c> receipt (#687 did) leaves four of them reported
 /// unbuilt indefinitely — the commit subject carries no per-unit tag, and their rows name files
 /// that already existed, so neither existing evidence class can see them.</para>
+///
+/// <para><b><see cref="HasCodeHit"/> is what <c>Frontier</c> actually gates dispatch on.</b> A
+/// unit whose only hits are comments (typically a forward reference deferring its own work, e.g.
+/// "U33 gives her a graduation line; this unit ships the mechanism the fact rides on, not the
+/// voice") must not be permanently unrunnable just because a later unit's author mentioned it —
+/// that shape blocked four real units before this split existed. This record still carries every
+/// hit, code and comment alike, because section 9 lists both; only the refusal decision reads
+/// <see cref="HasCodeHit"/>.</para>
 /// </summary>
-public sealed record SourceTaggedUnbuilt(string UnitId, IReadOnlyList<string> Paths);
+public sealed record SourceTaggedUnbuilt(string UnitId, IReadOnlyList<SourceTagHit> Hits)
+{
+    public bool HasCodeHit => Hits.Any(h => !h.IsComment);
+}
 
 public sealed record ReconciliationResult(
     IReadOnlyList<DomainStatus> Domains,

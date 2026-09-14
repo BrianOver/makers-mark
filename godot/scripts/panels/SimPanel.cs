@@ -339,14 +339,20 @@ public abstract partial class SimPanel : Control
     }
 
     /// <summary>A fitted modal card: <paramref name="Body"/> for the content, <paramref name="ActionRow"/> for
-    /// the controls that must never leave the screen.</summary>
-    protected readonly record struct ModalCard(VBoxContainer Body, Control ActionRow);
+    /// the controls that must never leave the screen, and <paramref name="Panel"/> — the outer bounded region
+    /// itself — for a caller that needs to dock the card's own height to its content (see
+    /// <c>CampPanel.SizeCardToContent</c>, the visfix5 fix for a card that used to always be exactly
+    /// window-minus-margin tall regardless of how little was inside it).</summary>
+    protected readonly record struct ModalCard(VBoxContainer Body, Control ActionRow, Control Panel);
 
     /// <summary>Inset (px) from each window edge for a fitted modal card.</summary>
     private const float ModalMargin = 64f;
 
-    /// <summary>Height (px) reserved for a fitted modal's bottom action row.</summary>
-    private const float ModalActionRowHeight = 40f;
+    /// <summary>Height (px) reserved for a fitted modal's bottom action row. Protected (visfix5): a
+    /// caller docking its own card height to content still needs to budget this same row, which is
+    /// reserved via <c>body.OffsetBottom</c> below rather than via anything the row's own children
+    /// report — the OFFSET is the one true source, not the row's live minimum size.</summary>
+    protected const float ModalActionRowHeight = 40f;
 
     /// <summary>
     /// Build a modal card that CANNOT outgrow the window, with its dismiss controls anchored to the bottom.
@@ -391,7 +397,7 @@ public abstract partial class SimPanel : Control
         actionRow.OffsetTop = -ModalActionRowHeight;
         host.AddChild(actionRow);
 
-        return new ModalCard(body, actionRow);
+        return new ModalCard(body, actionRow, panel);
     }
 
     protected static HBoxContainer AddRow(Node parent)

@@ -105,22 +105,80 @@ public class FrontierTests
         Assert.Null(Single(result, "P2-MEMORY-05").RefusalReason);
     }
 
+    private static Dictionary<string, IReadOnlyList<SourceTagHit>> SourceHits(
+        params (string Id, string Path, int Line, bool IsComment)[] hits)
+    {
+        var map = new Dictionary<string, IReadOnlyList<SourceTagHit>>(StringComparer.Ordinal);
+        foreach (var (id, path, line, isComment) in hits)
+        {
+            var hit = new SourceTagHit(path, line, isComment);
+            map[id] = map.TryGetValue(id, out var existing)
+                ? existing.Append(hit).ToList()
+                : new List<SourceTagHit> { hit };
+        }
+
+        return map;
+    }
+
     [Fact]
-    public void AUnitAlreadyNamedInTrackedSource_IsRefusedRatherThanRebuilt()
+    public void AUnitWithACodeHitInTrackedSource_IsRefusedRatherThanRebuilt()
     {
         // Section 9's warning, promoted to a refusal here: for a human it is "check before you
-        // build", but an unattended run has nobody to check, so it must not take the unit at all.
+        // build", but an unattended run has nobody to check, so it must not take the unit at all —
+        // but only when the hit is real CODE, never merely a comment mentioning the id.
         var plan = Plan(Row("P2-PROOF-04"));
-        var sites = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal)
-        {
-            ["P2-PROOF-04"] = new[] { "godot/scripts/panels/TellingPanel.cs" },
-        };
+        var sites = SourceHits(("P2-PROOF-04", "godot/scripts/panels/TellingPanel.cs", 42, false));
 
         var result = Reconciler.Reconcile(
             plan, new Dictionary<string, LandedUnit>(), new Dictionary<string, OpenUnit>(),
             new HashSet<string>(), sourceTagSites: sites);
 
-        Assert.Contains("already written into tracked source", Single(result, "P2-PROOF-04").RefusalReason);
+        var refusal = Single(result, "P2-PROOF-04").RefusalReason;
+        Assert.Contains("already written into tracked source", refusal);
+        Assert.Contains("godot/scripts/panels/TellingPanel.cs:42", refusal);
+    }
+
+    [Theory]
+    [InlineData("    // U33 gives her a graduation line; this unit ships the mechanism, not the voice")]
+    [InlineData("    /// U33's own test scenario is explicit (\"a declining player gets no line\")")]
+    [InlineData("    # U33 is a later unit's own remaining scope, not this unit's")]
+    [InlineData("     * U33 gives her a graduation line (block-comment continuation)")]
+    public void AUnitWithOnlyCommentHits_IsNeverRefusedOnThatBasisAlone(string commentLine)
+    {
+        // The defect this whole change fixes: every one of U33's real hits on main is a
+        // doc-comment, several of them forward references saying U33's OWN work is not done yet.
+        // Refusing forever on a comment hit permanently blocked a unit nothing has built. Runs the
+        // REAL classifier over each marker family rather than hand-asserting IsComment: true, so a
+        // regression in GitShell.IsCommentHit itself would fail this test too.
+        var idIndex = commentLine.IndexOf("U33", StringComparison.Ordinal);
+        var isComment = GitShell.IsCommentHit(commentLine, idIndex);
+        Assert.True(isComment, $"expected '{commentLine}' to classify as a comment");
+
+        var plan = Plan(Row("U33"));
+        var sites = SourceHits(("U33", "godot/scripts/ui/TutorialFlow.cs", 2924, isComment));
+
+        var result = Reconciler.Reconcile(
+            plan, new Dictionary<string, LandedUnit>(), new Dictionary<string, OpenUnit>(),
+            new HashSet<string>(), sourceTagSites: sites);
+
+        Assert.Null(Single(result, "U33").RefusalReason);
+    }
+
+    [Fact]
+    public void AUnitWithBothCodeAndCommentHits_IsRefused()
+    {
+        // The gate is "at least one code hit", not "every hit is code" — a mixed unit is exactly
+        // as suspect as an all-code one.
+        var plan = Plan(Row("P2-PEOPLE-02"));
+        var sites = SourceHits(
+            ("P2-PEOPLE-02", "godot/scripts/ui/ArcSceneFlow.cs", 197, true),
+            ("P2-PEOPLE-02", "godot/scripts/ui/ArcSceneFlow.cs", 213, false));
+
+        var result = Reconciler.Reconcile(
+            plan, new Dictionary<string, LandedUnit>(), new Dictionary<string, OpenUnit>(),
+            new HashSet<string>(), sourceTagSites: sites);
+
+        Assert.Contains("already written into tracked source", Single(result, "P2-PEOPLE-02").RefusalReason);
     }
 
     [Fact]

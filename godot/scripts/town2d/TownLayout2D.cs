@@ -355,6 +355,38 @@ public static class TownLayout2D
     };
 
     /// <summary>
+    /// P2-MEMORY-22 ("the east field remembers", link 5): the outdoor memorial wall's sprite id —
+    /// resolved through the SAME <see cref="TownAssets2D.ForVenue"/> ladder every venue building
+    /// uses (real art first, a loud placeholder box on a miss), even though this structure is
+    /// deliberately NOT one of the five <see cref="Venues"/> above — it carries no interior, no
+    /// drawer panel, and none of <c>MainUi.OnTownBuildingClicked</c>'s venue-key routing; it is
+    /// built and wired standalone by <c>Town2D.BuildMemorialWall</c> so a stray click can never
+    /// fall through that switch's "Town" default (a dead click — CLAUDE.md law 3).
+    /// </summary>
+    public const string MemorialWallSpriteId = "memorial-wall";
+
+    /// <summary>P2-MEMORY-22: the wall's own Y-sort line/front row, in the town's open east
+    /// field — the plan's own finding ("the east third of the map is grass, two crates and two
+    /// trees ... the town has no outdoor memory at all"). Chosen clear of every existing footprint
+    /// on today's 64×44 grid: south of the market-yard crates (tiles 54,18 / 54,20 / 54,22 —
+    /// TownAssets2D.ForVenue(MemorialWallSpriteId)'s placeholder footprint bottoms out at tile-row
+    /// 30.5, a full 8 tiles clear of them), north of the noticeboard's own door-approach lane
+    /// (37.4-40.5), and short of the east tree line at tile column ~60.6 by 3+ tiles — see
+    /// <c>MemorialWallTests</c> for the measured census.</summary>
+    public static readonly Vector2I MemorialWallTile = new(54, 32);
+
+    /// <summary>P2-MEMORY-22: the art id for a single lantern on the wall — the SAME committed
+    /// asset (<see cref="TownAssets2D.ForProp(string)"/>) the plaza's four corner lanterns already
+    /// draw (<see cref="Props"/> above), reused rather than a second lantern sprite invented for
+    /// this one surface.</summary>
+    public const string MemorialLanternSpriteId = "town2d-prop-lantern";
+
+    /// <summary>P2-MEMORY-22: horizontal spacing (px) between two lanterns on the wall — mirrors
+    /// <see cref="RallySpacingPx"/>'s own "one shared spacing constant, never a second number for
+    /// the same kind of row" precedent.</summary>
+    public const float MemorialLanternSpacingPx = 12f;
+
+    /// <summary>
     /// U-T3-1 (placement-census unit): the six starting heroes' deterministic wander-home tile,
     /// extracted VERBATIM from <c>Town2D.HomeFor</c>'s own formula — <c>TileToWorld(new
     /// Vector2I(6 + id*3 % 28, 10 + id*2 % 6))</c> evaluated for <c>id</c> 1..6 (index 0 is hero id
