@@ -542,23 +542,16 @@ public static class UiKit
         };
         placeholder.AddChild(body);
 
-        // P2-SCREEN-27 (owner GPU capture, Tavern hero rows): the SAME "LW5-class bug" the
-        // real-art branch above already documents and guards against (ExpandMode default of
-        // KeepSize reports the TEXTURE'S OWN pixel size) was never applied here. It went
-        // unnoticed on the DEFAULT glyph fallback (small and roughly square, so the mismatch
-        // barely showed), but TavernPanel passes a real, generated hero-class body sprite as
-        // `fallbackIcon` here — its native canvas is neither square nor anywhere near this
-        // half-size box, so it silently overrode CustomMinimumSize below and the surrounding
-        // VBox/PanelContainer grew to fit IT rather than the declared half-size tile, ballooning
-        // a 56px portrait's frame well past its own declared size (identically for every hero
-        // class, since none of them ever had IgnoreSize forcing the requested size to win).
         var icon = new TextureRect
         {
             Name = "FallbackIcon",
             Texture = fallbackIcon ?? IconRegistry.Glyph(DefaultFallbackGlyph),
             CustomMinimumSize = size * 0.5f,
-            StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
+            // P2-SCREEN-29: same LW5/PR #119 class as the real-art branch above — without this,
+            // KeepSize's GetMinimumSize() reports the fallback glyph's own pixel size instead of
+            // `size * 0.5f`.
             ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
+            StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
             MouseFilter = Control.MouseFilterEnum.Ignore,
         };
         body.AddChild(icon);
