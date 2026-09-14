@@ -191,8 +191,11 @@ loot, depth records, and the ore heroes hauled up — offered at the price you w
 the faction's favour named when it moved the number. The ticker notes the rent paid, the guild's
 dues assessed, a hero's promotion, a bounty collected.
 
-Night has its own verbs: **buy ore** — which doubles as the only sanctioned gift in the game, since
-you pay the hero directly and may pay well; **shake on ore** in the tavern's second act; **honor a
+Night has its own verbs: **buy ore** — the only channel that moves coin from you to a hero for its
+own sake, since the gold goes to the hero standing in front of you rather than to a vendor. You pay
+their ask, whole-offer or nothing: `BuyOreAction` carries no price, so there is no "pay well" to
+perform, and the generosity is in buying at all rather than in the number. (This line used to
+promise you "may pay well", which the verb has never let anyone do.); **shake on ore** in the tavern's second act; **honor a
 memorial**; **reforge** a fallen hero's recorded gear into an heirloom, choosing which recipe and
 which metal its next life takes; and **post a bounty** with the day's lesson fresh.
 
@@ -223,10 +226,12 @@ Skipping stays legal. You can ring straight through a day you do not care about.
 Day one you have one profession, a handful of copper, an empty shelf, and six strangers.
 
 The tutorial runs three days as an apprenticeship rather than a tooltip tour: make one thing, sell
-one thing, watch one raid resolve. By the end of it you have picked a second profession. The
+one thing, watch one raid resolve. A second profession is available to pick, but it is gated on
+your first paid bounty rather than on day three, so plenty of smiths finish the apprenticeship
+with one trade. (This line used to say you have picked one by the end of it.) The
 apprenticeship carries a warrant, and you are told so at the first send-off: through day three the
 Mine keeps no one. A killing blow leaves a hero at death's door and they limp home, and that night's
-ledger shows you the roll that should have killed them. You are told when the warrant ends — twice —
+ledger shows you the roll that should have killed them. The send-off names the day the warrant ends,
 and the dawn of day four ends it as a beat, not a footnote: from today the Mine keeps what it takes.
 Walk out of the apprenticeship early and you walk out of its warrant too; the game names that price
 at the moment you choose it.
@@ -276,10 +281,13 @@ The decisions the game is actually made of.
 5. **Buy the ore, or buy the faction's favour?** Every purchase pays the returning hero their ask
    and raises your standing with their faction, which cheapens every future load. The fork is whose
    ore you buy: the faction you will need, or the hero standing in front of you tonight.
-6. **Send the runner, or trust their judgment?** The full shape of this one is worth stating
-   plainly: provisioning a camped party provably saves that party, and measurably endangers the run.
-   A topped-up party dares one floor deeper, and the deep floors are where heroes die. Both halves
-   are real, and the game does not resolve them for you.
+6. **Send the runner, or trust their judgment?** The intended shape is that provisioning saves the
+   party you provision and endangers the run, because a topped-up party dares one floor deeper and
+   the deep floors are where heroes die. **Only the first half is currently real.** The A/B run on
+   2026-09-02 came back byte-identical with zero deliveries, because a camped party's HP already
+   sits at or above half by construction, so the send almost never has a band to act in. The second
+   half is a design intent with no measurement behind it today; `P2-LONG-25` aims the verb at where
+   camped heroes actually are, and until it lands this decision is one-sided.
 
 ---
 
@@ -332,7 +340,11 @@ rent on a ten-day cadence, guild dues on a seven-day one, materials, and the Fou
 
 Four venues are live on a forward ladder — the Mine and the Sunken Crypt at the ladder's foot,
 Gloomwood, then the Emberfall Foundry at its top. A party graduates a rung by clearing that venue's
-own floor 5, never routes back down, and each rung's ore grade rises with it. A rival shop holds
+own floor 5 and each rung's ore grade rises with it. **Routing never sends a graduated party back
+down — but a bounty does.** Bounties are structurally Mine-scoped, and a bounty is judged on a
+hero's single venue-agnostic deepest floor, so a veteran can accept one and take her whole party
+back to the Mine for a night. That is the one "order" the player can buy, working as built; it is
+named here because "never routes back down" read as an absolute and is not one. A rival shop holds
 market share and restocks against you.
 
 **Faction standing** sits underneath the ore trade. Buying a faction's ore raises your standing with
@@ -478,8 +490,13 @@ Stated as description. These are properties of the game as it stands, not gaps a
   irreversible facts are deaths and the calendar.
 - **Demand leans toward the blacksmith.** Heroes ask for gear, consumables and trinkets, but nothing
   in the world specifically *needs* what only a tanner or an engineer can make.
-- **Nothing is spoken aloud.** Four written narrator voices carry the prose and a director paces
-  them, but the game is read, not heard. There is no narrator in the ear.
+- **The narrator is spoken; nothing else is.** Four narrator voices carry the prose, a director
+  paces them, and the lines are recorded — 49 of them, with their own volume slider, which may be
+  set to zero. Everything else in the game is read: no hero, customer, mentor or townsperson has a
+  voice. The narrator's audio carries nothing its text does not, and no setting anywhere may
+  suppress the TEXT, so a silenced narrator loses nothing. This bullet used to say nothing is
+  spoken aloud and that there is no narrator in the ear, which was written before the voice
+  library was.
 - **Craft quality is gated on hand skill.** The forge minigames decide the grade, and by the second
   week heroes refuse Poor work. The only route to quality that does not pass through the player's own
   hands is the purchased masterwork behind forge Tier II. There is no timing assist — a deliberate
@@ -487,9 +504,11 @@ Stated as description. These are properties of the game as it stands, not gaps a
 - **English only, and every lesson is prose.** No string in the client is translated, and nothing is
   taught by a picture. A hobby-scope cut, named here because an undeclared gap is the one silence
   this project's own rules forbid.
-- **Most of what the town knows arrives as text on a board.** Two surfaces deliver information
-  through a person — the customer at the counter states their want before you present anything, and
-  the tavern patron carries their business face to face. Everything else is posted: the muster
+- **Most of what the town knows arrives as text on a board.** Three surfaces deliver information
+  through a person — the customer at the counter states their want before you present anything, the
+  tavern patron carries their business face to face, and Bryn at her own station speaks whatever
+  the apprenticeship is teaching right now, falling through to the live top objective once it is
+  done. (Said two for as long as Bryn's station only recited a fixed greeting.) Everything else is posted: the muster
   forecast, the commission board, the bounty board, the night's ledger.
 - **Professions are picked, not accumulated.** A shop runs one or two at a time and may swap between
   them mid-campaign at the bell. There is no ladder that opens all four over a campaign, and no
@@ -497,7 +516,12 @@ Stated as description. These are properties of the game as it stands, not gaps a
 - **A run gets one camp, however deep it is going.** The checkpoint fires once, whether the party is
   bound for floor 2 or floor 5 — so the game's one reach-into-the-dark moment happens exactly as
   often on a shallow run as on the run where everything is at stake.
-- **Talents are free.** They cost prerequisites, not points; there is no skill-point economy.
+- **Talents cost no points, but they do cost a slot.** There is no skill-point economy — a talent
+  is unlocked by meeting its prerequisites, never by spending a currency saved up for it. But
+  `UnlockTalentAction` is one of the ten slot-consuming actions, so unlocking one spends a fifth of
+  the day, and two nodes additionally want forge tier, which wants gold and ore. This bullet used
+  to read "Talents are free", which sent a player into the day planning a purchase the budget
+  never agreed to.
 - **Provisioning saves the one and endangers the many.** A topped-up party dares one floor deeper,
   and the deep floors are where heroes die. Both effects are measured and real. The game states the
   tension and does not resolve it.
