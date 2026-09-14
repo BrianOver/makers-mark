@@ -148,6 +148,46 @@ public partial class CompanionDock : Control
         _chip.OffsetRight = Margin + DockWidth;
         _chip.OffsetBottom = -Margin;
         _chip.OffsetTop = -(Margin + ChipHeight);
+
+        // visfix3 (GPU-capture defect pass): this chip is the one on-screen control that sits
+        // right at the window's bottom edge (y = window_height - 44 .. - 12) inside its own
+        // CanvasLayer (CanvasLayerIndex above). Measured live with a throwaway pixel probe: at
+        // that Y position, Godot's StyleBoxFlat corner-radius anti-aliasing paints the top ~10px
+        // of this button's background as a visible blend with whatever is BEHIND it (the world's
+        // grass showed through, tinting the "normal" state green) instead of the flat opaque fill
+        // every other themed panel gets — "the counter banner ... overlaps the world" was that
+        // bleed, not the button sitting outside the viewport (its rect was always fully on
+        // screen). Isolated with three A/B captures: the identical Button moved to mid-screen or
+        // the top edge painted perfectly solid; a bare ColorRect at this SAME bottom-edge rect
+        // also painted perfectly solid; only this StyleBoxFlat's AntiAliasing at this Y bled.
+        // Turning AntiAliasing off removes only a ~1px edge softening that was never visible at
+        // this resolution — the rounded corners and border stay exactly as themed — and the
+        // bottom third of the button (the only part anything is behind) is the only place this
+        // project currently docks a CanvasLayer control this close to the bottom edge, so the
+        // override stays local to this one chip rather than GameTheme.ButtonStyle() itself.
+        foreach (var state in new[]
+                 {
+                     GameTheme.ButtonVisualState.Normal, GameTheme.ButtonVisualState.Hover,
+                     GameTheme.ButtonVisualState.Pressed, GameTheme.ButtonVisualState.Disabled,
+                 })
+        {
+            var style = (StyleBoxFlat)GameTheme.ButtonStyle(state).Duplicate();
+            style.AntiAliasing = false;
+            var key = state switch
+            {
+                GameTheme.ButtonVisualState.Normal => "normal",
+                GameTheme.ButtonVisualState.Hover => "hover",
+                GameTheme.ButtonVisualState.Pressed => "pressed",
+                _ => "disabled",
+            };
+            _chip.AddThemeStyleboxOverride(key, style);
+        }
+
+        // "focus" reuses the Hover surface project-wide (GameTheme.Build) — same substitution here.
+        var focusStyle = (StyleBoxFlat)GameTheme.ButtonStyle(GameTheme.ButtonVisualState.Hover).Duplicate();
+        focusStyle.AntiAliasing = false;
+        _chip.AddThemeStyleboxOverride("focus", focusStyle);
+
         _chip.Pressed += () => SetExpanded(!IsExpanded);
         AddChild(_chip);
 
