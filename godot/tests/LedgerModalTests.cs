@@ -356,7 +356,19 @@ public class LedgerModalTests
     /// The sim sits AT day-1 Evening (<c>BuyOreLegal</c>'s own precondition) with the SAME offer
     /// mirrored into <see cref="GameState.OpenOreOffers"/>, so the Ledger's Buy button is enabled
     /// and a press resolves through the REAL <c>OreMarketHandlers.Apply</c> kernel path.</summary>
-    private static GameState OreOfferDay(int standing, int quantity, int unitPrice)
+    private static GameState OreOfferDay(int standing, int quantity, int unitPrice) =>
+        OreOfferDay(MaterialRegistry.Copper, standing, quantity, unitPrice);
+
+    /// <summary>
+    /// P2-HONEST-25: the same day-1 fixture, parametrized by material key so a property test can
+    /// drive every faction/ore pair the registry actually holds rather than only copper/Deepvein —
+    /// a hand-picked pair stops covering the family the moment a new faction's ore ships (this repo
+    /// has paid for that shape of gap four times already). Standing is set against whichever
+    /// faction <see cref="FactionRegistry.ByOreKey"/> resolves for the given material, falling back
+    /// to no standing change at all for a material no faction supplies (a conformance defect this
+    /// test itself flags, never silently swallowed).
+    /// </summary>
+    private static GameState OreOfferDay(string materialKey, int standing, int quantity, int unitPrice)
     {
         var sellerId = new HeroId(1);
         var seller = new Hero(
@@ -365,16 +377,17 @@ public class LedgerModalTests
             DeepestFloorReached: 1, DiedOnDay: null);
         var heroes = ImmutableSortedDictionary<int, Hero>.Empty.Add(sellerId.Value, seller);
 
-        var offer = new OreOffered(sellerId, MaterialRegistry.Copper, quantity, unitPrice);
+        var offer = new OreOffered(sellerId, materialKey, quantity, unitPrice);
         var events = ImmutableList.Create<GameEvent>(
             new PartyReturned(ImmutableList.Create(sellerId)) { Id = new EventId(1), Day = 1 },
             offer with { Id = new EventId(2), Day = 1 });
 
         var baseState = GameFactory.NewGame(9101, heroes);
+        var faction = FactionRegistry.ByOreKey(materialKey);
         return baseState with
         {
             Phase = DayPhase.Evening,
-            Player = baseState.Player.WithStanding(FactionRegistry.DeepveinId, standing),
+            Player = faction is null ? baseState.Player : baseState.Player.WithStanding(faction.Id, standing),
             EventLog = events,
             OpenOreOffers = ImmutableList.Create(offer),
         };
@@ -390,6 +403,20 @@ public class LedgerModalTests
             .OverrideFailureMessage($"No 'for Ng total' ore line found in:\n{renderedText}")
             .IsTrue();
         return int.Parse(match.Groups[1].Value);
+    }
+
+    /// <summary>The Ledger's OWN ore-offer line for one material, isolated from the rest of the
+    /// panel's text (button labels like "Buy" would otherwise pollute a bare-verb scan) — anchored
+    /// on the fixed "offers Nx {material} for Ng total" shape <see cref="LedgerModal"/> always
+    /// renders, with its optional parenthetical faction note captured too.</summary>
+    private static string OreLineFor(string renderedText, string materialKey)
+    {
+        var materialName = MaterialRegistry.Require(materialKey).DisplayName.ToLowerInvariant();
+        var match = Regex.Match(renderedText, $@"offers \d+x {Regex.Escape(materialName)} for \d+g total(?: \([^)]*\))?");
+        AssertThat(match.Success)
+            .OverrideFailureMessage($"No ore-offer line for '{materialName}' found in:\n{renderedText}")
+            .IsTrue();
+        return match.Value;
     }
 
     private const string BuyButtonName = "BuyOre_1_" + MaterialRegistry.Copper;
@@ -444,6 +471,65 @@ public class LedgerModalTests
         {
             Unmount(ui);
         }
+    }
+
+    /// <summary>
+    /// P2-HONEST-25. Decision 5 ("buy the ore, or buy the goodwill") has an invisible second arm
+    /// on a player's FIRST ore buy: before this unit the faction only got named once its tariff
+    /// had actually moved the price, so a neutral-standing offer — the exact state every faction
+    /// starts in — read as a plain price line. Drives every material <see
+    /// cref="MaterialRegistry.PricedPool"/> actually holds (the registry IS the set; a hand-picked
+    /// pair stops covering the family the moment a new venue's ore ships) at neutral standing,
+    /// where the pre-fix code showed nothing extra at all, and checks the property rather than one
+    /// instance: the row names its faction, and does so as a FACT — never a recommendation or a
+    /// predicted future price (the law this unit sits closest to breaking).
+    /// </summary>
+    [TestCase]
+    public void OreOfferLine_NamesItsFaction_ForEveryLiveMaterial_AtNeutralStanding_AsAFactNeverAnOrder()
+    {
+        AssertThat(MaterialRegistry.PricedPool.Length)
+            .OverrideFailureMessage("The priced pool is suspiciously small — this property test would not mean much.")
+            .IsGreaterEqual(15);
+
+        var offenders = new SortedDictionary<string, string>(StringComparer.Ordinal);
+
+        foreach (var materialKey in MaterialRegistry.PricedPool)
+        {
+            var faction = FactionRegistry.ByOreKey(materialKey);
+            if (faction is null)
+            {
+                offenders[materialKey] = "no supplying faction is registered for this live material";
+                continue;
+            }
+
+            var ui = MountMainUi(new SimAdapter(OreOfferDay(materialKey, standing: 0, quantity: 2, unitPrice: 5)));
+            try
+            {
+                ui.Ledger.ShowFor(1);
+                var line = OreLineFor(RenderedText(ui.Ledger), materialKey);
+
+                if (!line.Contains(faction.DisplayName, StringComparison.Ordinal))
+                {
+                    offenders[materialKey] = $"row never named its supplier ({faction.DisplayName}): \"{line}\"";
+                    continue;
+                }
+
+                if (Regex.IsMatch(line, @"%|should|must|need to|build|worth|recommend", RegexOptions.IgnoreCase))
+                {
+                    offenders[materialKey] = $"row reads as a recommendation or a predicted payoff, not a fact: \"{line}\"";
+                }
+            }
+            finally
+            {
+                Unmount(ui);
+            }
+        }
+
+        AssertThat(offenders.Count)
+            .OverrideFailureMessage(
+                "Every ore row must name its faction, tariff or none (P2-HONEST-25) — a fact, never a " +
+                "recommendation:\n  " + string.Join("\n  ", offenders.Select(kv => $"{kv.Key}: {kv.Value}")))
+            .IsEqual(0);
     }
 
     [TestCase]

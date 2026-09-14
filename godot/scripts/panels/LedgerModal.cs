@@ -1013,17 +1013,27 @@ public partial class LedgerModal : SimPanel
     /// applies to the AGGREGATE line only, never per-unit (a "corrected per-unit price" would
     /// re-introduce the exact rounding lie this fix removes). Buying is whole-offer-or-nothing
     /// (no partial buy), so a line total is also the only number that corresponds to something the
-    /// player can actually pay. Names the supplying faction only when its tariff actually moved
-    /// the price — a neutral-standing offer reads identically to the pre-fix base-ask line, just
-    /// summed instead of per-unit.
+    /// player can actually pay.
+    ///
+    /// P2-HONEST-25: names the supplying faction on EVERY row, tariff or none — before this unit
+    /// the name only appeared once the tariff had actually moved the price, so a player's FIRST
+    /// ore buy (the one that sets the relationship, decision 5's own "buy the ore, or buy the
+    /// goodwill") named no faction at all and read as a plain price line. A neutral-standing offer
+    /// now carries the same parenthetical without a percent — a fact ("whose books this feeds"),
+    /// never a recommendation and never a predicted future price.
     /// </summary>
     private static string OreOfferLine(GameState state, OreOffered offer)
     {
         var (cost, adjPerMille, faction) = PricedOffer(state, offer);
         var line = $"offers {offer.Quantity}x {MaterialRegistry.Require(offer.MaterialKey).DisplayName.ToLowerInvariant()} for {cost}g total";
-        if (faction is null || adjPerMille == 0)
+        if (faction is null)
         {
             return line;
+        }
+
+        if (adjPerMille == 0)
+        {
+            return $"{line} ({faction.DisplayName} ore)";
         }
 
         // Round-to-nearest per-mille -> percent for the flavor note only; the charged gold above
