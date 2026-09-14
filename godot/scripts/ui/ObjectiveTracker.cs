@@ -613,7 +613,20 @@ public sealed partial class DayTimeline : HBoxContainer
         {
             var isCurrent = i == currentIndex;
             var isPast = i < currentIndex;
-            _segmentPills[i].AddThemeStyleboxOverride("panel", SegmentStyle(isCurrent, isPast));
+
+            // P2-SCREEN-25 overflow fix: Morning is the one segment Build() reserves extra label
+            // width on (see Build's own remark) so it never resizes when the live word swaps
+            // Dawn<->Prepare. That reservation makes Morning's pill wider than any other
+            // single-word segment, and this row has no slack to absorb it — proved by measuring
+            // it on clean origin/main, where the identical 5 segments fit with zero pixels to
+            // spare (HudBoundsTests.ObjectiveChip_TextNeverOverflowsItsOwnContainer went red the
+            // moment this reservation shipped). `separation` (Build's own theme override) is a
+            // shared, pinned floor another in-flight PR is also drawing on, so it is not this
+            // fix's to spend; SegmentStyle's own content margin, trimmed ONLY for the one pill
+            // this fix widened, claws back exactly enough of that pill's own padding for "Night"
+            // to clear TimelineWrap's right edge again, without touching any other segment's size.
+            var isMorning = KernelOrder[i].Phase == DayPhase.Morning;
+            _segmentPills[i].AddThemeStyleboxOverride("panel", SegmentStyle(isCurrent, isPast, isMorning));
             _phaseLabels[i].AddThemeColorOverride(
                 "font_color", isCurrent ? GameTheme.BoneColor : isPast ? GameTheme.TextDim : GameTheme.BodyTextColor);
             _phaseLabels[i].Text = isCurrent && liveLabel is not null ? liveLabel : KernelOrder[i].Label;
@@ -646,12 +659,22 @@ public sealed partial class DayTimeline : HBoxContainer
         _waiting.Color = new Color(GameTheme.EmberColor, alpha);
     }
 
+    /// <summary>P2-SCREEN-25 overflow fix: the horizontal content margin for the ONE pill whose
+    /// label <see cref="Build"/> reserves extra width on (Morning, against "Prepare") — see
+    /// <see cref="Refresh"/>'s own remark for why this pill's own padding, and not the shared
+    /// <c>separation</c> constant or any other segment's margin, is what pays for that
+    /// reservation. Vertical margin is untouched (height was never the constrained axis).</summary>
+    private const int MorningPillHorizontalMargin = 1;
+
     /// <summary>Fresh <see cref="StyleBoxFlat"/> per call (StyleBox is a mutable Resource — never
     /// share one instance across segments/calls, same rule <c>GameTheme</c>'s own builders
     /// follow): filled Arcane for the current phase, a faint Arcane outline for a future phase,
-    /// and a dim, borderless fill for a past one.</summary>
-    private static StyleBoxFlat SegmentStyle(bool isCurrent, bool isPast)
+    /// and a dim, borderless fill for a past one. <paramref name="reservedWidth"/> is true only
+    /// for the Morning segment (see <see cref="MorningPillHorizontalMargin"/>).</summary>
+    private static StyleBoxFlat SegmentStyle(bool isCurrent, bool isPast, bool reservedWidth = false)
     {
+        var horizontalMargin = reservedWidth ? MorningPillHorizontalMargin : GameTheme.Space4;
+
         if (isCurrent)
         {
             return new StyleBoxFlat
@@ -665,8 +688,8 @@ public sealed partial class DayTimeline : HBoxContainer
                 // Build()/AddThemeConstantOverride("separation", ...) doc for why: reclaiming
                 // width here (5 pills * 2 sides * 4px = 40px) is the other half of what stopped
                 // the "Night" segment clipping once the Books Tray grew an eighth icon.
-                ContentMarginLeft = GameTheme.Space4,
-                ContentMarginRight = GameTheme.Space4,
+                ContentMarginLeft = horizontalMargin,
+                ContentMarginRight = horizontalMargin,
                 ContentMarginTop = GameTheme.Space4,
                 ContentMarginBottom = GameTheme.Space4,
             };
@@ -685,8 +708,8 @@ public sealed partial class DayTimeline : HBoxContainer
                 // Build()/AddThemeConstantOverride("separation", ...) doc for why: reclaiming
                 // width here (5 pills * 2 sides * 4px = 40px) is the other half of what stopped
                 // the "Night" segment clipping once the Books Tray grew an eighth icon.
-                ContentMarginLeft = GameTheme.Space4,
-                ContentMarginRight = GameTheme.Space4,
+                ContentMarginLeft = horizontalMargin,
+                ContentMarginRight = horizontalMargin,
                 ContentMarginTop = GameTheme.Space4,
                 ContentMarginBottom = GameTheme.Space4,
             };
@@ -706,8 +729,8 @@ public sealed partial class DayTimeline : HBoxContainer
             CornerRadiusTopLeft = GameTheme.RadiusChip,
             CornerRadiusTopRight = GameTheme.RadiusChip,
             // Trimmed from Space8 — see the isCurrent/isPast branches' own doc above.
-            ContentMarginLeft = GameTheme.Space4,
-            ContentMarginRight = GameTheme.Space4,
+            ContentMarginLeft = horizontalMargin,
+            ContentMarginRight = horizontalMargin,
             ContentMarginTop = GameTheme.Space4,
             ContentMarginBottom = GameTheme.Space4,
         };
