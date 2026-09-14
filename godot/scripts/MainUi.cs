@@ -2598,6 +2598,10 @@ public partial class MainUi : Control
             Name = "GoldIcon",
             Texture = IconRegistry.Glyph("gold"),
             CustomMinimumSize = new Vector2(20, 20),
+            // P2-SCREEN-29: ExpandMode defaults to KeepSize, whose GetMinimumSize() reports the
+            // glyph's own (64px) pixel size, not the 20px requested here. IgnoreSize lets
+            // CustomMinimumSize alone govern layout — see UiKit.ArtRect for the full history.
+            ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
             StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
             MouseFilter = MouseFilterEnum.Ignore,
         });

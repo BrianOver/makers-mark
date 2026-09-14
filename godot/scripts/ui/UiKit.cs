@@ -512,6 +512,10 @@ public static class UiKit
             Name = "FallbackIcon",
             Texture = fallbackIcon ?? IconRegistry.Glyph(DefaultFallbackGlyph),
             CustomMinimumSize = size * 0.5f,
+            // P2-SCREEN-29: same LW5/PR #119 class as the real-art branch above — without this,
+            // KeepSize's GetMinimumSize() reports the fallback glyph's own pixel size instead of
+            // `size * 0.5f`.
+            ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
             StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
             MouseFilter = Control.MouseFilterEnum.Ignore,
         };
@@ -636,6 +640,9 @@ public static class UiKit
             Name = "Icon",
             Texture = icon,
             CustomMinimumSize = new Vector2(IconChipIconSize, IconChipIconSize),
+            // P2-SCREEN-29: without ExpandMode, KeepSize's GetMinimumSize() reports the icon
+            // texture's own pixel size instead of IconChipIconSize (18px) — see UiKit.ArtRect.
+            ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
             StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
             MouseFilter = Control.MouseFilterEnum.Ignore,
         };
@@ -704,6 +711,9 @@ public static class UiKit
             Name = "Icon",
             Texture = icon,
             CustomMinimumSize = new Vector2(ListRowIconSize, ListRowIconSize),
+            // P2-SCREEN-29: without ExpandMode, KeepSize's GetMinimumSize() reports the icon
+            // texture's own pixel size instead of ListRowIconSize (24px) — see UiKit.ArtRect.
+            ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
             StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
             MouseFilter = Control.MouseFilterEnum.Ignore,
         };
