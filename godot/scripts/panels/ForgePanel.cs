@@ -6,6 +6,7 @@ using GameSim.Advisor;
 using GameSim.Contracts;
 using GameSim.Crafting;
 using GameSim.Economy;
+using GameSim.Heroes;
 using GameSim.Materials;
 using GameSim.Professions;
 using Godot;
@@ -789,6 +790,10 @@ public partial class ForgePanel : SimPanel
         string? needsKey = null;
         var needsQuantity = 0;
         var needsRecipeName = string.Empty;
+        // P2-PEOPLE-22: one marcher per gap slot, computed once per Refresh (not once per card —
+        // every recipe of the same slot names the SAME sim-decided fact, so this is read once and
+        // looked up below, never recomputed per card).
+        var marcherBySlot = MarcherBySlot(state);
         foreach (var professionId in state.Player.SelectedProfessions)
         {
             if (!ProfessionRegistry.TryGet(professionId, out var profession))
@@ -913,6 +918,18 @@ public partial class ForgePanel : SimPanel
                 }
 
                 outputRow.AddChild(StatChip("Wt", $"{recipe.BaseStats.Weight}"));
+
+                // P2-PEOPLE-22: a fact, never an order (LAW:influence-never-orders) — states who
+                // marches with this slot empty today and leaves the decision (forge it now, forge
+                // something else, or leave the slot for tomorrow) entirely with the player. Renders
+                // only when the sim actually decided someone marches today with THIS slot open —
+                // Trinket/Consumable recipes never match (RaidForecast.MissingItemSlots only tracks
+                // Weapon/Shield/Armor, the same three decision 3 is about), and a quiet muster or a
+                // fully-geared roster renders nothing rather than manufacture a marcher (rule 8).
+                if (marcherBySlot.TryGetValue(recipe.Slot, out var marcherName))
+                {
+                    AddLabel(infoCol, $"{marcherName} marches today with an empty {ItemVocab.Display(recipe.Slot).ToLowerInvariant()} slot.");
+                }
 
                 // Affordability lighting (KTD5) is a VISUAL MIRROR ONLY, read off the same
                 // state.Player.Materials the gate below reads — the kernel's CraftAction stays
@@ -1175,6 +1192,61 @@ public partial class ForgePanel : SimPanel
                 needsGate.Legal,
                 needsGate.WhyNot));
         }
+    }
+
+    /// <summary>
+    /// P2-PEOPLE-22 ("the recipe card names the marcher it would arm"): decision 3 ("fill the
+    /// empty slot, or upgrade the full one") is asked at THIS panel but was, until this unit,
+    /// answerable only later at the shop, via <see cref="HeroForecast.ForShelfAsItStands"/>
+    /// (decision 1's own "who would buy this" answer). <see cref="HeroForecast"/> cannot itself
+    /// name an EMPTY slot — its whole domain is ranking items already sitting on a shelf, so it has
+    /// no way to answer "which slot is this hero missing" for a recipe that has not been forged
+    /// yet. The honest source for that fact is <see cref="MusterPlan.Compute"/> — already public,
+    /// already the SAME projection <see cref="RaidForecast.ForTomorrow"/> shows on the HUD's
+    /// Forecast board (that class's own doc: "today's muster... actually TODAY's, later this same
+    /// day" — <see cref="MusterSystem"/>'s registration note says the same) — crossed with <see
+    /// cref="RaidForecast.MissingItemSlots"/> (already public, already reused by
+    /// <c>CommissionSystem</c>). Both are pre-existing, sim-decided facts, only READ here, never
+    /// re-derived. <see cref="HeroForecast"/> IS still reused, as the tie-break: among several
+    /// marchers who all carry the same empty slot, the one <see cref="HeroForecast"/> already says
+    /// would buy something today (the shop-side signal decision 1 shows) is named first, falling
+    /// back to muster order so the pick stays deterministic either way. Never a survival estimate,
+    /// never a ranking of heroes against each other — one fact: this hero marches today with this
+    /// slot empty.
+    /// </summary>
+    private static Dictionary<ItemSlot, string> MarcherBySlot(GameState state)
+    {
+        var candidatesBySlot = new Dictionary<ItemSlot, List<Hero>>();
+        foreach (var plan in MusterPlan.Compute(state.Heroes, state.Bounties, state.Items))
+        {
+            foreach (var heroId in plan.Roster)
+            {
+                if (!state.Heroes.TryGetValue(heroId.Value, out var hero))
+                {
+                    continue;
+                }
+
+                foreach (var slot in RaidForecast.MissingItemSlots(hero.Gear))
+                {
+                    if (!candidatesBySlot.TryGetValue(slot, out var marchers))
+                    {
+                        candidatesBySlot[slot] = marchers = new List<Hero>();
+                    }
+
+                    marchers.Add(hero);
+                }
+            }
+        }
+
+        var marcherBySlot = new Dictionary<ItemSlot, string>();
+        foreach (var (slot, marchers) in candidatesBySlot)
+        {
+            var chosen = marchers.FirstOrDefault(h => HeroForecast.ForShelfAsItStands(state, h.Id).WouldBuy)
+                ?? marchers[0];
+            marcherBySlot[slot] = chosen.Name;
+        }
+
+        return marcherBySlot;
     }
 
     /// <summary>
