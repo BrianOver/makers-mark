@@ -56,14 +56,26 @@ public static class AttributionEngine
                     }
                 }
 
-                // AE1 — killing blow by a player-crafted weapon.
+                // AE1 — killing blow by a player-crafted weapon. This beat is a RECORDED FACT, not
+                // a threshold (it fires on every player-crafted kill, decisive or not) — but the
+                // claim still gets its own arithmetic (P2-PROOF-14): the SAME recorded hero roll,
+                // replayed once with the weapon's Attack stat removed. No further rounds are ever
+                // rolled — the beat never claims what the fight would have become, only what this
+                // one recorded swing would have dealt (matches TellingQuery's KillingBlowPayload
+                // exactly, so the ledger and the "Ask how it happened" modal can never disagree).
                 if (combat.MonsterKilled
                     && combat.KillingItem is { } killer
                     && IsPlayerCrafted(killer, items))
                 {
+                    var heroRoll = combat.RecordedRolls[0];
+                    var attackWithoutItem = CombatMath.HeroAttack(hero, items.Remove(killer.Value));
+                    var dealtWithoutItem = CombatMath.HeroDamage(
+                        attackWithoutItem, heroRoll, venue.MonsterDefense(combat.Floor));
+
                     beats.Add(new AttributionBeat(
                         BeatType.KillingBlow, killer, hero.Id, combat.Floor,
-                        $"{items[killer.Value].Name} landed the killing blow on {MonsterName.Definite(combat.MonsterKind)}"));
+                        $"{items[killer.Value].Name} landed the killing blow on {MonsterName.Definite(combat.MonsterKind)} " +
+                        $"-- the blow read {heroRoll}. Without it, the swing deals {dealtWithoutItem}, not {combat.DamageDealt}."));
                 }
 
                 // AE2 — lethal save: recompute the taken hit without each defensive player item.
@@ -88,9 +100,18 @@ public static class AttributionEngine
 
                         if (actualAfter > 0 && hpBefore - takenWithout <= 0)
                         {
+                            // The flagship counterfactual (P2-PROOF-14): the SAME recorded monster
+                            // roll, replayed with the item's Defense stat removed. rawBlow is what
+                            // the roll itself demanded before either version of the fight absorbed
+                            // it; the beat gives the raw number, what the item drank, and where the
+                            // hero actually stood -- never a share or a rating of the save.
+                            var rawBlow = venue.MonsterAttack(combat.Floor) + monsterRoll;
+
                             beats.Add(new AttributionBeat(
                                 BeatType.LethalSave, defId, hero.Id, combat.Floor,
-                                $"{items[defId.Value].Name} turned a lethal {MonsterName.AttributiveBlow(combat.MonsterKind)}"));
+                                $"{items[defId.Value].Name} turned a lethal {MonsterName.AttributiveBlow(combat.MonsterKind)} " +
+                                $"-- the blow read {rawBlow}. {items[defId.Value].Name} drank {items[defId.Value].Stats.Defense} of it. " +
+                                $"{hero.Name} stood at {actualAfter}. Without it, {hero.Name} falls."));
                         }
                     }
                 }
@@ -144,11 +165,17 @@ public static class AttributionEngine
                         }
 
                         var without = items.Remove(id.Value);
-                        if (avg >= gate && CombatMath.PartyAveragePower(floorStartFighters, without) < gate)
+                        var avgWithoutItem = CombatMath.PartyAveragePower(floorStartFighters, without);
+                        if (avg >= gate && avgWithoutItem < gate)
                         {
+                            // No round to replay here -- the counterfactual is the same
+                            // PartyAveragePower recomputation the condition above just used, said out
+                            // loud (P2-PROOF-14): the party's power WITH this item against the gate,
+                            // and what it reads with the item's stats pulled back out.
                             beats.Add(new AttributionBeat(
                                 BeatType.BreakpointClear, id, hero.Id, floor.Floor,
-                                $"{items[id.Value].Name} carried the party past the floor {floor.Floor} gate"));
+                                $"{items[id.Value].Name} carried the party past the floor {floor.Floor} gate " +
+                                $"-- the party's power read {avg} against the gate at {gate}. Without it, {avgWithoutItem} -- under the gate."));
                         }
                     }
                 }
@@ -229,16 +256,30 @@ public static class AttributionEngine
                         }
                     }
 
-                    var wouldHaveDied = use.HpBefore - damageFromRound <= 0;
-                    var survivedFight = use.HpAfter - damageFromRound + laterHeals > 0;
+                    // naiveHpWithoutHeal / survivedHp are the same two numbers the condition below
+                    // reads (P2-PROOF-14) -- named so the Detail below states the arithmetic that
+                    // actually decided the beat, never a re-derived or estimated one.
+                    var naiveHpWithoutHeal = use.HpBefore - damageFromRound;
+                    var survivedHp = use.HpAfter - damageFromRound + laterHeals;
+                    var wouldHaveDied = naiveHpWithoutHeal <= 0;
+                    var survivedFight = survivedHp > 0;
 
                     beats.Add(wouldHaveDied && survivedFight
                         ? new AttributionBeat(
                             BeatType.PotionLifesave, use.Item, hero.Id, combat.Floor,
-                            $"{items[use.Item.Value].Name} saved {hero.Name}'s life")
+                            $"{items[use.Item.Value].Name} saved {hero.Name}'s life -- the recorded damage from round " +
+                            $"{use.Round} on alone reads {naiveHpWithoutHeal} without it. {hero.Name} drank it at " +
+                            $"{use.HpBefore} to {use.HpAfter}, and closed the fight at {survivedHp}.")
                         : new AttributionBeat(
                             BeatType.Provisioned, use.Item, hero.Id, combat.Floor,
-                            $"{items[use.Item.Value].Name} kept {hero.Name} fighting on floor {combat.Floor}"));
+                            // Deliberately no "still standing" claim here (no participation credit,
+                            // stated honestly either way): this branch also covers the hero dying in
+                            // the fight regardless of the quaff, where survivedHp is <= 0 too -- the
+                            // number is reported either way, never spun into a verdict the beat did
+                            // not earn.
+                            $"{items[use.Item.Value].Name} kept {hero.Name} fighting on floor {combat.Floor} -- " +
+                            $"{hero.Name} drank it at round {use.Round}, {use.HpBefore} to {use.HpAfter}. Without it, " +
+                            $"the fight's own recorded numbers read {naiveHpWithoutHeal} from there. No credit taken."));
                 }
             }
         }
