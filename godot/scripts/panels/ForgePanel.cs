@@ -69,13 +69,23 @@ public partial class ForgePanel : SimPanel
     /// </summary>
     private const float MentorBannerWrapWidth = 480f;
 
-    /// <summary>P2-SCREEN-23 wrap floor for <see cref="AdvancedVerbsSummaryLabel"/> — same
-    /// unconstrained-Label-under-a-flow-row hazard <see cref="AddButton"/>'s own
+    /// <summary>P2-SCREEN-23 wrap floor for the collapsed Masterwork/Commission summary line —
+    /// same unconstrained-Label-under-a-flow-row hazard <see cref="AddButton"/>'s own
     /// <c>RefusedButtonWrapWidth</c> remark documents (an autowrap Control's preferred width is
     /// its UNWRAPPED single-line width inside an <c>HFlowContainer</c> absent an explicit cap).
-    /// Slightly under the Forge drawer's ~601px content budget so this label never claims the
-    /// full row width even alone.</summary>
-    private const float AdvancedVerbsSummaryWrapWidth = 560f;
+    ///
+    /// <para>560 measured as the regression here (#827): a <c>CustomMinimumSize.X</c> gives the
+    /// wrap something to wrap AGAINST, but it does not CAP the control's reported combined
+    /// minimum size against the card/scroll chrome stacked around it — instrumented directly
+    /// (<c>Control.GetCombinedMinimumSize()</c> on the live tree, ForgeAnvil's day-1 buckler
+    /// card), 560 measured as <c>ForgeRoot</c>/<c>CraftScroll</c>/<c>CraftView</c> all reporting
+    /// 608px combined-minimum-width against the drawer's 601px budget — the label's own 48px of
+    /// card padding/margin overhead riding on top of its 560px floor, exactly the 7px overshoot
+    /// CI's retry reproduced. 480 (same value already proven safe for this card at this exact
+    /// nesting depth by <see cref="MentorBannerWrapWidth"/>) reproduces at 528px combined —
+    /// comfortably under 601 with margin to spare, verified by the same instrumentation.</para>
+    /// </summary>
+    private const float AdvancedVerbsSummaryWrapWidth = 480f;
 
     /// <summary>
     /// Register #160 (U-T2-4): "Open the Docket" from right inside the craft section — the third
