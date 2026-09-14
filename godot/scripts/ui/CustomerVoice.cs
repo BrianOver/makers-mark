@@ -54,6 +54,18 @@ public static class CustomerVoice
     }
 
     /// <summary>
+    /// P2-PEOPLE-21 ("Forge it — Torvald waits"): the same slot pick <see cref="WantLine"/> speaks
+    /// in first person ("Looking for a weapon — about 40g on me"), extracted as a bare third-person
+    /// noun phrase ("a weapon") for a second speaker — the counter's own "forge it" handoff names
+    /// who is waiting and what they said FROM THE OUTSIDE, so it needs the noun, not the sentence.
+    /// Reuses <see cref="CounterForecast.Wants"/> verbatim (missing-slot-first, else the largest
+    /// genuine shelf upgrade) rather than re-deriving the pick, so this can never name a want the
+    /// counter itself would not also ask for.
+    /// </summary>
+    public static string WantNoun(Hero hero, GameState state) =>
+        CounterForecast.Wants(hero, state) is { } slot ? SlotArticle(slot) : "nothing in particular";
+
+    /// <summary>
     /// The customer's spoken reply to a Present, keyed on the sim's OWN realized verdict kind. By
     /// the time a caller can read this back, <c>CounterQueueSystem.ResolvePresentedItem</c> (internal
     /// — not cref-able from here) has already called <see cref="ShoppingAi.EvaluateItem"/> and
