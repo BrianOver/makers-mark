@@ -72,7 +72,7 @@ public static class UiKit
     /// More/Less button.
     /// </summary>
     public readonly record struct DisclosureView(
-        PanelContainer Root, VBoxContainer Body, HBoxContainer Header, Label Summary, Button Toggle);
+        Container Root, VBoxContainer Body, HBoxContainer Header, Label Summary, Button Toggle);
 
     /// <summary>
     /// Makes <paramref name="overlay"/> actually receive keyboard input, and keep receiving it.
@@ -340,10 +340,21 @@ public static class UiKit
     /// <see cref="ObjectiveTracker"/>'s icon-only "▾" for a worded More/Less control in a titled
     /// bar; this follows that precedent rather than re-introducing a glyph whose meaning depends on
     /// the display font having the codepoint.</para>
+    ///
+    /// <para><b>A row, not a panel.</b> The root is a thin <see cref="MarginContainer"/> where
+    /// <see cref="Section"/> uses a themed <see cref="PanelContainer"/>. That is a budget decision
+    /// with a measured price: the themed panel's own content margins are 24px, and a collapsed
+    /// disclosure is a 35px header row, so framing it spends two thirds as much again on chrome
+    /// around one line. Two of them in the Forge's craft view is 48px — the margin that keeps the
+    /// craft verb on screen once a purchase makes the feedback line appear
+    /// (<c>DeepPilotPlayTests</c>' own scenario, measured at 13px short before this). A frame
+    /// around a single row also reads as chrome-on-chrome next to the real sections beside it.</para>
     /// </summary>
     public static DisclosureView Disclosure(string title, bool startExpanded = false)
     {
-        var root = new PanelContainer { Name = SectionName(title), MouseFilter = Control.MouseFilterEnum.Ignore };
+        var root = new MarginContainer { Name = SectionName(title), MouseFilter = Control.MouseFilterEnum.Ignore };
+        root.AddThemeConstantOverride("margin_left", GameTheme.Space4);
+        root.AddThemeConstantOverride("margin_right", GameTheme.Space4);
         var outer = new VBoxContainer { Name = "DisclosureOuter" };
         root.AddChild(outer);
 
@@ -359,11 +370,21 @@ public static class UiKit
         titleLabel.ThemeTypeVariation = GameTheme.HeaderThemeType;
         header.AddChild(titleLabel);
 
+        // Clipped, ellipsized, never wrapping — the SAME treatment ListRow gives its own name
+        // column, and for the same reason: a plain Label's minimum width is its whole text, so a
+        // long summary (a refusal reason, say) would drag the row — and therefore the panel — past
+        // the drawer's 600px and trip
+        // HumanPlaytestTests.NoPanel_DemandsMoreWidthThanTheDrawerGivesIt. Callers put the fact that
+        // must survive FIRST in the string; the body still carries the full text, which is what the
+        // fold guarantees to give back.
         var summary = new Label
         {
             Name = "DisclosureSummary",
             SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
             SizeFlagsVertical = Control.SizeFlags.ShrinkCenter,
+            ClipText = true,
+            TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis,
+            AutowrapMode = TextServer.AutowrapMode.Off,
         };
         summary.AddThemeColorOverride("font_color", GameTheme.TextDim);
         header.AddChild(summary);

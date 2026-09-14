@@ -623,7 +623,15 @@ public partial class ForgePanel : SimPanel
         }
 
         var state = _devStagedState ?? Adapter.CurrentState;
-        _waitingCustomerLine!.Text = WaitingCustomerLine(state);
+        // 481px re-lay (owner ruling 2026-09-14): P2-PEOPLE-21's line is EMPTY whenever no customer
+        // is actually waiting — which is most opens — and a Container still reserves a full text
+        // row for an empty Label. That was 27px off the top of a 425px drawer body for a sentence
+        // nobody is reading, and this panel's own ForgeFeedback already fixed exactly this
+        // (register #149). Toggling Visible with the text keeps the line identical when there IS a
+        // customer and costs nothing when there is not.
+        var waitingLine = WaitingCustomerLine(state);
+        _waitingCustomerLine!.Text = waitingLine;
+        _waitingCustomerLine.Visible = !string.IsNullOrEmpty(waitingLine);
         // UI-5: the running materials list is now redundant with each vendor ListRow's own
         // "owned" column below — this line stays only as the empty-inventory hint (no full
         // "copper x4, iron x2" prose dump once there IS stock to read off the rows instead).
@@ -2393,11 +2401,19 @@ public partial class ForgePanel : SimPanel
         // left open — see WaitingCustomerLine's own doc for why this is derived every Refresh
         // rather than carried as a snapshot on that event. Above ForgeFeedback: this is context the
         // player needs BEFORE reading anything below, the same "speaks first" ordering CampPanel's
-        // own narrator line uses. Empty text collapses to zero height (same CampPanel precedent),
-        // so a Forge open with no one waiting costs no space.
+        // own narrator line uses.
+        //
+        // 481px re-lay (owner ruling 2026-09-14): this shipped with the claim that "empty text
+        // collapses to zero height, so a Forge open with no one waiting costs no space" — measured
+        // false. A Godot Container reserves a full text row for an empty Label; it was 27px of the
+        // 425px drawer body on every open with nobody at the counter, which is most of them. The
+        // only thing that actually collapses a row is Visible=false, which is why ForgeFeedback
+        // right below already does it (register #149) — so this does too, toggled with its text in
+        // Refresh.
         _waitingCustomerLine = AddLabel(root, string.Empty);
         _waitingCustomerLine.Name = "ForgeWaitingCustomer";
         _waitingCustomerLine.AddThemeColorOverride("font_color", GameTheme.AccentColor);
+        _waitingCustomerLine.Visible = false;
 
         _feedback = AddLabel(root, string.Empty);
         _feedback.Name = "ForgeFeedback";

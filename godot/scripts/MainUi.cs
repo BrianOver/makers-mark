@@ -5735,6 +5735,33 @@ public partial class MainUi : Control
     }
 
     /// <summary>
+    /// <see cref="DockObjectiveHorizontally"/>'s twin for the dock stacked beneath it (the second
+    /// profession button and the quick-travel row). Same two positions, same widths — see the call
+    /// site for why it needs its own predicate rather than sharing the objective card's.
+    /// </summary>
+    private void DockTutorialHorizontally(bool toLeftEdge)
+    {
+        if (Tutorial is null)
+        {
+            return;
+        }
+
+        if (toLeftEdge)
+        {
+            Tutorial.AnchorLeft = 0f;
+            Tutorial.AnchorRight = 0f;
+            Tutorial.OffsetLeft = ObjectiveDockMargin;
+            Tutorial.OffsetRight = ObjectiveDockMargin + ObjectiveDockWidth;
+            return;
+        }
+
+        Tutorial.AnchorLeft = 1f;
+        Tutorial.AnchorRight = 1f;
+        Tutorial.OffsetLeft = -ObjectiveDockWidth - ObjectiveDockMargin;
+        Tutorial.OffsetRight = -ObjectiveDockMargin;
+    }
+
+    /// <summary>
     /// U15/U21/U22 (KTD3/AE1/R7): real drawer/interior/modal state engages <see
     /// cref="PhaseClock.Engaged"/> — the bare world (no drawer open, no interior room entered, no
     /// modal visible) is the only flowing surface; any open drawer (<see cref="DrawerHost.IsOpen"/>),
@@ -5820,6 +5847,19 @@ public partial class MainUi : Control
         var keepTutorialReadable = Tutorial.Active && (Drawer.IsOpen || inRoom) && !AnOverlayOwnsTheScreen();
         Objective.Visible = !engaged || keepTutorialReadable;
         DockObjectiveHorizontally(toLeftEdge: keepTutorialReadable);
+
+        // 481px re-lay (owner ruling 2026-09-14): the SAME move, for the dock stacked under the
+        // objective card. This one is anchored TopRight too (BuildUi), but its predicate is plain
+        // `Drawer.IsOpen` rather than the tutorial-readability one above, because TutorialFlow's own
+        // Refresh keeps this panel visible for as long as quick travel is unlocked — which is
+        // exactly AFTER the tutorial chain completes, when `Tutorial.Active` is false and the
+        // predicate above would leave it sitting on the right. Measured: with the drawer now
+        // clearing the HUD header and the Forge's folded sections pulling its rows up,
+        // DeepPilotPlayTests' competent player clicked a Buy row at (1041, 345) and the press was
+        // eaten by `QuickTravel_Tavern` at (967, 342) — a HUD button painting over the drawer's own
+        // control. Same defect the objective chip had over the Forge's "Buy copper" row, same
+        // remedy: the drawer owns the right ~600px, so this docks to the free left column instead.
+        DockTutorialHorizontally(toLeftEdge: Drawer.IsOpen);
 
         // Same predicate for the journey dock. It was governed by PHASE alone, so during
         // Expedition/Camp/Deep it slid in over whatever the player had opened — a rendered playtest caught it

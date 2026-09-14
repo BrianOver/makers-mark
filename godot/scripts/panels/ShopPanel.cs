@@ -158,11 +158,28 @@ public partial class ShopPanel : SimPanel
 
         var passesToday = PassesToday(state);
 
+        // 481px re-lay (owner ruling 2026-09-14). Order matters here for one reason and it is
+        // measured, not aesthetic: this panel's primary verb is drag-to-shelve (U5, "restock as
+        // placement"), and a drag needs its SOURCE (an unshelved card) and its TARGET (an empty
+        // shelf slot) on screen AT THE SAME TIME. "Who Would Buy This" used to render between them
+        // — one line per living hero — and in a 425px drawer body that is what made
+        // RealDragOntoShelfTests unperformable. It renders AFTER the unshelved cards now, and
+        // folded, so the two halves of the gesture are adjacent. (Putting Unshelved FIRST was tried
+        // before and reverted for the same co-visibility reason, from the other side — see
+        // HudBoundsTests' own note; the shelf stays first, the forecast moves, nothing else does.)
         BuildCounterHeaderSection(state);
         BuildShelfSection(state, passesToday);
-        BuildForecastSection(state);
         BuildUnshelvedSection(state);
+        BuildForecastSection(state);
         BuildRivalSection(state);
+    }
+
+    /// <summary>The one place this panel's confirmation line changes — and the one place it is made
+    /// visible. See <see cref="EnsureBuilt"/>'s note on why it starts hidden.</summary>
+    private void SetShopFeedback(string text)
+    {
+        _feedback!.Text = text;
+        _feedback.Visible = !string.IsNullOrEmpty(text);
     }
 
     /// <summary>
@@ -798,6 +815,13 @@ public partial class ShopPanel : SimPanel
 
         _feedback = AddLabel(body, string.Empty);
         _feedback.Name = "ShopFeedback";
+        // 481px re-lay: an empty confirmation line still reserved a full text row at the very top of
+        // a 425px drawer body — the row a fresh open always shows blank. Godot's Container layout
+        // skips a Visible=false child entirely, so starting hidden (and toggling in SetShopFeedback,
+        // the only place this label's Text ever changes) reclaims that space until there is
+        // something to say. Exactly the fix ForgePanel's own ForgeFeedback already shipped
+        // (register #149).
+        _feedback.Visible = false;
 
         // PA7: the counter-service body sits ABOVE the shelf sections — built once here (never
         // torn down by this panel's own Clear(_content) cycle), bound to the same Adapter, and
@@ -865,7 +889,7 @@ public partial class ShopPanel : SimPanel
         var origin = Adapter.CurrentState.Items.TryGetValue(itemId, out var item)
             ? PriceOrigin(price, item)
             : "custom";
-        _feedback!.Text = $"queued: stock {id} — priced at {price}g — {origin}";
+        SetShopFeedback($"queued: stock {id} — priced at {price}g — {origin}");
     }
 
     /// <summary>
@@ -881,7 +905,7 @@ public partial class ShopPanel : SimPanel
 
         var id = new ItemId(itemId);
         Adapter.Queue(new UnstockAction(id));
-        _feedback!.Text = $"queued: unstock {id}";
+        SetShopFeedback($"queued: unstock {id}");
     }
 
     /// <summary>U6 (auto pricing): "suggested" when <paramref name="price"/> is exactly what
@@ -938,7 +962,7 @@ public partial class ShopPanel : SimPanel
 
         var id = new ItemId(itemId);
         Adapter.Queue(new SetPriceAction(id, price));
-        _feedback!.Text = $"queued: reprice {id} to {price}g";
+        SetShopFeedback($"queued: reprice {id} to {price}g");
         // U1 (§11.14.14 defect): the pricing lesson no longer fires from here. Reprice can only
         // ever touch an item that was stocked first (ActionLegality.SetPriceLegal requires the
         // item already be on Player.Shelf), so by the time a player reaches this button the shelf

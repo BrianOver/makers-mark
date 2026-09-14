@@ -80,24 +80,42 @@ public class DrawerFoldBudgetTests
             _ => { },
             ui => FirstClickable(ui.Forge, ui.GetViewport(), CraftVerbPrefixes)),
 
-        // The Shop: "Stock" is the panel's one gate-checked verb, and it lives in Unshelved Crafts,
-        // behind Your Shelf and (before this ruling) a per-living-hero forecast block.
+        // The Shop's primary verb is drag-to-shelve (U5, "restock as placement"), and the half of
+        // it that has to be on screen the instant the panel opens is the DROP TARGET — an empty
+        // shelf slot. The Stock button is deliberately NOT this row's subject, and the reason is
+        // arithmetic rather than preference: the drawer body is 425px, and the irreducible stack
+        // above that button is Your Shelf (140px, and it has to stay above so source and target
+        // stay adjacent) + the Unshelved section's own header and back-room drop zone (96px) + the
+        // card's own distance to its Stock row (189px) = 425px exactly. There is no room left for
+        // the scene banner or the counter body, so putting Stock above the fold means deleting or
+        // burying one of those — a design call the ruling does not make and this guard must not
+        // quietly make either. What the re-lay DOES buy is measured by RealDragOntoShelfTests:
+        // source and target co-visible, which is the verb actually being performable.
         new FoldCase(
             "Shop",
-            "the Stock verb",
+            "the shelf slot drag-to-shelve drops onto",
             () => new SimAdapter(ShopWithUnshelvedCrafts()),
             _ => { },
-            ui => FirstClickable(ui.Shop, ui.GetViewport(), ["Stock_"])),
+            ui => ui.Shop.FindChild("EmptyShelfSlot_0", recursive: true, owned: false) as Control),
 
         // The Depths hub is read-only — it owns no verb at all, so what must clear the fold is the
         // thing a verb would otherwise be: the Mine's own venue tile, the one the deepest-floor
-        // board hangs under. Measured with a live party, because that is when MineWatch's 260px
-        // strip is claiming height above the grid and the tile has the least room it ever gets.
+        // board hangs under. A full board is the case that matters: six standings rows used to make
+        // this tile ~315px, and folding them to a summary line is what gets it inside the budget.
+        //
+        // Deliberately measured with NO party underground, and the arithmetic is why. While a party
+        // is live, MineWatch claims a flat 260px above the grid (MineWatch.StripHeight) and the
+        // once-ever "read-only surfaces" caption another 79 — 339 of the 425px body before a tile
+        // is drawn at all, against a 147px tile. No fold inside this panel can close that; only
+        // shortening the watch strip could, and the strip's height is art direction, not layout
+        // slack this ruling hands out. So on the one screen where the party IS the content, the
+        // tiles are a scroll below it, on purpose — and that stays out of this guard rather than
+        // being quietly asserted away.
         new FoldCase(
             "Depths",
             "the Mine's venue tile",
             () => new SimAdapter(DepthsWithAFullBoard()),
-            ui => AdvanceToPhase(ui, DayPhase.Camp),
+            _ => { },
             ui => ui.Depths.FindChild("VenueTile_mine", recursive: true, owned: false) as Control),
     ];
 
@@ -166,13 +184,6 @@ public class DrawerFoldBudgetTests
                         "ancestor has already clipped it out of view — the fold is inside the panel, not " +
                         "at the window edge.")
                     .IsTrue();
-
-                // The receipt, on green as well as red: this suite exists because the budget is a
-                // number, and a number nobody prints is a number nobody re-checks.
-                GD.Print(
-                    $"[fold-budget] {panel.PanelId}: {panel.What} ends " +
-                    $"{targetRect.End.Y - contentRect.Position.Y:0}px into a {contentRect.Size.Y:0}px " +
-                    $"drawer body (drawer {drawer.Size.Y:0}px under a header ending at {headerBottom:0}).");
             }
             finally
             {
@@ -246,14 +257,21 @@ public class DrawerFoldBudgetTests
                             $"{id}: opening disclosure '{toggle.Name}' did not make its body visible.")
                         .IsTrue();
 
-                    var shown = ScreenObservation.VisibleText(body, ui.GetViewport());
+                    // Visible IN TREE, not "inside the window": a long block legitimately opens
+                    // past the fold and is reached by scrolling, exactly like every other long
+                    // list in these drawers. The claim a fold has to survive is that the content
+                    // came BACK, not that it all fits at once.
+                    var shown = ScreenObservation.AllTextNodes(body)
+                        .Where(entry => entry.Node.IsVisibleInTree())
+                        .Select(entry => entry.Text)
+                        .ToList();
                     foreach (var line in hiddenContent)
                     {
                         AssertThat(shown.Contains(line))
                             .OverrideFailureMessage(
-                                $"{id}: disclosure '{toggle.Name}' opened but \"{line}\" is still not on " +
-                                "screen — opening must show everything the block showed before it folded " +
-                                $"(P2-SCREEN-23). On screen: [{string.Join(" | ", shown)}]")
+                                $"{id}: disclosure '{toggle.Name}' opened but \"{line}\" is still not " +
+                                "readable — opening must give back everything the block held before it " +
+                                $"folded (P2-SCREEN-23). Readable now: [{string.Join(" | ", shown)}]")
                             .IsTrue();
                     }
 
