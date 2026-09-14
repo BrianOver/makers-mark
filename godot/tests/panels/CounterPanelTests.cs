@@ -7,6 +7,7 @@ using System.Linq;
 using GameSim;
 using GameSim.Classes;
 using GameSim.Contracts;
+using GameSim.Heroes;
 using GameSim.Kernel;
 using GdUnit4;
 using Godot;
@@ -55,11 +56,66 @@ public class CounterPanelTests
             AssertThat(text).Contains(ClassRegistry.Striker.DisplayName);
             AssertThat(text).Contains("Test Blade"); // the presented item
             AssertThat(text).Contains("12g");        // the standing offer
-            AssertThat(text).Contains("-40");        // Goodwill
+            // P2-ONBOARD-09: CounterFixture's hero has no mood/purchases recorded, so the Standing
+            // chip reads Stranger — the raw -40 goodwill this test used to assert on no longer
+            // renders anywhere on the counter (see BandChip tests below for the full property).
+            AssertThat(text).Contains(RelationshipBands.Label(RelationshipBand.Stranger));
         }
         finally
         {
             Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void Refresh_EveryRelationshipBand_StandingChipShowsThatBandsOwnVocabulary()
+    {
+        // P2-ONBOARD-09: the counter used to print CounterState.GoodwillPermille raw. Iterate
+        // RelationshipBand's own values (not two hand-picked cases) — for every band the sim can
+        // produce, the Standing chip must carry that exact band's Label, never a number.
+        foreach (RelationshipBand band in Enum.GetValues(typeof(RelationshipBand)))
+        {
+            var state = CounterFixtureForBand(band);
+            var ui = MountMainUi(new SimAdapter(state));
+            try
+            {
+                ui.OpenPanel("Shop");
+                var text = RenderedText(ui.Shop);
+
+                AssertThat(text).Contains(RelationshipBands.Label(band))
+                    .OverrideFailureMessage($"Standing chip did not show {band}'s own vocabulary.");
+            }
+            finally
+            {
+                Unmount(ui);
+            }
+        }
+    }
+
+    [TestCase]
+    public void Refresh_AcrossASpreadOfGoodwillMagnitudes_NeverRendersTheRawPermilleNumber()
+    {
+        // P2-ONBOARD-09: guard the PROPERTY (no raw CounterState.GoodwillPermille ever reaches the
+        // counter surface), not one instance — a spread of distinctive magnitudes, none of which
+        // collide with any other number this fixture legitimately renders (round/interest/patience/
+        // standing offer/hero gold/item stats).
+        foreach (var goodwill in new[] { -999, -365, -777, 137, 555, 901 })
+        {
+            var state = CounterFixture(
+                round: 2, interest: 150, patience: 2, goodwill: goodwill, standingOffer: 12, presented: ShopItemId);
+            var ui = MountMainUi(new SimAdapter(state));
+            try
+            {
+                ui.OpenPanel("Shop");
+                var text = RenderedText(ui.Shop);
+
+                AssertThat(text).NotContains($"{goodwill}")
+                    .OverrideFailureMessage($"Goodwill {goodwill} leaked onto the counter surface as a raw number.");
+            }
+            finally
+            {
+                Unmount(ui);
+            }
         }
     }
 
@@ -1332,6 +1388,49 @@ public class CounterPanelTests
 
         return baseState with
         {
+            Items = ImmutableSortedDictionary<int, Item>.Empty.Add(ShopItemId.Value, TestBlade()),
+            Player = baseState.Player with { Shelf = ImmutableList.Create(new ShelfEntry(ShopItemId, 8)) },
+            Counter = counter,
+        };
+    }
+
+    /// <summary>A live mid-haggle world whose active hero's mood/shelf-purchase history reaches
+    /// EXACTLY the given <see cref="RelationshipBand"/> — driven off <see cref="RelationshipBands"/>'
+    /// own threshold constants (P2-ONBOARD-09), never a hand-picked pair of magic numbers, so this
+    /// helper tracks the sim's own definition of each band rather than a second copy of it.</summary>
+    private static GameState CounterFixtureForBand(RelationshipBand band)
+    {
+        var mood = band switch
+        {
+            RelationshipBand.Sworn => RelationshipBands.SwornMinMood,
+            RelationshipBand.Patron => RelationshipBands.PatronMinMood,
+            RelationshipBand.Regular => RelationshipBands.RegularMinMood,
+            _ => 0,
+        };
+        var purchases = band == RelationshipBand.Sworn ? RelationshipBands.SwornMinPurchases : 0;
+
+        var hero = MakeHero(1, ClassRegistry.StrikerId, gold: 500) with { MoodPermille = mood };
+        var heroes = ImmutableSortedDictionary<int, Hero>.Empty.Add(hero.Id.Value, hero);
+        var baseState = GameFactory.NewGame(7011, heroes);
+
+        var log = ImmutableList.CreateRange<GameEvent>(
+            Enumerable.Range(0, purchases).Select(_ => new ItemSold(ShopItemId, hero.Id, Price: 10, FromPlayerShop: true)));
+
+        var counter = new CounterState(
+            Queue: ImmutableList.Create(hero.Id),
+            Active: hero.Id,
+            Round: 1,
+            InterestPermille: 100,
+            PatienceRounds: 3,
+            GoodwillPermille: 0,
+            Presented: null,
+            StandingOfferGold: null,
+            Served: ImmutableSortedSet<int>.Empty,
+            Closed: false);
+
+        return baseState with
+        {
+            EventLog = log,
             Items = ImmutableSortedDictionary<int, Item>.Empty.Add(ShopItemId.Value, TestBlade()),
             Player = baseState.Player with { Shelf = ImmutableList.Create(new ShelfEntry(ShopItemId, 8)) },
             Counter = counter,
