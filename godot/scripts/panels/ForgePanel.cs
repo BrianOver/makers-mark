@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using GameSim.Advisor;
+using GameSim.Classes;
 using GameSim.Contracts;
 using GameSim.Crafting;
 using GameSim.Economy;
@@ -1216,8 +1217,27 @@ public partial class ForgePanel : SimPanel
     /// </summary>
     private static Dictionary<ItemSlot, string> MarcherBySlot(GameState state)
     {
+        // #838 fix, found by measuring HeroRosterTests against clean main (it passed there — this
+        // call site is the regression): MusterPlan.Compute -> PartyFormation.FormParties ->
+        // IsAnchor calls ClassRegistry.Require(hero.ClassId), which is documented to THROW for a
+        // malformed roster entry ("an unregistered id is a malformed-data defect that should fail
+        // loudly"). That contract is correct for the sim's own callers, but this panel's Refresh()
+        // runs unconditionally on every SimPanel.Bind (MainUi builds Forge before Heroes), so one
+        // hero with an unresolvable class anywhere in the roster used to crash the WHOLE MainUi
+        // build, not just this card's one fact — exactly what HeroRosterTests.
+        // UnregisteredClassHero_RendersPlaceholderPortrait_StillShowingNameOnCard's deliberately
+        // malformed fixture (testing the ROSTER CARD's own KTD3 fallback-portrait guarantee, never
+        // meant to reach this far) tripped. This is a display-only projection (class doc above), so
+        // excluding a hero MusterPlan's own routing cannot resolve is the same "renders nothing
+        // rather than manufacture a marcher" rule this method already applies to a quiet muster or
+        // a fully-geared roster — never a reason to bring down a panel that has nothing to do with
+        // hero classes.
+        var musterableHeroes = state.Heroes.Values
+            .Where(h => ClassRegistry.IsRegistered(h.ClassId))
+            .ToImmutableSortedDictionary(h => h.Id.Value, h => h);
+
         var candidatesBySlot = new Dictionary<ItemSlot, List<Hero>>();
-        foreach (var plan in MusterPlan.Compute(state.Heroes, state.Bounties, state.Items))
+        foreach (var plan in MusterPlan.Compute(musterableHeroes, state.Bounties, state.Items))
         {
             foreach (var heroId in plan.Roster)
             {
