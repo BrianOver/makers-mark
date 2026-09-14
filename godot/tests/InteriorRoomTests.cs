@@ -1,10 +1,13 @@
 #if GDUNIT_TESTS
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using GdUnit4;
 using Godot;
 using GodotClient.Town2d;
+using GodotClient.Ui;
 using static GdUnit4.Assertions;
+using static GodotClient.Tests.UiTestSupport;
 
 namespace GodotClient.Tests;
 
@@ -355,6 +358,149 @@ public class InteriorRoomTests
         {
             town.Player.SetDirectInput(null);
             town.Free();
+        }
+    }
+
+    /// <summary>
+    /// P2-SCREEN-21 negative control: <see cref="Town2D.OpenDrawerWidthPx"/> defaults to 0, and
+    /// <see cref="Town2D.ApplyDrawerBiasedRoomClamp"/> must no-op at 0 — every room's clamp stays
+    /// exactly at its own true right edge, byte-identical to before this unit, when nothing covers
+    /// the screen. Parameterized over every room (not just "forge") the same way the island-offset
+    /// checks above are.
+    /// </summary>
+    [TestCase("forge")]
+    [TestCase("market")]
+    [TestCase("tavern")]
+    [TestCase("minegate")]
+    public async Task NoDrawerOpen_TheRoomClampStaysAtTheRoomsTrueRightEdge(string venueKey)
+    {
+        var town = Mount();
+        try
+        {
+            town.WorldViewport.RenderTargetUpdateMode = SubViewport.UpdateMode.Disabled;
+            town.EnterInterior(venueKey);
+            await SettleLayout(town); // let FollowPlayer run at least once with no drawer open
+
+            var trueRight = town.FindInteriorRoom(venueKey).RoomRect.End.X;
+            AssertThat((float)town.Cam.LimitRight)
+                .OverrideFailureMessage(
+                    $"'{venueKey}': with no drawer open, LimitRight drifted from the room's true "
+                    + $"right edge ({trueRight}) to {town.Cam.LimitRight} — the drawer bias must be "
+                    + "a no-op at OpenDrawerWidthPx == 0.")
+                .IsEqual(trueRight);
+        }
+        finally { town.Free(); }
+    }
+
+    /// <summary>
+    /// P2-SCREEN-21: the clamp bias only ever shrinks <see cref="Camera2D.LimitRight"/> toward the
+    /// room's own bounds, never past them — checked against <see cref="DrawerHost.DrawerWidth"/>
+    /// (what actually ships) AND an adversarially oversized width, so a future wider drawer (or a
+    /// narrower room) cannot silently invert the rect. Parameterized over every room.
+    /// </summary>
+    [TestCase("forge")]
+    [TestCase("market")]
+    [TestCase("tavern")]
+    [TestCase("minegate")]
+    public async Task DrawerBias_NeverPullsTheClampPastTheRoomsOwnBounds(string venueKey)
+    {
+        var town = Mount();
+        try
+        {
+            town.WorldViewport.RenderTargetUpdateMode = SubViewport.UpdateMode.Disabled;
+            town.EnterInterior(venueKey);
+            var room = town.FindInteriorRoom(venueKey);
+
+            foreach (var drawerWidthPx in new[] { DrawerHost.DrawerWidth, 4000f })
+            {
+                town.OpenDrawerWidthPx = drawerWidthPx;
+                await SettleLayout(town);
+
+                AssertThat((float)town.Cam.LimitLeft)
+                    .OverrideFailureMessage(
+                        $"'{venueKey}' at drawer width {drawerWidthPx}: LimitLeft "
+                        + $"({town.Cam.LimitLeft}) fell outside the room's own left edge "
+                        + $"({room.RoomRect.Position.X}).")
+                    .IsEqual(room.RoomRect.Position.X); // this unit never touches LimitLeft
+
+                AssertThat((float)town.Cam.LimitRight)
+                    .OverrideFailureMessage(
+                        $"'{venueKey}' at drawer width {drawerWidthPx}: LimitRight "
+                        + $"({town.Cam.LimitRight}) is past the room's own right edge "
+                        + $"({room.RoomRect.End.X}) — the bias must only ever shrink the clamp.")
+                    .IsLessEqual(room.RoomRect.End.X);
+
+                AssertThat((float)town.Cam.LimitRight)
+                    .OverrideFailureMessage(
+                        $"'{venueKey}' at drawer width {drawerWidthPx}: LimitRight "
+                        + $"({town.Cam.LimitRight}) fell below LimitLeft ({town.Cam.LimitLeft}) — "
+                        + "a degenerate (inverted) clamp rect.")
+                    .IsGreaterEqual(town.Cam.LimitLeft);
+            }
+        }
+        finally { town.Free(); }
+    }
+
+    /// <summary>
+    /// P2-SCREEN-21's own bug: with a drawer open, the player (spawned at every room's horizontal
+    /// centre — every <c>RoomSpec.DoorTile</c> is centred) rendered UNDER it, because the room is
+    /// narrower than the viewport and Camera2D's own Limit clamp pins the view flush against
+    /// <c>LimitRight</c> regardless of player position (see <see
+    /// cref="Town2D.ApplyDrawerBiasedRoomClamp"/>'s own doc). Phrased against <see
+    /// cref="DrawerHost.RegisteredIds"/> generically — any panel that actually opens this campaign
+    /// day — rather than hardcoding "Forge", since every registered panel shares the exact same
+    /// <see cref="DrawerHost.DrawerWidth"/> and the property being proven does not depend on which
+    /// one is showing.
+    /// </summary>
+    [TestCase]
+    public async Task DrawerOpen_PlayerRendersInsideTheUncoveredRegion_ForAnyRegisteredPanel()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.Town.EnterInterior("forge");
+            await SettleLayout(ui.Town);
+
+            var checkedAnyPanel = false;
+            foreach (var id in ui.Drawer.RegisteredIds)
+            {
+                ui.OpenPanel(id);
+                if (ui.Drawer.CurrentPanelId != id)
+                {
+                    continue; // gated this campaign day (Demand/HeroCards/Progress) — nothing to check
+                }
+
+                await SettleUntil(
+                    ui.Town,
+                    () => ui.Town.Cam.LimitRight < ui.Town.FindInteriorRoom("forge").RoomRect.End.X - 1f,
+                    frameBudget: 5,
+                    $"Town2D's camera clamp to shrink for the open '{id}' drawer");
+
+                var uncoveredRight = ui.Town.ViewportScreenRect.Position.X
+                    + ui.Town.ViewportScreenRect.Size.X - DrawerHost.DrawerWidth;
+                var playerScreenX = ui.Town.WorldToScreen(ui.Town.Player.GlobalPosition).X;
+
+                AssertThat(playerScreenX)
+                    .OverrideFailureMessage(
+                        $"With the '{id}' drawer open the player rendered at screen x="
+                        + $"{playerScreenX:0.#}, at or past the drawer's own left edge "
+                        + $"({uncoveredRight:0.#}) — the player is standing under the open panel.")
+                    .IsLess(uncoveredRight);
+
+                checkedAnyPanel = true;
+                ui.OpenPanel("Town");
+                await SettleLayout(ui.Town);
+            }
+
+            AssertThat(checkedAnyPanel)
+                .OverrideFailureMessage(
+                    "Every registered drawer panel was gated this campaign day — the property this "
+                    + "test exists to check was never actually exercised.")
+                .IsTrue();
+        }
+        finally
+        {
+            Unmount(ui);
         }
     }
 }

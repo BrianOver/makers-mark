@@ -206,6 +206,17 @@ public partial class Town2D : Control
     /// visibility).</summary>
     public string? InteriorVenueKey { get; private set; }
 
+    /// <summary>Width in SCREEN pixels of any drawer/panel covering the right edge of the screen —
+    /// set by <c>MainUi.UpdateEngaged</c> from <c>DrawerHost.DrawerWidth</c> while <c>Drawer.IsOpen</c>,
+    /// 0 otherwise. <see cref="DrawerHost"/> is a MainUi sibling of this control, not a child of it
+    /// (it slides in over the SAME full-width viewport <c>Town2D</c> renders into), so this is the
+    /// only way this class can know part of its own frame is covered. Read by <see
+    /// cref="FollowPlayer"/>, and only while <see cref="InteriorActive"/> — mirrors the retired
+    /// <c>TopObstructionPx</c> term's exact shape (a screen-space measurement handed in from outside,
+    /// converted to world px via <see cref="CanvasShrink"/>), just for the room's right edge instead
+    /// of the town's top edge (P2-SCREEN-21).</summary>
+    public float OpenDrawerWidthPx { get; set; }
+
     /// <summary>Warm constant modulate for the room's interior (U1 slice-1 answer to "the room
     /// would otherwise read purple" — <see cref="DuskModulate"/> tints the WHOLE viewport, and the
     /// room/town are never on screen at once, so overriding it while <see cref="InteriorActive"/>
@@ -1438,6 +1449,40 @@ public partial class Town2D : Control
         // position smoothing eases both directions for free.
         var anchor = _focusRemaining > 0f && _focusTarget is { } focus ? focus : Player.GlobalPosition;
         Cam.GlobalPosition = anchor;
+
+        ApplyDrawerBiasedRoomClamp();
+    }
+
+    /// <summary>
+    /// P2-SCREEN-21: every room in <see cref="InteriorLayout2D"/> today (288-384px wide) is
+    /// NARROWER than the default visible viewport (576px, <see cref="TargetVisibleWorldWidth"/>).
+    /// Camera2D's own Limit clamp checks <c>LimitLeft</c> then <c>LimitRight</c> in that order, so
+    /// whenever the room is narrower than the viewport the second check always wins: the view sits
+    /// pinned flush against <see cref="Camera2D.LimitRight"/> regardless of the player's actual
+    /// position (measured against the <c>ForgeAnvil</c> capture: a room 384px wide inside a 576px
+    /// viewport leaves exactly 192px of void, and it all lands on the LEFT). <see
+    /// cref="DrawerHost"/> covers that same flush-right edge, so the room's own right-hand stations
+    /// — and the player, spawned at every room's horizontal centre (every <c>RoomSpec.DoorTile</c>
+    /// is centred) — end up under it the moment one opens.
+    ///
+    /// <para>Pulls <see cref="Camera2D.LimitRight"/> inward by HALF of <see
+    /// cref="OpenDrawerWidthPx"/> (converted from screen px to world px via <see
+    /// cref="CanvasShrink"/>) — the same halving <c>TopObstructionPx</c> used, so the remaining
+    /// framing centres in the strip that is actually visible rather than the whole viewport. Always
+    /// re-derived from the room's own true right edge (never compounded frame over frame), and
+    /// never pulled past <see cref="Camera2D.LimitLeft"/>, so the clamp only ever shrinks toward the
+    /// room's own bounds — it can never widen past them, open drawer or not.</para>
+    /// </summary>
+    private void ApplyDrawerBiasedRoomClamp()
+    {
+        if (!InteriorActive || InteriorVenueKey is null)
+        {
+            return;
+        }
+
+        var trueRight = FindInteriorRoom(InteriorVenueKey).RoomRect.End.X;
+        var bias = OpenDrawerWidthPx > 0f ? OpenDrawerWidthPx / 2f / CanvasShrink : 0f;
+        Cam.LimitRight = (int)Mathf.Max(Cam.LimitLeft, trueRight - bias);
     }
 
     /// <summary>
