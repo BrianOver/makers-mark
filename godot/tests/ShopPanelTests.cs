@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using GameSim;
 using GameSim.Advisor;
+using GameSim.Classes;
 using GameSim.Contracts;
 using GameSim.Drama;
 using GameSim.Kernel;
@@ -1070,6 +1071,167 @@ public class ShopPanelTests
                 AssertThat(chipText)
                     .OverrideFailureMessage($"Rival Edge chip rendered the raw permille ({permille}) instead of a band phrase.")
                     .NotContains(permille.ToString());
+            }
+            finally
+            {
+                Unmount(ui);
+            }
+        }
+    }
+
+    // ── P2-PEOPLE-17 ("stocking a piece names the morning queue that will reach it first") ────────
+    // decision 1: sell the good one, or hold it for the hero who needs it. ShopPanel.QueueForecastLine
+    // reads GameSim.Heroes.CommissionHandlers.ForecastQueueFor — the sim's own commission-match
+    // predicate and its own Morning shopping order, never re-derived client-side (the sim-side
+    // CommissionQueueForecastTests / CommissionQueuePredicateCopyCensusTests pin that half); these
+    // scenarios prove the RENDER: the line actually reaches the screen, names nothing when there is
+    // nothing to name, and never slides into advice (law 12, "influence never orders").
+
+    private static Hero QueueForecastHero(int id, string name, int gold) => new(
+        new HeroId(id), name, ClassRegistry.VanguardId, Level: 1, MaxHp: 25, Gold: gold,
+        GearSet.Empty, ImmutableList<ItemMemory>.Empty,
+        Alive: true, DeepestFloorReached: 0, DiedOnDay: null);
+
+    private static Item QueueForecastWeapon(int id, string name) => new(
+        new ItemId(id), "test-recipe", name, ItemSlot.Weapon, QualityGrade.Common,
+        new ItemStats(1, 1, 1), Mark: null, ImmutableList<ItemHistoryEntry>.Empty);
+
+    private static GameState QueueForecastWorld(
+        ImmutableSortedDictionary<int, Hero> heroes, Item item, int shelfPrice, Commission? commission)
+    {
+        var baseState = GameFactory.NewGame(9801) with { Heroes = heroes };
+        return baseState with
+        {
+            Items = ImmutableSortedDictionary<int, Item>.Empty.Add(item.Id.Value, item),
+            Player = baseState.Player with { Shelf = ImmutableList.Create(new ShelfEntry(item.Id, shelfPrice)) },
+            Commissions = commission is null ? ImmutableList<Commission>.Empty : ImmutableList.Create(commission),
+        };
+    }
+
+    [TestCase]
+    public void ShelvedPiece_MatchingAcceptedCommission_NamesTheAskAndEveryoneAheadInQueue()
+    {
+        // Torvald(1) and Brunhilde(2) shop before Kael(3) in the real Morning order — the exact
+        // "Fills Kael's ask (+40g). Torvald, Brunhilde shop before Kael does." shape from the unit's
+        // own spec.
+        var torvald = QueueForecastHero(1, "Torvald", gold: 5);
+        var brunhilde = QueueForecastHero(2, "Brunhilde", gold: 5);
+        var kael = QueueForecastHero(3, "Kael", gold: 5);
+        var sword = QueueForecastWeapon(1, "Iron Sword");
+        var commission = new Commission(kael.Id, ItemSlot.Weapon, QualityGrade.Common, DeadlineDay: 99, PremiumGold: 40)
+        {
+            Accepted = true,
+        };
+
+        var heroes = ImmutableSortedDictionary<int, Hero>.Empty.Add(1, torvald).Add(2, brunhilde).Add(3, kael);
+        var state = QueueForecastWorld(heroes, sword, shelfPrice: 20, commission);
+
+        var ui = MountMainUi(new SimAdapter(state));
+        try
+        {
+            ui.OpenPanel("Shop");
+            var line = Find<Label>(ui.Shop, $"QueueForecast_{sword.Id.Value}");
+            AssertThat(line.Text).IsEqual("Fills Kael's ask (+40g). Torvald, Brunhilde shop before Kael does.");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void ShelvedPiece_MatchingAcceptedCommission_WithNoOneAhead_NamesNoOneShopsBeforeThem()
+    {
+        var kael = QueueForecastHero(1, "Kael", gold: 5); // first in queue — nobody shops before him
+        var sword = QueueForecastWeapon(1, "Iron Sword");
+        var commission = new Commission(kael.Id, ItemSlot.Weapon, QualityGrade.Common, DeadlineDay: 99, PremiumGold: 40)
+        {
+            Accepted = true,
+        };
+
+        var heroes = ImmutableSortedDictionary<int, Hero>.Empty.Add(1, kael);
+        var state = QueueForecastWorld(heroes, sword, shelfPrice: 20, commission);
+
+        var ui = MountMainUi(new SimAdapter(state));
+        try
+        {
+            ui.OpenPanel("Shop");
+            var line = Find<Label>(ui.Shop, $"QueueForecast_{sword.Id.Value}");
+            AssertThat(line.Text).IsEqual("Fills Kael's ask (+40g). No one shops before Kael does.");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void ShelvedPiece_MatchingNoCommission_RendersNoQueueLine_NeverAnInventedOne()
+    {
+        var torvald = QueueForecastHero(1, "Torvald", gold: 5);
+        var sword = QueueForecastWeapon(1, "Iron Sword");
+        // No commission at all — the piece cannot fill anyone's ask.
+        var heroes = ImmutableSortedDictionary<int, Hero>.Empty.Add(1, torvald);
+        var state = QueueForecastWorld(heroes, sword, shelfPrice: 20, commission: null);
+
+        var ui = MountMainUi(new SimAdapter(state));
+        try
+        {
+            ui.OpenPanel("Shop");
+            AssertThat(ui.Shop.FindChild($"QueueForecast_{sword.Id.Value}", recursive: true, owned: false)).IsNull();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>
+    /// Law 12, "influence never orders": the queue line states a fact about POSITION — who shops
+    /// before whom — and must never slide into telling the player what to do about it. Iterates
+    /// several queue shapes (0, 1, 2, and 3 heroes ahead) rather than trusting one hand-typed
+    /// scenario, and checks a DENY-LIST of command phrasings against the rendered line rather than
+    /// one literal string, so a future rewrite of the copy still has to clear the same bar.
+    /// </summary>
+    [TestCase]
+    public void QueueForecastLine_NeverPhrasesAsAnOrder_AcrossQueueDepths()
+    {
+        string[] imperativePhrases =
+        [
+            "you should", "should sell", "should hold", "should price", "hold onto", "hold this",
+            "hold it", "sell it", "sell now", "price it", "don't sell", "make sure", "you must",
+            "must sell", "must hold", "recommend", "better to sell", "better to hold",
+        ];
+
+        for (var aheadCount = 0; aheadCount <= 3; aheadCount++)
+        {
+            var heroCount = aheadCount + 1;
+            var heroes = ImmutableSortedDictionary<int, Hero>.Empty;
+            for (var i = 1; i <= heroCount; i++)
+            {
+                heroes = heroes.Add(i, QueueForecastHero(i, $"Hero{i}", gold: 5));
+            }
+
+            var targetHeroId = heroCount; // last in queue — every other hero built above is ahead
+            var sword = QueueForecastWeapon(1, "Iron Sword");
+            var commission = new Commission(new HeroId(targetHeroId), ItemSlot.Weapon, QualityGrade.Common, DeadlineDay: 99, PremiumGold: 40)
+            {
+                Accepted = true,
+            };
+            var state = QueueForecastWorld(heroes, sword, shelfPrice: 20, commission);
+
+            var ui = MountMainUi(new SimAdapter(state));
+            try
+            {
+                ui.OpenPanel("Shop");
+                var line = Find<Label>(ui.Shop, $"QueueForecast_{sword.Id.Value}").Text;
+                var lowered = line.ToLowerInvariant();
+                foreach (var phrase in imperativePhrases)
+                {
+                    AssertThat(lowered)
+                        .OverrideFailureMessage($"Queue forecast line reads as an order (\"{phrase}\") with {aheadCount} ahead: \"{line}\"")
+                        .NotContains(phrase);
+                }
             }
             finally
             {
