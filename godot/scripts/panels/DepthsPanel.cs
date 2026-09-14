@@ -50,10 +50,17 @@ public partial class DepthsPanel : SimPanel
     /// portrait (<see cref="UiKit.PortraitSize"/> is smaller, for hero figures).</summary>
     private const float BackdropSize = 120f;
 
-    /// <summary>Fixed tile width (px) — R7 guard: a <see cref="GridContainer"/> column sizes to
+    /// <summary>MINIMUM tile width (px) — R7 guard: a <see cref="GridContainer"/> column sizes to
     /// its narrowest content unless a cell claims real width up front (the same fixed-
     /// <c>CustomMinimumSize</c> technique <c>HeroesPanel.RosterCardSize</c> uses), so the
-    /// standings' autowrap labels never collapse to one character per line.</summary>
+    /// standings' autowrap labels never collapse to one character per line.
+    ///
+    /// <para>MINIMUM only, not fixed (visfix4): a card also carries
+    /// <see cref="Control.SizeFlags.ExpandFill"/> now (see <see cref="BuildVenueTile"/>), so once
+    /// this floor is met the <see cref="GridContainer"/> stretches the card to fill whatever's left
+    /// of the drawer's real width. Before that flag, one column at 360px inside a 600px
+    /// <see cref="DrawerHost.DrawerWidth"/> drawer left a ~240px dead column down the right —
+    /// visible in the design-pass shot at runs/shots-2026-09-13/Watch.png.</para></summary>
     private static readonly Vector2 VenueTileSize = new(360f, 0f);
 
     /// <summary>
@@ -145,6 +152,10 @@ public partial class DepthsPanel : SimPanel
         var venue = GameSim.Venues.VenueRegistry.Require(venueId);
         var card = Card($"VenueTile_{venueId}");
         card.CustomMinimumSize = VenueTileSize;
+        // visfix4: ExpandFill lets the GridContainer grow this card past its VenueTileSize floor
+        // to actually use the drawer's real width instead of stranding a dead column beside it
+        // (see VenueTileSize's own remarks).
+        card.SizeFlagsHorizontal = SizeFlags.ExpandFill;
         var body = new VBoxContainer();
         card.AddChild(body);
 
@@ -156,9 +167,18 @@ public partial class DepthsPanel : SimPanel
         // 1024x1024 "mine-backdrop" blowing the 120x120 tile out to ~1024px wide (discovered by
         // LW5's own screenshot self-verify, PR #119) now lives centrally in UiKit.ArtRect instead
         // of patched locally here — see UiKit.ArtRect's own remarks.
+        //
+        // visfix4: KeepAspectCovered, not the ArtRect default KeepAspectCentered. Every committed
+        // venue backdrop (mine-/gloomwood-/sunkencrypt-/emberfall-backdrop.png, checked directly)
+        // is 1024x260 — a wide banner, not a portrait-ish square. Centered-and-contained inside
+        // this square BackdropSize box scaled that down to a ~120x30 sliver with dead space above
+        // and below (the design-pass shot at runs/shots-2026-09-13/Watch.png), reading as a broken
+        // image. Covered crops instead of letterboxing, so the box always shows a real, full-bleed
+        // slice of the art.
         var backdropArt = ArtRect(
             AssetCatalog.VenueBackdropId(venueId), new Vector2(BackdropSize, BackdropSize),
-            IconRegistry.Glyph("depths"), venue.DisplayName);
+            IconRegistry.Glyph("depths"), venue.DisplayName,
+            stretchMode: TextureRect.StretchModeEnum.KeepAspectCovered);
         headerRow.AddChild(backdropArt);
 
         var infoCol = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
@@ -248,8 +268,20 @@ public partial class DepthsPanel : SimPanel
         };
         scroll.AddChild(body);
 
+        // visfix4: the caption used to be a bare Label dropped straight into `body` at 0px left
+        // inset, so its text ran under the drawer's own border (design-pass shot,
+        // runs/shots-2026-09-13/Watch.png). Everything else on this drawer gets an inset for
+        // free because it sits inside its OWN bare PanelContainer — DrawerHeader's title strip,
+        // and each venue tile below via Card() — which picks up the theme's default "panel"
+        // StyleBox (GameTheme.PanelStyle()) and its ContentMarginLeft/Right. Read that same
+        // property (not a re-typed literal) so the caption lines up with both.
+        var captionHost = new MarginContainer { Name = "CaptionInset" };
+        var panelInset = (int)GameTheme.PanelStyle().ContentMarginLeft;
+        captionHost.AddThemeConstantOverride("margin_left", panelInset);
+        captionHost.AddThemeConstantOverride("margin_right", panelInset);
         _caption = UiKit.OnceEverCaption();
-        body.AddChild(_caption);
+        captionHost.AddChild(_caption);
+        body.AddChild(captionHost);
 
         // GridContainer (not a flat VBox): venue tiles drop in as grid children with no layout rework.
         //
