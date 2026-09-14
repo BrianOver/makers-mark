@@ -474,12 +474,26 @@ public static class UiKit
             // R7-class guard: reserve width beyond the bare art tile for the caption. A square
             // portrait/item tile (e.g. PortraitSize=96) is narrower than a short name needs at
             // GameTheme.BodyFontSize — without this floor a WordSmart label can be squeezed
-            // narrow enough to hard-wrap mid-word, the exact defect item 3 of this fix targets.
-            // KeepAspectCentered still renders the art at its own aspect within the wider cell.
+            // narrow enough to hard-wrap mid-word. KeepAspectCentered still renders the art at
+            // its own aspect within the wider cell.
+            //
+            // P2-SCREEN-27 (owner GPU capture, Tavern hero rows): CaptionMinWidth is a flat
+            // floor sized for the WordSmart wrap risk above — pointless, and purely a cost, when
+            // the caller passed `ellipsizeCaption` (CaptionLabel's branch for it sets
+            // AutowrapMode.Off with ClipText + TrimEllipsis, so there is no wrap this floor could
+            // ever be preventing). Applying it anyway is exactly "the frame is fixed while art
+            // varies": a compact 56px tile (TavernPanel's own PatronPortraitSize) reserved the
+            // SAME 116px floor a 96px roster portrait does, ballooning the frame to roughly
+            // double its art's own width for nothing. But the art's own bare width (56px) isn't
+            // enough either — it clips real hero names ("Brunhilde" -> "Brunhi"), trading one
+            // visible defect for a worse one. The right floor is whatever THIS caption's own text
+            // actually needs at the theme's default font (<see cref="MeasureLabelWidth"/>) —
+            // never more (no dead frame), never less (no clipped name).
+            var captionFloor = ellipsizeCaption ? MeasureLabelWidth(caption) : CaptionMinWidth;
             var captioned = new VBoxContainer
             {
                 Name = "ArtRectCaptioned",
-                CustomMinimumSize = new Vector2(Mathf.Max(size.X, CaptionMinWidth), 0),
+                CustomMinimumSize = new Vector2(Mathf.Max(size.X, captionFloor), 0),
             };
             captioned.AddChild(textureRect);
             captioned.AddChild(CaptionLabel(caption, ellipsizeCaption));
@@ -495,10 +509,16 @@ public static class UiKit
         // real-art branch above).
         WarnOnceOnArtMiss(artKey);
 
+        // P2-SCREEN-27: same conditional floor as the real-art caption branch above — an
+        // ellipsized caption never wraps, so reserving a flat width against a WordSmart wrap it
+        // cannot hit only inflates the frame past its own art; measuring what THIS caption's own
+        // text actually needs avoids both that and the clipped-name regression a bare art-width
+        // floor caused.
+        var placeholderCaptionFloor = ellipsizeCaption ? MeasureLabelWidth(caption ?? artKey) : CaptionMinWidth;
         var placeholder = new PanelContainer
         {
             Name = "ArtRectFallback",
-            CustomMinimumSize = new Vector2(Mathf.Max(size.X, CaptionMinWidth), size.Y),
+            CustomMinimumSize = new Vector2(Mathf.Max(size.X, placeholderCaptionFloor), size.Y),
         };
         var body = new VBoxContainer
         {
@@ -507,12 +527,23 @@ public static class UiKit
         };
         placeholder.AddChild(body);
 
+        // P2-SCREEN-27 (owner GPU capture, Tavern hero rows): the SAME "LW5-class bug" the
+        // real-art branch above already documents and guards against (ExpandMode default of
+        // KeepSize reports the TEXTURE'S OWN pixel size) was never applied here. It went
+        // unnoticed on the DEFAULT glyph fallback (small and roughly square, so the mismatch
+        // barely showed), but TavernPanel passes a real, generated hero-class body sprite as
+        // `fallbackIcon` here — its native canvas is neither square nor anywhere near this
+        // half-size box, so it silently overrode CustomMinimumSize below and the surrounding
+        // VBox/PanelContainer grew to fit IT rather than the declared half-size tile, ballooning
+        // a 56px portrait's frame well past its own declared size (identically for every hero
+        // class, since none of them ever had IgnoreSize forcing the requested size to win).
         var icon = new TextureRect
         {
             Name = "FallbackIcon",
             Texture = fallbackIcon ?? IconRegistry.Glyph(DefaultFallbackGlyph),
             CustomMinimumSize = size * 0.5f,
             StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
+            ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
             MouseFilter = Control.MouseFilterEnum.Ignore,
         };
         body.AddChild(icon);
@@ -592,6 +623,20 @@ public static class UiKit
         return label;
     }
 
+    /// <summary>P2-SCREEN-27: the real, unclipped single-line width <paramref name="text"/> needs
+    /// at the theme's default font — <see cref="Control.GetMinimumSize"/> on a plain <see
+    /// cref="Label"/> with neither <see cref="Label.ClipText"/> nor autowrap set (both default
+    /// off), which is Godot's own text-metrics answer, not a guessed character count. A clipped
+    /// or autowrapped Label reports a near-zero minimum instead (it no longer NEEDS room, since
+    /// it can shrink to whatever it is given), so this measures with a bare, throwaway probe —
+    /// same theme/font every real <see cref="CaptionLabel"/> resolves, since neither sets one of
+    /// its own — freed immediately since it never joins any tree.</summary>
+    private static float MeasureLabelWidth(string text)
+    {
+        using var probe = new Label { Text = text };
+        return probe.GetMinimumSize().X;
+    }
+
     private static Color ToneColor(ChipTone tone) => tone switch
     {
         ChipTone.Positive => GameTheme.CoolantColor,
@@ -665,12 +710,13 @@ public static class UiKit
     /// <summary>
     /// A themed shop/recipe/vendor row (UI-2) — one <see cref="HBoxContainer"/> with fixed
     /// columns (icon 24px | name, Bone, fills remaining width and single-line-ellipsizes rather
-    /// than wrapping | price 64px right-aligned Gold | owned "×N" 40px dim | action button 72px)
-    /// so a whole list of rows lines up into clean columns instead of each row's own content
-    /// dictating its width. A 1px Iron hairline separates rows (a full per-row box reads as one
-    /// card per item, which is too heavy for a dense list); hovering swaps the row's own fill to
-    /// <see cref="GameTheme.SurfaceRaised"/> — a plain stylebox swap on <c>MouseEntered</c>/
-    /// <c>MouseExited</c>, not an engine Tween (this codebase's accumulated-delta-only rule).
+    /// than wrapping | price 64px right-aligned Gold | owned "×N" 40px dim | optional <paramref
+    /// name="inlineExtra"/> | action button 72px) so a whole list of rows lines up into clean
+    /// columns instead of each row's own content dictating its width. A 1px Iron hairline
+    /// separates rows (a full per-row box reads as one card per item, which is too heavy for a
+    /// dense list); hovering swaps the row's own fill to <see cref="GameTheme.SurfaceRaised"/> —
+    /// a plain stylebox swap on <c>MouseEntered</c>/<c>MouseExited</c>, not an engine Tween (this
+    /// codebase's accumulated-delta-only rule).
     ///
     /// <para>When <paramref name="enabled"/> is false, the whole row dims to
     /// <see cref="ListRowDisabledAlpha"/>, the price tints <see cref="GameTheme.DangerColor"/>,
@@ -678,10 +724,15 @@ public static class UiKit
     /// the exact <c>SimPanel.GateButton</c> contract (Disabled + player-phrased tooltip),
     /// inlined here since <c>GateButton</c> itself is a <c>SimPanel</c>-protected member this
     /// static kit cannot call directly.</para>
+    ///
+    /// <para>P2-SCREEN-27: <paramref name="inlineExtra"/> (default null, every existing caller
+    /// untouched) is a slot for the ONE live control a row's own action sometimes needs re-gated
+    /// against (ForgePanel's per-material quantity SpinBox) — it draws inside THIS row, never as
+    /// a second row underneath with no visible tie back to the button it modifies.</para>
     /// </summary>
     public static Control ListRow(
         Texture2D? icon, string name, string price, string owned, Button action, bool enabled,
-        string whyNot = "")
+        string whyNot = "", Control? inlineExtra = null)
     {
         var row = new PanelContainer
         {
@@ -743,6 +794,16 @@ public static class UiKit
         };
         ownedLabel.AddThemeColorOverride("font_color", GameTheme.TextDim);
         hbox.AddChild(ownedLabel);
+
+        // P2-SCREEN-27: an optional extra live control (ForgePanel's per-material quantity
+        // SpinBox) slots in HERE, between owned and the action button, so a row that needs one
+        // more live-editable control stays ONE row — a caller that needs this used to build its
+        // own unlabeled second row underneath instead, with nothing tying it back to the button
+        // it re-gates.
+        if (inlineExtra is not null)
+        {
+            hbox.AddChild(inlineExtra);
+        }
 
         action.CustomMinimumSize = new Vector2(ListRowActionWidth, 0);
         action.Disabled = !enabled; // SimPanel.GateButton's exact contract, inlined (see remarks)

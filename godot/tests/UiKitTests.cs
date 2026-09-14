@@ -173,6 +173,56 @@ public class UiKitTests
     }
 
     [TestCase]
+    public void ArtRect_EllipsizedCaption_SizesToItsOwnTextWidth_NotAFlatFloor_ForHitAndMiss()
+    {
+        // P2-SCREEN-27 (owner GPU capture, Tavern hero rows): CaptionMinWidth (116px) is tuned
+        // for the WordSmart wrap risk a NON-ellipsized caption carries — applying it
+        // unconditionally to an ellipsized one (which never wraps) ballooned a compact 56px
+        // portrait tile to roughly double its own art's width for nothing ("the frame is fixed
+        // while art varies"). Narrowing the floor to the bare art width alone then clipped real
+        // hero names ("Brunhilde" -> "Brunhi"). Phrased against the property: an ellipsized
+        // caption's frame must fit ITS OWN text — narrower for a short name, wider for a longer
+        // one, never narrower than the text actually needs — for both the real-art hit and the
+        // no-art fallback miss.
+        var size = new Vector2(56, 56);
+        var hitShort = UiKit.ArtRect(KnownArtKey, size, caption: "Kael", ellipsizeCaption: true);
+        var hitLong = UiKit.ArtRect(KnownArtKey, size, caption: "Brunhilde", ellipsizeCaption: true);
+        var missShort = UiKit.ArtRect(UnknownArtKey, size, caption: "Kael", ellipsizeCaption: true);
+        var missLong = UiKit.ArtRect(UnknownArtKey, size, caption: "Brunhilde", ellipsizeCaption: true);
+        try
+        {
+            foreach (var (control, caption) in new[]
+                     {
+                         (hitShort, "Kael"), (hitLong, "Brunhilde"), (missShort, "Kael"), (missLong, "Brunhilde"),
+                     })
+            {
+                using var probe = new Label { Text = caption };
+                var needed = probe.GetMinimumSize().X;
+                var actual = control.GetCombinedMinimumSize().X;
+
+                AssertThat(actual >= needed - 0.5f)
+                    .OverrideFailureMessage($"'{caption}' frame ({actual}) is narrower than its own text needs ({needed}) — it will clip")
+                    .IsTrue();
+                AssertThat(actual)
+                    .OverrideFailureMessage($"'{caption}' frame ({actual}) still uses the flat CaptionMinWidth floor instead of its own text width")
+                    .IsLess(116f);
+            }
+
+            // The property this whole fix is FOR: a longer caption earns more room than a
+            // shorter one, never a fixed frame regardless of content.
+            AssertThat(hitLong.GetCombinedMinimumSize().X).IsGreater(hitShort.GetCombinedMinimumSize().X);
+            AssertThat(missLong.GetCombinedMinimumSize().X).IsGreater(missShort.GetCombinedMinimumSize().X);
+        }
+        finally
+        {
+            hitShort.Free();
+            hitLong.Free();
+            missShort.Free();
+            missLong.Free();
+        }
+    }
+
+    [TestCase]
     public void PortraitFrame_HitAndMiss_BothRenderNonNullFramedContent()
     {
         var hit = PortraitFrame(KnownArtKey, caption: "Sir Vanguard");

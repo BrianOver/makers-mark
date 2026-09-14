@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using GameSim.Classes;
 using GameSim.Contracts;
+using GameSim.Drama;
 using GameSim.Heroes;
 using Godot;
 using GodotClient.Town2d;
@@ -70,6 +71,12 @@ public partial class CounterPanel : SimPanel
         var state = Adapter.CurrentState;
         Clear(_body!);
 
+        // P2-SCREEN-27 (owner GPU capture, Shop drawer): used to render as ShopPanel's own bare
+        // "CounterHeader" label, ahead of the shelf sections — a line describing THIS card,
+        // sitting outside it, flush to the drawer edge between two real cards. Moved inside the
+        // card it describes; see BuildCounterHeaderLine's own doc for the projection it mirrors.
+        BuildCounterHeaderLine(state);
+
         if (state.Counter is not { Closed: false } counter)
         {
             BuildClosedState(state);
@@ -91,6 +98,64 @@ public partial class CounterPanel : SimPanel
         // unclickable. See SimPanel._GetMinimumSize.
         UpdateMinimumSize();
     }
+
+    /// <summary>
+    /// U1 (§11.11, "tomorrow's asks, in front of tonight's shelf"): a persistent, read-only line
+    /// naming who the counter will seat FIRST and what they will ask for — the SAME <see
+    /// cref="CounterForecast.Queue"/> projection <c>CounterHandlers.ApplyOpen</c> builds the
+    /// instant the counter opens, so this can never name a different hero than the one who
+    /// actually sits down (U1 test 7). Morning-only, mirroring <c>ActionLegality</c>'s own
+    /// <c>OpenCounterAction</c> gate (sim/GameSim/Advisor/ActionLegality.cs:67 —
+    /// <c>phase == DayPhase.Morning</c>) rather than asserting an independent rule: outside
+    /// Morning the counter cannot open at all, so naming a "first customer" would be a fact about
+    /// a phase the player cannot currently act on. Read-only — no verb here; the verb is the
+    /// counter button (OpenCounter/Present/Suggest) already on this same card.
+    ///
+    /// <para>P2-SCREEN-27: originally <c>ShopPanel.BuildCounterHeaderSection</c>, rendering
+    /// straight into <c>ShopPanel</c>'s own content column ahead of the shelf sections — a line
+    /// ABOUT the counter, sitting flush to the drawer edge OUTSIDE the "COUNTER SERVICE" card it
+    /// describes, between it and the shelf card below. Moved here so it draws inside that same
+    /// card, right under its own header, same text and same Morning/queue-empty gate as before —
+    /// only where it draws changed.</para>
+    /// </summary>
+    private void BuildCounterHeaderLine(GameState state)
+    {
+        if (state.Phase != DayPhase.Morning)
+        {
+            return;
+        }
+
+        var queue = CounterForecast.Queue(state);
+        if (queue.IsEmpty)
+        {
+            return;
+        }
+
+        var first = queue[0];
+        if (!state.Heroes.TryGetValue(first.Hero.Value, out var hero))
+        {
+            return;
+        }
+
+        var wantText = first.WantSlot is { } slot ? $"wants {CounterHeaderSlotArticle(slot)}" : "is just browsing";
+        var header = AddLabel(_body!, $"First at the counter: {hero.Name} — {wantText}, {first.Gold}g on hand.");
+        header.Name = "CounterHeader";
+        header.AddThemeColorOverride("font_color", GameTheme.HeaderColor);
+    }
+
+    /// <summary>Cosmetic slot phrasing for <see cref="BuildCounterHeaderLine"/> — mirrors
+    /// <c>CustomerVoice.SlotArticle</c>'s wording (godot/scripts/ui/CustomerVoice.cs) without a
+    /// second implementation of the WANT decision itself (that stays <see
+    /// cref="CounterForecast.Wants"/> alone); this only turns an already-decided <see
+    /// cref="ItemSlot"/> into English.</summary>
+    private static string CounterHeaderSlotArticle(ItemSlot slot) => slot switch
+    {
+        ItemSlot.Weapon => "a weapon",
+        ItemSlot.Shield => "a shield",
+        ItemSlot.Armor => "some armor",
+        ItemSlot.Trinket => "a trinket",
+        _ => "some gear",
+    };
 
     private void BuildClosedState(GameState state)
     {

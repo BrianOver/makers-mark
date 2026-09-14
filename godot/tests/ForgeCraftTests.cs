@@ -714,6 +714,54 @@ public class ForgeCraftTests
         finally { Unmount(ui); }
     }
 
+    /// <summary>P2-SCREEN-27 (owner GPU capture, ForgePanel materials tab): the quantity stepper
+    /// used to draw as its own thin row underneath the ListRow it re-gates — a bare "qty:" line
+    /// orphaned between one material and the next, with nothing tying it back to the button it
+    /// modifies. Phrased against the property, not the instance ("the Copper row" would miss the
+    /// other eighteen): every priced material's stepper must share the SAME ListRow ancestor as
+    /// its own Buy button, not float in a row of its own.</summary>
+    [TestCase]
+    public void EveryVendorRow_QuantityStepperSharesItsListRow_WithTheBuyButtonItRegates()
+    {
+        var ui = MountMainUi(FoundryCampaign(gold: 999_999));
+        try
+        {
+            ui.OpenPanel("Forge");
+            Press(ui.Forge, "ForgeTab_materials");
+
+            foreach (var key in MaterialRegistry.PricedPool)
+            {
+                var buy = Find<Button>(ui.Forge, $"BuyMat_{key}");
+                var spin = Find<SpinBox>(ui.Forge, $"BuyMatQty_{key}");
+
+                var buyRow = NearestAncestorNamed(buy, "ListRow");
+                var spinRow = NearestAncestorNamed(spin, "ListRow");
+
+                AssertThat(spinRow)
+                    .OverrideFailureMessage($"'{key}' quantity stepper is not inside the same ListRow as its Buy button")
+                    .IsEqual(buyRow);
+            }
+        }
+        finally { Unmount(ui); }
+    }
+
+    /// <summary>Walks up from <paramref name="node"/> to the nearest ancestor named <paramref
+    /// name="name"/> — used above to prove two controls share the same visual row regardless of
+    /// exactly how many containers sit between either one and that row.</summary>
+    private static Node NearestAncestorNamed(Node node, string name)
+    {
+        var current = node.GetParent();
+        while (current is not null && current.Name != name)
+        {
+            current = current.GetParent();
+        }
+
+        AssertThat(current)
+            .OverrideFailureMessage($"no ancestor named '{name}' above {node.Name}")
+            .IsNotNull();
+        return current!;
+    }
+
     /// <summary>Select a <c>MaterialSelect</c> item by its displayed text (never a hardcoded
     /// index — <c>RecipeTable.MaterialGrades</c> is alphabetical, not insertion-order) and emit
     /// the same <c>ItemSelected</c> signal a real dropdown pick fires, driving the panel's
