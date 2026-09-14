@@ -32,7 +32,8 @@ public class ConstitutionTests
     private static readonly (string Slug, string Phrase, string[] Files)[] Laws =
     [
         ("influence-never-orders", "influence never orders",
-            ["sim/GameSim.Tests/Kernel/HeroSovereigntyCensusTests.cs"]),
+            ["sim/GameSim.Tests/Kernel/HeroSovereigntyCensusTests.cs",
+             "sim/GameSim.Tests/Advisor/AdvisorNeverOrdersTests.cs"]),
         ("no-decision-timers", "no timers on decisions",
             ["sim/GameSim.Tests/Presentation/ClientAuthorityCensusTests.cs"]),
         ("verbs-change-outcomes", "every verb changes an outcome",

@@ -12,6 +12,15 @@ namespace GameSim.Advisor;
 /// One suggested next step: an action to submit (or <c>null</c> when nothing productive is legal
 /// yet — the destitution floor, <see cref="DestitutionRecoverySystem"/>, will resolve it next
 /// Morning without player input) plus a short human-readable reason.
+///
+/// <para><b>P2-HONEST-24: <see cref="Reason"/> is never an order.</b> The game's first law
+/// (CLAUDE.md rule 12, <c>LAW:influence-never-orders</c>) says influence never orders the player —
+/// and until this unit that held for hero-facing verbs (<c>HeroSovereigntyCensusTests</c>) but not
+/// for the advisor's OWN voice, which imperative-moded its player-facing copy ("craft 'X' now",
+/// "Raise the forge to Tier N") and had that spoken verbatim in Bryn's mouth
+/// (<c>MentorIdleVoice</c>). Every <see cref="Reason"/> this class returns states a fact or a
+/// stake — what is true, what it costs to skip, what a purchase would unlock — never an
+/// instruction. <c>AdvisorNeverOrdersTests</c> is the tripwire.</para>
 /// </summary>
 public sealed record Suggestion(PlayerAction? Action, string Reason);
 
@@ -70,7 +79,7 @@ public static class ObjectiveAdvisor
                 if (ActionLegality.IsLegal(state, honor, phase))
                 {
                     suggestions.Add(new Suggestion(honor,
-                        $"Honor {memorial.HeroName}'s memorial — the rite keeps, and it will wait as long as you do."));
+                        $"{memorial.HeroName}'s memorial still waits unhonored — the rite keeps, and it will wait as long as you do."));
                 }
             }
         }
@@ -88,7 +97,7 @@ public static class ObjectiveAdvisor
             if (ActionLegality.IsLegal(state, accept, phase))
             {
                 suggestions.Add(new Suggestion(accept,
-                    $"Accept {commission.HeroName}'s commission — {commission.Slot} at {commission.MinQuality}+ quality " +
+                    $"{commission.HeroName}'s commission is open — {commission.Slot} at {commission.MinQuality}+ quality " +
                     $"for a {commission.PremiumGold}g premium (due day {commission.DeadlineDay}){GameSim.Heroes.CommissionSystem.SlotHonestyNote(commission.Slot)}."));
             }
         }
@@ -161,7 +170,14 @@ public static class ObjectiveAdvisor
                 var buy = new BuyMaterialAction(materialKey, quantity);
                 if (ActionLegality.IsLegal(state, buy, phase))
                 {
-                    suggestions.Add(new Suggestion(buy, $"Buy {quantity} {MaterialRegistry.Require(materialKey).DisplayName.ToLowerInvariant()} ({cost}g) — the cheapest path to your next craft."));
+                    // P2-HONEST-24 + P2-ONBOARD-06 together, and the pair is the reason this reads as a
+                    // gerund rather than either a command or a bare noun phrase. P2-ONBOARD-06 deleted all
+                    // WHERE-to-walk copy from the tutorial cards on the grounds that the overlay already
+                    // points at the thing, leaving "name the action" as this card's ONLY remaining job --
+                    // pinned by TutorialFlowTests.Step1Copy_NamesTheAction_NeverWhereToWalk. P2-HONEST-24
+                    // forbids the imperative that used to name it ("Buy 2 copper..."). A gerund satisfies
+                    // both at once: the action is named, and nobody is told to take it.
+                    suggestions.Add(new Suggestion(buy, $"Buying {quantity} {MaterialRegistry.Require(materialKey).DisplayName.ToLowerInvariant()} ({cost}g) is the cheapest path to your next craft."));
                 }
                 else
                 {
@@ -203,7 +219,7 @@ public static class ObjectiveAdvisor
             var stock = new StockAction(stockable.Id, price);
             if (ActionLegality.IsLegal(state, stock, phase))
             {
-                suggestions.Add(new Suggestion(stock, $"Shelve '{stockable.Name}' — it's finished and unsold."));
+                suggestions.Add(new Suggestion(stock, $"'{stockable.Name}' is finished, but it isn't on the shelf yet — nothing sells until it is."));
             }
         }
 
@@ -241,7 +257,7 @@ public static class ObjectiveAdvisor
             return ActionLegality.IsLegal(state, craft, phase)
                 ? new Suggestion(craft,
                     $"{stall.HeroName} is stalled at {DepthCopy.Deepest(stall.DeepestFloorReached)}, aiming for floor {stall.TargetFloor}, missing {slot} gear " +
-                    $"— craft '{recipe.Name}' now, you already have enough {MaterialRegistry.Require(recipe.MaterialKey).DisplayName.ToLowerInvariant()}.")
+                    $"— '{recipe.Name}' is ready: you already have enough {MaterialRegistry.Require(recipe.MaterialKey).DisplayName.ToLowerInvariant()}.")
                 : null;
         }
 
@@ -253,7 +269,7 @@ public static class ObjectiveAdvisor
                 var cost = MaterialVendorHandlers.QuoteCost(recipe.MaterialKey, recipe.MaterialQuantity);
                 return new Suggestion(buy,
                     $"{stall.HeroName} is stalled at {DepthCopy.Deepest(stall.DeepestFloorReached)}, aiming for floor {stall.TargetFloor}, missing {slot} gear " +
-                    $"— buy {recipe.MaterialQuantity} {MaterialRegistry.Require(recipe.MaterialKey).DisplayName.ToLowerInvariant()} ({cost}g) toward '{recipe.Name}'.");
+                    $"— {recipe.MaterialQuantity} {MaterialRegistry.Require(recipe.MaterialKey).DisplayName.ToLowerInvariant()} ({cost}g) would complete '{recipe.Name}'.");
             }
         }
 
@@ -333,7 +349,7 @@ public static class ObjectiveAdvisor
             {
                 return new Suggestion(unlock,
                     $"{stall.HeroName} carries {targetSlot} gear below floor {nextFloor}'s {required}+ bar (currently {carried}) " +
-                    $"— unlock '{profession.TalentNodes[gate].Name}' to open the way to '{recipe.Name}'.");
+                    $"— '{profession.TalentNodes[gate].Name}' opens the way to '{recipe.Name}'.");
             }
 
             // The rung BELOW the unlock, and the one this branch used to answer with silence. A gate
@@ -370,8 +386,8 @@ public static class ObjectiveAdvisor
                 // own (ForgeTierHandlers' cost/ore tables, and its own "Forge Tier {tierIndex + 2}"
                 // display convention for the tier a single upgrade lands on), never re-derived.
                 return new Suggestion(upgrade,
-                    $"Raise the forge to Tier {tierIndex + 2} ({ForgeTierHandlers.GoldCost[tierIndex]}g, " +
-                    $"{ForgeTierHandlers.OreQuantity} {MaterialRegistry.Require(ForgeTierHandlers.OreKey[tierIndex]).DisplayName.ToLowerInvariant()}) — the way to '{recipe.Name}'. " +
+                    $"Forge Tier {tierIndex + 2} ({ForgeTierHandlers.GoldCost[tierIndex]}g, " +
+                    $"{ForgeTierHandlers.OreQuantity} {MaterialRegistry.Require(ForgeTierHandlers.OreKey[tierIndex]).DisplayName.ToLowerInvariant()}) opens the way to '{recipe.Name}'. " +
                     $"{stall.HeroName} carries {targetSlot} gear below floor {nextFloor}'s {required}+ bar " +
                     $"(currently {carried}); '{profession.TalentNodes[gate].Name}' opens that recipe once the forge can hold it.");
             }
@@ -389,7 +405,7 @@ public static class ObjectiveAdvisor
             return ActionLegality.IsLegal(state, craft, phase)
                 ? new Suggestion(craft,
                     $"{stall.HeroName} carries {targetSlot} gear below floor {nextFloor}'s {required}+ bar (currently {carried}) " +
-                    $"— craft '{best.Name}' now, you already have enough {MaterialRegistry.Require(best.MaterialKey).DisplayName.ToLowerInvariant()}.")
+                    $"— '{best.Name}' is ready: you already have enough {MaterialRegistry.Require(best.MaterialKey).DisplayName.ToLowerInvariant()}.")
                 : null;
         }
 
@@ -401,7 +417,7 @@ public static class ObjectiveAdvisor
                 var cost = MaterialVendorHandlers.QuoteCost(best.MaterialKey, best.MaterialQuantity);
                 return new Suggestion(buy,
                     $"{stall.HeroName} carries {targetSlot} gear below floor {nextFloor}'s {required}+ bar (currently {carried}) " +
-                    $"— buy {best.MaterialQuantity} {MaterialRegistry.Require(best.MaterialKey).DisplayName.ToLowerInvariant()} ({cost}g) toward '{best.Name}'.");
+                    $"— {best.MaterialQuantity} {MaterialRegistry.Require(best.MaterialKey).DisplayName.ToLowerInvariant()} ({cost}g) would complete '{best.Name}'.");
             }
         }
 
@@ -538,7 +554,7 @@ public static class ObjectiveAdvisor
         var price = SuggestedPrice.For(held);
         var stock = new StockAction(held.Id, price);
         return ActionLegality.IsLegal(state, stock, phase)
-            ? new Suggestion(stock, $"You crafted a {held.Quality} {held.Name} — shelve it, {demandLabel} wants it.")
+            ? new Suggestion(stock, $"You crafted a {held.Quality} {held.Name}, still unshelved — {demandLabel} wants it.")
             : null;
     }
 
