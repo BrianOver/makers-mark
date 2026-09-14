@@ -491,11 +491,15 @@ public abstract partial class SimPanel : Control
     /// <see cref="PortraitFrame"/> passthrough just above — previously this was the one ArtRect
     /// caller that could never opt into the single-line ellipsized caption
     /// <see cref="UiKit.ArtRect"/> already supports. Default false keeps every existing caller
-    /// byte-identical.</summary>
+    /// byte-identical. Widened again (visfix4) to forward <paramref name="stretchMode"/> the same
+    /// way, so a panel cropping a wide banner-shaped source into a square-ish box can opt into
+    /// <see cref="TextureRect.StretchModeEnum.KeepAspectCovered"/> without a second, hand-rolled
+    /// cropping rule — see <see cref="UiKit.ArtRect"/>'s own remarks.</summary>
     protected static Control ArtRect(
         string artKey, Vector2 size, Texture2D? fallbackIcon = null, string? caption = null,
-        bool ellipsizeCaption = false) =>
-        UiKit.ArtRect(artKey, size, fallbackIcon, caption, ellipsizeCaption);
+        bool ellipsizeCaption = false,
+        TextureRect.StretchModeEnum stretchMode = TextureRect.StretchModeEnum.KeepAspectCentered) =>
+        UiKit.ArtRect(artKey, size, fallbackIcon, caption, ellipsizeCaption, stretchMode);
 
     // ── UI-2: cozy list/HUD builder passthroughs ──────────────────────────────────────────────
 
