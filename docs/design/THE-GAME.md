@@ -468,8 +468,6 @@ Stated as description. These are properties of the game as it stands, not gaps a
   everything your mark touched. There is no staged final scene — the tally is the ending.
 - **The camp simulates nothing while a party sleeps.** It is a decision, not a place. Its entire
   weight is the one question and the three verbs.
-- **The deep floors show the show, not the wager.** There is no slate down there restating what is
-  at stake.
 - **Four venues are live, and that is the whole ladder.** There is no rung past the Emberfall
   Foundry — beating its floor 5 is the campaign's climax, not a step toward a fifth dungeon.
 - **The heroes' autonomy is five rules over true memories.** There is no goal system and no inner
