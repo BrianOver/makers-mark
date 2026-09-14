@@ -33,7 +33,7 @@ public class HeroActor2DTests
         }
         finally
         {
-            actor.QueueFree();
+            actor.Free();
         }
     }
 
@@ -78,7 +78,7 @@ public class HeroActor2DTests
         }
         finally
         {
-            actor.QueueFree();
+            actor.Free();
         }
     }
 
@@ -98,7 +98,7 @@ public class HeroActor2DTests
         }
         finally
         {
-            actor.QueueFree();
+            actor.Free();
         }
     }
 
@@ -122,7 +122,7 @@ public class HeroActor2DTests
         }
         finally
         {
-            actor.QueueFree();
+            actor.Free();
         }
     }
 
@@ -183,7 +183,7 @@ public class HeroActor2DTests
         }
         finally
         {
-            actor.QueueFree();
+            actor.Free();
         }
     }
 
@@ -211,8 +211,8 @@ public class HeroActor2DTests
         }
         finally
         {
-            a.QueueFree();
-            b.QueueFree();
+            a.Free();
+            b.Free();
         }
     }
 
@@ -259,8 +259,8 @@ public class HeroActor2DTests
         }
         finally
         {
-            a.QueueFree();
-            b.QueueFree();
+            a.Free();
+            b.Free();
         }
     }
 
@@ -298,7 +298,7 @@ public class HeroActor2DTests
         }
         finally
         {
-            actor.QueueFree();
+            actor.Free();
         }
     }
 
@@ -334,7 +334,7 @@ public class HeroActor2DTests
         }
         finally
         {
-            actor.QueueFree();
+            actor.Free();
         }
     }
 
@@ -369,7 +369,7 @@ public class HeroActor2DTests
         }
         finally
         {
-            actor.QueueFree();
+            actor.Free();
         }
     }
 
@@ -400,7 +400,7 @@ public class HeroActor2DTests
         }
         finally
         {
-            actor.QueueFree();
+            actor.Free();
         }
     }
 
@@ -427,7 +427,7 @@ public class HeroActor2DTests
         }
         finally
         {
-            actor.QueueFree();
+            actor.Free();
         }
     }
 
@@ -459,8 +459,8 @@ public class HeroActor2DTests
         }
         finally
         {
-            actor.QueueFree();
-            recruit.QueueFree();
+            actor.Free();
+            recruit.Free();
         }
     }
 
@@ -480,7 +480,7 @@ public class HeroActor2DTests
         }
         finally
         {
-            actor.QueueFree();
+            actor.Free();
         }
     }
 
@@ -547,7 +547,7 @@ public class HeroActor2DTests
         }
         finally
         {
-            actor.QueueFree();
+            actor.Free();
         }
     }
 }

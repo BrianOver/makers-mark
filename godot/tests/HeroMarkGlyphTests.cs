@@ -43,7 +43,7 @@ public class HeroMarkGlyphTests
         }
         finally
         {
-            actor.QueueFree();
+            actor.Free();
         }
     }
 
@@ -65,7 +65,7 @@ public class HeroMarkGlyphTests
         }
         finally
         {
-            actor.QueueFree();
+            actor.Free();
         }
     }
 
@@ -98,8 +98,8 @@ public class HeroMarkGlyphTests
         }
         finally
         {
-            marked.QueueFree();
-            unmarked.QueueFree();
+            marked.Free();
+            unmarked.Free();
         }
     }
 
@@ -206,7 +206,7 @@ public class HeroMarkGlyphTests
         }
         finally
         {
-            actor.QueueFree();
+            actor.Free();
         }
     }
 
@@ -254,7 +254,7 @@ public class HeroMarkGlyphTests
         {
             foreach (var actor in actors)
             {
-                actor.QueueFree();
+                actor.Free();
             }
         }
     }
