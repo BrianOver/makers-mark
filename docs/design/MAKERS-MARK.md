@@ -4632,6 +4632,7 @@ name (§11.6 rule 4).
 | P2-PROOF-07 | The wiring and the deletion — "Ask how it happened", Full-tale dies | `godot/scripts/panels/LedgerModal.cs`, `docs/debugging.md` | P2-PROOF-05, P2-PROOF-06 | [G] |
 | ⚑ P2-PROOF-11 | Legible defeat — the death names its margin (research M4) | `godot/scripts/panels/LedgerModal.cs`, `sim/GameSim/Expedition/TellingQuery.cs` (read-only) | — | [G] |
 | ⚑ P2-PROOF-13 | The maker names the signed work — the glossary's own sentence becomes true | `sim/GameSim/Contracts/Actions.cs`, `sim/GameSim/Crafting/CraftingHandlers.cs`, `godot/scripts/panels/ForgePanel.cs` | P4 | [S][C] |
+| ⚑ P2-PROOF-14 | The counterfactual reaches the ledger — the beat carries its own arithmetic | `sim/GameSim/Expedition/AttributionEngine.cs`, `godot/scripts/panels/LedgerModal.cs` | — | [S][GOLD] |
 | P2-MEMORY-02 | The death card reads the pack and the last blow | `godot/scripts/panels/LedgerModal.cs` | — | [G] |
 | P2-MEMORY-05 | The Signed Work speaks; the idle line varies | `godot/scripts/panels/ForgePanel.cs`, advisor idle copy | — | [G] |
 | P2-MEMORY-06 | Provenance derives sales instead of omitting them | `godot/scripts/panels/ProvenanceCard.cs` | — | [G] |
@@ -4663,6 +4664,7 @@ name (§11.6 rule 4).
 | ⚑ P2-PEOPLE-16 | The camped rows carry the trait and band chips the roster already shows | `godot/scripts/panels/CampPanel.cs`, `godot/scripts/panels/HeroPanel.cs` (read-only) | — | [G] |
 | ⚑ P2-PEOPLE-17 | Stocking a piece names the morning queue that will reach it first | `godot/scripts/panels/ShopPanel.cs`, `sim/GameSim/Heroes/CommissionHandlers.cs` | — | [S] |
 | ⚑ P2-PEOPLE-18 | The morning pass's fixed hero order is a standing bias — measured, then ruled | `sim/GameSim/Heroes/HeroShoppingSystem.cs`, Balance suite | P4 | [S][BAL] |
+| ⚑ P2-PEOPLE-19 | A counter sale can fulfil the commission the customer came to collect | `sim/GameSim/Counter/HaggleResolver.cs`, `sim/GameSim/Heroes/CommissionHandlers.cs` | P4 | [S][BAL] |
 | ⚑ P2-PEOPLE-20 | The Patron (research M1) | `sim/GameSim/Contracts/Player.cs`, `sim/GameSim/Chronicle/`, `godot/scripts/` | P4 | [S][C] |
 | ⚑ P2-LONG-01 | Re-date the wall on the current build | `sim/GameSim.Cli/`, one instrumented sweep | — | [S] |
 | P2-LONG-02 | Typed consumable kinds; hazard type on `VenueDefinition` | `sim/GameSim/Contracts/`, `sim/GameSim/Venues/VenueDefinition.cs` | P2-LONG-01, P4 | [S][C][GOLD] |
@@ -4689,6 +4691,7 @@ name (§11.6 rule 4).
 | ⚑ P2-LONG-25 | Aim the send verb at where camped heroes actually are — one knob, re-baselined | `sim/GameSim/Expedition/ExpeditionResolver.cs`, `sim/GameSim/Expedition/ExpeditionSystem.cs`, the two tests above | — | [S][BAL] |
 | ⚑ P2-LONG-26 | Measure the FELT wall, not the novelty wall | `sim/GameSim.Cli/`, one instrumented sweep | P2-LONG-01 | [S] |
 | ⚑ P2-LONG-27 | The Deep vigil gets a stakes slate — words, never numbers | `godot/scripts/panels/MineWatch.cs` | — | [G] |
+| ⚑ P2-LONG-28 | The muster names the record the party is pressing past | `godot/scripts/panels/RaidForecastBoard.cs`, `sim/GameSim/Drama/DepthCopy.cs` (read-only) | — | [G] |
 | P2-HONEST-02 | Four dead-mechanism sentences die; `Gate.Reason` splits closed/opened | `godot/scripts/ui/SurfaceUnlocks.cs`, copy | — | [G] |
 | P2-HONEST-03 | The sentence "your commission died with them" gets a home (the sim half landed in #667) | `godot/scripts/panels/LedgerModal.cs`, `godot/scripts/panels/LegendsWall.cs` | P2-PEOPLE-07 | [G] |
 | P2-HONEST-04 | The queued suffix dies; eight panels stop teaching a console command | `godot/scripts/panels/SimPanel.cs`, `godot/scripts/panels/` | — | [G] |
@@ -4707,6 +4710,9 @@ name (§11.6 rule 4).
 | P2-HONEST-20 | `SHOT_STATE=PhaseN` lands somewhere its own comment does not claim — the capture harness's phase map is wrong | `godot/tools/shot_harness.gd`, `tools/shoot.ps1` | — | [G] |
 | P2-HONEST-21 | One art `.import` uid regenerates on every import, dirtying a clean tree | `godot/assets/art/item-mithril-warblade.png.import` | — | [G] |
 | ⚑ P2-HONEST-22 | The runner fee is mirrored in four files and guarded in none | `sim/GameSim/Expedition/CampHandlers.cs`, `godot/scripts/panels/CampPanel.cs`, `sim/GameSim.Tests/`, `godot/tests/` | — | [S] |
+| ⚑ P2-HONEST-23 | The idle day's cost is named, not only charged (law 7) | `sim/GameSim/Economy/MarketShareSystem.cs`, `godot/scripts/ui/AdventureTicker.cs` | — | [G] |
+| ⚑ P2-HONEST-24 | The advisor states the stake instead of giving the order (law 1) | `sim/GameSim/Advisor/ObjectiveAdvisor.cs`, `sim/GameSim.Tests/` | — | [S] |
+| ⚑ P2-HONEST-25 | Every ore row names the faction it feeds, not only the tariffed ones | `godot/scripts/panels/TavernPanel.cs`, `godot/scripts/panels/LedgerModal.cs` | — | [G] |
 
 The per-domain counts, the landed/unbuilt split, and which rows carry a Contracts micro-PR, a
 golden re-record or a balance re-baseline are **derived, not stated here**: run
@@ -6314,6 +6320,83 @@ other games.
   comes first: how often does an ordinary purchase actually take a commissioned piece across the
   corpus? `P2-PEOPLE-17` made the order legible to the player without changing it, deliberately,
   so this question can be asked with the current behaviour on screen.
+
+#### P2-PROOF-14. The counterfactual reaches the ledger
+
+- Goal: link 4 stops being asserted and starts being shown. This is the closest thing this plan has
+  to a unit about the product itself.
+- `AttributionEngine` computes the whole counterfactual for a lethal save — the monster's recorded
+  roll, the hero's defence with the player's piece and without it, the damage that would have
+  landed, the hp they stood at — and then discards every number, writing a bare claim into the
+  beat's `Detail`: *"Kael's Shield turned a lethal blow."* The ledger prints that verbatim. So the
+  surface the player reads every night states a conclusion with no arithmetic behind it, while the
+  numbers that would make it a theorem live for one instant inside the engine.
+- Approach: each beat's `Detail` carries its own comparison, in the voice the Telling already uses
+  (*"The blow read 15. Emberbite drank 2. Kael stood at 9."*) — not a second register for the same
+  fact. Every beat type, enumerated reflectively; where a beat genuinely has no counterfactual, the
+  code says so rather than inventing one.
+- Carries **[GOLD]**: `Detail` is serialized state, so changing this copy moves the golden hash by
+  construction. The same legitimate class as P2-MEMORY-08's prose rewrite.
+- The condition: **no participation credit.** A counterfactual is what would have happened without
+  the piece — never a share, a percentage, a total or a rating.
+
+#### P2-HONEST-23. The idle day's cost is named
+
+- Goal: law 7 stops bending. *Skipping stays legal and its cost is named in copy, never engineered.*
+- A day with no slot spent hands the rival +150‰ of market share, which then discounts its stock.
+  That is engineered. And the cause is never told: the event is deliberately excluded from the
+  ticker, and the rival gauge names the EFFECT ("the rival's edge is creeping up") while never
+  naming the player's own idle day as its cause. `NoSoftlockTests` admits in a comment that the copy
+  half is unmechanized.
+- Approach: name the cost, in copy, the evening it is charged. The mechanic does not move — this
+  unit closes the gap between charged and named, and nothing else. Skipping stays legal; what
+  changes is that the choice becomes informed instead of silently taxed.
+
+#### P2-HONEST-24. The advisor states the stake instead of giving the order
+
+- Goal: law 1 stops bending. `THE-GAME.md` §4.8 promises help "without ever telling you what to do"
+  and this plan's own invariant list says the advisor never orders.
+- `ObjectiveAdvisor` writes imperatives — *"craft 'X' now"*, *"Raise the forge to Tier N"* — and
+  `MentorIdleVoice` puts them in Bryn's mouth, so the game's most trusted character issues the
+  orders the design forbids. The `LAW:` tripwire is green because it guards HEROES never being
+  ordered; nothing guards the advisor's own register, which is exactly why it drifted.
+- Approach: every advisor line states a fact, a stake or an opportunity. Not deletion — an advisor
+  that says nothing helps nobody; the same information, without the instruction. Plus a guard
+  phrased against the REGISTER rather than against the three instances fixed today, because the
+  fourth will be written by someone who never read this unit.
+
+#### P2-HONEST-25. Every ore row names the faction it feeds
+
+- Goal: decision 5 ("buy the ore, or buy the goodwill") gets its second arm at the moment it is
+  made.
+- The faction is named only when its tariff is non-zero, and the tavern's own ore rows never name it
+  at all. On a player's FIRST ore purchase — the one that sets the relationship — the goodwill arm
+  is invisible, so the decision reads as a price comparison.
+- Approach: the faction is named on every ore row, tariff or none. A fact, never a recommendation.
+
+#### P2-LONG-28. The muster names the record the party is pressing past
+
+- Goal: link 3 becomes visible. Parties pick their own depth by a rule the sim states plainly — one
+  floor past the party's best — and the player never sees it, so "floor 4" reads as an arbitrary
+  destination rather than as these people deciding to go one deeper than anyone has been.
+- Approach: one line per forecast card, routed through `DepthCopy` (a census already fails any Godot
+  source interpolating a depth integer raw). Both branches: pressing past a record, and walking
+  known ground.
+- The condition: the forecast still does not tell you who will survive. *"One past Kael's deepest"*
+  is a fact; *"deeper than they should go"* is an opinion the sim never formed.
+
+#### P2-PEOPLE-19. A counter sale can fulfil a commission
+
+- Goal: decision 1's "hold it for the hero who needs it" arm becomes executable.
+- Today a commission can be fulfilled ONLY by the atomic morning pass reading the shelf; the counter
+  knows nothing about commissions. So the lesson that tells the player Unstock is how you hold a
+  piece is honest about the verb and dishonest about the outcome: to deliver it you must re-shelve
+  it, where anyone may buy it — including, per `P2-PEOPLE-18`, a hero who merely shops earlier.
+- Approach: a close at the counter honours the customer's own accepted commission and pays its
+  premium.
+- Behind **P4** and carrying [BAL]: this moves gold and changes which hero ends up with which piece,
+  so it re-baselines. It also interacts with `P2-PEOPLE-18` — the two touch the same unfairness from
+  opposite ends, and §11.7's own rule about sequencing interacting rulings applies.
 
 #### What this round says NOT to build
 
