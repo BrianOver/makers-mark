@@ -389,7 +389,11 @@ public class NameplateTests
     /// placeholder (<see cref="Building2D.BuildLabel"/>'s Size.X), positioned so the OLD
     /// placeholder-sized boxes do NOT collide (asserted below, so this is provably testing the
     /// long-name defect and not just "stand them closer") while the real text does — the resolver
-    /// must still catch it.
+    /// must still catch it. The separation between the two owners is DERIVED from this run's own
+    /// measured widths, not a hand-picked constant: Godot's headless-Linux CI font metrics differ
+    /// from a developer machine's, and both BuildLabel's placeholder Size.X (Control.Size clamps up
+    /// to a font-dependent minimum) and the real measured width move with the font — a literal gap
+    /// tuned against one font's numbers is not portable to another's.
     /// </summary>
     [TestCase]
     public void MeasureNameplateLocalRect_ALongNameStillCollidesWithItsNeighbour_EvenThoughItsPlaceholderBoxWouldNotHave()
@@ -402,8 +406,48 @@ public class NameplateTests
 
         try
         {
+            // Both labels' LOCAL rects (placeholder AND real) are independent of where their owner
+            // stands in the world — BuildLabel's Position/Size formula only depends on the literal
+            // sprite-size argument (identical for both calls above), and Godot's own Control.Size
+            // setter clamps a too-small requested size up to the label's OWN minimum size AT
+            // ASSIGNMENT TIME (computed under whatever theme font is resolved before
+            // LabelSettings — i.e. FontSize=7 — is applied a few properties later). That clamp is
+            // real-font-metric dependent and differs between this machine and CI's headless Linux
+            // font, so a hand-picked WORLD-POSITION gap (this test used to hardcode 20f) can land
+            // the placeholder boxes already colliding on a font where "Ux"'s clamped box is wider
+            // than the gap allows — tripping the setup guard below before the long-name defect is
+            // ever isolated. Measure both widths on THIS run's actual fonts first, then derive a
+            // separation instead of assuming one.
+            var (shortLocal, shortSize) = Building2D.MeasureNameplateLocalRect(shortLabel, shortLabel.Position);
+            var (longLocal, longSize) = Building2D.MeasureNameplateLocalRect(longLabel, longLabel.Position);
+
+            var placeholderShortWidth = shortLabel.Size.X;
+            var placeholderLongWidth = longLabel.Size.X;
+
+            AssertThat(longSize.X)
+                .OverrideFailureMessage("a long name's measured rect must be wider than its own sprite-width placeholder")
+                .IsGreater(placeholderLongWidth);
+
+            // With the short owner fixed at world X=0, a separation D for the long owner keeps the
+            // placeholder boxes disjoint iff D >= placeholderShortWidth (BuildLabel's Position.X
+            // offset is the same literal for both labels, so it cancels out of that comparison) and
+            // keeps the REAL measured rects colliding iff
+            //   D < (placeholderShortWidth + shortSize.X - placeholderLongWidth + longSize.X) / 2
+            // (both rects are centered on their own placeholder's center, per
+            // MeasureNameplateLocalRect, so this is the point where the short label's real right
+            // edge meets the long label's real left edge). Pick the midpoint of that range so it's
+            // provably interior on any font this run measured, rather than trusting a literal.
+            var upperBound = (placeholderShortWidth + shortSize.X - placeholderLongWidth + longSize.X) / 2f;
+            AssertThat(upperBound)
+                .OverrideFailureMessage(
+                    "test setup impossible on this run's font metrics: the placeholder widths and " +
+                    "real measured widths don't straddle any separation that both keeps the " +
+                    "placeholder boxes disjoint and still collides the real rects")
+                .IsGreater(placeholderShortWidth);
+            var separation = (placeholderShortWidth + upperBound) / 2f;
+
             var shortGlobal = new Vector2(0f, 0f);
-            var longGlobal = new Vector2(20f, 0f);
+            var longGlobal = new Vector2(separation, 0f);
 
             var placeholderShort = new Rect2(shortGlobal + shortLabel.Position, shortLabel.Size);
             var placeholderLong = new Rect2(longGlobal + longLabel.Position, longLabel.Size);
@@ -412,13 +456,6 @@ public class NameplateTests
                     "test setup invalid: the placeholder-sized boxes must NOT already collide, or " +
                     "this isn't isolating the long-name defect")
                 .IsFalse();
-
-            var (shortLocal, shortSize) = Building2D.MeasureNameplateLocalRect(shortLabel, shortLabel.Position);
-            var (longLocal, longSize) = Building2D.MeasureNameplateLocalRect(longLabel, longLabel.Position);
-
-            AssertThat(longSize.X)
-                .OverrideFailureMessage("a long name's measured rect must be wider than its own sprite-width placeholder")
-                .IsGreater(longLabel.Size.X);
 
             var owners = new[]
             {
