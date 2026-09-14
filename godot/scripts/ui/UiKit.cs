@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Godot;
 using GodotClient.Tools;
 
@@ -300,6 +301,30 @@ public static class UiKit
         row.AddChild(valueNode);
 
         return chip;
+    }
+
+    /// <summary>
+    /// P2-SCREEN-25: the widest pixel width any of <paramref name="candidates"/> renders at
+    /// <paramref name="fontSize"/> — for a caller reserving a live-updating label's width against
+    /// every word it can ever hold, so the label's own footprint (and everything laid out beside
+    /// it) stops changing size each time the word does. Measured against <see
+    /// cref="ThemeDB.FallbackFont"/> deliberately, not <see cref="GameTheme.HeaderFont"/>: <see
+    /// cref="GameTheme.Build"/>'s own remark states the base "Label"/"Button" theme types carry NO
+    /// font resource override, so the engine fallback face is what a plain <see cref="Label"/>
+    /// (a stat chip's Value, a day-timeline segment) actually renders with, in or out of the tree
+    /// — using the SAME face this measures keeps the reservation exact rather than an
+    /// approximation from a different font's metrics.
+    /// </summary>
+    public static float WidestTextWidth(IEnumerable<string> candidates, int fontSize)
+    {
+        var font = ThemeDB.FallbackFont;
+        var widest = 0f;
+        foreach (var text in candidates)
+        {
+            widest = Mathf.Max(widest, font.GetStringSize(text, HorizontalAlignment.Left, -1, fontSize).X);
+        }
+
+        return widest;
     }
 
     /// <summary>

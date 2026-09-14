@@ -537,6 +537,19 @@ public sealed partial class DayTimeline : HBoxContainer
 
             var label = new Label { Text = text, HorizontalAlignment = HorizontalAlignment.Center };
             label.AddThemeFontSizeOverride("font_size", GameTheme.LegibilityFloor);
+
+            // P2-SCREEN-25: Morning is the one segment whose label Refresh can repaint at runtime
+            // (see Refresh's own remark — it swaps between "Dawn" and the live "Prepare" to match
+            // the HUD's Phase chip). Every other segment's text never changes after Build, so only
+            // this one needs its width reserved up front against BOTH words it can ever hold —
+            // otherwise flipping between them would resize just this pill and shove every segment
+            // after it sideways, the identical reflow bug one level down from the HUD chip's own.
+            if (phase == DayPhase.Morning)
+            {
+                label.CustomMinimumSize = new Vector2(
+                    UiKit.WidestTextWidth(PhaseVocab.LiveWordsFor(DayPhase.Morning), GameTheme.LegibilityFloor), 0f);
+            }
+
             pill.AddChild(label);
 
             var underline = new ColorRect
@@ -569,8 +582,21 @@ public sealed partial class DayTimeline : HBoxContainer
 
     /// <summary>Highlight <paramref name="current"/> among the 5 phase segments (past dim,
     /// current filled+underlined, future outlined) and show/hide the pulsing engaged-wait dot per
-    /// <paramref name="waiting"/>.</summary>
-    public void Refresh(DayPhase current, bool waiting)
+    /// <paramref name="waiting"/>.
+    ///
+    /// <para><paramref name="liveLabel"/> (P2-SCREEN-25): the owner's own GPU capture caught the
+    /// HUD's "Phase" chip reading "Prepare" while this strip, six pixels below, read "Dawn" for
+    /// the SAME live moment — two names for one phase. Both words are real (<see
+    /// cref="PhaseVocab.Display(GameState)"/>'s own remark: Morning splits into "Prepare" while a
+    /// counter session is open), but only the HUD chip was ever told which one was live; this
+    /// strip's <see cref="KernelOrder"/> table is built once, from the context-free overload, and
+    /// can only ever say "Dawn". Every caller now passes <see cref="PhaseVocab.Display(GameState)"/>
+    /// here — the EXACT string the HUD chip renders — and it overwrites only the CURRENT segment's
+    /// label with it, leaving every other (non-current) segment showing its resting word exactly
+    /// as before. Null (or omitted) falls back to the resting word, so a caller with no live
+    /// <see cref="GameState"/> handy degrades to the pre-fix behavior rather than failing.</para>
+    /// </summary>
+    public void Refresh(DayPhase current, bool waiting, string? liveLabel = null)
     {
         Current = current;
         var currentIndex = 0;
@@ -590,6 +616,7 @@ public sealed partial class DayTimeline : HBoxContainer
             _segmentPills[i].AddThemeStyleboxOverride("panel", SegmentStyle(isCurrent, isPast));
             _phaseLabels[i].AddThemeColorOverride(
                 "font_color", isCurrent ? GameTheme.BoneColor : isPast ? GameTheme.TextDim : GameTheme.BodyTextColor);
+            _phaseLabels[i].Text = isCurrent && liveLabel is not null ? liveLabel : KernelOrder[i].Label;
             _underlines[i].Visible = isCurrent;
         }
 

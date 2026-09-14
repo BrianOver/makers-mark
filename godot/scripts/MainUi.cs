@@ -1847,7 +1847,9 @@ public partial class MainUi : Control
             Town.WorkshopNametag, Town.WorkshopStationNoun, Town.WorkshopMaterialsStationId, Town.WorkshopCraftStationId);
         Tutorial.RefreshAffordances(state);
         ShowQuickTravelUnlockedLessonIfEarned();
-        Timeline.Refresh(state.Phase, Waiting);
+        // P2-SCREEN-25: the live word, not the context-free one — see DayTimeline.Refresh's own
+        // remark for why the strip needs it too.
+        Timeline.Refresh(state.Phase, Waiting, PhaseVocab.Display(state));
         UpdateClockLabel(); // U3/U4: bell verb + player-phase banner are state-driven — refresh on every tick, not only per-frame _Process
         RefreshBellTray(); // U3 (KTD-B): keep the tray honest on every tick too, not only on submit
         RefreshSurfaceUnlocks(state); // U3 (tutorial-revamp plan): keep the seven gated tray books honest too
@@ -2278,6 +2280,21 @@ public partial class MainUi : Control
         // leak the timeline strip and continue screen had, just in a third place. One vocabulary now.
         var phaseChip = NamedStatChip("PhaseChip", "Phase", PhaseVocab.Display(state), UiKit.ChipTone.Accent);
         phaseChip.TooltipText = PhaseLegend;
+
+        // P2-SCREEN-25 (owner GPU capture: HUD read "Phase Prepare" while the tab strip six
+        // pixels below it read "Dawn" for the identical moment): the chip's Value label naturally
+        // sizes to its OWN text, so every phase transition that changes the rendered word ("Dawn"
+        // -> "Prepare" -> "Quest" -> ...) also resized this chip, shoving Act/Gold/Heroes/rent/
+        // slot-pips sideways in the same HudStatRow the moment it happened. Reserving the Value
+        // label's width against PhaseVocab.AllLiveWords (every word this chip can EVER hold,
+        // measured against the real font it renders with — see UiKit.WidestTextWidth's own
+        // remark) makes the chip's footprint constant regardless of which phase word it shows.
+        if (phaseChip.FindChild("Value", recursive: true, owned: false) is Label phaseValue)
+        {
+            phaseValue.CustomMinimumSize = new Vector2(
+                UiKit.WidestTextWidth(PhaseVocab.AllLiveWords, GameTheme.BodyFontSize), 0f);
+        }
+
         calendar.AddChild(phaseChip);
 
         // U-D3: which act of the campaign arc the town is in (I → II → III → ending) — demoted
@@ -3503,7 +3520,8 @@ public partial class MainUi : Control
             Clock.ToggleAuto();
             ClockSettings.SaveAutoAdvance(Clock.AutoAdvance); // U15 escape hatch: sticks across campaigns
             UpdateClockLabel();
-            Timeline.Refresh(Adapter.CurrentState.Phase, Waiting); // U18: Auto gates the Waiting predicate too
+            // U18: Auto gates the Waiting predicate too. P2-SCREEN-25: live word, see DayTimeline.Refresh.
+            Timeline.Refresh(Adapter.CurrentState.Phase, Waiting, PhaseVocab.Display(Adapter.CurrentState));
         };
         verbRow.AddChild(_auto);
 
@@ -3512,7 +3530,8 @@ public partial class MainUi : Control
         {
             Clock.TogglePlay();
             UpdateClockLabel();
-            Timeline.Refresh(Adapter.CurrentState.Phase, Waiting); // U18: Playing gates the Waiting predicate too
+            // U18: Playing gates the Waiting predicate too. P2-SCREEN-25: live word, see DayTimeline.Refresh.
+            Timeline.Refresh(Adapter.CurrentState.Phase, Waiting, PhaseVocab.Display(Adapter.CurrentState));
         };
         verbRow.AddChild(_playPause);
 
@@ -5705,8 +5724,8 @@ public partial class MainUi : Control
 
         // U18: the engaged latch flips on this discrete event (drawer open/close / modal
         // open-close), not only on a phase tick — the waiting indicator must track it here too,
-        // still never per frame.
-        Timeline.Refresh(Adapter.CurrentState.Phase, Waiting);
+        // still never per frame. P2-SCREEN-25: live word, see DayTimeline.Refresh's own remark.
+        Timeline.Refresh(Adapter.CurrentState.Phase, Waiting, PhaseVocab.Display(Adapter.CurrentState));
     }
 
     /// <summary>
