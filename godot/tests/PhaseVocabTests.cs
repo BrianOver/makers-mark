@@ -180,8 +180,12 @@ public class PhaseVocabTests
         AssertThat(board.Nametag).IsEqual("Bounties");
     }
 
+    /// <summary>P2-SCREEN-26: renamed from "...AtTheGate" — every hero actually stands in the
+    /// plaza at Morning (<c>TownLayout2D.MorningSpotAssignments</c>), so the badge now names the
+    /// square instead of a gate nobody is standing at. See <c>MainUi.HeroesReadyInSquareBadge</c>'s
+    /// own doc for why the sentence changed rather than the hero positions.</summary>
     [TestCase]
-    public void Morning_NamesWhoIsReadyAtTheGate()
+    public void Morning_NamesWhoIsReadyInTheSquare()
     {
         var ui = MountMainUi();
         try
@@ -190,7 +194,7 @@ public class PhaseVocabTests
             var clockLabel = Find<Label>(ui, "ClockLabel").Text;
             AssertThat(clockLabel)
                 .OverrideFailureMessage($"Morning clock label was \"{clockLabel}\" with {alive} alive")
-                .Contains(alive == 1 ? "1 hero ready at the gate" : $"{alive} heroes ready at the gate");
+                .Contains(alive == 1 ? "1 hero ready in the square" : $"{alive} heroes ready in the square");
         }
         finally
         {

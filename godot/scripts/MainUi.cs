@@ -2927,7 +2927,7 @@ public partial class MainUi : Control
 
             if (state.Phase == DayPhase.Morning)
             {
-                var ready = HeroesReadyAtGateBadge(state);
+                var ready = HeroesReadyInSquareBadge(state);
                 if (!string.IsNullOrEmpty(ready))
                 {
                     tailParts.Add(ready);
@@ -2968,15 +2968,28 @@ public partial class MainUi : Control
     /// away-on-expedition heroes don't exist yet during Morning — <c>InFlight</c>/
     /// <c>PendingExpeditions</c> are both torn down by the time Evening hands off to the next
     /// day's Morning, see <c>ExpeditionDeepSystem</c>/<c>ExpeditionRevealSystem</c> — so a plain
-    /// Alive count is exactly the roster the send-off tick will actually muster from).</summary>
-    private static string HeroesReadyAtGateBadge(GameState state)
+    /// Alive count is exactly the roster the send-off tick will actually muster from).
+    ///
+    /// <para>P2-SCREEN-26: this used to say "ready at the gate", but at Morning every hero is
+    /// standing in the plaza (<see cref="GodotClient.Town2d.TownLayout2D.MorningSpotAssignments"/>
+    /// clusters the starting six at the Well/GateRoad spots, both plaza-internal landmarks, not the
+    /// mine gate itself) — the gate stays empty until <c>Town2D.DepartWanderingHeroes</c> rallies
+    /// and marches them out once Morning ends. Moving the muster to the actual gate tile was the
+    /// other option; it was rejected because <c>MorningSpotAssignments</c>' own doc calls Morning
+    /// "the day's neutral default, before anything has pulled anyone anywhere in particular", and
+    /// <c>SpotAssignment_NoSpotHoldsMoreThanThreeActors_AcrossEveryPhase</c>/the pinned Morning
+    /// pairwise-distance ceiling both bake in a two-cluster-of-three layout that six-at-one-spot
+    /// would break. Naming the plaza instead costs nothing and matches the noun <see
+    /// cref="GodotClient.Ui.MusterVoice"/> already speaks from ("a party anchor speaks the same
+    /// forecast at the square").</para></summary>
+    private static string HeroesReadyInSquareBadge(GameState state)
     {
         var ready = state.Heroes.Values.Count(h => h.Alive);
         return ready switch
         {
             0 => string.Empty, // "no heroes" is the destitution floor's own message, not the bell's
-            1 => "1 hero ready at the gate",
-            _ => $"{ready} heroes ready at the gate",
+            1 => "1 hero ready in the square",
+            _ => $"{ready} heroes ready in the square",
         };
     }
 
