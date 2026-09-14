@@ -289,6 +289,20 @@ public class RaidForecastBoardTests
     /// immediately following that party's "Party {ordinal}: ..." header, with nothing rendered
     /// between them) — scopes an assertion to one party's own Target line instead of the whole
     /// board, the same way <c>ScarcityHudTests.ExtractBlock</c> scopes to one section.</summary>
+    /// <summary>
+    /// The named party's own Target line, found by WHAT IT SAYS rather than by where it sits.
+    ///
+    /// <para>This used to return "the line immediately after the Party N header", which was true
+    /// right up until P2-MEMORY-20 put the muster anchor's spoken line in that position — and then
+    /// this helper silently handed every caller the anchor's voice instead, so a test named for the
+    /// record caption was asserting against a sentence that has never contained one. The board is a
+    /// surface several units add lines to; any helper that addresses it by offset is a helper that
+    /// breaks on the next one, and breaks by pointing at the WRONG line rather than at none.</para>
+    ///
+    /// <para>Scanning is bounded by the next party's header so a two-party board cannot answer for
+    /// the wrong party, which is the failure the offset version could not have had and this one
+    /// could.</para>
+    /// </summary>
     private static string TargetLineForParty(string renderedText, int ordinal)
     {
         var marker = $"Party {ordinal}: ";
@@ -298,10 +312,20 @@ public class RaidForecastBoardTests
             throw new InvalidOperationException($"'{marker}' was never rendered:\n{renderedText}");
         }
 
-        var lineStart = renderedText.IndexOf('\n', start) + 1;
-        var lineEnd = renderedText.IndexOf('\n', lineStart);
-        var line = lineEnd < 0 ? renderedText[lineStart..] : renderedText[lineStart..lineEnd];
-        return line.TrimEnd('\r');
+        var nextParty = renderedText.IndexOf($"Party {ordinal + 1}: ", start, StringComparison.Ordinal);
+        var blockEnd = nextParty < 0 ? renderedText.Length : nextParty;
+
+        foreach (var raw in renderedText[start..blockEnd].Split('\n'))
+        {
+            var line = raw.TrimEnd('\r');
+            if (line.TrimStart().StartsWith("Target:", StringComparison.Ordinal))
+            {
+                return line;
+            }
+        }
+
+        throw new InvalidOperationException(
+            $"Party {ordinal} rendered no Target line:\n{renderedText[start..blockEnd]}");
     }
 }
 #endif

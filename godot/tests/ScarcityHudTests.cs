@@ -201,6 +201,99 @@ public class ScarcityHudTests
     }
 
     /// <summary>
+    /// P2-MEMORY-20 ("the forecast gets a face"): the board renders the party anchor's own line —
+    /// <see cref="GodotClient.Ui.MusterVoice.AnchorLine"/> — for EVERY mustering party, not just the
+    /// first. A fresh starting roster mustering for the first time carries a real gear gap on every
+    /// hero (nobody has crafted anything yet), so this exercises the "going without" branch rather
+    /// than the quieter full-kit one — <see cref="ForecastBoard_QuietDay_RendersNoRaidsLine_NotEmpty"/>
+    /// below covers the no-parties-at-all case, and <c>MusterVoiceTests</c> covers the full-kit
+    /// branch as a pure-logic property. This is the wiring check: the exact string the read-model
+    /// produces actually reaches the screen, verbatim, for whichever party ordinal it is.
+    /// </summary>
+    [TestCase]
+    public void ForecastBoard_RendersTheAnchorLine_ForEveryMusteringParty()
+    {
+        var state = HeroRoster.InstallStartingRoster(GameFactory.NewGame(seed: 9105));
+        var expected = RaidForecast.ForTomorrow(state);
+        AssertThat(expected.IsEmpty)
+            .OverrideFailureMessage("setup check: a fresh starting roster must muster at least one party.")
+            .IsFalse();
+
+        var ui = MountMainUi(new SimAdapter(state));
+        try
+        {
+            ui.Forecast.ShowForTomorrow(state);
+            var text = RenderedText(ui.Forecast);
+
+            foreach (var party in expected)
+            {
+                AssertThat(text)
+                    .OverrideFailureMessage(
+                        $"the board must speak the SAME line MusterVoice derives for this party, verbatim: \"{text}\"")
+                    .Contains(GodotClient.Ui.MusterVoice.AnchorLine(party));
+            }
+        }
+        finally { Unmount(ui); }
+    }
+
+    /// <summary>
+    /// Negative control (this unit's own "fires at the muster and nowhere else"): the anchor's voice
+    /// is wired into <c>RaidForecastBoard.RenderParty</c> alone, so it must never leak into the
+    /// board's OTHER sections — "TOMORROW AT THE COUNTER" and "THE LIST" render from entirely
+    /// different read-models (<see cref="CounterForecast"/>, <see cref="DemandBoard"/>) and must
+    /// never coincidentally echo a muster-voice phrase.
+    /// </summary>
+    [TestCase]
+    public void MusterVoicePhrasing_NeverAppearsOutsideThePartySections()
+    {
+        var state = HeroRoster.InstallStartingRoster(GameFactory.NewGame(seed: 9106));
+        var expected = RaidForecast.ForTomorrow(state);
+        AssertThat(expected.IsEmpty)
+            .OverrideFailureMessage("setup check: a fresh starting roster must muster at least one party.")
+            .IsFalse();
+
+        var ui = MountMainUi(new SimAdapter(state));
+        try
+        {
+            ui.Forecast.ShowForTomorrow(state);
+            var text = RenderedText(ui.Forecast);
+            // TOMORROW AT THE COUNTER + THE LIST render before the first party section (see
+            // RaidForecastBoard.ShowForTomorrow — RenderCounterSection runs before the party loop).
+            var scopedBlock = ExtractBlock(text, "TOMORROW AT THE COUNTER", "Party 1:");
+
+            AssertThat(scopedBlock.Contains("of us for floor", StringComparison.Ordinal))
+                .OverrideFailureMessage($"the muster voice leaked into the counter/todo sections: \"{scopedBlock}\"")
+                .IsFalse();
+            AssertThat(scopedBlock.Contains("Just me, for floor", StringComparison.Ordinal))
+                .OverrideFailureMessage($"the muster voice leaked into the counter/todo sections: \"{scopedBlock}\"")
+                .IsFalse();
+        }
+        finally { Unmount(ui); }
+    }
+
+    /// <summary>
+    /// Negative control: nowhere else in the client speaks this way before the forecast board is
+    /// ever opened — the anchor's line is a projection of tomorrow's muster, not a standing UI
+    /// fixture, so a client that has never opened the board must never render it by accident.
+    /// </summary>
+    [TestCase]
+    public void MusterVoicePhrasing_NeverAppearsAnywhereInTheClient_BeforeTheForecastBoardIsOpened()
+    {
+        var ui = MountMainUi(new SimAdapter(HeroRoster.InstallStartingRoster(GameFactory.NewGame(seed: 9107))));
+        try
+        {
+            var text = RenderedText(ui);
+            AssertThat(text.Contains("of us for floor", StringComparison.Ordinal))
+                .OverrideFailureMessage($"the muster voice rendered somewhere without the board ever being opened: \"{text}\"")
+                .IsFalse();
+            AssertThat(text.Contains("Just me, for floor", StringComparison.Ordinal))
+                .OverrideFailureMessage($"the muster voice rendered somewhere without the board ever being opened: \"{text}\"")
+                .IsFalse();
+        }
+        finally { Unmount(ui); }
+    }
+
+    /// <summary>
     /// P2-SCREEN-18 (decision 3, "fill the empty slot, or upgrade the full one"): the board's OTHER
     /// arm. <see cref="ForecastButton_OpensBoard_ContentMatchesSimQuery"/> above only ever pins the
     /// party/floor/threat rendering — the starting roster carries no gear at all, so <see
@@ -318,7 +411,14 @@ public class ScarcityHudTests
             ui.Forecast.ShowForTomorrow(quiet);
 
             AssertThat(ui.Forecast.PartyCount).IsEqual(0);
-            AssertThat(RenderedText(ui.Forecast)).Contains("No parties muster tomorrow");
+            var text = RenderedText(ui.Forecast);
+            AssertThat(text).Contains("No parties muster tomorrow");
+
+            // P2-MEMORY-20 negative control: no party means no anchor — the voice never renders
+            // for a muster that never happens.
+            AssertThat(text.Contains("of us for floor", StringComparison.Ordinal))
+                .OverrideFailureMessage($"a quiet day must never speak a party's anchor line: \"{text}\"")
+                .IsFalse();
         }
         finally { Unmount(ui); }
     }
