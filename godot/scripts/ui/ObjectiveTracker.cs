@@ -506,15 +506,20 @@ public sealed partial class DayTimeline : HBoxContainer
         // Menu-sizing fix (gate-b): LOCAL override only (this node's own theme-constant
         // stack) — never theme.SetConstant("separation", "HBoxContainer", ...), which would
         // restyle every HBoxContainer in the app. Without this the 5 phase segments + the
-        // waiting dot sat with zero gap and read as run-on text. Kept >= 6 (MenuSizingTests).
+        // waiting dot sat with zero gap and read as run-on text. Kept >= 6 (MenuSizingTests) —
+        // this is now AT that pinned floor, so the next squeeze on this strip needs a real
+        // width fix elsewhere, not another point off this constant.
         //
-        // Trimmed from 12 (tutorial-revamp wave, §11.13): the Books Tray's eighth icon
-        // (LessonsPanel, added the same wave) ate into this row's shared ExpandFill budget —
-        // see SegmentStyle's own margin trim just below for the other half of that reclaim —
-        // and this timeline was the one left short, clipping the "Night" segment
-        // (HudBoundsTests.ObjectiveChip_TextNeverOverflowsItsOwnContainer). Still comfortably
-        // above the pinned floor.
-        AddThemeConstantOverride("separation", 8);
+        // Trimmed from 12 (tutorial-revamp wave, §11.13) to 8 (Books Tray's eighth icon), then
+        // to 6 here (P2-SCREEN-26): the Dawn badge's "N heroes ready in the square" runs a few
+        // characters longer than the retired "...at the gate" it replaced. That badge is part
+        // of VerbCluster's clock label, a sibling of TimelineWrap (ExpandFill) in the same
+        // HudHeaderRow — a wider label leaves the timeline less room, and "Night", the
+        // last/rightmost segment, is the first one clipped once the strip is squeezed
+        // (HudBoundsTests.ObjectiveChip_TextNeverOverflowsItsOwnContainer measured the overflow
+        // at 6px). Reclaiming 2px/gap * 5 gaps = 10px here covers it without touching the
+        // sentence, which is the whole point of P2-SCREEN-26.
+        AddThemeConstantOverride("separation", 6);
 
         // UI-4 (menu-sizing/cozy redesign): a connected segment strip — past dim, current a
         // filled Arcane pill with an Ember underline, future outlined — replacing the 5 loose
