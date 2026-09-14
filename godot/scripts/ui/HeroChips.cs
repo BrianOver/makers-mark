@@ -63,12 +63,27 @@ public static class HeroChips
     }
 
     /// <summary>
-    /// P2-PEOPLE-16's own addition, unique to the vigil: whether this hero is CURRENTLY WEARING at
-    /// least one piece of the player's own marked work — every equip slot (Weapon/Shield/Armor/
-    /// Trinket), read straight off <see cref="Hero.Gear"/> and <see cref="Item.PlayerCrafted"/>
-    /// (the exact "Mark is not null" fact <see cref="GameSim.Crafting.ItemForge"/> stamps and
-    /// <see cref="GodotClient.Panels.HeroesPanel"/>'s own GEAR rows already print per slot as
-    /// "mark of {name}").
+    /// Whether <paramref name="hero"/> is CURRENTLY WEARING at least one piece of the player's own
+    /// marked work — every equip slot (Weapon/Shield/Armor/Trinket), read straight off <see
+    /// cref="Hero.Gear"/> and <see cref="Item.PlayerCrafted"/> (the exact "Mark is not null" fact
+    /// <see cref="GameSim.Crafting.ItemForge"/> stamps and <see
+    /// cref="GodotClient.Panels.HeroesPanel"/>'s own GEAR rows already print per slot as "mark of
+    /// {name}"). Link1's one axiom ("every craft is stamped <see cref="MakersMark"/>, and the whole
+    /// chain keys on that stamp") gets exactly one reader — this is it. <see cref="GearMarkChip"/>
+    /// (the vigil's own chip) and <c>HeroActor2D</c>'s street-level mark glyph (P2-PEOPLE-23) both
+    /// call this SAME method rather than each re-deriving "is this mine."
+    /// </summary>
+    public static bool WearsPlayerMark(Hero hero, GameState state)
+    {
+        var equipped = new[] { hero.Gear.Weapon, hero.Gear.Shield, hero.Gear.Armor, hero.Gear.Trinket };
+        return equipped.Any(id => id is { } itemId
+            && state.Items.TryGetValue(itemId.Value, out var item)
+            && item.PlayerCrafted);
+    }
+
+    /// <summary>
+    /// P2-PEOPLE-16's own addition, unique to the vigil: renders <see cref="WearsPlayerMark"/> as a
+    /// chip.
     ///
     /// <para>Always renders, unlike the omit-when-empty Trait/Needs idiom above: at the vigil,
     /// "wearing nothing of yours" is exactly as decision-relevant as "wearing your mark", so this
@@ -76,15 +91,8 @@ public static class HeroChips
     /// condition is that a hero not wearing the player's work must read as "not", never as an
     /// absent chip that could as easily mean "nobody checked".</para>
     /// </summary>
-    public static Control GearMarkChip(Hero hero, GameState state)
-    {
-        var equipped = new[] { hero.Gear.Weapon, hero.Gear.Shield, hero.Gear.Armor, hero.Gear.Trinket };
-        var wearsYours = equipped.Any(id => id is { } itemId
-            && state.Items.TryGetValue(itemId.Value, out var item)
-            && item.PlayerCrafted);
-
-        return wearsYours
+    public static Control GearMarkChip(Hero hero, GameState state) =>
+        WearsPlayerMark(hero, state)
             ? UiKit.StatChip("Gear", "your mark", UiKit.ChipTone.Positive)
             : UiKit.StatChip("Gear", "none of yours", UiKit.ChipTone.Neutral);
-    }
 }
