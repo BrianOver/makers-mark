@@ -1,11 +1,13 @@
 using GameSim.Contracts;
+using GameSim.Expedition;
 using GameSim.Heroes;
 using GameSim.Venues;
 
 namespace GameSim.Drama;
 
 /// <summary>
-/// P2-MEMORY-02 (§11.15): the death card's two pure reads — the pack line and the last-blow line.
+/// P2-MEMORY-02 (§11.15) / P2-PROOF-11: the death card's three pure reads — the pack line, the
+/// last-blow line, and the margin line.
 ///
 /// <para>Both facts were already recorded and neither had a reader. <see cref="Hero.Pack"/> is
 /// depleted at the reveal for the fallen exactly as it is for survivors (<see
@@ -33,6 +35,16 @@ namespace GameSim.Drama;
 /// construction — so the last-blow line, and the Reckless branch of the pack line, go silent once
 /// that night rolls out, exactly as the Telling's own button does. A hero dies once (permadeath), so
 /// matching on <see cref="ExpeditionResult.Deaths"/> can never land on the wrong hero's night.</para>
+///
+/// <para><b>The margin line (P2-PROOF-11) closes the plan's own naming of the defect:</b>
+/// <c>"slain by a {MonsterKind}"</c> is anonymous-aggregate in our own voice, and the margin was
+/// already sitting in the record with nobody reading it. <see cref="MarginLine"/> composes it from
+/// three already-recorded numbers — the monster's recorded roll against its venue attack stat, the
+/// hero's own worn gear stats, and a replay of the hero's own hp into the round that killed them —
+/// reusing <see cref="TellingQuery"/>'s own hp replay rather than a second copy of it (this repo's
+/// own rule: a second replay is how a card and its own beat quietly disagree). Law 4's "no
+/// participation credit" bars a share, a ratio, or a percentage of anything; every number here is a
+/// magnitude in its own right — a roll, a stat total, an hp figure — never a fraction of one.</para>
 /// </summary>
 public static class FallenQuery
 {
@@ -130,6 +142,90 @@ public static class FallenQuery
 
         return $"{fallen.Name}'s last blow felled {MonsterName.Definite(felled.MonsterKind)}. "
             + $"The blade was not yours. The arm was {fallen.Name}'s.";
+    }
+
+    /// <summary>
+    /// The margin line (P2-PROOF-11): how close the fatal blow actually was, in the numbers the
+    /// resolver already recorded — never a counterfactual, never a share.
+    ///
+    /// <para>The fatal round is the LAST recorded <see cref="CombatEvent"/> for this hero on the
+    /// retained night (the resolver stops recording a hero once it kills them — see
+    /// <c>ExpeditionRevealSystem.DeathReport</c>'s own doc comment), and it is only ever this shape:
+    /// the monster's own roll is recorded (that only happens when the hero's blow left it standing —
+    /// <see cref="TellingRound"/>'s own contract), and the damage it dealt is positive. A last round
+    /// that does not have that shape — no recorded rounds at all (<c>DeathReport</c>'s own "lost to
+    /// the Mine" fallback, a death with no fight behind it), or one where the monster was somehow
+    /// killed on the very round the hero died — cannot support a margin, and this returns
+    /// <see cref="string.Empty"/> rather than guess at one.</para>
+    ///
+    /// <para><b>The three numbers, and where each one comes from:</b> the blow is the venue's fixed
+    /// attack stat for that floor plus the monster's own recorded roll — both facts, no roll drawn
+    /// here. What the worn gear drank is the Shield's and Armor's own <c>Defense</c> stats added
+    /// together (read from <see cref="ExpeditionResult.PartyAtDeparture"/>, the raid-time snapshot
+    /// <see cref="TellingQuery"/> itself insists on, never live <c>state.Heroes</c>) — the hero's own
+    /// innate (level) defense is deliberately excluded, because THAT was never the player's gear.
+    /// And the hp the hero stood at is <see cref="TellingQuery.ReplayHp"/> walked over every round
+    /// this hero fought on the fatal floor strictly before this one, starting from
+    /// <see cref="TellingQuery.ReplayHpThroughFloor"/> — the same replay every other Telling shape
+    /// reads, so this card cannot silently disagree with it.</para>
+    ///
+    /// <para><b>No participation credit, nowhere (law 4):</b> none of the three numbers is a ratio,
+    /// a percentage, or a share of the blow, the gear, or the fight. Each is a magnitude that stands
+    /// on its own — worth saying by itself, the way "the blow read 15" needs no denominator.</para>
+    /// </summary>
+    public static string MarginLine(GameState state, HeroId hero)
+    {
+        if (!state.Heroes.TryGetValue(hero.Value, out var fallen)
+            || fallen.Alive
+            || RetainedNight(state, hero) is not { } night)
+        {
+            return string.Empty;
+        }
+
+        CombatEvent? last = null;
+        FloorOutcome? lastFloor = null;
+        foreach (var floor in night.Floors)
+        {
+            foreach (var combat in floor.Combats)
+            {
+                if (combat.Hero == hero)
+                {
+                    last = combat;
+                    lastFloor = floor;
+                }
+            }
+        }
+
+        // Honest downgrade: no recorded fight at all (DeathReport's "lost to the Mine" case), or a
+        // last round that is not actually a fatal blow (the monster's roll only ever gets recorded
+        // when it survived the hero's own swing — a round where it did not, or where nothing was
+        // dealt, cannot be the round that killed this hero). Never invent a margin past this line.
+        if (last is not { MonsterKilled: false, RecordedRolls.Count: >= 2, DamageTaken: > 0 } fatal
+            || lastFloor is not { } floorOfDeath)
+        {
+            return string.Empty;
+        }
+
+        var departure = night.PartyAtDeparture.FirstOrDefault(h => h.Id == hero);
+        if (departure is null)
+        {
+            return string.Empty;
+        }
+
+        var venue = VenueRegistry.All.TryGetValue(night.VenueId, out var v) ? v : VenueRegistry.Mine;
+        var rawBlow = venue.MonsterAttack(fatal.Floor) + fatal.RecordedRolls[1];
+
+        var gearAbsorbed = CombatMath.StatOf(departure.Shield, state.Items, s => s.Defense)
+            + CombatMath.StatOf(departure.Armor, state.Items, s => s.Defense);
+
+        var priorRounds = floorOfDeath.Combats
+            .Where(c => c.Hero == hero)
+            .TakeWhile(c => !ReferenceEquals(c, fatal));
+        var hpEnteringFloor = TellingQuery.ReplayHpThroughFloor(night, hero, departure.MaxHp, floorOfDeath.Floor);
+        var hpStoodAt = TellingQuery.ReplayHp(priorRounds, hpEnteringFloor);
+
+        var gearClause = gearAbsorbed > 0 ? $"{fallen.Name}'s gear drank {gearAbsorbed} of it. " : string.Empty;
+        return $"The blow read {rawBlow}. {gearClause}{fallen.Name} stood at {hpStoodAt}.";
     }
 
     /// <summary>The retained night this hero died on, or null once it has rolled out (or if this

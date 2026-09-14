@@ -253,6 +253,12 @@ public class StateFieldReachCensusTests
         ["CombatEvent.MonsterKilled"] = new(FieldKind.Rendered, "godot/scripts/panels/DelveStage.cs (kill poof)"),
         ["CombatEvent.MonsterKind"] = new(FieldKind.Rendered, "godot/scripts/panels/DelveStage.cs (monster portrait/name)"),
         ["CombatEvent.Uses"] = new(FieldKind.Rendered, "godot/scripts/DelveBeats.cs (quaff replay folds ConsumableUse into the HP timeline)"),
+        // P2-PROOF-11: crossed the N=3 sim-reader bar once FallenQuery.cs became a third
+        // sim/GameSim/**/*.cs file reading it (AttributionEngine.cs and TellingQuery.cs already did)
+        // — already RENDERED before this PR, just never counted: TellingPanel's own round-by-round
+        // replay names both rolls verbatim ("Roll" / "Monster roll" stat chips).
+        ["CombatEvent.RecordedRolls"] = new(FieldKind.Rendered,
+            "godot/scripts/panels/TellingPanel.cs:326,334 (\"Roll\" / \"Monster roll\" stat chips in the round replay)"),
 
         // ---- Commission: CommissionBoard ----
         ["Commission.Accepted"] = new(FieldKind.Rendered, "godot/scripts/panels/CommissionBoard.cs (accepted rows show a status line)"),
@@ -517,7 +523,18 @@ public class StateFieldReachCensusTests
     // bar (PledgeDuesHandlers.cs + ActionLegality.cs, checking appraisal-vs-dues, joined
     // GuildAssessmentSystem.cs as sim readers) — both already RENDERED via Voss (P2-LONG-17), just
     // never counted below the bar. Same "census catching up," no new client surface.
-    private const int ExpectedRenderedCount = 127;
+    // 127 -> 128 (P2-PROOF-11): CombatEvent.RecordedRolls newly crosses the bar — FallenQuery.MarginLine
+    // joined TellingQuery and AttributionEngine as a third sim reader of the recorded rolls. Already
+    // RENDERED through TellingPanel long before this unit; the death card is simply the second surface
+    // to read the same recorded facts, which is the point of the margin being recorded at all.
+    //
+    // The step reads 127 -> 128 rather than 126 -> 127 because P2-SCREEN-18 landed first and took
+    // 126 -> 127 for Item.Mark. Worth recording how close that came to shipping wrong: the two units
+    // bumped the SAME line to the SAME value for DIFFERENT fields, so git resolved the number cleanly
+    // to 127 and put the conflict only in the comment above it. A comment-only conflict is the easy
+    // thing to wave through, and doing so would have left a census asserting a total one short of the
+    // fields it had just classified.
+    private const int ExpectedRenderedCount = 128;
     private const int ExpectedRoutedCount = 9;
     private const int ExpectedInternalCount = 6;
     // 12 -> 8: the same join, mirrored — the four fields that left GAP for RENDERED above.

@@ -534,8 +534,14 @@ public static class TellingQuery
     /// (never reached it, already dead, or retreated) passes through unchanged — exactly the
     /// property that makes a dead or retreated hero's hp stay frozen, matching
     /// <see cref="AttributionEngine"/>'s own shared hp dictionary.
+    ///
+    /// <para>Internal rather than private (P2-PROOF-11): <see cref="GameSim.Drama.FallenQuery"/>'s
+    /// margin line needs exactly this hp-entering-the-floor number for a hero's death round, and
+    /// this repo's own rule is that a second copy of a replay is the defect a MonsterName-shaped
+    /// class exists to prevent — so the death card reuses this replay rather than re-deriving it.
+    /// </para>
     /// </summary>
-    private static int ReplayHpThroughFloor(ExpeditionResult result, HeroId heroId, int startHp, int stopBeforeFloor)
+    internal static int ReplayHpThroughFloor(ExpeditionResult result, HeroId heroId, int startHp, int stopBeforeFloor)
     {
         var hp = startHp;
         foreach (var floor in result.Floors)
@@ -553,8 +559,15 @@ public static class TellingQuery
 
     /// <summary>The hp replay <see cref="AttributionEngine"/> performs, applied to one hero's own
     /// combat events in round order: pre-round heals, actual damage, the modifier delta, then any
-    /// post-round (post-floor "too hurt") heal. Never draws RNG.</summary>
-    private static int ReplayHp(IEnumerable<CombatEvent> fight, int hpStart)
+    /// post-round (post-floor "too hurt") heal. Never draws RNG.
+    ///
+    /// <para>Internal rather than private (P2-PROOF-11) for the same reason as
+    /// <see cref="ReplayHpThroughFloor"/> just above: <see cref="GameSim.Drama.FallenQuery"/> walks
+    /// a hero's own rounds up to (but not including) their fatal one with this exact method, so the
+    /// margin it reports can never silently drift from the replay every other Telling shape uses.
+    /// </para>
+    /// </summary>
+    internal static int ReplayHp(IEnumerable<CombatEvent> fight, int hpStart)
     {
         var hp = hpStart;
         var round = 0;

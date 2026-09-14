@@ -1318,6 +1318,68 @@ public class LedgerModalTests
         };
     }
 
+    /// <summary>P2-PROOF-11: <see cref="DrivenDay"/>'s death night, but with a REAL fatal blow
+    /// recorded (monster's roll present, damage taken, the monster left standing) and the raid-time
+    /// gear snapshot <see cref="FallenQuery.MarginLine"/> needs — unlike <see cref="FallenNight"/>'s
+    /// own fixture, whose one recorded combat is the hero's OWN kill (<c>MonsterKilled: true</c>)
+    /// and so can never be mistaken for the round that killed him.</summary>
+    private static GameState FallenNightWithFatalBlow()
+    {
+        var state = DrivenDay();
+        var ward = new Item(
+            new ItemId(602), "iron-ward", "Iron Ward", ItemSlot.Shield, QualityGrade.Fine,
+            new ItemStats(0, 2, 3), new MakersMark("You", 1), ImmutableList<ItemHistoryEntry>.Empty);
+
+        var night = new ExpeditionResult(
+            ImmutableList.Create(SurvivorId, FallenId),
+            TargetFloor: 3,
+            DeepestFloorCleared: 0,
+            ImmutableList.Create(new FloorOutcome(
+                1, Cleared: false,
+                ImmutableList.Create(new CombatEvent(
+                    1, FallenId, "Deep Ghoul", ImmutableList.Create(3, 4), DamageDealt: 6, DamageTaken: 13,
+                    MonsterKilled: false, KillingItem: null)))),
+            ImmutableList.Create(SurvivorId),
+            ImmutableList.Create(FallenId),
+            ImmutableList<AttributionBeat>.Empty,
+            ImmutableList<OreLoot>.Empty,
+            ImmutableSortedDictionary<int, int>.Empty)
+        {
+            PartyAtDeparture = ImmutableList.Create(new HeroAtDeparture(
+                FallenId, "Borin", ClassRegistry.StrikerId, Level: 2, MaxHp: 9,
+                Weapon: null, Shield: ward.Id, Armor: null)),
+        };
+
+        return state with
+        {
+            Items = state.Items.SetItem(ward.Id.Value, ward),
+            LastNightExpeditions = ImmutableList.Create(night),
+        };
+    }
+
+    [TestCase]
+    public void DeathCard_RendersTheMarginLine_FromTheRecordAlone()
+    {
+        // Mine floor 1's attack stat (11) plus the recorded monster roll (4) is the blow (15); the
+        // Iron Ward's own Defense stat (2) is what the gear drank; Borin's MaxHp (9), with no prior
+        // round on this floor, is what he stood at -- three recorded facts, nothing guessed.
+        var ui = MountMainUi(new SimAdapter(FallenNightWithFatalBlow()));
+        try
+        {
+            ui.Ledger.ShowFor(1);
+
+            var margin = ui.Ledger.FindChild("FallenMarginLine", recursive: true, owned: false) as Label;
+            AssertThat(margin)
+                .OverrideFailureMessage("a death must name its margin, not just its killer")
+                .IsNotNull();
+            AssertThat(margin!.Text).IsEqual("The blow read 15. Borin's gear drank 2 of it. Borin stood at 9.");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
     [TestCase]
     public void DeathCard_RendersThePackLineAndTheLastBlowLine_FromTheRecordAlone()
     {
@@ -1344,16 +1406,20 @@ public class LedgerModalTests
     }
 
     [TestCase]
-    public void DeathCard_WithNothingOfYoursInThePackAndNoRecordedBlade_RendersNeitherLine()
+    public void DeathCard_WithNothingOfYoursInThePackAndNoRecordedBlade_RendersNoFallenLines()
     {
         // The honest-empty-state half: FallenQuery returns an empty string wherever the record
         // cannot prove the sentence, and an empty string must draw NO node at all — never a
         // placeholder row, never a vaguer line standing in for the one that could not be said.
+        // FallenNight's own recorded combat is Borin's OWN kill (MonsterKilled: true) and carries no
+        // raid-time gear snapshot, so the margin line has neither a fatal round nor a departure to
+        // read from -- the same silence P2-PROOF-11 asks for rather than a guessed number.
         var ui = MountMainUi(new SimAdapter(FallenNight(salveInPack: false, killingItem: null)));
         try
         {
             ui.Ledger.ShowFor(1);
 
+            AssertThat(ui.Ledger.FindChild("FallenMarginLine", recursive: true, owned: false)).IsNull();
             AssertThat(ui.Ledger.FindChild("FallenPackLine", recursive: true, owned: false)).IsNull();
             AssertThat(ui.Ledger.FindChild("FallenLastBlowLine", recursive: true, owned: false)).IsNull();
         }
@@ -1396,6 +1462,7 @@ public class LedgerModalTests
                 .FindIndex(c => c.Hero == SurvivorId);
             var survivorCard = Find<Control>(ui.Ledger, $"LedgerCard_{survivorCardIndex}");
 
+            AssertThat(survivorCard.FindChild("FallenMarginLine", recursive: true, owned: false)).IsNull();
             AssertThat(survivorCard.FindChild("FallenPackLine", recursive: true, owned: false)).IsNull();
             AssertThat(survivorCard.FindChild("FallenLastBlowLine", recursive: true, owned: false)).IsNull();
         }
