@@ -64,13 +64,20 @@ public class ExpeditionNarratorTests
         return lines;
     }
 
-    // ---------------------------------------------------------------- determinism
+    // ---------------------------------------------------------------- attribution recap (P2-HONEST-26)
+
+    private static ExpeditionResult MakeResult(
+        ImmutableList<Hero> party, ImmutableList<FloorOutcome> floors, ImmutableList<AttributionBeat> beats,
+        int targetFloor = 2, int deepestFloor = 2, ExpeditionHalt halt = ExpeditionHalt.TargetReached) =>
+        new(
+            party.Select(h => h.Id).ToImmutableList(), targetFloor, deepestFloor, floors,
+            party.Select(h => h.Id).ToImmutableList(), ImmutableList<HeroId>.Empty,
+            beats, ImmutableList<OreLoot>.Empty, ImmutableSortedDictionary<int, int>.Empty, "mine", halt);
 
     [Fact]
-    public void Retell_SameInputs_IsByteIdenticalTwice()
+    public void AttributionRecap_SameInputs_IsByteIdenticalTwice()
     {
         var party = ImmutableList.Create(MakeHero(1, "Kess"), MakeHero(2, "Bran"));
-        var items = Items(MakeItem(10, "Field Salve"));
         var floors = ImmutableList.Create(
             new FloorOutcome(1, true, ImmutableList.Create(
                 Combat(1, new HeroId(1), "Cave Rat", 4, true),
@@ -78,17 +85,71 @@ public class ExpeditionNarratorTests
             new FloorOutcome(2, true, ImmutableList.Create(
                 Combat(2, new HeroId(1), "Tunnel Spider", 15, true),
                 Combat(2, new HeroId(2), "Tunnel Spider", 3, true))));
-        var result = new ExpeditionResult(
-            party.Select(h => h.Id).ToImmutableList(), 2, 2, floors,
-            party.Select(h => h.Id).ToImmutableList(), ImmutableList<HeroId>.Empty,
-            ImmutableList.Create(new AttributionBeat(BeatType.KillingBlow, new ItemId(10), new HeroId(1), 2, "Field Salve landed the killing blow on the Tunnel Spider")),
-            ImmutableList<OreLoot>.Empty, ImmutableSortedDictionary<int, int>.Empty, "mine", ExpeditionHalt.TargetReached);
+        var result = MakeResult(party, floors, ImmutableList.Create(
+            new AttributionBeat(BeatType.KillingBlow, new ItemId(10), new HeroId(1), 2, "Field Salve landed the killing blow on the Tunnel Spider")));
 
-        var first = ExpeditionNarrator.Retell(result, party, items, NarratorPack.Pack, Campaign, Day);
-        var second = ExpeditionNarrator.Retell(result, party, items, NarratorPack.Pack, Campaign, Day);
+        var first = ExpeditionNarrator.AttributionRecap(result, party, NarratorPack.Pack, Campaign, Day);
+        var second = ExpeditionNarrator.AttributionRecap(result, party, NarratorPack.Pack, Campaign, Day);
 
         Assert.Equal(first, second);
         Assert.NotEmpty(first);
+    }
+
+    /// <summary>
+    /// The property P2-HONEST-26 exists to pin: the recap composes NOTHING but proven attribution
+    /// beats and the closer — never the departure line or a floor's tension prose (floor-enter,
+    /// quaff, kill, hurt, flee). Regressing this back to building (and discarding) that prose is
+    /// exactly the dead work this unit removed.
+    /// </summary>
+    [Fact]
+    public void AttributionRecap_ComposesOnlyBeatsAndTheCloser()
+    {
+        var party = ImmutableList.Create(MakeHero(1, "Kess"));
+        var items = Items(MakeItem(10, "Field Salve"));
+        var use = ImmutableList.Create(new ConsumableUse(new ItemId(10), 1, 5, 20));
+        var floors = ImmutableList.Create(
+            new FloorOutcome(1, true, ImmutableList.Create(Combat(1, new HeroId(1), "Cave Rat", 15, true, use))),
+            new FloorOutcome(2, false, ImmutableList.Create(Combat(2, new HeroId(1), "Tunnel Spider", 4, killed: false))));
+        var beats = ImmutableList.Create(
+            new AttributionBeat(BeatType.KillingBlow, new ItemId(10), new HeroId(1), 1, "Field Salve landed the killing blow on the Cave Rat"));
+        var result = MakeResult(party, floors, beats, targetFloor: 2, deepestFloor: 1, halt: ExpeditionHalt.TooHurt);
+
+        var recap = ExpeditionNarrator.AttributionRecap(result, party, NarratorPack.Pack, Campaign, Day);
+
+        Assert.Equal(beats.Count + 1, recap.Count); // one line per beat, plus the closer — no more
+        foreach (var line in recap.Take(recap.Count - 1))
+        {
+            Assert.StartsWith("★", line);
+        }
+
+        var expectedCloser = ExpeditionNarrator.Closer(
+            result.Halt, party, result.DeepestFloorCleared, result.TargetFloor, NarratorPack.Pack, Campaign, Day);
+        Assert.Equal(expectedCloser, recap[^1]);
+
+        // Never claims what FloorBeats alone would have built and this method deliberately doesn't.
+        Assert.DoesNotContain(recap, l => l.Contains("Cave Rat", StringComparison.Ordinal) && !l.StartsWith("★", StringComparison.Ordinal));
+        Assert.DoesNotContain(recap, l => l.Contains("Tunnel Spider", StringComparison.Ordinal));
+    }
+
+    /// <summary>Negative control (must not move): the beats surface with hero + item names intact,
+    /// in proving-floor order, exactly as they did when the ledger called the whole retelling.</summary>
+    [Fact]
+    public void AttributionRecap_OrdersBeatsByProvingFloor()
+    {
+        var party = ImmutableList.Create(MakeHero(1, "Kess"));
+        var floors = ImmutableList.Create(
+            new FloorOutcome(1, true, ImmutableList.Create(Combat(1, new HeroId(1), "Cave Rat", 3, true))),
+            new FloorOutcome(2, true, ImmutableList.Create(Combat(2, new HeroId(1), "Spider", 3, true))));
+        // Beats deliberately out of floor order going in — the recap must still read floor-ascending.
+        var beats = ImmutableList.Create(
+            new AttributionBeat(BeatType.KillingBlow, new ItemId(11), new HeroId(1), 2, "Trusty Blade landed the killing blow on the Spider"),
+            new AttributionBeat(BeatType.PotionLifesave, new ItemId(10), new HeroId(1), 1, "Field Salve saved Kess's life"));
+        var result = MakeResult(party, floors, beats);
+
+        var recap = ExpeditionNarrator.AttributionRecap(result, party, NarratorPack.Pack, Campaign, Day);
+
+        Assert.Contains("Field Salve", recap[0]);
+        Assert.Contains("Trusty Blade", recap[1]);
     }
 
     // ---------------------------------------------------------------- closers
@@ -116,13 +177,11 @@ public class ExpeditionNarratorTests
         var party = ImmutableList.Create(MakeHero(1, "Kess"));
         var floors = ImmutableList.Create(
             new FloorOutcome(3, true, ImmutableList.Create(Combat(3, new HeroId(1), "Deep Ghoul", 20, true))));
-        var result = new ExpeditionResult(
-            party.Select(h => h.Id).ToImmutableList(), 3, 3, floors,
-            party.Select(h => h.Id).ToImmutableList(), ImmutableList<HeroId>.Empty,
-            ImmutableList<AttributionBeat>.Empty, ImmutableList<OreLoot>.Empty,
-            ImmutableSortedDictionary<int, int>.Empty, "mine", ExpeditionHalt.TargetReached);
+        var result = MakeResult(
+            party, floors, ImmutableList<AttributionBeat>.Empty,
+            targetFloor: 3, deepestFloor: 3, halt: ExpeditionHalt.TargetReached);
 
-        var closer = ExpeditionNarrator.Retell(result, party, Items(), NarratorPack.Pack, Campaign, Day)[^1];
+        var closer = ExpeditionNarrator.AttributionRecap(result, party, NarratorPack.Pack, Campaign, Day)[^1];
 
         Assert.Contains(closer, Candidates(NarratorPack.TargetReached, Voice(1), ("hero", "Kess"), ("floor", "3")));
         Assert.DoesNotContain(closer, Candidates(NarratorPack.TooHurt, Voice(1), ("hero", "Kess"), ("floor", "3")));

@@ -58,7 +58,7 @@ public class TownLifeTests
         }
         finally
         {
-            npc.QueueFree();
+            npc.Free();
         }
     }
 
@@ -99,7 +99,7 @@ public class TownLifeTests
         }
         finally
         {
-            npc.QueueFree();
+            npc.Free();
         }
     }
 
@@ -132,7 +132,7 @@ public class TownLifeTests
         }
         finally
         {
-            npc.QueueFree();
+            npc.Free();
         }
     }
 
@@ -161,8 +161,8 @@ public class TownLifeTests
         }
         finally
         {
-            a.QueueFree();
-            b.QueueFree();
+            a.Free();
+            b.Free();
         }
     }
 
@@ -219,7 +219,7 @@ public class TownLifeTests
         }
         finally
         {
-            actor.QueueFree();
+            actor.Free();
         }
     }
 
@@ -259,7 +259,7 @@ public class TownLifeTests
         }
         finally
         {
-            actor.QueueFree();
+            actor.Free();
         }
     }
 
@@ -292,7 +292,7 @@ public class TownLifeTests
         }
         finally
         {
-            actor.QueueFree();
+            actor.Free();
         }
     }
 
@@ -321,8 +321,8 @@ public class TownLifeTests
         }
         finally
         {
-            a.QueueFree();
-            b.QueueFree();
+            a.Free();
+            b.Free();
         }
     }
 
@@ -371,8 +371,8 @@ public class TownLifeTests
         }
         finally
         {
-            frozen.QueueFree();
-            walking.QueueFree();
+            frozen.Free();
+            walking.Free();
         }
     }
 
@@ -607,7 +607,7 @@ public class TownLifeTests
         }
         finally
         {
-            life.QueueFree();
+            life.Free();
         }
     }
 
@@ -628,7 +628,7 @@ public class TownLifeTests
         }
         finally
         {
-            life.QueueFree();
+            life.Free();
         }
     }
 
@@ -657,7 +657,7 @@ public class TownLifeTests
         }
         finally
         {
-            life.QueueFree();
+            life.Free();
         }
     }
 
@@ -991,10 +991,128 @@ public class TownLifeTests
                 }
                 finally
                 {
-                    actor.QueueFree();
+                    actor.Free();
                 }
             }
         }
+    }
+
+    // ── P2-SCREEN-26: the HUD's Morning claim and the render must agree ──────────────────────────
+    //
+    // MainUi.HeroesReadyInSquareBadge (was "...AtTheGateBadge") counts alive heroes and says they
+    // are "ready in the square". This pins that claim against the actual render: every alive
+    // hero's Home anchor really is one of the plaza's own GatheringSpotTiles, strictly closer to
+    // the plaza than to the empty mine gate, over more than one roster shape -- not one hand-picked
+    // six-alive case -- so the property holds for whatever Count(h.Alive) the badge itself reads.
+
+    [TestCase]
+    public void Morning_LivingHeroesStandInThePlaza_MatchingTheHudsSquareClaim_OverVariedRosters()
+    {
+        var fullRosterState = GameComposition.NewCampaign(11);
+        var twoFallenState = WithHeroesFallen(fullRosterState, 1, 2);
+
+        foreach (var state in new[] { fullRosterState, twoFallenState })
+        {
+            var town = new Town2D { Name = "Town2D" };
+            town.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+            ((SceneTree)Engine.GetMainLoop()).Root.AddChild(town);
+            town.Build(new SimAdapter(state));
+            try
+            {
+                var aliveCount = state.Heroes.Values.Count(h => h.Alive);
+                AssertThat(town.HeroActors.Count)
+                    .OverrideFailureMessage(
+                        "the badge's own alive-hero count and the actors Town2D actually built disagree")
+                    .IsEqual(aliveCount);
+
+                var mineGateWorld = TownLayout2D.TileToWorld(
+                    TownLayout2D.Venues.First(v => v.Key == "minegate").Tile);
+                var plazaSpots = TownLayout2D.GatheringSpotTiles
+                    .Select(TownLayout2D.TileToWorld)
+                    .ToList();
+
+                foreach (var actor in town.HeroActors)
+                {
+                    var expected = TownLayout2D.SpotAnchorFor(actor.HeroIdValue, DayPhase.Morning);
+                    AssertThat(actor.Home)
+                        .OverrideFailureMessage(
+                            $"hero {actor.HeroIdValue}: Home {actor.Home} does not match its Morning " +
+                            $"gathering-spot anchor {expected} -- the render disagrees with the table " +
+                            "the HUD's own count is drawn from")
+                        .IsEqual(expected);
+
+                    var nearestPlazaSpot = plazaSpots.Min(p => p.DistanceTo(actor.Home));
+                    var distanceFromGate = mineGateWorld.DistanceTo(actor.Home);
+                    AssertThat(nearestPlazaSpot < distanceFromGate)
+                        .OverrideFailureMessage(
+                            $"hero {actor.HeroIdValue}: Home {actor.Home} sits closer to the mine gate " +
+                            $"({distanceFromGate:0.##}px) than to any plaza spot ({nearestPlazaSpot:0.##}px) " +
+                            "-- the HUD's \"ready in the square\" line would be false")
+                        .IsTrue();
+                }
+            }
+            finally
+            {
+                town.Free();
+            }
+        }
+    }
+
+    /// <summary>Negative control for P2-SCREEN-26: the send-off choreography (rally then march to
+    /// the mine gate) must still fire correctly starting from the Morning plaza position -- this is
+    /// the mechanism the finding's "move the heroes" option would have put the most load on, and it
+    /// is exercised here unchanged so a reviewer can see it was checked, not assumed.</summary>
+    [TestCase]
+    public void Morning_EndingTheDay_StillMustersEveryLivingHeroFromThePlaza_AndMarchesThemToTheGate()
+    {
+        var town = new Town2D { Name = "Town2D" };
+        town.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        ((SceneTree)Engine.GetMainLoop()).Root.AddChild(town);
+        var adapter = new SimAdapter(GameComposition.NewCampaign(11));
+        town.Build(adapter);
+        try
+        {
+            var aliveCount = adapter.CurrentState.Heroes.Values.Count(h => h.Alive);
+            AssertThat(town.HeroActors.Count).IsEqual(aliveCount);
+            foreach (var actor in town.HeroActors)
+            {
+                AssertThat(actor.State).IsEqual(HeroActor2D.HeroTownState.Wandering);
+            }
+
+            town.OnPhaseCompleted(DayPhase.Morning);
+
+            // U10/U-T3-1's own dwell-then-peel-off-in-file cascade -- ticking well past the last
+            // hero's stagger offset must land every one of them past idle Wandering, proving the
+            // muster fired for the whole roster regardless of which plaza spot each one started at.
+            for (var i = 0; i < 200; i++)
+            {
+                town._Process(0.1);
+            }
+
+            foreach (var actor in town.HeroActors)
+            {
+                AssertThat(actor.State)
+                    .OverrideFailureMessage(
+                        $"hero {actor.HeroIdValue}: still Wandering after the Morning send-off ticked -- " +
+                        "the muster never picked it up from its plaza spot")
+                    .IsNotEqual(HeroActor2D.HeroTownState.Wandering);
+            }
+        }
+        finally
+        {
+            town.Free();
+        }
+    }
+
+    private static GameState WithHeroesFallen(GameState state, params int[] heroIds)
+    {
+        var heroes = state.Heroes;
+        foreach (var id in heroIds)
+        {
+            heroes = heroes.SetItem(id, heroes[id] with { Alive = false, DiedOnDay = state.Day });
+        }
+
+        return state with { Heroes = heroes };
     }
 }
 #endif

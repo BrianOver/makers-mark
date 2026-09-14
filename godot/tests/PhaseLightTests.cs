@@ -87,7 +87,7 @@ public class PhaseLightTests
         }
         finally
         {
-            life.QueueFree();
+            life.Free();
         }
     }
 
@@ -169,7 +169,7 @@ public class PhaseLightTests
         }
         finally
         {
-            life.QueueFree();
+            life.Free();
         }
     }
 
@@ -194,7 +194,7 @@ public class PhaseLightTests
         }
         finally
         {
-            life.QueueFree();
+            life.Free();
         }
     }
 
@@ -230,7 +230,7 @@ public class PhaseLightTests
         }
         finally
         {
-            life.QueueFree();
+            life.Free();
         }
     }
 }

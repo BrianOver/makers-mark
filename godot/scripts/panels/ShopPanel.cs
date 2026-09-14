@@ -94,6 +94,13 @@ public partial class ShopPanel : SimPanel
     /// </summary>
     public TutorialFlow? Tutorial { get; set; }
 
+    /// <summary>P2-PEOPLE-21: forwards <see cref="CounterPanel.OpenForgeRequested"/>. The counter
+    /// body is nested inside this panel (PA7, see <see cref="_counter"/>'s own doc) rather than
+    /// mounted directly by <c>MainUi</c>, so the bare "open the forge" request needs one hop before
+    /// <c>MainUi</c> can act on it — wired once in <see cref="EnsureBuilt"/> alongside <see
+    /// cref="_counter"/>'s own construction.</summary>
+    public event System.Action? OpenForgeRequested;
+
     /// <summary>The shared "Bryn speaks a first-touch lesson" banner (<see cref="MentorBanner"/>,
     /// Wave C) — owned by <c>MainUi</c> so it draws above whatever panel is open, wired in
     /// alongside <see cref="Tutorial"/>.</summary>
@@ -768,6 +775,7 @@ public partial class ShopPanel : SimPanel
         // torn down by this panel's own Clear(_content) cycle), bound to the same Adapter, and
         // re-bound every Refresh (see call site above).
         _counter = new CounterPanel { Name = "CounterPanel" };
+        _counter.OpenForgeRequested += () => OpenForgeRequested?.Invoke();
         body.AddChild(_counter);
 
         _content = new VBoxContainer { Name = "ShopContent" };

@@ -886,12 +886,14 @@ public partial class LedgerModal : SimPanel
     /// The narrator drip made VISIBLE (V7b, DoD D2/D4/D6): the same <see cref="ExpeditionNarrator"/>
     /// the CLI voices, surfaced on the Evening reveal. For each expedition the day revealed
     /// (snapshotted in <see cref="SimAdapter.LastRevealedExpeditions"/> before the reveal tick
-    /// cleared it), retell it with the CLI's inputs — party heroes + items from state, the campaign
-    /// identity (<c>state.Rng.Inc</c>, KTD3), the shown day for the deterministic variant pick.
-    /// <see cref="CollapsedTale"/> keeps the pride payload only (attribution ★ beats + the Halt
-    /// closer) — P2-PROOF-07 deleted the "Full tale" escape hatch to the whole retelling once
-    /// <see cref="TellingPanel"/>'s per-beat counterfactual replay took over the proof this toggle
-    /// used to stand in for. Plain Labels only, so <c>RenderedText</c> reads every line.
+    /// cleared it), recap it with the CLI's campaign identity (<c>state.Rng.Inc</c>, KTD3) and the
+    /// shown day for the deterministic closer pick. <see cref="ExpeditionNarrator.AttributionRecap"/>
+    /// already returns the pride payload only (attribution ★ beats + the Halt closer) — P2-PROOF-07
+    /// deleted the "Full tale" escape hatch to the whole retelling once <see cref="TellingPanel"/>'s
+    /// per-beat counterfactual replay took over the proof this toggle used to stand in for, and
+    /// P2-HONEST-26 stopped composing the departure line and per-floor tension prose that decision
+    /// left with no reader (that prose still has a live surface — MineWatch's own feed — by the time
+    /// the ledger opens). Plain Labels only, so <c>RenderedText</c> reads every line.
     /// </summary>
     private void RenderRetelling(int day)
     {
@@ -913,11 +915,9 @@ public partial class LedgerModal : SimPanel
                 continue; // defensive: a result whose party left state has no voice
             }
 
-            // Same call shape as the CLI's unstaged retelling path (Program.cs).
-            var tale = ExpeditionNarrator.Retell(
-                result, party, state.Items, NarratorPack.Pack, state.Rng.Inc, day);
+            var recap = ExpeditionNarrator.AttributionRecap(result, party, NarratorPack.Pack, state.Rng.Inc, day);
 
-            foreach (var line in CollapsedTale(tale))
+            foreach (var line in Cap(recap))
             {
                 var label = AddLabel(_cards!, line);
                 if (line.StartsWith('★'))
@@ -930,23 +930,20 @@ public partial class LedgerModal : SimPanel
     }
 
     /// <summary>
-    /// The compact pride payload: every attribution ★ beat plus the closer (always the retelling's
-    /// last line). Bounded by <see cref="MaxCollapsedTaleLines"/> so a beat-heavy run still fits —
-    /// the closer is appended last regardless, so it is never dropped (V7b req 2, DoD D4).
+    /// Bounds a beat-heavy run to <see cref="MaxCollapsedTaleLines"/> so the modal still fits without
+    /// scrolling forever — every line but the last IS already a beat (<see cref="ExpeditionNarrator.AttributionRecap"/>
+    /// composes nothing else), so this only ever trims beats, never the closer (always the recap's
+    /// last line, appended back regardless — V7b req 2, DoD D4).
     /// </summary>
-    private static ImmutableList<string> CollapsedTale(ImmutableList<string> tale)
+    private static ImmutableList<string> Cap(ImmutableList<string> recap)
     {
-        if (tale.IsEmpty)
+        if (recap.IsEmpty)
         {
-            return tale;
+            return recap;
         }
 
-        var closer = tale[^1];
-        var beats = tale
-            .Take(tale.Count - 1)
-            .Where(line => line.StartsWith('★'))
-            .Take(MaxCollapsedTaleLines - 1)
-            .ToImmutableList();
+        var closer = recap[^1];
+        var beats = recap.Take(recap.Count - 1).Take(MaxCollapsedTaleLines - 1).ToImmutableList();
         return beats.Add(closer);
     }
 

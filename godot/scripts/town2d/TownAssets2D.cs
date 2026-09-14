@@ -50,6 +50,12 @@ public static class TownAssets2D
         ["tavern"] = (new Vector2(125, 187), new Color(0.40f, 0.24f, 0.30f)),
         ["mine-gate"] = (new Vector2(95, 121), new Color(0.18f, 0.16f, 0.22f)),
         ["noticeboard"] = (new Vector2(94, 136), new Color(0.36f, 0.30f, 0.20f)),
+
+        // P2-MEMORY-22 ("the east field remembers"): the outdoor memorial wall — wide and short
+        // (a standing wall, not a building), dark cold stone so it reads apart from every warm
+        // timber/thatch venue in this table. No committed art yet, so this still draws through the
+        // loud magenta-bordered Placeholder() path below until real pixels land — never silently.
+        ["memorial-wall"] = (new Vector2(80, 32), new Color(0.30f, 0.30f, 0.33f)),
     };
 
     private static readonly Vector2 DefaultVenueSize = new(64, 64);
