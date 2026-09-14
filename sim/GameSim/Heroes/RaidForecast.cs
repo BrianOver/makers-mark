@@ -9,15 +9,44 @@ namespace GameSim.Heroes;
 public sealed record ForecastThreat(int Floor, string MonsterKind);
 
 /// <summary>
+/// P2-SCREEN-18: one filled gear slot a marching hero actually wears — the upgrade arm of decision 3
+/// ("fill the empty slot, or upgrade the full one"), which before this record had only its gap arm
+/// visible (<see cref="ForecastParty.GearGaps"/>). A party in three Common copper daggers used to
+/// read identically to a party in full Masterwork; this is the fact that tells them apart.
+///
+/// <para>FACTS only, per the muster board's own law (<see cref="ForecastParty"/>'s doc): what the
+/// slot holds, its quality tier, and whose hands made it (<see cref="WornSlot.PlayerCrafted"/> —
+/// link 1, the fact that makes the upgrade decision the PLAYER's, not the sim's). Never combat
+/// stats, never a survival estimate, never a power score: this is worn-gear bookkeeping, not a
+/// verdict.</para>
+/// </summary>
+public sealed record WornSlot(
+    string HeroName,
+    ItemSlot Slot,
+    string ItemName,
+    QualityGrade Quality,
+    bool PlayerCrafted,
+    int? CraftedOnDay);
+
+/// <summary>
 /// A single party's raid-day forecast: who marches, how deep they mean to go, the threats on the
-/// way, and where their kit is thin. Pure projection — presentation data only.
+/// way, where their kit is thin, and what their filled slots actually hold. Pure projection —
+/// presentation data only.
+///
+/// <para><b>The law this record stays inside of (P2-SCREEN-18):</b> the forecast does not tell you
+/// who will survive. It carries only facts of worn gear — what a slot holds, its quality tier, whose
+/// hands made it — never a survival estimate, a power score, a "this party needs X" verdict, or a
+/// ranking of one party against another. The advisor never orders: naming what a slot holds is a
+/// fact, "you should upgrade Kael's dagger" is an order, and this type has no field for the second
+/// one.</para>
 /// </summary>
 public sealed record ForecastParty(
     ImmutableList<string> HeroNames,
     int TargetFloor,
     string VenueId,
     ImmutableList<ForecastThreat> Threats,
-    ImmutableList<string> GearGaps);
+    ImmutableList<string> GearGaps,
+    ImmutableList<WornSlot> WornGear);
 
 /// <summary>
 /// Game-Feel Plan G4 ("Tomorrow's Telegraph", docs/design/2026-07-21-game-feel-plan.md §G4): the
@@ -35,7 +64,9 @@ public static class RaidForecast
     /// <see cref="ForecastParty"/> per predicted party, in muster order. <see cref="ForecastParty.Threats"/>
     /// lists floors 1..TargetFloor with each floor's monster; <see cref="ForecastParty.GearGaps"/> names
     /// only heroes carrying at least one empty weapon/shield/armor slot (trinket is optional content,
-    /// not a gap).
+    /// not a gap); <see cref="ForecastParty.WornGear"/> (P2-SCREEN-18) names what every OTHER weapon/
+    /// shield/armor slot holds — the two lists partition the same three tracked slots, so together
+    /// they account for every hero's kit, gap or filled.
     /// </summary>
     public static ImmutableList<ForecastParty> ForTomorrow(GameState state)
     {
@@ -57,6 +88,7 @@ public static class RaidForecast
             }
 
             var gaps = ImmutableList.CreateBuilder<string>();
+            var worn = ImmutableList.CreateBuilder<WornSlot>();
             foreach (var id in plan.Roster)
             {
                 var hero = state.Heroes[id.Value];
@@ -65,10 +97,23 @@ public static class RaidForecast
                 {
                     gaps.Add($"{hero.Name}: {string.Join(", ", missing.Select(SlotLabel))}");
                 }
+
+                // Same three tracked slots MissingItemSlots gaps on (trinket is optional content,
+                // not part of decision 3's fill-or-upgrade surface) — every slot a gap did NOT claim
+                // is filled, and what it holds is this loop's whole job.
+                foreach (var slot in TrackedSlots)
+                {
+                    if (hero.Gear.Slot(slot) is { } itemId
+                        && state.Items.TryGetValue(itemId.Value, out var item))
+                    {
+                        worn.Add(new WornSlot(
+                            hero.Name, slot, item.Name, item.Quality, item.PlayerCrafted, item.Mark?.CraftedOnDay));
+                    }
+                }
             }
 
             forecast.Add(new ForecastParty(
-                names, plan.TargetFloor, plan.VenueId, threats.ToImmutable(), gaps.ToImmutable()));
+                names, plan.TargetFloor, plan.VenueId, threats.ToImmutable(), gaps.ToImmutable(), worn.ToImmutable()));
         }
 
         return forecast.ToImmutable();
@@ -110,4 +155,10 @@ public static class RaidForecast
         ItemSlot.Armor => "no armor",
         _ => $"no {slot.ToString().ToLowerInvariant()}",
     };
+
+    /// <summary>The three slots decision 3 ("fill the empty slot, or upgrade the full one") is
+    /// actually about — the same set <see cref="MissingItemSlots"/> gaps on. Trinket stays excluded
+    /// (optional content, not a gap and not an upgrade decision — same rule <see
+    /// cref="MissingItemSlots"/>'s own doc states).</summary>
+    private static readonly ItemSlot[] TrackedSlots = { ItemSlot.Weapon, ItemSlot.Shield, ItemSlot.Armor };
 }

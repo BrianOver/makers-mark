@@ -432,6 +432,13 @@ public class StateFieldReachCensusTests
         ["Item.Effect"] = new(FieldKind.Rendered, "godot/scripts/panels/CampPanel.cs:325,335,346,367 / ShopPanel.cs:496 (Effect.Kind checks)"),
         ["Item.HeirloomLineage"] = new(FieldKind.Routed, "ProvenanceQuery.cs -> ProvenanceCard.cs (item history sentence, opened from Shop/Heroes/Tavern/Mirror/LegendsWall History buttons)"),
         ["Item.History"] = new(FieldKind.Rendered, "godot/scripts/panels/ProvenanceCard.cs (the item's own History prose)"),
+        // P2-SCREEN-18: crossed the N=3 sim-reader bar once RaidForecast.cs became a third
+        // sim/GameSim/**/*.cs file matching ".Mark" (FallenQuery.cs and RivalAbsenceQuery.cs were
+        // already two) — already RENDERED long before this PR (ProvenanceCard's mark row), just
+        // never counted.
+        ["Item.Mark"] = new(FieldKind.Rendered,
+            "godot/scripts/panels/ProvenanceCard.cs:84-86 (\"Forged by {mark.CrafterName} on day "
+            + "{mark.CraftedOnDay}.\" vs \"No maker's mark — not player-crafted.\")"),
         ["Item.Id"] = new(FieldKind.Rendered, "godot/scripts/panels/ShopPanel.cs:321 (Unstock_{itemId.Value}) and every other per-item control's Name"),
         ["Item.Name"] = new(FieldKind.Rendered, "godot/scripts/panels/ShopPanel.cs / ForgePanel.cs / HeroesPanel.cs — every item card"),
         ["Item.Quality"] = new(FieldKind.Rendered, "godot/scripts/panels/ForgePanel.cs (grade stings) / ShopPanel.cs (quality-grade badge)"),
@@ -510,7 +517,7 @@ public class StateFieldReachCensusTests
     // bar (PledgeDuesHandlers.cs + ActionLegality.cs, checking appraisal-vs-dues, joined
     // GuildAssessmentSystem.cs as sim readers) — both already RENDERED via Voss (P2-LONG-17), just
     // never counted below the bar. Same "census catching up," no new client surface.
-    private const int ExpectedRenderedCount = 126;
+    private const int ExpectedRenderedCount = 127;
     private const int ExpectedRoutedCount = 9;
     private const int ExpectedInternalCount = 6;
     // 12 -> 8: the same join, mirrored — the four fields that left GAP for RENDERED above.

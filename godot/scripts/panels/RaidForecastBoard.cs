@@ -157,8 +157,20 @@ public partial class RaidForecastBoard : Control
             }
         }
 
-        // Gear gaps only when a hero actually marches with an empty slot — an all-kitted party
-        // renders a reassuring line instead of nothing (parallels the empty-day handling).
+        // P2-SCREEN-18: decision 3 ("fill the empty slot, or upgrade the full one") used to show
+        // only its gap arm — a fully-kitted party rendered "all slots filled" and stopped, so a
+        // party in three Common copper daggers read identically to one in full Masterwork. Every
+        // filled slot now gets named alongside every gap, from the SAME three tracked slots
+        // (RaidForecast.TrackedSlots), so the two lists always account for a hero's whole kit.
+        if (!party.WornGear.IsEmpty)
+        {
+            AddHeader(_body!, "  Gear worn:");
+            foreach (var worn in party.WornGear)
+            {
+                AddLabel(_body!, $"  - {WornGearLine(worn)}");
+            }
+        }
+
         if (party.GearGaps.IsEmpty)
         {
             AddLabel(_body!, "  Gear: all slots filled.");
@@ -173,6 +185,20 @@ public partial class RaidForecastBoard : Control
 
             ShowMusterGearGapLesson();
         }
+    }
+
+    /// <summary>
+    /// Renders one <see cref="WornSlot"/> as "Hero — Item Name (Quality)" plus, only for a piece the
+    /// player forged (<see cref="WornSlot.PlayerCrafted"/> — link 1), "(yours, day N)" naming the
+    /// day <c>ItemForge</c> stamped its <c>MakersMark</c>. Rival-vendor stock carries no mark at all
+    /// (R5), so it renders with no suffix rather than an invented maker or day — never inventing
+    /// provenance the sim does not already hold (P2-SCREEN-18). Quality routes through <see
+    /// cref="ItemVocab.Display(QualityGrade)"/> (P2-HONEST-06) — never render the enum raw.
+    /// </summary>
+    private static string WornGearLine(WornSlot worn)
+    {
+        var suffix = worn is { PlayerCrafted: true, CraftedOnDay: { } day } ? $" (yours, day {day})" : string.Empty;
+        return $"{worn.HeroName} — {worn.ItemName} ({ItemVocab.Display(worn.Quality)}){suffix}";
     }
 
     /// <summary>
