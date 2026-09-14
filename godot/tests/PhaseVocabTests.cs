@@ -1,10 +1,12 @@
 #if GDUNIT_TESTS
 using System;
 using System.Linq;
+using System.Threading.Tasks;
 using GameSim;
 using GameSim.Contracts;
 using GdUnit4;
 using Godot;
+using GodotClient.Tools;
 using GodotClient.Town2d;
 using GodotClient.Ui;
 using static GdUnit4.Assertions;
@@ -86,6 +88,189 @@ public class PhaseVocabTests
                 AssertThat(timelineText.Contains("Camp")).IsFalse();
                 AssertThat(timelineText.Contains("ExpeditionDeep")).IsFalse();
             }
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>
+    /// P2-SCREEN-25 (owner GPU capture, 2026-09-13): the HUD's "Phase" chip read "Prepare" while
+    /// the day-timeline strip six pixels below it read "Dawn" for the SAME live moment — two
+    /// names for one phase. Both words were real (<see cref="PhaseVocab.Display(GameState)"/>'s
+    /// own remark), but only the HUD chip was ever handed the live one; <see
+    /// cref="GodotClient.Ui.ObjectiveTracker.DayTimeline"/>'s segment table was built once from
+    /// the context-free <see cref="PhaseVocab.Display(DayPhase)"/> overload, which has no counter
+    /// session to ask about. <c>DayTimeline.Refresh</c> now takes the caller's live word and
+    /// paints it onto the CURRENT segment only. This proves the two surfaces already agreed for
+    /// every ordinary phase (the pre-fix baseline); <see
+    /// cref="HudPhaseChip_AndDayTimelineCurrentSegment_AgreeOnPrepare_WhileACounterSessionIsOpen"/>
+    /// below proves it for the actual sub-state the capture caught disagreeing.
+    /// </summary>
+    [TestCase]
+    public void HudPhaseChip_AndDayTimelineCurrentSegment_NameTheSamePhaseIdentically_ForEveryDayPhase()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            foreach (var phase in Enum.GetValues<DayPhase>())
+            {
+                AdvanceToPhase(ui, phase);
+                ui.RefreshAll();
+
+                var hudWord = ChipValueText(ui, "PhaseChip");
+                var stripWord = TimelineCurrentSegmentText(ui);
+
+                AssertThat(hudWord)
+                    .OverrideFailureMessage(
+                        $"{phase}: HUD Phase chip says \"{hudWord}\" but the day-timeline's " +
+                        $"current segment says \"{stripWord}\" — the exact split-brain P2-SCREEN-25 found.")
+                    .IsEqual(stripWord);
+
+                // Negative control: a real word every time, never an empty label passing vacuously.
+                AssertThat(hudWord).IsNotEmpty();
+            }
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>
+    /// The actual live sub-state the owner's capture caught. <c>RingBellHudTests.OpenCounter_
+    /// ShowsPrepareBanner</c> already pins the HUD's <c>ClockLabel</c> banner reading "Prepare";
+    /// this pins the SAME live word reaching the day-timeline's current segment too — something
+    /// the pre-fix code could never do, since its table was built once from the context-free
+    /// overload and had no live <see cref="GameSim.Contracts.CounterState"/> to consult.
+    /// </summary>
+    [TestCase]
+    public void HudPhaseChip_AndDayTimelineCurrentSegment_AgreeOnPrepare_WhileACounterSessionIsOpen()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.Adapter.Queue(new OpenCounterAction());
+            ui.Adapter.AdvancePhase(); // applies OpenCounter; day HOLDS at Morning (session open)
+            ui.RefreshAll();
+
+            AssertThat(ui.Adapter.CurrentState.Phase).IsEqual(DayPhase.Morning);
+            AssertThat(ui.Adapter.CurrentState.Counter is { Closed: false }).IsTrue();
+
+            var hudWord = ChipValueText(ui, "PhaseChip");
+            var stripWord = TimelineCurrentSegmentText(ui);
+
+            AssertThat(hudWord).IsEqual("Prepare");
+            AssertThat(stripWord)
+                .OverrideFailureMessage(
+                    $"HUD Phase chip says \"Prepare\" but the day-timeline's current segment still " +
+                    $"says \"{stripWord}\" — the pre-fix P2-SCREEN-25 split-brain.")
+                .IsEqual("Prepare");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>
+    /// The override above targets ONLY the current segment (<c>DayTimeline.Refresh</c>'s own
+    /// remark) — a phase that is not live right now has no sub-state of its own to speak of, and
+    /// must keep reading its own context-free <see cref="PhaseVocab.Display(DayPhase)"/> resting
+    /// word regardless of what Morning's live word is doing. Pins that the two forms (context-free
+    /// vs live) each stay in their own place rather than one silently overwriting the other.
+    /// </summary>
+    [TestCase]
+    public void DayTimeline_OnlyTheCurrentSegmentGetsTheLiveWord_EveryOtherSegmentKeepsItsRestingWord()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.Adapter.Queue(new OpenCounterAction());
+            ui.Adapter.AdvancePhase();
+            ui.RefreshAll();
+            AssertThat(ui.Adapter.CurrentState.Counter is { Closed: false }).IsTrue();
+            AssertThat(ChipValueText(ui, "PhaseChip"))
+                .OverrideFailureMessage("this test needs the live word to actually be Prepare right now")
+                .IsEqual("Prepare");
+
+            var eveningWord = SegmentText(ui, DayPhase.Evening);
+            AssertThat(eveningWord)
+                .OverrideFailureMessage(
+                    $"Evening's segment read \"{eveningWord}\" while Morning was live and showing " +
+                    "\"Prepare\" — the live override leaked onto a segment that isn't current.")
+                .IsEqual(PhaseVocab.Display(DayPhase.Evening));
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>
+    /// The audit's second finding: the whole HUD row visibly reflowed every time the Phase word's
+    /// length changed, because <c>UiKit.StatChip</c>'s Value label sizes to its OWN text by
+    /// default. <c>MainUi.RefreshStatus</c> now reserves that label's width against <see
+    /// cref="PhaseVocab.AllLiveWords"/> — every word it can ever hold, measured against the real
+    /// font it renders with (<c>UiKit.WidestTextWidth</c>'s own remark) — so the chip's footprint,
+    /// and every sibling chip laid out after it in the same row, must stop moving regardless of
+    /// which phase word is showing. Checked across the whole day cycle AND the Dawn/Prepare pair
+    /// specifically, since that pair is the one the owner's own capture caught mid-jump.
+    /// </summary>
+    [TestCase]
+    public async Task PhaseChip_WidthAndItsSiblingsPosition_NeverChange_AcrossAnyPhaseWord()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            PressEnabled(ui, "AdvancePhase"); // past day-1 Morning, so Gold/Heroes chips mount too
+            await SettleLayout(ui);
+
+            float? width = null;
+            float? actChipX = null;
+
+            void AssertStable(string label)
+            {
+                var phaseChip = Find<PanelContainer>(ui, "PhaseChip");
+                var actChip = Find<PanelContainer>(ui, "ActChip");
+                width ??= phaseChip.Size.X;
+                actChipX ??= actChip.GetGlobalRect().Position.X;
+
+                AssertThat(phaseChip.Size.X)
+                    .OverrideFailureMessage(
+                        $"{label}: PhaseChip width {phaseChip.Size.X}px, was {width}px at an earlier " +
+                        "phase — the HUD row is reflowing again (P2-SCREEN-25).")
+                    .IsEqualApprox(width!.Value, 0.5f);
+                AssertThat(actChip.GetGlobalRect().Position.X)
+                    .OverrideFailureMessage(
+                        $"{label}: ActChip moved to x={actChip.GetGlobalRect().Position.X}, was " +
+                        $"{actChipX}px — it shifted because PhaseChip resized under it.")
+                    .IsEqualApprox(actChipX!.Value, 0.5f);
+            }
+
+            foreach (var phase in Enum.GetValues<DayPhase>())
+            {
+                AdvanceToPhase(ui, phase);
+                ui.RefreshAll();
+                await SettleLayout(ui);
+                AssertStable(phase.ToString());
+            }
+
+            // The exact pair the owner's capture caught mid-jump: Dawn -> Prepare, same phase.
+            AdvanceToPhase(ui, DayPhase.Morning);
+            ui.RefreshAll();
+            await SettleLayout(ui);
+            AssertStable("Dawn");
+
+            ui.Adapter.Queue(new OpenCounterAction());
+            ui.Adapter.AdvancePhase();
+            ui.RefreshAll();
+            await SettleLayout(ui);
+            AssertThat(ChipValueText(ui, "PhaseChip"))
+                .OverrideFailureMessage("this test needs the live word to actually flip to Prepare")
+                .IsEqual("Prepare");
+            AssertStable("Prepare");
         }
         finally
         {
@@ -253,6 +438,27 @@ public class PhaseVocabTests
             PlaytestLog.RedirectForTests(null);
         }
     }
+
+    // ── P2-SCREEN-25 helpers: read the two vocabulary surfaces exactly as a player would see them ──
+
+    /// <summary>The rendered text of a named HUD stat chip's "Value" label — <paramref
+    /// name="chipName"/> scopes the lookup to ONE chip, since every stat chip's value label
+    /// shares the same bare "Value" node name (<c>UiKit.StatChip</c>'s own contract).</summary>
+    private static string ChipValueText(Node root, string chipName) =>
+        ((Label)Find<PanelContainer>(root, chipName).FindChild("Value", recursive: true, owned: false)!).Text;
+
+    /// <summary>The rendered text of the day-timeline segment for <paramref name="phase"/> —
+    /// scoped to that ONE segment's own subtree, since <c>DayTimeline.Build</c> gives every
+    /// segment's Label the same bare (unnamed-by-name) default, only the segment's own name is
+    /// discoverable.</summary>
+    private static string SegmentText(MainUi ui, DayPhase phase) =>
+        ScreenObservation.Descendants(Find<VBoxContainer>(ui.Timeline, $"TimelinePhase_{phase}"))
+            .OfType<Label>().Single().Text;
+
+    /// <summary>The day-timeline segment CURRENTLY highlighted (<see
+    /// cref="GodotClient.Ui.ObjectiveTracker.DayTimeline.Current"/>) — the one segment <see
+    /// cref="GodotClient.Ui.ObjectiveTracker.DayTimeline.Refresh"/> can paint with a live word.</summary>
+    private static string TimelineCurrentSegmentText(MainUi ui) => SegmentText(ui, ui.Timeline.Current);
 
     // ── helpers: never clobber a real campaign save (CampaignSaveTests' own precedent) ──────────
 
