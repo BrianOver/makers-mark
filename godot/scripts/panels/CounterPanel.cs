@@ -113,7 +113,7 @@ public partial class CounterPanel : SimPanel
 
         BuildActiveCustomerCard(state, hero);
         BuildNextStep(counter, hero);
-        BuildMeters(counter);
+        BuildMeters(state, counter, hero);
         BuildDesk(state, counter, hero);
         BuildPresentedAndOffer(state, counter);
         BuildPresentReplyBubble(counter);
@@ -238,17 +238,30 @@ public partial class CounterPanel : SimPanel
         label.Name = "CounterNextStep";
     }
 
-    /// <summary>Interest/Patience/Goodwill/Round — the sim's own integers rendered 1:1, no
-    /// UI-side arithmetic (CounterPanelTests pins this).</summary>
-    private void BuildMeters(CounterState counter)
+    /// <summary>Interest/Patience/Standing/Round — the sim's own integers rendered 1:1, no
+    /// UI-side arithmetic (CounterPanelTests pins this). Standing replaces the raw
+    /// <see cref="CounterState.GoodwillPermille"/> reading this used to print (P2-ONBOARD-09):
+    /// Goodwill is a per-session fleece-memory number nothing else reads for player-facing
+    /// purposes, while the value that actually pays off — <see cref="RelationshipBands.For"/>,
+    /// fed by <see cref="Hero.MoodPermille"/> and shelf purchases — is what
+    /// <see cref="GameSim.Heroes.CommissionSystem"/>'s premium bonus and Bryn's own redemption
+    /// beat (<c>TutorialFlow.RuleRevisedFactLanded</c>) both key on. Decision 2 ("price for the
+    /// sale, or price for the relationship") only reads as a real choice if the counter names the
+    /// fact the sim actually acts on, not an internal counter the player can't act on. Reuses
+    /// <see cref="HeroChips.StandingChip"/> — the same chip HeroPanel/CampPanel already render for
+    /// this hero, so the band is never toned or worded two different ways.</summary>
+    private void BuildMeters(GameState state, CounterState counter, Hero? hero)
     {
         var row = AddRow(_body!);
         row.AddChild(StatChip("Interest", $"{counter.InterestPermille}",
             counter.InterestPermille > 0 ? UiKit.ChipTone.Positive : UiKit.ChipTone.Neutral));
         row.AddChild(StatChip("Patience", $"{counter.PatienceRounds}",
             counter.PatienceRounds <= 1 ? UiKit.ChipTone.Negative : UiKit.ChipTone.Neutral));
-        row.AddChild(StatChip("Goodwill", $"{counter.GoodwillPermille}",
-            counter.GoodwillPermille < 0 ? UiKit.ChipTone.Negative : UiKit.ChipTone.Neutral));
+        if (hero is not null)
+        {
+            row.AddChild(HeroChips.StandingChip(hero.Id, state, hero.MoodPermille));
+        }
+
         row.AddChild(StatChip("Round", $"{counter.Round}", UiKit.ChipTone.Accent));
     }
 
