@@ -1689,6 +1689,15 @@ public class MineWatchTests
                 "they own; see this test's own comment for the separate, accepted UpdateDepartureSlate/" +
                 "PanelGraveyard baseline noise this budget already covers.")
             .IsLess(LeakBudget);
+
+        // The budget above is deliberately non-zero (see this test's own comment): a standalone
+        // MineWatch never mounted under MainUi never drains the PanelGraveyard rows
+        // UpdateDepartureSlate buries. That is fine for THIS test's own assertion, measured before
+        // this drain runs, but those QueueFree'd rows would otherwise sit as real orphans for the
+        // rest of the suite's shared Godot runtime — the exact cumulative pressure that truncates
+        // engine-tests CI runs (see .runsettings). Draining here after the measurement costs this
+        // test nothing and stops it from contributing that pressure to every test that runs after it.
+        MainUi.DrainDetachedPanelsForTests();
     }
 
     private static int OrphanNodeCount() => (int)Performance.GetMonitor(Performance.Monitor.ObjectOrphanNodeCount);

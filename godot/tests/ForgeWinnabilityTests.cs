@@ -80,34 +80,41 @@ public class ForgeWinnabilityTests
     public void AColdBilletStillMoves_SoTheActCanAlwaysClose()
     {
         var act1 = new ForgeMinigame();
-        act1.Configure(DaggerRecipe, ScriptedSession.CraftMaterial, ProfessionRegistry.Blacksmith,
-            ImmutableSortedSet<string>.Empty, day: 0, demonstratedAccuracyPermille: 500);
-
-        // Drain to Brian's state: strike until the heat bottoms out, never pumping.
-        for (var i = 0; i < 40 && act1.HeatYPermille > 0 && !act1.Completed; i++)
+        try
         {
+            act1.Configure(DaggerRecipe, ScriptedSession.CraftMaterial, ProfessionRegistry.Blacksmith,
+                ImmutableSortedSet<string>.Empty, day: 0, demonstratedAccuracyPermille: 500);
+
+            // Drain to Brian's state: strike until the heat bottoms out, never pumping.
+            for (var i = 0; i < 40 && act1.HeatYPermille > 0 && !act1.Completed; i++)
+            {
+                act1.ForgeStrike();
+            }
+
+            if (act1.Completed)
+            {
+                return; // finished before going cold — not the state under test, and not a failure
+            }
+
+            AssertThat(act1.HeatYPermille)
+                .OverrideFailureMessage("could not drive the billet cold; the test no longer reproduces Brian's state")
+                .IsEqual(0);
+
+            var shapeBefore = act1.ShapeXPermille;
             act1.ForgeStrike();
-        }
 
-        if (act1.Completed)
+            AssertThat(act1.ShapeXPermille)
+                .OverrideFailureMessage(
+                    $"A strike on a stone-cold billet advanced the shape by 0 (still {act1.ShapeXPermille} "
+                    + $"after {act1.StrikesLanded} strikes, assist x{act1.AssistMultiplier:0.00}). That is a "
+                    + "softlock the readout describes as \"the billet is yielding, keep going\" — the player "
+                    + "can hammer forever and never finish. A cold strike must still buy SOMETHING.")
+                .IsGreater(shapeBefore);
+        }
+        finally
         {
-            return; // finished before going cold — not the state under test, and not a failure
+            act1.Free();
         }
-
-        AssertThat(act1.HeatYPermille)
-            .OverrideFailureMessage("could not drive the billet cold; the test no longer reproduces Brian's state")
-            .IsEqual(0);
-
-        var shapeBefore = act1.ShapeXPermille;
-        act1.ForgeStrike();
-
-        AssertThat(act1.ShapeXPermille)
-            .OverrideFailureMessage(
-                $"A strike on a stone-cold billet advanced the shape by 0 (still {act1.ShapeXPermille} "
-                + $"after {act1.StrikesLanded} strikes, assist x{act1.AssistMultiplier:0.00}). That is a "
-                + "softlock the readout describes as \"the billet is yielding, keep going\" — the player "
-                + "can hammer forever and never finish. A cold strike must still buy SOMETHING.")
-            .IsGreater(shapeBefore);
     }
 
     /// <summary>
@@ -119,24 +126,31 @@ public class ForgeWinnabilityTests
     public void AColdBillet_TellsThePlayerToWorkTheBellows()
     {
         var act1 = new ForgeMinigame();
-        act1.Configure(DaggerRecipe, ScriptedSession.CraftMaterial, ProfessionRegistry.Blacksmith,
-            ImmutableSortedSet<string>.Empty, day: 0, demonstratedAccuracyPermille: 500);
-
-        for (var i = 0; i < 40 && act1.HeatYPermille > ForgeMinigame.ColdBilletHeatPermille && !act1.Completed; i++)
+        try
         {
-            act1.ForgeStrike();
-        }
+            act1.Configure(DaggerRecipe, ScriptedSession.CraftMaterial, ProfessionRegistry.Blacksmith,
+                ImmutableSortedSet<string>.Empty, day: 0, demonstratedAccuracyPermille: 500);
 
-        if (act1.Completed)
+            for (var i = 0; i < 40 && act1.HeatYPermille > ForgeMinigame.ColdBilletHeatPermille && !act1.Completed; i++)
+            {
+                act1.ForgeStrike();
+            }
+
+            if (act1.Completed)
+            {
+                return;
+            }
+
+            AssertThat(act1.ReadoutText.ToLowerInvariant())
+                .OverrideFailureMessage(
+                    $"At heat {act1.HeatYPermille} the readout says \"{act1.ReadoutText}\" — it must name the "
+                    + "cold and point at the bellows, not tell the player to keep striking.")
+                .Contains("bellows");
+        }
+        finally
         {
-            return;
+            act1.Free();
         }
-
-        AssertThat(act1.ReadoutText.ToLowerInvariant())
-            .OverrideFailureMessage(
-                $"At heat {act1.HeatYPermille} the readout says \"{act1.ReadoutText}\" — it must name the "
-                + "cold and point at the bellows, not tell the player to keep striking.")
-            .Contains("bellows");
     }
 
     /// <summary>
