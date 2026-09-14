@@ -377,7 +377,7 @@ public class CampPanelTests
     // slate now behaves honestly.
 
     [TestCase]
-    public void CampedParty_StillRendersAnchorVoiceChipsFloorCaptionAndLiveVerbs()
+    public async Task CampedParty_StillRendersAnchorVoiceChipsFloorCaptionAndLiveVerbs()
     {
         var ui = MountAtCamp();
         try
@@ -397,6 +397,16 @@ public class CampPanelTests
 
             // Hero-facing-day H1: the floor caption naming what's still ahead.
             AssertThat(text).Contains("Still ahead, in the dark:");
+
+            // visfix5's CampPanel.SizeCardToContent recomputes the card's height from _parties'
+            // live minimum size in _Process (CampPanel.cs's own doc: a freshly re-added Container
+            // child's minimum size is not reliably settled until its own parent's deferred sort has
+            // run), one real frame after Render() populates it — same reason
+            // CampCard_HeightTracksItsOwnContent_... (below) already awaits this. Skipping it here
+            // reads the card at EnsureBuilt's OWN initial fit (computed before Render ever ran, for
+            // an empty _parties), which clips every per-party row's Control rect out of
+            // ClickableButtons' clipping-ancestor check — not a "verb removed", a stale rect.
+            await SettleLayout(ui);
 
             // All four live verbs still respond to a real click — the fix only removes a verb when
             // there is truly nobody to aim it at, never when a party is actually camped.

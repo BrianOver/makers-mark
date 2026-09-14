@@ -76,12 +76,20 @@ namespace GodotClient.Panels;
 ///
 /// <para>visfix5: the three-verbs description above holds for the one shape this modal is meant to
 /// be seen in — a real, non-empty <see cref="GameState.InFlight"/>. A caller that forces <see
-/// cref="ShowModal"/> open anyway (a dev bridge, a screenshot harness) with nobody camped gets none
-/// of those verbs and a title that says so — see <see cref="Render"/>'s own empty-branch remarks —
-/// rather than the old contradiction of a title claiming a camp existed, a body saying none did,
-/// and "Send them deeper" still live for a party that was not there. <see cref="SizeCardToContent"/>
-/// is the other half: the card itself now tracks how much of the above it actually has to say,
-/// rather than always being exactly window-minus-margin tall.</para>
+/// cref="ShowModal"/> open anyway (a dev bridge, a screenshot harness) OUTSIDE <see
+/// cref="DayPhase.Camp"/> entirely gets none of those verbs and a title that says so — see <see
+/// cref="Render"/>'s own empty-branch remarks — rather than the old contradiction of a title
+/// claiming a camp existed, a body saying none did, and "Send them deeper" still live for a party
+/// that was not there. <see cref="SizeCardToContent"/> is the other half: the card itself now tracks
+/// how much of the above it actually has to say, rather than always being exactly
+/// window-minus-margin tall.</para>
+///
+/// <para>visfix5-fix823: "Send them deeper" is the one exception to "presupposes a camped party" —
+/// see <see cref="Render"/>'s own remarks on why it is gated on <see cref="DayPhase.Camp"/> rather
+/// than on <see cref="GameState.InFlight"/>, so a Camp day that resolved with nobody actually
+/// stopping at the checkpoint (<c>RaidConductor.Beat.DeepTick</c>, the common case) still lets the
+/// player answer/close the stop instead of leaving the tutorial's last verb permanently
+/// Disabled.</para>
 /// </summary>
 public partial class CampPanel : SimPanel
 {
@@ -101,11 +109,16 @@ public partial class CampPanel : SimPanel
     private VBoxContainer? _parties;
     private Label? _rejection;
 
-    /// <summary>visfix5: the three controls that presuppose a camped party exists — hidden (never
-    /// merely disabled-and-visible) whenever <see cref="GameState.InFlight"/> is empty, so the slate
-    /// stops offering a verb it cannot honour for nobody. See <see cref="Render"/>.</summary>
+    /// <summary>visfix5: the Forge hint/button presuppose a camped party exists (there is no "them"
+    /// to forge for otherwise) — hidden (never merely disabled-and-visible) whenever <see
+    /// cref="GameState.InFlight"/> is empty, so the slate stops offering a verb it cannot honour for
+    /// nobody. See <see cref="Render"/>.</summary>
     private Label? _forgeHint;
     private Button? _forgeButton;
+
+    /// <summary>visfix5-fix823: gated on <see cref="DayPhase.Camp"/>, NOT on <see
+    /// cref="GameState.InFlight"/> — see <see cref="Render"/>'s own remarks for why "Send them
+    /// deeper" is the one verb that must not presuppose an actual camped party.</summary>
     private Button? _deeperButton;
 
     /// <summary>visfix5: the card's own bounded region (<see cref="BuildFittedModalCard"/>'s
@@ -247,10 +260,10 @@ public partial class CampPanel : SimPanel
         // reached through; law 3 — every verb changes an outcome or reveals the player's stake):
         // Send/Recall's own per-member GateButton calls already refuse honestly when there is
         // nobody to send to or recall (they are built per camped party, inside the loop above, so
-        // an empty InFlight already renders none of them). The title and the three controls below
-        // are the ones EnsureBuilt built once, unconditionally, before this fix — every one of them
-        // presupposes a camped party exists, so none may render live for an empty vigil. The title
-        // itself must stop asserting a camp that is not there, not just go quiet about the verbs.
+        // an empty InFlight already renders none of them). The title and Forge below presuppose a
+        // camped party exists (there is no "them" to forge for otherwise), so neither may render
+        // live for an empty vigil. The title itself must stop asserting a camp that is not there,
+        // not just go quiet about the verbs.
         var partyCamped = !state.InFlight.IsEmpty;
         _title!.Text = partyCamped
             ? "They've made camp above the deep floors. Send supplies, bring them home — or send them deeper."
@@ -258,8 +271,24 @@ public partial class CampPanel : SimPanel
         _forgeHint!.Visible = partyCamped;
         _forgeButton!.Visible = partyCamped;
         _forgeButton!.Disabled = !partyCamped;
-        _deeperButton!.Visible = partyCamped;
-        _deeperButton!.Disabled = !partyCamped;
+
+        // visfix5-fix823: "Send them deeper" is NOT the same claim as "a party is camped" — it is
+        // the one control that answers RaidConductor.Beat.VigilStop, and VigilStop is deliberately
+        // the UNCOMMON reason Camp is reached (RaidConductor.cs: DayPhase.Camp maps to VigilStop
+        // only when InFlight is non-empty; an empty-InFlight Camp auto-advances to DeepTick without
+        // ever pausing). Gating this button on InFlight instead of on actually BEING at Camp made it
+        // Disabled the moment a day's parties all resolved without a checkpoint stop — reproduced by
+        // TutorialFlowTests.Step7_Completes_OnSendDeeper (a real day-2 Camp phase, confirmed empty
+        // InFlight — sim/GameSim.Expedition.ExpeditionSystem: a fresh roster's own target floor 1
+        // needs no checkpoint) — silently blocking the tutorial's last step. The panel never enforces
+        // a rule (AE4, this class's own doc): CampPanel.SendDeeperRequested carries no precondition
+        // of its own, and RaidConductor.ResolveVigil already no-ops safely when Current isn't
+        // VigilStop, so gating on the phase and letting the conductor decide is the same "submit and
+        // let the kernel/conductor answer" shape as every verb below it — never a second copy of
+        // VigilStop's own condition.
+        var vigilPhaseOpen = state.Phase == DayPhase.Camp;
+        _deeperButton!.Visible = vigilPhaseOpen;
+        _deeperButton!.Disabled = !vigilPhaseOpen;
     }
 
     private void RenderParty(GameState state, InFlightExpedition party, ImmutableList<Item> held)
