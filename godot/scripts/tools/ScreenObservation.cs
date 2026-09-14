@@ -153,7 +153,11 @@ public static class ScreenObservation
     /// ancestor walk (same two clipping shapes, same tolerance) so the two can never drift apart
     /// again — "clickable" and "the region a click can actually land in" are now the same question.
     /// </summary>
-    private static bool FullyInsideEveryClippingAncestor(Control control)
+    /// <remarks>Public (fix/visfix1) so the 481px fold-budget guard can ask the identical question
+    /// about a control that is not a <see cref="Button"/> — a venue tile, a section root. A second
+    /// hand-rolled copy of this ancestor walk in a test file is exactly the drift this method's own
+    /// history warns about.</remarks>
+    public static bool FullyInsideEveryClippingAncestor(Control control)
     {
         for (var parent = control.GetParent(); parent is not null; parent = parent.GetParent())
         {

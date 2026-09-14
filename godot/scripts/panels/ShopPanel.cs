@@ -220,13 +220,23 @@ public partial class ShopPanel : SimPanel
     /// "would buy nothing — reason") with only the hero's name prefixed — two phrasings of one
     /// forecast is a drift bug waiting to happen.</para>
     /// </summary>
+    /// <para><b>481px re-lay (owner ruling 2026-09-14).</b> A <see cref="UiKit.Disclosure"/>, not a
+    /// Section. This block renders one line PER LIVING HERO — six of them on a full roster — and it
+    /// sits between "Your Shelf" and "Unshelved Crafts", i.e. between the drop TARGET and the drag
+    /// SOURCE of this panel's core verb. In a 481px drawer that is the whole reason
+    /// <c>RealDragOntoShelfTests</c> cannot get both ends of the gesture on screen at once. Folding
+    /// it keeps the forecast exactly where it is (moving it was tried and reverted — see
+    /// <c>HudBoundsTests</c>' own note) and returns ~5 rows of height to the two sections that
+    /// actually need to be co-visible. The header still counts the buyers, so the sell-or-hold
+    /// decision never depends on opening it.</para>
     private void BuildForecastSection(GameState state)
     {
-        var section = Section("Who Would Buy This");
+        var section = UiKit.Disclosure("Who Would Buy This");
         _content!.AddChild(section.Root);
 
         if (state.Player.Shelf.IsEmpty)
         {
+            section.Summary.Text = "nothing shelved yet";
             AddLabel(section.Body, "Nothing on the shelf to forecast — stock something first.");
             return;
         }
@@ -234,18 +244,29 @@ public partial class ShopPanel : SimPanel
         var aliveHeroes = state.Heroes.Values.Where(h => h.Alive).ToList();
         if (aliveHeroes.Count == 0)
         {
+            section.Summary.Text = "no heroes in town";
             AddLabel(section.Body, "  (no heroes in town to forecast for)");
             return;
         }
 
+        var wouldBuy = 0;
         foreach (var hero in aliveHeroes)
         {
             var forecast = HeroForecast.ForShelfAsItStands(state, hero.Id);
             var heroName = HeroName(hero.Id);
+            if (forecast.WouldBuy)
+            {
+                wouldBuy++;
+            }
+
             AddLabel(section.Body, forecast.WouldBuy
                 ? $"  {heroName} — as the shelf stands: would buy {forecast.ItemName} — {forecast.Reason}"
                 : $"  {heroName} — as the shelf stands: would buy nothing — {forecast.Reason}");
         }
+
+        // The one fact the fold may not eat: whether ANYONE would buy the shelf as it stands. That
+        // is the sell-or-hold call this section exists for; the per-hero reasons are the detail.
+        section.Summary.Text = $"{wouldBuy} of {aliveHeroes.Count} would buy as the shelf stands";
     }
 
     /// <summary>The day's pass-reasons, grouped per item (R8/AE4 — the legible half).</summary>
@@ -605,14 +626,21 @@ public partial class ShopPanel : SimPanel
             Bands.First(b => rivalMarketSharePermille < b.UpperBoundExclusive);
     }
 
+    /// <para><b>481px re-lay (owner ruling 2026-09-14).</b> A <see cref="UiKit.Disclosure"/>: the
+    /// rival's stall is a read-only comparison the player consults when pricing, not a verb, and it
+    /// renders a full art card per rival item at the BOTTOM of a 481px drawer. The header keeps the
+    /// one line that actually feeds the price-for-the-sale-or-the-relationship decision — the Rival
+    /// Edge phrase (P2-HONEST-17's meter) — so folding the cards away never costs the player a
+    /// fact they were pricing against.</para>
     private void BuildRivalSection(GameState state)
     {
-        var section = Section("Rival Shelf");
+        var section = UiKit.Disclosure("Rival Shelf");
         _content!.AddChild(section.Root);
 
         // P2-HONEST-17: the meter, not the number — see RivalEdgeGradient's own doc.
         var edge = RivalEdgeGradient.For(state.RivalMarketSharePermille);
         AddChip(section.Body, StatChip("Rival Edge", edge.Phrase, edge.Tone));
+        section.Summary.Text = edge.Phrase;
 
         if (state.RivalShelf.IsEmpty)
         {
