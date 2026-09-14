@@ -551,8 +551,37 @@ public partial class MainUi : Control
             state = StageGateHeldStreakReceipt(state);
         }
 
+        // P2-MEMORY-22 receipt seam ONLY, same contract as the four above: the memorial wall's
+        // lantern row needs real recorded deaths, which a fresh day-1 campaign has none of and a
+        // screenshot has no business scripting via real play. SHOT_MEMORIAL_DEATHS=<n> plants n
+        // Memorial records (DramaState.Memorials) and nothing else — Town2D's own
+        // RefreshMemorialWallLanterns then decides for itself how many lanterns to draw, exactly
+        // as it would in play. Never reads in real play.
+        var memorialDeaths = System.Environment.GetEnvironmentVariable("SHOT_MEMORIAL_DEATHS");
+        if (!string.IsNullOrEmpty(memorialDeaths) && int.TryParse(memorialDeaths, out var memorialDeathCount) && memorialDeathCount > 0)
+        {
+            state = StageMemorialDeathsReceipt(state, memorialDeathCount);
+        }
+
         return new SimAdapter(state);
     }
+
+    /// <summary>
+    /// Dev/receipt tool only (never called from real play): plants <paramref name="count"/>
+    /// synthetic <see cref="Memorial"/> records — same shape <c>ExpeditionRevealSystem</c> writes
+    /// on a real hero death, just staged directly rather than driving a whole fight — so
+    /// <see cref="Town2D"/>'s memorial wall has something real to count when a screenshot needs
+    /// one without scripting several real campaigns' worth of losses first.
+    /// </summary>
+    private static GameState StageMemorialDeathsReceipt(GameState state, int count) => state with
+    {
+        Drama = state.Drama with
+        {
+            Memorials = Enumerable.Range(1, count)
+                .Select(i => new Memorial(new HeroId(9000 + i), $"Fallen {i}", state.Day, "a worn blade"))
+                .ToImmutableList(),
+        },
+    };
 
     /// <summary>
     /// Dev/receipt tool only (never called from real play): puts one player-marked piece in
@@ -1852,7 +1881,9 @@ public partial class MainUi : Control
             Town.WorkshopNametag, Town.WorkshopStationNoun, Town.WorkshopMaterialsStationId, Town.WorkshopCraftStationId);
         Tutorial.RefreshAffordances(state);
         ShowQuickTravelUnlockedLessonIfEarned();
-        Timeline.Refresh(state.Phase, Waiting);
+        // P2-SCREEN-25: the live word, not the context-free one — see DayTimeline.Refresh's own
+        // remark for why the strip needs it too.
+        Timeline.Refresh(state.Phase, Waiting, PhaseVocab.Display(state));
         UpdateClockLabel(); // U3/U4: bell verb + player-phase banner are state-driven — refresh on every tick, not only per-frame _Process
         RefreshBellTray(); // U3 (KTD-B): keep the tray honest on every tick too, not only on submit
         RefreshSurfaceUnlocks(state); // U3 (tutorial-revamp plan): keep the seven gated tray books honest too
@@ -2189,11 +2220,13 @@ public partial class MainUi : Control
         }
     }
 
-    /// <summary>Clearance (px) the interact-prompt chip's bottom edge keeps above the true window
-    /// bottom — the AdventureTicker's own reserved band (28px, <c>tickerWrap.CustomMinimumSize</c>
-    /// in <see cref="BuildUi"/>) plus one <see cref="GameTheme.Space16"/> gap, so the marquee's
-    /// full-width scrolling line never runs under the chip's text.</summary>
-    private const float InteractPromptBottomMargin = 28f + GameTheme.Space16;
+    /// <summary>P2-SCREEN-22: world-px clearance the chip's bottom edge keeps above the nametag it
+    /// floats over (see <see cref="UpdateInteractPrompt"/>) — small on purpose, the same "clear of
+    /// the roof, centered above" gap <see cref="Town2d.Building2D.BuildLabel"/> already keeps
+    /// between the nametag and the sprite it labels, not a screen-space margin (this value is added
+    /// to a WORLD position before <see cref="Town2d.Town2D.WorldToScreen"/> runs, so it scales with
+    /// <see cref="Town2d.Town2D.CanvasShrink"/> exactly like the nametag itself does).</summary>
+    private const float InteractPromptWorldGap = 4f;
 
     /// <summary>
     /// U12 (§11.14.14, R13): "the core interaction verb of this game has no on-screen affordance"
@@ -2206,21 +2239,34 @@ public partial class MainUi : Control
     ///
     /// <para>Called every <see cref="_Process"/> frame (unlike <see cref="UpdateObjectiveDock"/>'s
     /// once-per-tick contract): the target a player is nearest to can change on ANY physics frame,
-    /// not just a phase boundary. The early-return below keeps a steady-state frame (no target
-    /// change) to a single string comparison — the Label write and re-dock only happen the frame
-    /// the text actually changes.</para>
+    /// not just a phase boundary.</para>
+    ///
+    /// <para><b>P2-SCREEN-22:</b> a design capture found "E · Forge" rendered on the TAVERN's roof
+    /// while the player stood at the forge door — the chip was anchored CenterBottom, a fixed
+    /// screen point, so it named one building while sitting wherever the camera happened to frame
+    /// the bottom of the screen. It also persisted through a Send-Off/mine-gate camera pan (<see
+    /// cref="Town2d.Town2D.IsCameraOnPlayer"/> false): <see cref="Town2d.WorldInput2D"/> keeps
+    /// scanning while the player keeps walking during one of those (see <see
+    /// cref="Town2d.Town2D.FocusOn"/>'s own doc), so a target stayed active the whole time the
+    /// visible frame showed somewhere else entirely. Fixed on both counts: the chip now floats
+    /// above <see cref="Town2d.WorldInput2D.ActiveTarget"/>'s OWN nametag (<see
+    /// cref="Town2d.Building2D.NameLabel"/> — the same world-space anchor the nametag itself
+    /// already uses, projected through <see cref="Town2d.Town2D.WorldToScreen"/> rather than a
+    /// second, independent anchoring scheme), re-read every frame since the camera can move the
+    /// target's screen position even while the target itself never changes; and it is hidden
+    /// outright while the camera is off the player, since a target-relative chip cannot honestly
+    /// point at anything while the target is not where the screen says it is.</para>
     /// </summary>
     private void UpdateInteractPrompt()
     {
         var text = Town.WorldInputNode.PromptText;
-        if (text == _interactPromptLabel.Text)
+        if (text != _interactPromptLabel.Text)
         {
-            return;
+            _interactPromptLabel.Text = text;
         }
 
-        _interactPromptLabel.Text = text;
-        _interactPrompt.Visible = !string.IsNullOrEmpty(text);
-
+        var target = Town.WorldInputNode.ActiveTarget;
+        _interactPrompt.Visible = target is not null && Town.IsCameraOnPlayer;
         if (!_interactPrompt.Visible)
         {
             return;
@@ -2228,13 +2274,34 @@ public partial class MainUi : Control
 
         // Hug the text rather than a fixed dock width (Objective/Tutorial's own DockWidth exists
         // for a multi-line reading column; a one-line "E · Forge" chip should not claim 320px of
-        // the world view) — re-centered here since the string, and so the chip's own minimum
-        // width, just changed.
+        // the world view).
         var size = _interactPrompt.GetCombinedMinimumSize();
-        _interactPrompt.OffsetLeft = -size.X / 2f;
-        _interactPrompt.OffsetRight = size.X / 2f;
-        _interactPrompt.OffsetBottom = -InteractPromptBottomMargin;
-        _interactPrompt.OffsetTop = _interactPrompt.OffsetBottom - size.Y;
+
+        // Anchor over the target's OWN nametag — the same world-space point BuildLabel already
+        // centers above the sprite for every building AND interior station alike, so the chip and
+        // the name it carries can never independently drift apart. Lifted one small world-px gap
+        // clear of the nametag (see InteractPromptWorldGap) rather than drawn on top of it.
+        var nameplateTopCenter = target!.NameLabel.GlobalPosition
+            + new Vector2(target.NameLabel.Size.X / 2f, -InteractPromptWorldGap);
+        var anchorScreen = Town.WorldToScreen(nameplateTopCenter);
+        var wanted = new Vector2(anchorScreen.X - size.X / 2f, anchorScreen.Y - size.Y);
+
+        // HudBoundsTests (ObjectiveChip_TextNeverOverflowsItsOwnContainer, reproduced on a fresh
+        // Day-1 mount that spawns the player right next to the Forge): the nametag this chip floats
+        // above can itself sit close enough to a screen edge — here, the TOP — that lifting the chip
+        // one more chip-height clear of it pushes the chip itself off-window. Neither existing guard
+        // catches this: there IS a target, and the camera IS on the player. A prompt anchored to a
+        // world object will sometimes point at something near an edge, so the chip is clamped fully
+        // inside the viewport rather than left to follow its target off-screen — the same contract
+        // Objective/Tutorial already keep (see UpdateTutorialSize's own viewport-relative clamp
+        // above) — not a return to the old fixed CenterBottom anchor this PR replaced.
+        var viewport = GetViewportRect().Size;
+        var clamped = new Vector2(
+            Mathf.Clamp(wanted.X, 0f, Mathf.Max(0f, viewport.X - size.X)),
+            Mathf.Clamp(wanted.Y, 0f, Mathf.Max(0f, viewport.Y - size.Y)));
+
+        _interactPrompt.Size = size;
+        _interactPrompt.GlobalPosition = clamped;
     }
 
     /// <summary>U18/U15: the day-timeline's engaged-wait indicator mirrors <see cref="
@@ -2283,6 +2350,21 @@ public partial class MainUi : Control
         // leak the timeline strip and continue screen had, just in a third place. One vocabulary now.
         var phaseChip = NamedStatChip("PhaseChip", "Phase", PhaseVocab.Display(state), UiKit.ChipTone.Accent);
         phaseChip.TooltipText = PhaseLegend;
+
+        // P2-SCREEN-25 (owner GPU capture: HUD read "Phase Prepare" while the tab strip six
+        // pixels below it read "Dawn" for the identical moment): the chip's Value label naturally
+        // sizes to its OWN text, so every phase transition that changes the rendered word ("Dawn"
+        // -> "Prepare" -> "Quest" -> ...) also resized this chip, shoving Act/Gold/Heroes/rent/
+        // slot-pips sideways in the same HudStatRow the moment it happened. Reserving the Value
+        // label's width against PhaseVocab.AllLiveWords (every word this chip can EVER hold,
+        // measured against the real font it renders with — see UiKit.WidestTextWidth's own
+        // remark) makes the chip's footprint constant regardless of which phase word it shows.
+        if (phaseChip.FindChild("Value", recursive: true, owned: false) is Label phaseValue)
+        {
+            phaseValue.CustomMinimumSize = new Vector2(
+                UiKit.WidestTextWidth(PhaseVocab.AllLiveWords, GameTheme.BodyFontSize), 0f);
+        }
+
         calendar.AddChild(phaseChip);
 
         // U-D3: which act of the campaign arc the town is in (I → II → III → ending) — demoted
@@ -2927,7 +3009,7 @@ public partial class MainUi : Control
 
             if (state.Phase == DayPhase.Morning)
             {
-                var ready = HeroesReadyAtGateBadge(state);
+                var ready = HeroesReadyInSquareBadge(state);
                 if (!string.IsNullOrEmpty(ready))
                 {
                     tailParts.Add(ready);
@@ -2968,15 +3050,28 @@ public partial class MainUi : Control
     /// away-on-expedition heroes don't exist yet during Morning — <c>InFlight</c>/
     /// <c>PendingExpeditions</c> are both torn down by the time Evening hands off to the next
     /// day's Morning, see <c>ExpeditionDeepSystem</c>/<c>ExpeditionRevealSystem</c> — so a plain
-    /// Alive count is exactly the roster the send-off tick will actually muster from).</summary>
-    private static string HeroesReadyAtGateBadge(GameState state)
+    /// Alive count is exactly the roster the send-off tick will actually muster from).
+    ///
+    /// <para>P2-SCREEN-26: this used to say "ready at the gate", but at Morning every hero is
+    /// standing in the plaza (<see cref="GodotClient.Town2d.TownLayout2D.MorningSpotAssignments"/>
+    /// clusters the starting six at the Well/GateRoad spots, both plaza-internal landmarks, not the
+    /// mine gate itself) — the gate stays empty until <c>Town2D.DepartWanderingHeroes</c> rallies
+    /// and marches them out once Morning ends. Moving the muster to the actual gate tile was the
+    /// other option; it was rejected because <c>MorningSpotAssignments</c>' own doc calls Morning
+    /// "the day's neutral default, before anything has pulled anyone anywhere in particular", and
+    /// <c>SpotAssignment_NoSpotHoldsMoreThanThreeActors_AcrossEveryPhase</c>/the pinned Morning
+    /// pairwise-distance ceiling both bake in a two-cluster-of-three layout that six-at-one-spot
+    /// would break. Naming the plaza instead costs nothing and matches the noun <see
+    /// cref="GodotClient.Ui.MusterVoice"/> already speaks from ("a party anchor speaks the same
+    /// forecast at the square").</para></summary>
+    private static string HeroesReadyInSquareBadge(GameState state)
     {
         var ready = state.Heroes.Values.Count(h => h.Alive);
         return ready switch
         {
             0 => string.Empty, // "no heroes" is the destitution floor's own message, not the bell's
-            1 => "1 hero ready at the gate",
-            _ => $"{ready} heroes ready at the gate",
+            1 => "1 hero ready in the square",
+            _ => $"{ready} heroes ready in the square",
         };
     }
 
@@ -3512,7 +3607,8 @@ public partial class MainUi : Control
             Clock.ToggleAuto();
             ClockSettings.SaveAutoAdvance(Clock.AutoAdvance); // U15 escape hatch: sticks across campaigns
             UpdateClockLabel();
-            Timeline.Refresh(Adapter.CurrentState.Phase, Waiting); // U18: Auto gates the Waiting predicate too
+            // U18: Auto gates the Waiting predicate too. P2-SCREEN-25: live word, see DayTimeline.Refresh.
+            Timeline.Refresh(Adapter.CurrentState.Phase, Waiting, PhaseVocab.Display(Adapter.CurrentState));
         };
         verbRow.AddChild(_auto);
 
@@ -3521,7 +3617,8 @@ public partial class MainUi : Control
         {
             Clock.TogglePlay();
             UpdateClockLabel();
-            Timeline.Refresh(Adapter.CurrentState.Phase, Waiting); // U18: Playing gates the Waiting predicate too
+            // U18: Playing gates the Waiting predicate too. P2-SCREEN-25: live word, see DayTimeline.Refresh.
+            Timeline.Refresh(Adapter.CurrentState.Phase, Waiting, PhaseVocab.Display(Adapter.CurrentState));
         };
         verbRow.AddChild(_playPause);
 
@@ -3807,6 +3904,7 @@ public partial class MainUi : Control
         Town.HeroClicked += OnTownHeroClicked;
         Town.BuildingClicked += OnTownBuildingClicked;
         Town.AssessorClicked += OnAssessorClicked;
+        Town.MemorialWallClicked += OnMemorialWallClicked;
         // U3 (painted-interiors plan): a station's Picked now carries its WHOLE StationSpec
         // (Action/Focus/HoverLine/FlavorLine), so it routes through its own OnStationActivated
         // rather than straight onto OnInteriorHotspotActivated.
@@ -4194,13 +4292,16 @@ public partial class MainUi : Control
         //     PanelContainer + Label — no dedicated class, mirroring _toastBanner's own inline
         //     shape (this chip's whole job is "mirror one string, show/hide"; ObjectiveTracker's
         //     heavier Refresh/Expand-button contract has nothing here to earn its own class for).
-        //     Anchored CenterBottom and re-centered on every text change in UpdateInteractPrompt
-        //     (called from _Process, tracking Town.WorldInputNode.PromptText's own per-physics-
-        //     frame updates) rather than docked to a fixed width like Objective/Tutorial, since a
-        //     one-line prompt ("E · Forge") should hug its own text, not a 320px reading column. --
+        //     P2-SCREEN-22: TopLeft anchors, positioned every frame in UpdateInteractPrompt via
+        //     GlobalPosition over whatever Town.WorldInputNode.ActiveTarget actually is (projected
+        //     through Town.WorldToScreen) — it used to sit CenterBottom, a fixed screen point that
+        //     named one building while sitting over whichever OTHER building the camera happened
+        //     to frame at the bottom of the screen. Still sized to hug its own text, not a fixed
+        //     dock width like Objective/Tutorial ("E · Forge" should hug its own text, not a
+        //     320px reading column). --
         _interactPrompt = new PanelContainer { Name = "InteractPrompt", Visible = false, MouseFilter = MouseFilterEnum.Ignore };
         AddChild(_interactPrompt);
-        _interactPrompt.SetAnchorsPreset(LayoutPreset.CenterBottom);
+        _interactPrompt.SetAnchorsPreset(LayoutPreset.TopLeft);
         _interactPromptLabel = new Label
         {
             Name = "InteractPromptText",
@@ -4762,6 +4863,12 @@ public partial class MainUi : Control
     /// Show method, never through <see cref="OpenPanel"/>'s scene-panel string switch), not gated
     /// behind a HUD tray button.</summary>
     private void OnAssessorClicked() => Pledge.ShowPledge(Adapter.CurrentState);
+
+    /// <summary>P2-MEMORY-22 ("the east field remembers", link 5): the outdoor memorial wall's own
+    /// entry point — opens the SAME <see cref="LegendsWall"/> the tavern's "storywall" interior
+    /// station and the "OpenLegends" HUD button already open (<see cref="Dev_ShowLegendsWallLive"/>
+    /// is the same call), never a second book.</summary>
+    private void OnMemorialWallClicked() => Legends.ShowWall(Adapter.CurrentState);
 
     /// <summary>
     /// Town building click/interact (R20, T8, U1 painted-interiors plan): <see cref="Town2D"/>'s
@@ -5714,8 +5821,8 @@ public partial class MainUi : Control
 
         // U18: the engaged latch flips on this discrete event (drawer open/close / modal
         // open-close), not only on a phase tick — the waiting indicator must track it here too,
-        // still never per frame.
-        Timeline.Refresh(Adapter.CurrentState.Phase, Waiting);
+        // still never per frame. P2-SCREEN-25: live word, see DayTimeline.Refresh's own remark.
+        Timeline.Refresh(Adapter.CurrentState.Phase, Waiting, PhaseVocab.Display(Adapter.CurrentState));
     }
 
     /// <summary>

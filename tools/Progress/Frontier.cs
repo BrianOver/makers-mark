@@ -31,9 +31,13 @@ public sealed record FrontierRow(
 /// to build tonight. The source system shipped exactly this defect as a <c>type: HITL</c> field
 /// that gated nothing; two of its committed kickoffs would have walked straight into it.</para>
 ///
-/// <para>Also refused: a unit whose id is already written into tracked source (section 9's
-/// warning — it may have shipped inside a PR whose subject carried no per-unit tag), and one
-/// carrying a ceremony flag an unattended run must not perform alone.</para>
+/// <para>Also refused: a unit with at least one CODE hit already written into tracked source
+/// (section 9's warning — it may have shipped inside a PR whose subject carried no per-unit tag),
+/// and one carrying a ceremony flag an unattended run must not perform alone. A unit whose only
+/// source hits are COMMENTS is never refused on that basis alone — a forward-reference doc-comment
+/// deferring a unit's own work ("U33 gives her a graduation line; this unit ships the mechanism…")
+/// must not permanently block the unit it names; see <see cref="SourceTaggedUnbuilt.HasCodeHit"/>.
+/// </para>
 /// </summary>
 public static class Frontier
 {
@@ -52,8 +56,9 @@ public static class Frontier
             status[row.Unit.Id] = row.Status;
         }
 
-        var sourceTagged = new HashSet<string>(
-            result.SourceTaggedUnbuilts.Select(s => s.UnitId), StringComparer.Ordinal);
+        var sourceTaggedByCode = result.SourceTaggedUnbuilts
+            .Where(s => s.HasCodeHit)
+            .ToDictionary(s => s.UnitId, s => s, StringComparer.Ordinal);
 
         var rows = new List<FrontierRow>();
         foreach (var row in result.Domains.SelectMany(d => d.Rows))
@@ -68,7 +73,7 @@ public static class Frontier
                 row.Unit.Title,
                 row.Unit.Flags,
                 row.Unit.Files.Select(f => f.Path).ToList(),
-                Refusal(row.Unit, status, sourceTagged)));
+                Refusal(row.Unit, status, sourceTaggedByCode)));
         }
 
         return rows
@@ -80,7 +85,7 @@ public static class Frontier
     private static string? Refusal(
         UnitRow unit,
         IReadOnlyDictionary<string, UnitStatus> status,
-        IReadOnlySet<string> sourceTagged)
+        IReadOnlyDictionary<string, SourceTaggedUnbuilt> sourceTaggedByCode)
     {
         if (unit.UnparsedDependsOn.Count > 0)
         {
@@ -104,10 +109,13 @@ public static class Frontier
                 + "does not perform alone (Contracts micro-PR, golden re-record, balance re-baseline).";
         }
 
-        if (sourceTagged.Contains(unit.Id))
+        if (sourceTaggedByCode.TryGetValue(unit.Id, out var tagged))
         {
-            return "its id is already written into tracked source on origin/main (section 9) — it may have "
-                + "shipped inside a PR whose subject carried no per-unit tag. Read the cited file first.";
+            var codeSites = tagged.Hits.Where(h => !h.IsComment)
+                .Select(h => $"{h.Path}:{h.Line}");
+            return "its id is already written into tracked source on origin/main as CODE, not just a comment "
+                + $"(section 9) — {string.Join(", ", codeSites)} — it may have shipped inside a PR whose "
+                + "subject carried no per-unit tag. Read the cited file first.";
         }
 
         return null;
