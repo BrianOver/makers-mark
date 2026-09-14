@@ -1,8 +1,11 @@
 #if GDUNIT_TESTS
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
+using System.Text.RegularExpressions;
 using GameSim.Classes;
 using GameSim.Contracts;
+using GameSim.Factions;
 using GameSim.Kernel;
 using GameSim.Materials;
 using GdUnit4;
@@ -80,10 +83,13 @@ public class TavernActsTests
         {
             ui.OpenPanel("Tavern");
 
-            AssertThat(RenderedText(ui.Tavern)).Contains("Offering: 4x copper at 5g each.");
+            // P2-HONEST-25: the faction is named on this row even though standing is neutral and
+            // no tariff has moved — decision 5's goodwill arm has to be visible on the FIRST buy,
+            // not only once a tariff has already shifted the price.
+            AssertThat(RenderedText(ui.Tavern)).Contains("Offering: 4x copper at 5g each (Deepvein Consortium ore).");
 
             PressEnabled(ui.Tavern, $"Pursue_Ore_{PatronId.Value}");
-            AssertThat(RenderedText(ui.Tavern)).Contains("Bram offers 4x copper at 5g each.");
+            AssertThat(RenderedText(ui.Tavern)).Contains("Bram offers 4x copper at 5g each (Deepvein Consortium ore).");
 
             // Real outcome, not a toy: the default quantity is the full offer, and the commit
             // must name exactly that quantity — never a hand-picked default.
@@ -96,6 +102,94 @@ public class TavernActsTests
             AssertThat(RenderedText(ui.Tavern)).Contains("Bought 4x copper from Bram");
         }
         finally { Unmount(ui); }
+    }
+
+    /// <summary>One patron offering one material at neutral standing, day-1 Evening — the same
+    /// shape <see cref="EveningOreThread_PursueThenShakeOnIt_CommitsBuyOre_MatchingTheSpokenOffer"/>
+    /// drives, parametrized by material key so a property test can walk every faction/ore pair the
+    /// registry actually holds.</summary>
+    private static GameState PatronOreOfferDay(string materialKey, int quantity, int unitPrice) =>
+        GameFactory.NewGame(7302, OnePatron()) with
+        {
+            Phase = DayPhase.Evening,
+            OpenOreOffers = ImmutableList.Create(new OreOffered(PatronId, materialKey, quantity, unitPrice)),
+        };
+
+    /// <summary>Isolates one prefixed ore line ("Offering: ..." in Act 1, "Bram offers ..." in Act
+    /// 2) from the rest of the panel's rendered text — anchored on the fixed shape both rows always
+    /// render, so a button label elsewhere on the screen can never pollute the match.</summary>
+    private static string OreLineFrom(string renderedText, string prefix, string materialKey)
+    {
+        var materialName = MaterialRegistry.Require(materialKey).DisplayName.ToLowerInvariant();
+        var pattern = $@"{Regex.Escape(prefix)} \d+x {Regex.Escape(materialName)} at \d+g each(?: \([^)]*\))?\.";
+        var match = Regex.Match(renderedText, pattern);
+        AssertThat(match.Success)
+            .OverrideFailureMessage($"No '{prefix} ...{materialName}...' line found in:\n{renderedText}")
+            .IsTrue();
+        return match.Value;
+    }
+
+    /// <summary>
+    /// P2-HONEST-25. The tavern's own ore rows never named a supplying faction at all before this
+    /// unit — Act 1's "Offering:" row and Act 2's Handshake row both just showed quantity and
+    /// price. Drives every material <see cref="MaterialRegistry.PricedPool"/> holds (the registry
+    /// IS the set — a hand-picked pair stops covering the family the moment a new venue's ore
+    /// ships) at neutral standing, and checks both rows name their faction as a FACT, never a
+    /// recommendation or a predicted future price (the law this unit sits closest to breaking).
+    /// </summary>
+    [TestCase]
+    public void OreThreadRows_NameTheSupplyingFaction_ForEveryLiveMaterial_AsAFactNeverAnOrder()
+    {
+        AssertThat(MaterialRegistry.PricedPool.Length)
+            .OverrideFailureMessage("The priced pool is suspiciously small — this property test would not mean much.")
+            .IsGreaterEqual(15);
+
+        var offenders = new SortedDictionary<string, string>(System.StringComparer.Ordinal);
+
+        foreach (var materialKey in MaterialRegistry.PricedPool)
+        {
+            var faction = FactionRegistry.ByOreKey(materialKey);
+            if (faction is null)
+            {
+                offenders[materialKey] = "no supplying faction is registered for this live material";
+                continue;
+            }
+
+            var ui = MountMainUi(new SimAdapter(PatronOreOfferDay(materialKey, quantity: 2, unitPrice: 5)));
+            try
+            {
+                ui.OpenPanel("Tavern");
+                var roomLine = OreLineFrom(RenderedText(ui.Tavern), "Offering:", materialKey);
+
+                PressEnabled(ui.Tavern, $"Pursue_Ore_{PatronId.Value}");
+                var handshakeLine = OreLineFrom(RenderedText(ui.Tavern), "Bram offers", materialKey);
+
+                foreach (var (label, line) in new[] { ("room", roomLine), ("handshake", handshakeLine) })
+                {
+                    if (!line.Contains(faction.DisplayName, System.StringComparison.Ordinal))
+                    {
+                        offenders[$"{materialKey} ({label})"] = $"row never named its supplier ({faction.DisplayName}): \"{line}\"";
+                        continue;
+                    }
+
+                    if (Regex.IsMatch(line, @"%|should|must|need to|build|worth|recommend", RegexOptions.IgnoreCase))
+                    {
+                        offenders[$"{materialKey} ({label})"] = $"row reads as a recommendation or a predicted payoff, not a fact: \"{line}\"";
+                    }
+                }
+            }
+            finally
+            {
+                Unmount(ui);
+            }
+        }
+
+        AssertThat(offenders.Count)
+            .OverrideFailureMessage(
+                "Every ore row on both tavern surfaces must name its faction (P2-HONEST-25) — a " +
+                "fact, never a recommendation:\n  " +
+                string.Join("\n  ", offenders.Select(kv => $"{kv.Key}: {kv.Value}")))
+            .IsEqual(0);
     }
 
     [TestCase]

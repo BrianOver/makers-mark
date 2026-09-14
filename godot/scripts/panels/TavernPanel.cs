@@ -436,7 +436,7 @@ public partial class TavernPanel : SimPanel
                 ? $"Asking: {ItemVocab.Display(commission.MinQuality)} {ItemVocab.Display(commission.Slot)} by day {commission.DeadlineDay}, +{commission.PremiumGold}g over list{CommissionSystem.SlotHonestyNote(commission.Slot)}."
                 : null,
             PursuedThreadKind.Ore => OpenOreOfferFor(state, hero.Id) is { } offer
-                ? $"Offering: {offer.Quantity}x {MaterialRegistry.Require(offer.MaterialKey).DisplayName.ToLowerInvariant()} at {offer.UnitPrice}g each."
+                ? $"Offering: {offer.Quantity}x {MaterialRegistry.Require(offer.MaterialKey).DisplayName.ToLowerInvariant()} at {offer.UnitPrice}g each{OreFactionNote(offer.MaterialKey)}."
                 : null,
             _ => null,
         };
@@ -470,6 +470,17 @@ public partial class TavernPanel : SimPanel
     /// <see cref="LedgerModal"/> and <c>GameSim.Advisor.ActionLegality.BuyOreLegal</c> make.</summary>
     private static OreOffered? OpenOreOfferFor(GameState state, HeroId hero) =>
         state.OpenOreOffers.FirstOrDefault(o => o.From == hero);
+
+    /// <summary>
+    /// P2-HONEST-25: decision 5's second arm ("buy the ore, or buy the goodwill") only exists if
+    /// the player can see WHOSE goodwill is on the table, and before this unit the tavern's own ore
+    /// rows never named it at all — only <see cref="LedgerModal"/> did, and only once the tariff had
+    /// already moved. Same <see cref="FactionRegistry.ByOreKey"/> lookup <see cref="TariffedCost"/>
+    /// makes for the gate above; this is display-only and moves no gold. A fact ("whose books this
+    /// feeds"), never a recommendation and never a predicted future price — no percent, no verb.
+    /// </summary>
+    private static string OreFactionNote(string materialKey) =>
+        FactionRegistry.ByOreKey(materialKey) is { } faction ? $" ({faction.DisplayName} ore)" : "";
 
     // ── THE HANDSHAKE (Act 2: short, decisive — commits the pursued thread) ──────────────────
 
@@ -611,7 +622,7 @@ public partial class TavernPanel : SimPanel
             return;
         }
 
-        AddLabel(parent, $"  {hero.Name} offers {offer.Quantity}x {MaterialRegistry.Require(offer.MaterialKey).DisplayName.ToLowerInvariant()} at {offer.UnitPrice}g each.");
+        AddLabel(parent, $"  {hero.Name} offers {offer.Quantity}x {MaterialRegistry.Require(offer.MaterialKey).DisplayName.ToLowerInvariant()} at {offer.UnitPrice}g each{OreFactionNote(offer.MaterialKey)}.");
 
         var spin = AddSpinBox(parent, $"HandshakeQty_{hero.Id.Value}", 1, offer.Quantity, offer.Quantity);
 
