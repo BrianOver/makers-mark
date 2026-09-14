@@ -1,9 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Globalization;
 using System.Linq;
 using GameSim.Contracts;
 using GameSim.Expedition;
+using GameSim.Flavor;
+using GameSim.Flavor.Packs;
 using GameSim.Venues;
 using Godot;
 using GodotClient.Ui;
@@ -73,6 +76,7 @@ public sealed partial class TellingPanel : SimPanel
     private GameState? _state;
     private ExpeditionResult? _result;
     private AttributionBeat? _beat;
+    private EventId _beatEventId;
     private TellingScript? _script;
     private TellingStage _stage;
     private int _roundIndex;
@@ -153,6 +157,7 @@ public sealed partial class TellingPanel : SimPanel
         _state = state;
         _result = result;
         _beat = beat;
+        _beatEventId = beatEvent.Id;
         _script = script;
         _stage = TellingStage.Framing;
         _roundIndex = 0;
@@ -448,6 +453,18 @@ public sealed partial class TellingPanel : SimPanel
         }
     }
 
+    /// <summary>
+    /// P2-PROOF-06: the copy pack. Each shape has several phrasings in <see cref="TellingPack"/>;
+    /// <see cref="PickVerdictLine"/> below is the ONE call that picks among them, and the pick is
+    /// deterministic — CLAUDE.md hard rule 5 (determinism: same seed + same actions = identical
+    /// state) applies to this line same as any sim number, because a re-opened Telling that reads
+    /// differently on the second viewing would make the player doubt the proof itself. No
+    /// <see cref="System.Random"/>, no wall clock, no counter tied to how many times the panel has
+    /// been opened — see <see cref="PickVerdictLine"/>'s own doc for what actually drives the pick.
+    /// The generic fallback line for an unhandled payload type is unchanged from before this unit
+    /// (append-only enum, CLAUDE.md hard rule 12's own no-participation-credit law: a shape with no
+    /// staging still reads as "unclear" rather than inventing a beat).
+    /// </summary>
     private (string Headline, string Detail) VerdictLines()
     {
         var itemName = ItemNameOf(_beat!.Item);
@@ -456,33 +473,53 @@ public sealed partial class TellingPanel : SimPanel
 
         return _script.Payload switch
         {
-            KillingBlowPayload p => (
-                $"{itemName} turned the killing blow on floor {floor}. {heroName} lives.",
-                $"The blow read {p.HeroRoll}. Without {itemName}, it deals {p.DamageDealtWithoutItem}, not {p.DamageDealtWithItem} " +
-                $"-- the beast still stands at {p.MonsterHpWithoutItem}. There the record ends. No one rolled what comes next."),
-            LethalSavePayload p => (
-                $"{itemName} turned the killing blow on floor {floor}. {heroName} lives.",
-                $"The blow read {p.RawBlow}. {itemName} drank {p.ItemDefenseStat} of it. {heroName} stood at {p.HeroHpAfterWithItem}. " +
-                $"Without it, {heroName} falls."),
-            BreakpointClearPayload p => (
-                $"{itemName} opened floor {floor}.",
-                $"The party's power read {p.PartyAveragePowerWithItem} against the gate at {p.Gate}. Without {itemName}, it reads " +
-                $"{p.PartyAveragePowerWithoutItem} -- under the gate. The floor never opens without it."),
-            ProvisionedPayload p => (
-                $"{itemName} kept {heroName} fighting on floor {floor} -- but it would have run the same without it.",
-                $"{heroName} drank it at round {p.QuaffRound}, {p.HpBeforeQuaff} to {p.HpAfterQuaff}. Even without it, the fight's own " +
-                $"numbers leave {heroName} at {p.NaiveHpWithoutHeal} -- still standing. No credit taken."),
-            PotionLifesavePayload p => (
-                $"{itemName} kept {heroName} standing on floor {floor}.",
-                $"Without it, the fight turns at round {p.DivergenceRound} -- {heroName} falls at {p.HpAtDivergence}. " +
-                "The rest of that night never happens."),
-            MarginOnlyPayload p => (
-                $"{itemName} looked like it saved {heroName} -- the strict replay says otherwise.",
-                $"A later drink already carried {heroName} through. Without {itemName}, the low point would have been " +
-                $"{p.MinHpReached} at round {p.MinHpRound} -- and the fight went on. No credit taken."),
+            KillingBlowPayload p => PickVerdictLine(TellingPack.KillingBlow, FlavorEngine.Slots(
+                ("item", itemName), ("hero", heroName), ("floor", Digits(floor)),
+                ("heroRoll", Digits(p.HeroRoll)), ("dealtWithout", Digits(p.DamageDealtWithoutItem)),
+                ("dealtWith", Digits(p.DamageDealtWithItem)), ("monsterHpWithout", Digits(p.MonsterHpWithoutItem)))),
+            LethalSavePayload p => PickVerdictLine(TellingPack.LethalSave, FlavorEngine.Slots(
+                ("item", itemName), ("hero", heroName), ("floor", Digits(floor)),
+                ("rawBlow", Digits(p.RawBlow)), ("itemDefense", Digits(p.ItemDefenseStat)),
+                ("heroHpAfter", Digits(p.HeroHpAfterWithItem)))),
+            BreakpointClearPayload p => PickVerdictLine(TellingPack.BreakpointClear, FlavorEngine.Slots(
+                ("item", itemName), ("floor", Digits(floor)),
+                ("avgWith", Digits(p.PartyAveragePowerWithItem)), ("gate", Digits(p.Gate)),
+                ("avgWithout", Digits(p.PartyAveragePowerWithoutItem)))),
+            ProvisionedPayload p => PickVerdictLine(TellingPack.Provisioned, FlavorEngine.Slots(
+                ("item", itemName), ("hero", heroName), ("floor", Digits(floor)),
+                ("quaffRound", Digits(p.QuaffRound)), ("hpBefore", Digits(p.HpBeforeQuaff)),
+                ("hpAfter", Digits(p.HpAfterQuaff)), ("naiveHp", Digits(p.NaiveHpWithoutHeal)))),
+            PotionLifesavePayload p => PickVerdictLine(TellingPack.PotionLifesave, FlavorEngine.Slots(
+                ("item", itemName), ("hero", heroName), ("floor", Digits(floor)),
+                ("divergenceRound", Digits(p.DivergenceRound)), ("hpAtDivergence", Digits(p.HpAtDivergence)))),
+            MarginOnlyPayload p => PickVerdictLine(TellingPack.MarginOnly, FlavorEngine.Slots(
+                ("item", itemName), ("hero", heroName),
+                ("minHp", Digits(p.MinHpReached)), ("minHpRound", Digits(p.MinHpRound)))),
             _ => ("The record is unclear.", string.Empty),
         };
     }
+
+    /// <summary>
+    /// One <see cref="FlavorEngine.Render"/> call picks a paired headline+detail phrasing from
+    /// <see cref="TellingPack.Pack"/> atomically (<see cref="TellingPack.Delim"/>'s own doc: a
+    /// single template avoids two independent picks landing on mismatched indices), then splits it.
+    /// Campaign identity is <c>_state.Rng.Inc</c> — the same convention <see cref="LedgerModal"/>'s
+    /// own fate lines and every other pack caller in this repo uses (KTD3) — and the variant pick
+    /// keys on the beat's own STAMPED <see cref="AttributionBeatEvent"/> id
+    /// (<see cref="_beatEventId"/>, set once in <see cref="ShowFor"/>): a real, logged fact, never a
+    /// counter that depends on how many times this panel has been opened. Same recorded fight, same
+    /// seed, same phrasing, forever — <see cref="FlavorEngine.Render"/> itself draws no RNG and
+    /// reads no wall clock, so this cannot drift between two opens of the same night.
+    /// </summary>
+    private (string Headline, string Detail) PickVerdictLine(string key, IReadOnlyDictionary<string, string> slots)
+    {
+        var rendered = FlavorEngine.Render(
+            TellingPack.Pack, key, slots, _state!.Rng.Inc, unchecked((ulong)_beatEventId.Value));
+        var parts = rendered.Split(TellingPack.Delim, 2);
+        return parts.Length == 2 ? (parts[0], parts[1]) : (rendered, string.Empty);
+    }
+
+    private static string Digits(int value) => value.ToString(CultureInfo.InvariantCulture);
 
     private HeroAtDeparture? DepartureOf(HeroId id) => _result!.PartyAtDeparture.FirstOrDefault(h => h.Id == id);
 
