@@ -36,7 +36,7 @@ public class TownsfolkNpc2DTests
         }
         finally
         {
-            npc.QueueFree();
+            npc.Free();
         }
     }
 
@@ -69,7 +69,7 @@ public class TownsfolkNpc2DTests
         }
         finally
         {
-            npc.QueueFree();
+            npc.Free();
         }
     }
 
@@ -90,7 +90,7 @@ public class TownsfolkNpc2DTests
         }
         finally
         {
-            npc.QueueFree();
+            npc.Free();
         }
     }
 
@@ -136,7 +136,7 @@ public class TownsfolkNpc2DTests
         }
         finally
         {
-            npc.QueueFree();
+            npc.Free();
         }
     }
 
@@ -163,8 +163,8 @@ public class TownsfolkNpc2DTests
         }
         finally
         {
-            a.QueueFree();
-            b.QueueFree();
+            a.Free();
+            b.Free();
         }
     }
 
@@ -207,7 +207,7 @@ public class TownsfolkNpc2DTests
         }
         finally
         {
-            npc.QueueFree();
+            npc.Free();
         }
     }
 
@@ -230,7 +230,7 @@ public class TownsfolkNpc2DTests
         }
         finally
         {
-            npc.QueueFree();
+            npc.Free();
         }
     }
 
@@ -255,7 +255,7 @@ public class TownsfolkNpc2DTests
         }
         finally
         {
-            npc.QueueFree();
+            npc.Free();
         }
     }
 
@@ -348,7 +348,7 @@ public class TownsfolkNpc2DTests
         }
         finally
         {
-            npc.QueueFree();
+            npc.Free();
         }
     }
 
@@ -374,7 +374,7 @@ public class TownsfolkNpc2DTests
         }
         finally
         {
-            npc.QueueFree();
+            npc.Free();
         }
     }
 
@@ -397,7 +397,7 @@ public class TownsfolkNpc2DTests
         }
         finally
         {
-            npc.QueueFree();
+            npc.Free();
         }
     }
 }

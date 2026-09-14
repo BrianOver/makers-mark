@@ -936,6 +936,136 @@ public class CounterPanelTests
         }
     }
 
+    // ── Forge handoff (P2-PEOPLE-21, "Forge it — Torvald waits") ────────────────────────────────
+    // The frame that named this gap (runs/shots-2026-09-13/Counter.png): a customer states a want
+    // and a budget over an EMPTY shelf, and the only guidance was "present an item from the shelf"
+    // when there is nothing to present. Every assertion below reads visible on-screen text and
+    // live sim state, the same style the rest of this file already uses.
+
+    [TestCase]
+    public void ForgeItButton_AppearsWhenTheShelfCannotServeTheWaitingCustomer()
+    {
+        var ui = MountMainUi(new SimAdapter(EmptyShelfCounterFixture()));
+        try
+        {
+            ui.OpenPanel("Shop");
+
+            // Exists and reachable — throws if missing.
+            var button = Find<Button>(ui.Shop, "CounterForgeIt");
+            AssertThat(button.Text).IsEqual("Forge something for them");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void ForgeItButton_AbsentWhenTheShelfCanServeTheWaitingCustomer()
+    {
+        // SingleHeroGuaranteedBuyState's own shelf item is a proven Buy for this exact hero —
+        // PresentingTheWantedSlot_AtAFairPrice_OpensARound_NotAWalk_AndSpeaksInterest (above)
+        // already proves presenting it opens a round rather than a walk.
+        var ui = MountMainUi(new SimAdapter(SingleHeroGuaranteedBuyState()));
+        try
+        {
+            ui.OpenPanel("Shop");
+            PressEnabled(ui.Shop, "OpenCounter");
+
+            var missing = ui.Shop.FindChild("CounterForgeIt", recursive: true, owned: false);
+            AssertThat(missing)
+                .OverrideFailureMessage("Forge It button rendered even though the shelf can serve this customer.")
+                .IsNull();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void ForgeItButton_OpensTheForgeDrawer_NamingWhoIsWaitingAndWhatTheyWant()
+    {
+        var ui = MountMainUi(new SimAdapter(EmptyShelfCounterFixture()));
+        try
+        {
+            ui.OpenPanel("Shop");
+            Press(ui.Shop, "CounterForgeIt");
+
+            AssertThat(ui.Drawer.CurrentPanelId)
+                .OverrideFailureMessage("Pressing Forge It must open the Forge drawer, not merely raise an event.")
+                .IsEqual("Forge");
+
+            // The card the player lands on must name WHO is waiting and WHAT they said — not
+            // merely that a panel opened (the whole point of P2-PEOPLE-21's handoff).
+            var text = RenderedText(ui.Forge);
+            AssertThat(text).Contains("Buyer1");
+            AssertThat(text).Contains("at the counter");
+            AssertThat(text).Contains("a weapon"); // Buyer1's empty Gear -> Weapon is the missing slot
+            AssertThat(text).Contains("500g");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void ForgeItButton_PressedTwice_TheCounterSessionItselfIsUntouched()
+    {
+        // Law: no timers on decisions — the day holds while the counter is open (THE-GAME.md
+        // §3.1), so opening the forge from here must spend nothing: no patience round, no
+        // interest movement, no queued action of any kind.
+        var ui = MountMainUi(new SimAdapter(EmptyShelfCounterFixture()));
+        try
+        {
+            ui.OpenPanel("Shop");
+            var before = ui.Adapter.CurrentState.Counter;
+
+            Press(ui.Shop, "CounterForgeIt");
+            ui.OpenPanel("Shop");
+            Press(ui.Shop, "CounterForgeIt");
+
+            var after = ui.Adapter.CurrentState.Counter;
+            AssertThat(after!.Round).IsEqual(before!.Round);
+            AssertThat(after.PatienceRounds).IsEqual(before.PatienceRounds);
+            AssertThat(after.InterestPermille).IsEqual(before.InterestPermille);
+            AssertThat(after.Active).IsEqual(before.Active);
+            AssertThat(ui.Adapter.AppliedThisPhase.Count).IsEqual(0);
+            AssertThat(ui.Adapter.PendingActions.Count).IsEqual(0);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void ForgeHandoffCopy_NeverOrdersThePlayer()
+    {
+        // Law: influence never orders — same register AdvisorNeverOrdersTests pins for the sim's
+        // own advisor voice: no second-person directive, no bare command verb opening a clause.
+        var ui = MountMainUi(new SimAdapter(EmptyShelfCounterFixture()));
+        try
+        {
+            ui.OpenPanel("Shop");
+            Press(ui.Shop, "CounterForgeIt");
+
+            var pinnedLine = Find<Label>(ui.Forge, "ForgeWaitingCustomer").Text;
+            var lowered = pinnedLine.ToLowerInvariant();
+            AssertThat(pinnedLine).IsNotEmpty();
+            AssertThat(lowered).NotContains("you should");
+            AssertThat(lowered).NotContains("you must");
+            AssertThat(lowered).NotContains("you need to");
+            AssertThat(pinnedLine).NotContains("!");
+            AssertThat(lowered).NotContains("hurry");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
     [TestCase]
     public void Suggest_FittingEmptySlot_RendersTheInterestedSpokenReply_AndTheInterestChipMovesSameRefresh()
     {
@@ -1386,6 +1516,31 @@ public class CounterPanelTests
                     new ShelfEntry(itemA, 8), new ShelfEntry(itemB, 8), new ShelfEntry(itemC, 8)),
             },
         };
+    }
+
+    /// <summary>P2-PEOPLE-21: an active counter session over a genuinely EMPTY shelf (no Items, no
+    /// ShelfEntry at all) — the exact frame that named the gap (runs/shots-2026-09-13/Counter.png):
+    /// a customer stating a want and a budget with nothing to present. The shelf-can't-serve gated
+    /// surfaces (the "Forge It" button) must appear here.</summary>
+    private static GameState EmptyShelfCounterFixture()
+    {
+        var hero = MakeHero(1, ClassRegistry.StrikerId, gold: 500);
+        var heroes = ImmutableSortedDictionary<int, Hero>.Empty.Add(hero.Id.Value, hero);
+        var baseState = GameFactory.NewGame(7099, heroes); // Items/Shelf empty by construction
+
+        var counter = new CounterState(
+            Queue: ImmutableList.Create(hero.Id),
+            Active: hero.Id,
+            Round: 0,
+            InterestPermille: 0,
+            PatienceRounds: 3,
+            GoodwillPermille: 0,
+            Presented: null,
+            StandingOfferGold: null,
+            Served: ImmutableSortedSet<int>.Empty,
+            Closed: false);
+
+        return baseState with { Counter = counter };
     }
 
     /// <summary>A world with a live, mid-haggle <see cref="CounterState"/> already installed —

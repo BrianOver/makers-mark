@@ -75,7 +75,7 @@ Debugging anything? `docs/debugging.md` — deterministic repro recipe, log map,
 - **Directory ownership:** one agent owns one unit's directory exclusively. Claim it in `.claude/tasks/` (see README there) before starting.
 - **Deny-list — never edit unassigned:** `Game.sln`, `godot/project.godot`, `.github/`, `sim/GameSim/Contracts/`, `CLAUDE.md`, `global.json`, `Directory.Build.props`, `.godot-version`.
 - **Contract amendments:** changes to `sim/GameSim/Contracts/` land as dedicated micro-PRs authored by the orchestrating session only, merged before dependent module PRs; in-flight agents rebase.
-- **Branches/PRs:** one unit = one branch (`feat/uN-slug`) = one small PR. Ruleset requires green checks + branch up to date; auto-merge is on — rebase and re-run when stale.
+- **Branches/PRs:** one unit = one branch (`feat/uN-slug`) = one small PR. The `main-protection` ruleset requires exactly three green checks (`sim-tests`, `balance-sim`, `engine-tests`) and squash as the only merge method. It does **not** require the branch to be up to date with `main` (`strict_required_status_checks_policy: false`), so PRs merge independently as their own checks clear — a merge to `main` does not stale anyone else's branch. Arm auto-merge and leave it alone; rebase only when GitHub reports a real conflict, never speculatively, because every needless rebase burns a full CI cycle on a queue that serializes.
 - **Commits:** conventional messages (`feat(sim): ...`, `ci: ...`). No `git add .` — stage the unit's files.
 
 ## Layout

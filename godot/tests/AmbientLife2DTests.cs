@@ -42,7 +42,7 @@ public class AmbientLife2DTests
         }
         finally
         {
-            life.QueueFree();
+            life.Free();
         }
     }
 
@@ -62,7 +62,7 @@ public class AmbientLife2DTests
         }
         finally
         {
-            life.QueueFree();
+            life.Free();
         }
     }
 
@@ -94,7 +94,7 @@ public class AmbientLife2DTests
         }
         finally
         {
-            life.QueueFree();
+            life.Free();
         }
     }
 
@@ -120,7 +120,7 @@ public class AmbientLife2DTests
         }
         finally
         {
-            life.QueueFree();
+            life.Free();
         }
     }
 
@@ -141,7 +141,7 @@ public class AmbientLife2DTests
         }
         finally
         {
-            life.QueueFree();
+            life.Free();
         }
     }
 
@@ -170,7 +170,7 @@ public class AmbientLife2DTests
         }
         finally
         {
-            life.QueueFree();
+            life.Free();
         }
     }
 
@@ -199,7 +199,7 @@ public class AmbientLife2DTests
         }
         finally
         {
-            life.QueueFree();
+            life.Free();
         }
     }
 
@@ -223,7 +223,7 @@ public class AmbientLife2DTests
         }
         finally
         {
-            life.QueueFree();
+            life.Free();
         }
     }
 
@@ -242,7 +242,7 @@ public class AmbientLife2DTests
         }
         finally
         {
-            life.QueueFree();
+            life.Free();
         }
     }
 
@@ -270,7 +270,7 @@ public class AmbientLife2DTests
         }
         finally
         {
-            life.QueueFree();
+            life.Free();
         }
     }
 
@@ -298,7 +298,7 @@ public class AmbientLife2DTests
         }
         finally
         {
-            life.QueueFree();
+            life.Free();
         }
     }
 }

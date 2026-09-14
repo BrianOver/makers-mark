@@ -227,22 +227,46 @@ public static class Report
         if (findings.Count == 0)
         {
             sb.AppendLine("None.");
-        }
-        else
-        {
-            sb.AppendLine("Neither evidence class this tool trusts can see a unit that shipped inside a PR whose");
-            sb.AppendLine("subject carried no per-unit tag and whose row names files that already existed. These rows");
-            sb.AppendLine("are the residue such a unit leaves in source. Read the cited file before dispatching the");
-            sb.AppendLine("unit -- a hit is equally a shipped unit and a comment DEFERRING one, which is exactly why");
-            sb.AppendLine("this is a warning and not a status. Changes no count and no exit code.");
             sb.AppendLine();
-            foreach (var f in findings)
-            {
-                sb.AppendLine($"- {f.UnitId} — reported unbuilt, but named in: {string.Join(", ", f.Paths.Select(p => $"`{p}`"))}");
-            }
+            return;
         }
 
+        sb.AppendLine("Neither evidence class this tool trusts can see a unit that shipped inside a PR whose");
+        sb.AppendLine("subject carried no per-unit tag and whose row names files that already existed. These rows");
+        sb.AppendLine("are the residue such a unit leaves in source. A CODE hit is equally a shipped unit and one");
+        sb.AppendLine("this tool cannot yet distinguish from it -- read the cited site before dispatching. A");
+        sb.AppendLine("COMMENT-only hit is usually a forward reference deferring the unit's own work (\"U33 gives");
+        sb.AppendLine("her a graduation line; this unit ships the mechanism...\" is a real line on main) and does");
+        sb.AppendLine("not, by itself, mean the unit shipped -- it is a note, not a warning. Either way this");
+        sb.AppendLine("changes no count and no exit code, and never promotes a unit to Landed.");
         sb.AppendLine();
+
+        var withCode = findings.Where(f => f.HasCodeHit).ToList();
+        var commentOnly = findings.Where(f => !f.HasCodeHit).ToList();
+
+        if (withCode.Count > 0)
+        {
+            sb.AppendLine("WARNING -- at least one CODE hit (verify before building):");
+            foreach (var f in withCode)
+            {
+                var sites = f.Hits.Select(h => $"`{h.Path}:{h.Line}`{(h.IsComment ? " (comment)" : " (code)")}");
+                sb.AppendLine($"- {f.UnitId} — reported unbuilt, but named in: {string.Join(", ", sites)}");
+            }
+
+            sb.AppendLine();
+        }
+
+        if (commentOnly.Count > 0)
+        {
+            sb.AppendLine("NOTE -- comment-only hits (informational; does not imply the unit shipped):");
+            foreach (var f in commentOnly)
+            {
+                var sites = f.Hits.Select(h => $"`{h.Path}:{h.Line}`");
+                sb.AppendLine($"- {f.UnitId} — reported unbuilt, mentioned in: {string.Join(", ", sites)}");
+            }
+
+            sb.AppendLine();
+        }
     }
 
     private static void AppendUnparseable(StringBuilder sb, IReadOnlyList<UnparseableRow> unparseable)

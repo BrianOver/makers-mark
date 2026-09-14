@@ -285,9 +285,16 @@ The decisions the game is actually made of.
    party you provision and endangers the run, because a topped-up party dares one floor deeper and
    the deep floors are where heroes die. **Only the first half is currently real.** The A/B run on
    2026-09-02 came back byte-identical with zero deliveries, because a camped party's HP already
-   sits at or above half by construction, so the send almost never has a band to act in. The second
-   half is a design intent with no measurement behind it today; `P2-LONG-25` aims the verb at where
-   camped heroes actually are, and until it lands this decision is one-sided.
+   sat at or above half by construction, so the send had no band to act in. **`P2-LONG-25` landed on
+   2026-09-04 (#710)** and repaired exactly that: `CombatMath` now carries its own
+   `TooHurtThresholdPct` (30%), strictly between the flee and drink lines, so the post-floor check no
+   longer fuses "too hurt to press deeper" to "wounded enough to drink". The `[30%,40%)` band the
+   send verb aims at is reachable again — 44 observations over the same sweep where there had been
+   none. **Both halves are now measured together: 20 deliveries against zero before, 5 of them proved
+   by counterfactual replay to have saved a hero who would otherwise have died, bought with 4 net
+   deaths** (`sim/GameSim.Tests/Balance/CampProvisioningBalanceTests.cs`, the REPAIRED block). The
+   dilemma has two live arms; what remains open is whether the magnitude is the one the design wants,
+   not whether the second arm exists.
 
 ---
 

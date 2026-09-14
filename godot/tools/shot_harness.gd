@@ -124,7 +124,7 @@ const KNOWN_STATES := [
 	"ForgeAnvil", "ForgeAnvilEmpty", "ForgeEcho", "ForgeExit", "ForgeFlavor", "ForgeLadder", "ForgePanel",
 	"ForgeShelf", "ForgeTrinket", "GatedCounterEmptyShelf", "GateHeldStreak", "GateNight", "Graduation",
 	"HeroCandidateOpen", "HeroCards",
-	"HeroErrand", "HeroTrinket", "Ledger", "LedgerProvenance", "Lessons", "MemoryRow",
+	"HeroErrand", "HeroTrinket", "Ledger", "LedgerProvenance", "Lessons", "Memorial", "MemoryRow",
 	"MineGateFocus", "Mirror",
 	"OccupancyCorner", "Primer", "Provenance", "ReturnAtNight", "ReturnEmerge", "ReturnQuestEmpty",
 	"SendOff", "ShopPanel", "ShopTrinket", "SplitLessons", "Storied", "StoriedCard",
@@ -391,7 +391,7 @@ func _process(_delta: float) -> bool:
 			_ui = warrant_swapped_ui
 			if is_instance_valid(warrant_stale_new_game_select):
 				warrant_stale_new_game_select.queue_free()
-	if (_state == "TownOverview" or _state == "OccupancyCorner") and _frames == 65:
+	if (_state == "TownOverview" or _state == "OccupancyCorner" or _state == "Memorial") and _frames == 65:
 		# U-T3-3: Town2D.FollowPlayer() re-centers the camera on Player.GlobalPosition EVERY
 		# real engine frame -- a direct or even a set_deferred Cam.GlobalPosition write from
 		# THIS script was measured to still lose that race every single frame (this SceneTree's
@@ -410,13 +410,20 @@ func _process(_delta: float) -> bool:
 				# grey letterbox per side).
 				player.call("SpawnAt", Vector2(512, 352))
 				cam.zoom = Vector2(0.5, 0.5)
-			else:
+			elif _state == "OccupancyCorner":
 				# Hero 5's own errand rotation seeds at _errandRotation = heroId = 5, and the
 				# shared pool's index 5 (five venue doors, then the four TownsfolkHomeTiles in
 				# order) is TownsfolkHomeTiles[0] = tile (6,12) = world (104, 200) -- hero 5's
 				# FIRST errand, no rotation cycling needed, targets exactly this corner (see
 				# the _settle branch above for the full timing derivation).
 				player.call("SpawnAt", Vector2(104, 200))
+				cam.zoom = Vector2(1.4, 1.4)
+			elif _state == "Memorial":
+				# P2-MEMORY-22 ("the east field remembers"): a close-up on the town's new outdoor
+				# memorial in the open east field (TownLayout2D.MemorialWallTile = (54,32) ->
+				# world (872,520)) -- same close-up zoom as OccupancyCorner's own corner receipt,
+				# just centered on the wall instead of a wandering hero's errand target.
+				player.call("SpawnAt", Vector2(872, 520))
 				cam.zoom = Vector2(1.4, 1.4)
 			cam.global_position = player.global_position
 			cam.reset_smoothing()

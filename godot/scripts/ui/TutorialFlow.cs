@@ -1505,6 +1505,62 @@ public sealed partial class TutorialFlow : PanelContainer
             : "No stop today — everyone's headed one floor down; it fires on a run aiming deeper.";
     }
 
+    /// <summary>P2-PEOPLE-24: non-null exactly when a vigil is genuinely live right now —
+    /// <see cref="DayPhase.Camp"/> AND at least one party really is camped, the same
+    /// non-empty-<see cref="GameState.InFlight"/>-at-Camp test <c>MainUi.SyncCampModal</c> and
+    /// <c>CampPanel</c>'s own class doc gate the winch-house slate on (never re-derived here). Camp
+    /// can run with an empty <see cref="GameState.InFlight"/> (<see
+    /// cref="GameSim.Expedition.ExpeditionSystem"/>'s own Beat.DeepTick fallthrough, RaidConductor.cs)
+    /// — that shape must NOT claim a vigil, or this line rots into the exact "shut vendor" failure
+    /// it replaces, just wearing the word "vigil" instead.
+    ///
+    /// <para>Every clause is read off state the client already holds for this same camped party —
+    /// <see cref="PartyVoice.YoursHealsLeft"/>, the exact count <see cref="PartyVoice.AnchorLine"/>
+    /// and the camp card's own per-member rows already total, never a second tally that could drift
+    /// from what the card shows a screen away. Names all three vigil verbs (Send, Recall, Send
+    /// Deeper) and picks none — Law 1, influence never orders — and "it waits on you" states the
+    /// vigil's own truth: no clock, no timer implied (Law 2). One party is named even when several
+    /// camp the same day (<see cref="GameState.InFlight"/>[0], id-sorted at departure like every
+    /// other InFlight read in this file): the tracker's job is naming that the vigil moment is HERE,
+    /// not enumerating every camped party the modal itself already lists in full.</para></summary>
+    private static string? VigilInProgressText(GameState state)
+    {
+        if (state.Phase != DayPhase.Camp || state.InFlight.IsEmpty)
+        {
+            return null;
+        }
+
+        var party = state.InFlight[0];
+        var names = party.Party
+            .Select(id => state.Heroes.TryGetValue(id.Value, out var hero) ? hero.Name : $"hero {id.Value}")
+            .ToList();
+        var namesClause = names.Count switch
+        {
+            1 => names[0],
+            2 => $"{names[0]} and {names[1]}",
+            _ => $"{string.Join(", ", names.Take(names.Count - 1))} and {names[^1]}",
+        };
+        var verb = names.Count == 1 ? "is" : "are";
+
+        var yoursHeals = party.Party.Sum(member => PartyVoice.YoursHealsLeft(state, party, member));
+        var healsClause = yoursHeals switch
+        {
+            0 => "no heals of yours",
+            1 => "1 heal of yours",
+            _ => $"{yoursHeals} heals of yours",
+        };
+
+        return $"The vigil holds — {namesClause} {verb} camped below floor {party.CheckpointFloor} with " +
+            $"{healsClause}. A runner can still reach them, a recall brings them home, or they can go " +
+            "deeper on their own — it waits on you.";
+    }
+
+    /// <summary>Test seam for <c>VigilInProgressText</c> — same naming idiom as <see
+    /// cref="GatingNoteForTests"/>/<see cref="StepActionAvailableForTests"/>: lets a test assert on
+    /// the raw generated sentence (no <see cref="StepPrefix"/> chip mixed in) against a constructed
+    /// <see cref="GameState"/>, without driving the chain to a specific current step first.</summary>
+    public static string? VigilInProgressTextForTests(GameState state) => VigilInProgressText(state);
+
     /// <summary>The deferred "comes back later" variant (playtest F6) shown in place of the raw
     /// instruction whenever <see cref="StepActionAvailable"/> is false — the day-not-reached case
     /// is checked FIRST (the more fundamental reason), then the action-slot case, then phase, so
@@ -1515,9 +1571,25 @@ public sealed partial class TutorialFlow : PanelContainer
     /// <para>U5: the day-gate branch no longer says "press Next/Advance to move things along" — the
     /// owner's exact complaint ("Tutorial 6 says press 'next/advance' assuming this should be
     /// 'close the vigil'") was this line naming a button instead of just saying the day has not
-    /// arrived. It now names nothing to press at all.</para></summary>
+    /// arrived. It now names nothing to press at all.</para>
+    ///
+    /// <para>P2-PEOPLE-24: one reason outranks all three of the above — a real vigil in progress
+    /// (<see cref="VigilInProgressText"/>). Before this unit, WaitText answered strictly for
+    /// whichever step the numbered chain happened to be parked on: a chain still on BuyMaterial
+    /// during Camp printed "the material vendor only trades in the Morning... nothing to do here
+    /// until then" over the one screen the whole day exists for — decision 6, the vigil, with a
+    /// party actually camped below the checkpoint. The day/slot/phase excuse was never FALSE (it is
+    /// Camp, not Morning), it was just answering the wrong question. So this check runs before all
+    /// three, not alongside them: a live vigil is not one more gate on the current step, it is a
+    /// different, more relevant fact than whatever the current step's own gate would have said.
+    /// </para></summary>
     private string WaitText(GameState state, TutorialStepDef def)
     {
+        if (VigilInProgressText(state) is { } vigilText)
+        {
+            return $"{StepPrefix(def)}: {vigilText}";
+        }
+
         if (state.Day < def.MinDay)
         {
             return def.Step switch
