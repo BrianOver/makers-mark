@@ -4617,6 +4617,7 @@ name (§11.6 rule 4).
 | ⚑ P2-SCREEN-26 | The gate line becomes true — heroes muster where the HUD says they are | `godot/scripts/town2d/Town2D.cs` | — | [G] |
 | ⚑ P2-SCREEN-27 | Small placements: the wandering caption, the orphan spinner, the floating class sprite, the loose shelf label | `godot/scripts/town2d/`, `godot/scripts/panels/` | — | [G] |
 | ⚑ P2-SCREEN-28 | The capture harness's own usage header stops naming states it does not have | `tools/shoot.ps1` | — | [G] |
+| ⚑ P2-SCREEN-29 | A sized `TextureRect` cannot silently claim its texture's size | `sim/GameSim.Tests/Hygiene/TextureRectExpandModeCensusTests.cs`, `godot/scripts/MainUi.cs`, `godot/scripts/panels/MineWatch.cs`, `godot/scripts/panels/ProvenanceCard.cs`, `godot/scripts/panels/SimPanel.cs`, `godot/scripts/ui/UiKit.cs` | — | [S] |
 | P2-ONBOARD-09 | The Goodwill chip speaks the band or dies (the beat's own half landed) | `godot/scripts/panels/CounterPanel.cs` | — | [G] |
 | P2-ONBOARD-10 | The seed becomes enterable at New Game | `godot/scripts/NewGameSelect.cs` | — | [G] |
 | P2-PROOF-03 | The stage, pass one — one duel, recorded rolls | new `godot/scripts/panels/TellingPanel.cs` (+`.uid`) | — | [G] |
@@ -6395,13 +6396,19 @@ other games.
   so it re-baselines. It also interacts with `P2-PEOPLE-18` — the two touch the same unfairness from
   opposite ends, and §11.7's own rule about sequencing interacting rulings applies.
 
-#### The visual wave (P2-SCREEN-21..28), and how it was found
+#### The visual wave (P2-SCREEN-21..29), and how it was found
 
 Every row below came from **looking at the running game** rather than from reading code. Eight GPU
 captures were taken with `tools/shoot.ps1` and read as images; the defects are described by what is
 visibly wrong in a named frame, and each cites the file most likely responsible. This is the method
 `docs/debugging.md` and this repo's own history both insist on for anything visual: a test suite
 cannot see that two surfaces are drawing in the same pixels.
+
+P2-SCREEN-29 has a different provenance from the rest of this wave: it was found by grepping
+`godot/scripts/` for every `new TextureRect` construction site while fixing P2-SCREEN-24, not by
+reading a capture — the pattern had already shipped twice as a one-off fix (PR #119, P2-SCREEN-24)
+before anyone counted the remaining sites. Captures came after the fix, to confirm each corrected
+icon renders at its intended size rather than distorted or cropped.
 
 Three defects from the same pass are already in flight and deliberately have no row here — the watch
 strip drawing through open drawers, nameplates colliding into unreadable text, and the `Act I` chip
@@ -6434,6 +6441,26 @@ clipping its own label.
   Gate`, none of which the harness has known for some time — it errors with its real list. Rule 8
   applies to a tool's own docs: the first thing a session does with the capture harness is read that
   header and be wrong.
+- **P2-SCREEN-29.** Godot's `TextureRect` defaults `ExpandMode` to `KeepSize`, whose
+  `GetMinimumSize()` returns the bound texture's own pixel size and ignores `CustomMinimumSize`
+  entirely — a 20px icon request silently becomes a 64px minimum, because every glyph under
+  `res://assets/icons` is authored 64×64. This shipped three times: PR #119 (`UiKit.ArtRect`),
+  P2-SCREEN-24 (PR #826, `UiKit.DrawerHeader`'s icon overhanging its 56px strip), and a grep of
+  `godot/scripts/` turned up 8 more live sites carrying the identical shape — `MainUi.BuildGoldChip`,
+  `MineWatch`'s two empty-manifest icons, `ProvenanceCard.ItemIcon`, `SimPanel.AddIcon`, and three
+  more in `UiKit` (`ArtRect`'s fallback icon, `IconChip`, `ListRow`). All 8 now set `ExpandMode`
+  explicitly (`IgnoreSize`, matching `ArtRect`'s already-correct real-art path). `UiKit.DrawerHeader`
+  itself was left untouched — P2-SCREEN-24 already carries the identical fix on its own open branch,
+  and editing the same lines from two PRs is how one silently reverts the other.
+
+  The fix-one-at-a-time approach had already failed twice, so the deliverable is a deny-by-default
+  census (`sim/GameSim.Tests/Hygiene/TextureRectExpandModeCensusTests.cs`, same pinned-exception
+  idiom as `GearWornCheckCensusTests`): any `new TextureRect` initializer that sets
+  `CustomMinimumSize` without also setting `ExpandMode` is a red build, with a single cited exception
+  for `UiKit.DrawerHeader`'s icon (dropped once P2-SCREEN-24 merges). A `TextureRect` that claims no
+  size of its own — sized instead by a direct runtime `Size`, e.g. `DelveStage.SpawnSparkle`'s
+  free-floating VFX sprite outside any layout container — is out of scope by construction rather than
+  exempted, since it sets no `CustomMinimumSize` for `ExpandMode` to defend.
 
 #### P2-HONEST-26. The night's narration is shown or stops being composed
 

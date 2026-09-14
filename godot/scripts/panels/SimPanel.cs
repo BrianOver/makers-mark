@@ -430,6 +430,9 @@ public abstract partial class SimPanel : Control
         {
             Texture = texture,
             CustomMinimumSize = new Vector2(size, size),
+            // P2-SCREEN-29: without ExpandMode, KeepSize's GetMinimumSize() reports the source
+            // texture's own pixel size instead of the requested `size` — see UiKit.ArtRect.
+            ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
             StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
             MouseFilter = MouseFilterEnum.Ignore,
         };
