@@ -1,4 +1,5 @@
 #if GDUNIT_TESTS
+using System;
 using System.Threading.Tasks;
 using GdUnit4;
 using Godot;
@@ -52,6 +53,10 @@ public class InteractPromptAnchorTests
                 var building = ui.Town.FindBuilding(venue.Key);
                 ui.Town.Player.GlobalPosition = building.DoorAnchorGlobal;
                 await PumpWorldFrames(ui, 4);
+                // The chip is anchored to a WORLD position projected through the camera, so its
+                // screen position is only meaningful once the camera has finished travelling —
+                // see SettleCamera. Teleporting the player is instant; the camera is not.
+                await SettleCamera(ui);
                 await SettleLayout(ui);
 
                 AssertThat(ui.Town.WorldInputNode.ActiveTarget?.Key)
@@ -168,6 +173,88 @@ public class InteractPromptAnchorTests
                 .IsFalse();
         }
         finally { Unmount(ui); }
+    }
+
+    /// <summary>Consecutive frames the drawn camera centre must not move before it counts as
+    /// arrived. One is not enough: the glide is exponential, so a single sub-epsilon step could in
+    /// principle be a very short frame rather than the end of the journey.</summary>
+    private const int CameraStillFrames = 3;
+
+    /// <summary>Squared world-px the drawn centre may move per frame and still count as stopped —
+    /// (0.01px)². The glide never lands exactly on its target (measured rest for the mine gate:
+    /// drawn (519.9808, 152.044) against target (520, 152)), so "equals the target" is not a
+    /// reachable condition and this is a movement test, not a distance-to-target one.</summary>
+    private const float CameraStillEpsilonSq = 0.0001f;
+
+    /// <summary>Frames before giving up. The worst measured journey here (tavern door → mine-gate
+    /// door, 512 world px) converged in 57; 240 is ~4x that, so exhausting it means the camera
+    /// genuinely never arrived rather than that this number is too tight.</summary>
+    private const int CameraSettleFrameBudget = 240;
+
+    /// <summary>
+    /// Waits until <see cref="Town2D.Cam"/>'s DRAWN centre stops moving.
+    ///
+    /// <para><b>Why this exists (2026-09-14, CI-only red on this suite's first case).</b> CI failed
+    /// with <c>[minegate] chip ((640.1, 12), (101, 23)) does not float above its own building
+    /// (screen anchor (684.52, -1.854))</c> — a screen anchor 1.85px ABOVE the top of the window,
+    /// which no on-screen chip can sit above, so the assertion read as unsatisfiable. It is not.
+    /// The anchor is right and the invariant is right; the MEASUREMENT was taken while the camera
+    /// was still travelling.</para>
+    ///
+    /// <para><c>Town2D.FollowPlayer</c> assigns <c>Cam.GlobalPosition</c> instantly, but the
+    /// camera is built with <c>PositionSmoothingEnabled = true, PositionSmoothingSpeed = 8</c>, so
+    /// the DRAWN centre — the one <see cref="Viewport.GetCanvasTransform"/>, and therefore <see
+    /// cref="Town2D.WorldToScreen"/>, actually uses — eases toward it over many frames. This suite
+    /// walks the venue list in <see cref="TownLayout2D.Venues"/> order, and tavern (tile 18,40) →
+    /// minegate (tile 32,8) is a 512-world-px teleport. Measured locally at the exact instant the
+    /// old <c>PumpWorldFrames(ui, 4) + SettleLayout(ui)</c> pump handed control back: camera target
+    /// (520, 152), camera DRAWN (437.75, 340.02) — 188px short, only ~63% of the way there, which
+    /// puts the gate's own origin at screen y 10.95 with the clamped chip at 12 and fails by
+    /// 1.05px. Pump to convergence instead and the same frame reads screen anchor (576.04, 386.91)
+    /// against a chip at y 81.9: it passes by 305px, and the horizontal check lands within 0.006px
+    /// of dead centre against its own 250px slack. Every venue behaves the same way — the worst
+    /// settled horizontal error across all five is 0.014px.</para>
+    ///
+    /// <para>So this is <c>frame count is not a duration</c> again, the same defect #741 fixed in
+    /// <c>RealClickReachesBuildingTests</c>: 7 process frames is a guess, and Godot's idle
+    /// smoothing consumes the PROCESS delta, which differs between a local run and a headless CI
+    /// runner with rendering disabled. That is the whole CI-vs-local split — nothing here is
+    /// font-derived. <c>buildingScreen</c> is <see cref="Town2D.WorldToScreen"/> of a layout
+    /// constant, and the failing chip Y is the viewport clamp's own floor; the only font-sensitive
+    /// term in the chip's position is <c>NameLabel.Size.X</c>, which feeds the horizontal check
+    /// that did not fail (and cannot be clamped for these five: their requested widths are 76-125px
+    /// against font minimums of 17-35px).</para>
+    ///
+    /// <para>Deliberately NOT <see cref="UiTestSupport.SettleUntil"/> with "drawn equals target":
+    /// <c>Cam</c>'s <c>Limit*</c> rect clamps the drawn centre, so at a map edge the two never
+    /// converge — the tavern rests at y 605.5 (704px map minus the 98.5px half-viewport) while its
+    /// target stays 664. Movement between frames is the honest condition at an edge and in open
+    /// ground alike.</para>
+    /// </summary>
+    private static async Task SettleCamera(MainUi ui)
+    {
+        var tree = (SceneTree)Engine.GetMainLoop();
+        var last = ui.Town.Cam.GetScreenCenterPosition();
+        var still = 0;
+
+        for (var frame = 0; frame < CameraSettleFrameBudget; frame++)
+        {
+            await ui.ToSignal(tree, SceneTree.SignalName.ProcessFrame);
+            var now = ui.Town.Cam.GetScreenCenterPosition();
+            still = now.DistanceSquaredTo(last) < CameraStillEpsilonSq ? still + 1 : 0;
+            last = now;
+
+            if (still >= CameraStillFrames)
+            {
+                return;
+            }
+        }
+
+        throw new InvalidOperationException(
+            $"The camera never stopped moving within {CameraSettleFrameBudget} frames: drawn centre " +
+            $"{last} is still travelling toward {ui.Town.Cam.GlobalPosition}. Every screen position " +
+            "read in this suite is projected through that camera, so asserting now would measure a " +
+            "glide rather than a layout.");
     }
 }
 #endif
