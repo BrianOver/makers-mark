@@ -170,7 +170,14 @@ public static class ObjectiveAdvisor
                 var buy = new BuyMaterialAction(materialKey, quantity);
                 if (ActionLegality.IsLegal(state, buy, phase))
                 {
-                    suggestions.Add(new Suggestion(buy, $"{quantity} {MaterialRegistry.Require(materialKey).DisplayName.ToLowerInvariant()} ({cost}g) is the cheapest path to your next craft."));
+                    // P2-HONEST-24 + P2-ONBOARD-06 together, and the pair is the reason this reads as a
+                    // gerund rather than either a command or a bare noun phrase. P2-ONBOARD-06 deleted all
+                    // WHERE-to-walk copy from the tutorial cards on the grounds that the overlay already
+                    // points at the thing, leaving "name the action" as this card's ONLY remaining job --
+                    // pinned by TutorialFlowTests.Step1Copy_NamesTheAction_NeverWhereToWalk. P2-HONEST-24
+                    // forbids the imperative that used to name it ("Buy 2 copper..."). A gerund satisfies
+                    // both at once: the action is named, and nobody is told to take it.
+                    suggestions.Add(new Suggestion(buy, $"Buying {quantity} {MaterialRegistry.Require(materialKey).DisplayName.ToLowerInvariant()} ({cost}g) is the cheapest path to your next craft."));
                 }
                 else
                 {
