@@ -510,31 +510,53 @@ public partial class Building2D : Node2D
     /// than internal because <c>godot/tests</c> is a separate assembly with no
     /// <c>InternalsVisibleTo</c> grant to <c>GodotClient</c> (this repo's own established
     /// constraint, see e.g. <c>CampPanel.cs</c>'s doc for the GameSim side of the same fact), and
-    /// this recipe needs to be test-visible too.</summary>
-    public static Label BuildLabel(string text, Vector2 size, bool dim = false, Color? tint = null) => new()
+    /// this recipe needs to be test-visible too.
+    ///
+    /// <para><b>Stale-position fix (town-wide mis-centred captions, found 2026-09-14):</b> Godot's
+    /// <see cref="Control.Size"/> setter clamps the assigned value UP to
+    /// <see cref="Control.GetCombinedMinimumSize"/> at the moment of assignment. <see
+    /// cref="LabelSettings"/> is assigned to this label BEFORE <see cref="Control.Size"/> is (the
+    /// object initializer below runs top to bottom), so that clamp measures THIS label's own real
+    /// font (FontSize 7 / OutlineSize 3) — not, as it did before this fix, whatever font the label
+    /// would have inherited from the default theme at construction time (a much larger font, which
+    /// clamped <c>Size.X</c> far past <paramref name="size"/>'s own width for every name/caption
+    /// longer than a couple of characters). <c>Position.X</c> is then derived from THIS label's own
+    /// (possibly-clamped) <c>Size.X</c>, read back AFTER construction, never from <paramref
+    /// name="size"/> directly — <paramref name="size"/> is only ever the owner's sprite width, which
+    /// is what centred the label on the wrong point once the clamp had already moved <c>Size.X</c>
+    /// off of it.</para>
+    /// </summary>
+    public static Label BuildLabel(string text, Vector2 size, bool dim = false, Color? tint = null)
     {
-        Name = "Label",
-        Text = text,
-        // Nametags live INSIDE the world, so they are magnified by the same integer upscale the
-        // tiles are (see Town2D's StretchShrink) — a 12px font was landing on screen as ~36px of
-        // text stamped across the roof it was supposed to caption. These are world-pixel sizes, not
-        // screen sizes: keep them small.
-        Position = new Vector2(-size.X / 2f, -size.Y - 10f), // clear of the roof, centered above
-        Size = new Vector2(size.X, 8f),
-        HorizontalAlignment = HorizontalAlignment.Center,
-        ZAsRelative = false,
-        ZIndex = NameplateZIndex,
-        LabelSettings = new LabelSettings
+        var label = new Label
         {
-            FontSize = 7,
-            FontColor = tint ?? (dim ? DimLabelFontColor : LabelFontColor),
-            OutlineSize = 3,
-            OutlineColor = LabelOutlineColor,
-            ShadowSize = 2,
-            ShadowColor = LabelShadowColor,
-            ShadowOffset = new Vector2(0f, 1.5f),
-        },
-    };
+            Name = "Label",
+            Text = text,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            ZAsRelative = false,
+            ZIndex = NameplateZIndex,
+            // Assigned BEFORE Size below — see this method's own "stale-position fix" remarks.
+            LabelSettings = new LabelSettings
+            {
+                // Nametags live INSIDE the world, so they are magnified by the same integer upscale
+                // the tiles are (see Town2D's StretchShrink) — a 12px font was landing on screen as
+                // ~36px of text stamped across the roof it was supposed to caption. These are
+                // world-pixel sizes, not screen sizes: keep them small.
+                FontSize = 7,
+                FontColor = tint ?? (dim ? DimLabelFontColor : LabelFontColor),
+                OutlineSize = 3,
+                OutlineColor = LabelOutlineColor,
+                ShadowSize = 2,
+                ShadowColor = LabelShadowColor,
+                ShadowOffset = new Vector2(0f, 1.5f),
+            },
+            Size = new Vector2(size.X, 8f),
+        };
+        // Centered on the owner (local X=0), using the label's OWN real Size.X — never `size.X` —
+        // so a caption whose real box clamped wider than its owner's sprite still lands centred.
+        label.Position = new Vector2(-label.Size.X / 2f, -size.Y - 10f); // clear of the roof, centered above
+        return label;
+    }
 
     /// <summary>Extra clearance between two nameplates <see cref="ResolveNameplateStagger"/>
     /// stacks into separate rows — beyond their own height, so the split itself doesn't read as a
