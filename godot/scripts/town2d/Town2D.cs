@@ -1458,20 +1458,35 @@ public partial class Town2D : Control
     /// NARROWER than the default visible viewport (576px, <see cref="TargetVisibleWorldWidth"/>).
     /// Camera2D's own Limit clamp checks <c>LimitLeft</c> then <c>LimitRight</c> in that order, so
     /// whenever the room is narrower than the viewport the second check always wins: the view sits
-    /// pinned flush against <see cref="Camera2D.LimitRight"/> regardless of the player's actual
-    /// position (measured against the <c>ForgeAnvil</c> capture: a room 384px wide inside a 576px
-    /// viewport leaves exactly 192px of void, and it all lands on the LEFT). <see
-    /// cref="DrawerHost"/> covers that same flush-right edge, so the room's own right-hand stations
-    /// — and the player, spawned at every room's horizontal centre (every <c>RoomSpec.DoorTile</c>
-    /// is centred) — end up under it the moment one opens.
+    /// pinned flush against <see cref="Camera2D.LimitRight"/> — and stays pinned there, at exactly
+    /// <c>LimitRight - TargetVisibleWorldWidth</c>, REGARDLESS of <c>LimitLeft</c> or the player's
+    /// actual position — the moment the first (already-corrected) position still overflows the
+    /// second check, which it always does here (measured against the <c>ForgeAnvil</c> capture: a
+    /// room 384px wide inside a 576px viewport leaves exactly 192px of void, and it all lands on
+    /// the LEFT). <see cref="DrawerHost"/> covers that same flush-right edge, so the room's own
+    /// right-hand stations — and the player, spawned at every room's horizontal centre (every
+    /// <c>RoomSpec.DoorTile</c> is centred) — end up under it the moment one opens.
     ///
-    /// <para>Pulls <see cref="Camera2D.LimitRight"/> inward by HALF of <see
-    /// cref="OpenDrawerWidthPx"/> (converted from screen px to world px via <see
-    /// cref="CanvasShrink"/>) — the same halving <c>TopObstructionPx</c> used, so the remaining
-    /// framing centres in the strip that is actually visible rather than the whole viewport. Always
-    /// re-derived from the room's own true right edge (never compounded frame over frame), and
-    /// never pulled past <see cref="Camera2D.LimitLeft"/>, so the clamp only ever shrinks toward the
-    /// room's own bounds — it can never widen past them, open drawer or not.</para>
+    /// <para><b>This unit shipped pulling <see cref="Camera2D.LimitRight"/> INWARD, which is
+    /// backwards.</b> Since the resolved view is <c>LimitRight - TargetVisibleWorldWidth</c>
+    /// unconditionally in this regime, shrinking <c>LimitRight</c> only slides the whole window
+    /// further LEFT — moving every fixed world point, including the player, further RIGHT on
+    /// screen, deeper under the drawer. And the ceiling that shrink was capped at
+    /// (<c>LimitRight &lt;= trueRight</c>) is also the value that already produces the worst case:
+    /// bias = 0 is the best any shrink-only value can do, and it still fails by a wide margin. No
+    /// value of that approach could have worked.</para>
+    ///
+    /// <para>The fix goes the other way: it widens <see cref="Camera2D.LimitRight"/> PAST the
+    /// room's own true right edge — far enough that <c>LimitRight - LimitLeft</c> reaches <see
+    /// cref="TargetVisibleWorldWidth"/>, which flips which check dominates. Every registered room's
+    /// spawn point sits within <c>TargetVisibleWorldWidth / 2</c> of <c>LimitLeft</c> (door tiles
+    /// are centred, and no registered room is even half <see cref="TargetVisibleWorldWidth"/>
+    /// wide), so once the LEFT check is the one left standing, the view pins flush LEFT instead —
+    /// clear across the room from the drawer, for every registered room, regardless of its own
+    /// width. The extra void this reveals past the room's real right wall renders as plain
+    /// background, the same as the void this bug already showed on the left; a station standing
+    /// right at that wall can still end up under the drawer while it's open — an accepted
+    /// trade-off, since a room this narrow cannot show 100% of itself clear of a 600px drawer.</para>
     /// </summary>
     private void ApplyDrawerBiasedRoomClamp()
     {
@@ -1481,8 +1496,13 @@ public partial class Town2D : Control
         }
 
         var trueRight = FindInteriorRoom(InteriorVenueKey).RoomRect.End.X;
-        var bias = OpenDrawerWidthPx > 0f ? OpenDrawerWidthPx / 2f / CanvasShrink : 0f;
-        Cam.LimitRight = (int)Mathf.Max(Cam.LimitLeft, trueRight - bias);
+        if (OpenDrawerWidthPx <= 0f)
+        {
+            Cam.LimitRight = (int)trueRight;
+            return;
+        }
+
+        Cam.LimitRight = (int)Mathf.Max(trueRight, Cam.LimitLeft + TargetVisibleWorldWidth);
     }
 
     /// <summary>

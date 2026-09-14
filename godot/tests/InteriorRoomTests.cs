@@ -393,10 +393,17 @@ public class InteriorRoomTests
     }
 
     /// <summary>
-    /// P2-SCREEN-21: the clamp bias only ever shrinks <see cref="Camera2D.LimitRight"/> toward the
-    /// room's own bounds, never past them — checked against <see cref="DrawerHost.DrawerWidth"/>
-    /// (what actually ships) AND an adversarially oversized width, so a future wider drawer (or a
-    /// narrower room) cannot silently invert the rect. Parameterized over every room.
+    /// P2-SCREEN-21 (post-fix): the clamp bias never touches <see cref="Camera2D.LimitLeft"/>,
+    /// never drops <see cref="Camera2D.LimitRight"/> below the room's own right edge (closing the
+    /// bug this unit actually shipped with: shrinking it, capped at that same edge, could never
+    /// have worked — bias 0 was already the best case, and it still failed), and never grows it
+    /// unboundedly for an adversarial width either: past the room's true edge it is capped at
+    /// widening the clamp to exactly <see cref="Town2D.TargetVisibleWorldWidth"/>, the minimum
+    /// needed to flip Camera2D's own dominant-side check from right to left (<see
+    /// cref="Town2D.ApplyDrawerBiasedRoomClamp"/>'s own doc) — checked against <see
+    /// cref="DrawerHost.DrawerWidth"/> (what actually ships) AND an adversarially oversized width,
+    /// so a future wider drawer (or a narrower room) cannot silently invert the rect or blow the
+    /// clamp out arbitrarily far. Parameterized over every room.
     /// </summary>
     [TestCase("forge")]
     [TestCase("market")]
@@ -426,9 +433,19 @@ public class InteriorRoomTests
                 AssertThat((float)town.Cam.LimitRight)
                     .OverrideFailureMessage(
                         $"'{venueKey}' at drawer width {drawerWidthPx}: LimitRight "
-                        + $"({town.Cam.LimitRight}) is past the room's own right edge "
-                        + $"({room.RoomRect.End.X}) — the bias must only ever shrink the clamp.")
-                    .IsLessEqual(room.RoomRect.End.X);
+                        + $"({town.Cam.LimitRight}) fell below the room's own right edge "
+                        + $"({room.RoomRect.End.X}) — an open drawer must never SHRINK the clamp; "
+                        + "that only ever pins the view further right, deeper under the drawer.")
+                    .IsGreaterEqual(room.RoomRect.End.X);
+
+                AssertThat((float)town.Cam.LimitRight)
+                    .OverrideFailureMessage(
+                        $"'{venueKey}' at drawer width {drawerWidthPx}: LimitRight "
+                        + $"({town.Cam.LimitRight}) widened the clamp by more than "
+                        + $"{Town2D.TargetVisibleWorldWidth}px past the room's own right edge "
+                        + $"({room.RoomRect.End.X}) — an adversarial drawer width must not blow "
+                        + "the clamp out arbitrarily far.")
+                    .IsLessEqual(room.RoomRect.End.X + Town2D.TargetVisibleWorldWidth);
 
                 AssertThat((float)town.Cam.LimitRight)
                     .OverrideFailureMessage(
@@ -470,14 +487,20 @@ public class InteriorRoomTests
                     continue; // gated this campaign day (Demand/HeroCards/Progress) — nothing to check
                 }
 
-                await SettleUntil(
-                    ui.Town,
-                    () => ui.Town.Cam.LimitRight < ui.Town.FindInteriorRoom("forge").RoomRect.End.X - 1f,
-                    frameBudget: 5,
-                    $"Town2D's camera clamp to shrink for the open '{id}' drawer");
-
                 var uncoveredRight = ui.Town.ViewportScreenRect.Position.X
                     + ui.Town.ViewportScreenRect.Size.X - DrawerHost.DrawerWidth;
+
+                // Waits on the actual property this test exists to prove — not a specific
+                // mechanism's own intermediate state (Town2D.ApplyDrawerBiasedRoomClamp fixed this
+                // by WIDENING Cam.LimitRight past the room's true edge, not shrinking it — see its
+                // own doc — so a LimitRight-direction proxy here would be re-coupled to whichever
+                // implementation happens to ship today).
+                await SettleUntil(
+                    ui.Town,
+                    () => ui.Town.WorldToScreen(ui.Town.Player.GlobalPosition).X < uncoveredRight,
+                    frameBudget: 5,
+                    $"the player to render inside the uncovered region for the open '{id}' drawer");
+
                 var playerScreenX = ui.Town.WorldToScreen(ui.Town.Player.GlobalPosition).X;
 
                 AssertThat(playerScreenX)
