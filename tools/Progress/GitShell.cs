@@ -72,26 +72,34 @@ public static class GitShell
     }
 
     /// <summary>
-    /// Every tracked SOURCE file on <paramref name="gitRef"/> that writes one of
-    /// <paramref name="unitIds"/> into its text, keyed by unit id — the input for the
-    /// <see cref="SourceTaggedUnbuilt"/> warning.
+    /// Every tracked SOURCE line on <paramref name="gitRef"/> that writes one of
+    /// <paramref name="unitIds"/> into its text, keyed by unit id, classified as a code hit or a
+    /// comment hit — the input for the <see cref="SourceTaggedUnbuilt"/> warning.
     ///
     /// <para>Source only, never <c>docs/</c>: the plan itself names every id by definition, so
     /// including it would match all of them and say nothing. One `git grep` process for the whole
     /// id set rather than one per unit; a no-match run exits 1, which is the empty answer and not a
     /// failure, so only a code above 1 throws.</para>
+    ///
+    /// <para><b>Why the full line, not <c>--only-matching</c>.</b> The prior version captured only
+    /// the matched id text, so it could never tell a real implementation from a doc-comment
+    /// forward-reference deferring one ("U33 gives her a graduation line; this unit ships the
+    /// mechanism the fact rides on, not the voice" is a real line on main) — every hit refused
+    /// dispatch regardless. Capturing the whole line (plus <c>-n</c> for the line number, so a
+    /// reader can jump straight to the site) is what <see cref="IsCommentHit"/> needs to
+    /// classify.</para>
     /// </summary>
-    public static Dictionary<string, List<string>> ListSourceTagSites(
+    public static Dictionary<string, List<SourceTagHit>> ListSourceTagSites(
         string repoRoot, string gitRef, IEnumerable<string> unitIds)
     {
         var ids = unitIds.Distinct(StringComparer.Ordinal).ToList();
-        var sites = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        var sites = new Dictionary<string, List<SourceTagHit>>(StringComparer.Ordinal);
         if (ids.Count == 0)
         {
             return sites;
         }
 
-        var args = new List<string> { "grep", "--only-matching", "--fixed-strings" };
+        var args = new List<string> { "grep", "-n", "--fixed-strings" };
         foreach (var id in ids)
         {
             args.Add("-e");
@@ -114,37 +122,101 @@ public static class GitShell
             throw new InvalidOperationException($"git grep over {ids.Count} unit ids failed: {stderr}");
         }
 
-        // `<rev>:<path>:<match>` — the path can itself contain no ':' in this repo, but splitting
-        // from the END is correct regardless: the match is the last field and the rev is the first.
+        // `<rev>:<path>:<lineno>:<content>` — the rev is exactly the `gitRef` we passed (no colon
+        // in a ref name like `origin/main`) and the path has no ':' in this repo, so stripping the
+        // known rev prefix and then splitting the remainder on the next two colons is exact; the
+        // content itself is free to contain colons (a URL, a ratio) because nothing after the
+        // second colon is split any further.
+        var revPrefix = gitRef + ":";
         foreach (var line in stdout.Replace("\r\n", "\n").Split('\n'))
         {
-            var lastColon = line.LastIndexOf(':');
-            var firstColon = line.IndexOf(':');
-            if (lastColon <= firstColon || firstColon < 0)
+            if (!line.StartsWith(revPrefix, StringComparison.Ordinal))
             {
                 continue;
             }
 
-            var id = line[(lastColon + 1)..];
-            var path = line[(firstColon + 1)..lastColon];
-            if (id.Length == 0 || path.Length == 0)
+            var rest = line[revPrefix.Length..];
+            var pathEnd = rest.IndexOf(':');
+            if (pathEnd < 0)
             {
                 continue;
             }
 
-            if (!sites.TryGetValue(id, out var paths))
+            var path = rest[..pathEnd];
+            var afterPath = rest[(pathEnd + 1)..];
+            var lineEnd = afterPath.IndexOf(':');
+            if (lineEnd < 0)
             {
-                paths = [];
-                sites[id] = paths;
+                continue;
             }
 
-            if (!paths.Contains(path, StringComparer.Ordinal))
+            var lineNoText = afterPath[..lineEnd];
+            var content = afterPath[(lineEnd + 1)..];
+            if (path.Length == 0 || !int.TryParse(lineNoText, out var lineNo))
             {
-                paths.Add(path);
+                continue;
+            }
+
+            // git grep guarantees the line matches at least one of the OR'd `-e` patterns but
+            // (without --only-matching) does not say which — so every id is checked against this
+            // one line's content directly, same fixed-string semantics as the grep itself.
+            foreach (var id in ids)
+            {
+                var matchIndex = content.IndexOf(id, StringComparison.Ordinal);
+                if (matchIndex < 0)
+                {
+                    continue;
+                }
+
+                if (!sites.TryGetValue(id, out var hits))
+                {
+                    hits = [];
+                    sites[id] = hits;
+                }
+
+                if (!hits.Any(h => h.Path == path && h.Line == lineNo))
+                {
+                    hits.Add(new SourceTagHit(path, lineNo, IsCommentHit(content, matchIndex)));
+                }
             }
         }
 
         return sites;
+    }
+
+    /// <summary>
+    /// Whether a comment marker sits before <paramref name="matchIndex"/> on this line, or the
+    /// whole line is a block-comment continuation. Pure and unit-tested directly against literal
+    /// strings — deliberately git-agnostic.
+    ///
+    /// <para>Covers the four inline markers the tracked extensions actually use — <c>//</c> (which
+    /// also covers <c>///</c>, a superset match), <c>#</c> (<c>*.ps1</c>/<c>*.py</c>/<c>*.yml</c>),
+    /// and <c>&lt;!--</c> — plus a line whose trimmed start is <c>*</c> or <c>/*</c>, the
+    /// Javadoc/JSDoc-style block-comment continuation that carries no marker of its own on the
+    /// line the id sits on.</para>
+    ///
+    /// <para><b>Which way this fails.</b> A marker missed here reads the line as CODE, which keeps
+    /// today's conservative refuse-and-verify behaviour — no unit is ever newly unblocked by a
+    /// classifier miss. Only a marker correctly found downgrades a hit to a note. So the failure
+    /// mode of this heuristic is safe in the direction it fails.</para>
+    /// </summary>
+    public static bool IsCommentHit(string lineContent, int matchIndex)
+    {
+        var trimmed = lineContent.TrimStart();
+        if (trimmed.StartsWith("*", StringComparison.Ordinal) || trimmed.StartsWith("/*", StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        if (matchIndex <= 0)
+        {
+            return false;
+        }
+
+        var before = lineContent[..matchIndex];
+        return before.Contains("//", StringComparison.Ordinal)
+            || before.Contains('#')
+            || before.Contains("<!--", StringComparison.Ordinal);
     }
 
     public static HashSet<string> ListTrackedFiles(string repoRoot, string gitRef)

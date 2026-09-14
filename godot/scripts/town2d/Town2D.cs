@@ -130,6 +130,16 @@ public partial class Town2D : Control
     /// Accumulated-delta, matching every other timer in this file — no engine Tween anywhere here.</summary>
     private float _focusRemaining;
 
+    /// <summary>P2-SCREEN-22: true exactly when <see cref="Cam"/> is centred on the player, false
+    /// for as long as a <see cref="FocusOn"/>/<see cref="FocusOnMineGate"/> timed borrow (a Send-Off
+    /// departure pan, the Reask camera peek) has the screen showing somewhere else. <see
+    /// cref="GodotClient.MainUi.UpdateInteractPrompt"/> reads this to hide the "E · {name}" chip
+    /// during a focus beat — the player keeps walking and <see cref="WorldInputNode"/> keeps
+    /// scanning throughout one (see <see cref="FocusOn"/>'s own doc), so a target can stay active
+    /// the whole time; without this gate the chip kept floating over whatever the player was last
+    /// standing next to while the visible frame showed a different part of the town entirely.</summary>
+    public bool IsCameraOnPlayer => _focusRemaining <= 0f;
+
     public SubViewportContainer ViewportContainer { get; private set; } = null!;
     /// <summary>Named <c>WorldViewport</c> rather than <c>Viewport</c> to avoid shadowing the
     /// Godot <see cref="Godot.Viewport"/> TYPE (needed unqualified below for <see
@@ -160,6 +170,14 @@ public partial class Town2D : Control
     /// <see cref="BuildAssessor"/>). Parameterless, same reason <see cref="TownsfolkNpc2D.Picked"/>
     /// itself is: there is exactly one Voss.</summary>
     public event Action? AssessorClicked;
+
+    /// <summary>P2-MEMORY-22 ("the east field remembers", link 5): re-emits <see
+    /// cref="Building2D.Picked"/> for <see cref="MemorialWall"/> specifically — mirrors <see
+    /// cref="AssessorClicked"/>'s exact shape (parameterless; there is exactly one memorial wall)
+    /// rather than folding it into <see cref="BuildingClicked"/>'s venue-key vocabulary, since this
+    /// structure is not one of <see cref="TownLayout2D.Venues"/> and has no entry in
+    /// <c>MainUi.OnTownBuildingClicked</c>'s switch to fall through to.</summary>
+    public event Action? MemorialWallClicked;
 
     /// <summary>U1 (painted-interiors plan): re-emits <see cref="InteriorRoom2D.StationActivated"/>
     /// — the WHOLE <see cref="InteriorLayout2D.StationSpec"/> (U3: Action/Focus/HoverLine/FlavorLine
@@ -493,6 +511,29 @@ public partial class Town2D : Control
     /// actually changed, never on an idle frame.</summary>
     private (int DaysUntilAssessment, int DuesGold, int MissedAssessments) _assessorLastSeen = (-1, -1, -1);
 
+    /// <summary>P2-MEMORY-22 ("the east field remembers", link 5): the standing memorial in the
+    /// town's open east field — present once <see cref="Build"/> has run. Test/inspection surface
+    /// (mirrors <see cref="Assessor"/>): a live campaign always has one, this is only ever null
+    /// before <see cref="Build"/> runs.</summary>
+    public Building2D? MemorialWall { get; private set; }
+
+    /// <summary>P2-MEMORY-22: one lantern <see cref="Sprite2D"/> per fallen hero currently mounted
+    /// on <see cref="MemorialWall"/> — rebuilt whole by <see cref="RefreshMemorialWallLanterns"/>
+    /// whenever the sim's own fallen-hero count changes. Test/inspection surface via <see
+    /// cref="MemorialLanternCount"/>.</summary>
+    private readonly List<Sprite2D> _memorialLanterns = new();
+
+    /// <summary>P2-MEMORY-22: how many lanterns <see cref="MemorialWall"/> currently carries — the
+    /// sim's own <see cref="DramaState.Memorials"/> count as of the last <see
+    /// cref="RefreshMemorialWallLanterns"/> call (LAW 4: shown, never derived or estimated).</summary>
+    public int MemorialLanternCount => _memorialLanterns.Count;
+
+    /// <summary>P2-MEMORY-22: the fallen-hero count <see cref="_memorialLanterns"/> was last built
+    /// against — -1 (never a real count) forces <see cref="BuildMemorialWall"/>'s own initial call
+    /// to build even a zero-lantern row, same "force the first paint" idiom as <see
+    /// cref="_assessorLastSeen"/>'s sentinel tuple above.</summary>
+    private int _memorialLanternsBuiltFor = -1;
+
     /// <summary>U6: patron seating inside the tavern room — null only if the tavern has no
     /// <see cref="InteriorLayout2D"/> row (defensive; every real build has one) or its "Patron
     /// Table" stations were renamed out from under <see cref="WireTavernLife"/>.</summary>
@@ -628,6 +669,7 @@ public partial class Town2D : Control
                            // generic cosmetic pool so TownsfolkCount's exact-count contract holds
         BuildAssessor(); // P2-LONG-17: the Guild Assessment's own face — same "outside the generic
                           // pool" reasoning as the rival smith above, same reason
+        BuildMemorialWall(); // P2-MEMORY-22: the east field's own standing memorial — link 5
         WireTavernLife(); // U6: needs BuildInteriorRooms' tavern row + stations, already built above
 
         Fx = new Node2D { Name = "Fx" };
@@ -1021,6 +1063,10 @@ public partial class Town2D : Control
             var color = ClassColors.RoleColor(hero.ClassId);
             var sprite = TownAssets2D.ForHero(hero.ClassId, hero.Id.Value);
             actor.Init(hero.Id.Value, hero.ClassId, color, sprite, HomeFor(hero.Id.Value, state.Phase), hero.Name);
+            // P2-PEOPLE-23: seed the mark glyph at spawn (same gate _Process refreshes every frame
+            // below) so a freshly-reconciled actor never shows one stale frame of "no mark" for a
+            // hero who was already wearing one the moment they entered the square.
+            actor.SetWearsPlayerMark(HeroChips.WearsPlayerMark(hero, state));
             // U-T3-8: same venue-door pool townsfolk errand toward (see _errandTargets' own doc) —
             // gives a wandering hero a real destination instead of the frozen-below-threshold
             // lissajous drift alone.
@@ -1229,11 +1275,29 @@ public partial class Town2D : Control
                 actor.SetPhase(Adapter.CurrentState.Phase);
             }
 
+            // P2-PEOPLE-23 ("your mark on the walker"): refreshed every frame, same cheap per-actor
+            // cadence as the phase gate just above, so a hero who re-equips mid-day (forge counter,
+            // commission hand-off) shows the mark change immediately rather than waiting on the next
+            // ReconcileHeroes (which never re-runs for a hero who already has a live actor). Reads
+            // the SAME HeroChips.WearsPlayerMark gate the vigil's own Gear chip reads — link1's one
+            // axiom, one reader.
+            foreach (var actor in _heroActors.Values)
+            {
+                if (Adapter.CurrentState.Heroes.TryGetValue(actor.HeroIdValue, out var hero))
+                {
+                    actor.SetWearsPlayerMark(HeroChips.WearsPlayerMark(hero, Adapter.CurrentState));
+                }
+            }
+
             // P2-LONG-19: the rival's one spoken line, checked the same cheap per-frame way.
             RefreshRivalAbsenceLine(Adapter.CurrentState);
 
             // P2-LONG-17: the assessor's own line, same cheap per-frame check.
             RefreshAssessorLine(Adapter.CurrentState);
+
+            // P2-MEMORY-22: the wall's own lantern row, same cheap per-frame gate — rebuilds only
+            // when the sim's own fallen-hero count actually changed since the last tick.
+            RefreshMemorialWallLanterns(Adapter.CurrentState);
         }
 
         // U10 (KTD-5): accumulate/reset each actor's Away timer every frame, regardless of
@@ -2180,6 +2244,101 @@ public partial class Town2D : Control
 
         _assessorLastSeen = seen;
         Assessor.SetCaption(AssessorLine(state.Assessment));
+    }
+
+    /// <summary>
+    /// P2-MEMORY-22 ("the east field remembers", link 5): a standing memorial in the town's open
+    /// east field — the plan's own finding was that this whole third of the map was bare grass
+    /// with no outdoor memory at all. Built as a standalone <see cref="Building2D"/> (real art
+    /// ladder, proximity/E-interact, click-pick — the SAME mechanism every venue and <see
+    /// cref="Assessor"/> already use) rather than a <see cref="TownLayout2D.Venues"/> row, since it
+    /// has no interior and no drawer panel — routing its <see cref="Building2D.Picked"/> through
+    /// the generic <see cref="BuildingClicked"/> re-emit would fall through <c>MainUi
+    /// .OnTownBuildingClicked</c>'s unrecognized-key default straight into a dead "Town" click
+    /// (CLAUDE.md law 3). <see cref="MemorialWallClicked"/> is its own dedicated event instead,
+    /// mirroring <see cref="AssessorClicked"/>'s exact shape.
+    ///
+    /// <para>"E · Legends" opens the SAME <see cref="GodotClient.Panels.LegendsWall"/> the tavern's
+    /// "storywall" interior station already opens — <see cref="MainUi"/> wires <see
+    /// cref="MemorialWallClicked"/> straight to <c>Legends.ShowWall(Adapter.CurrentState)</c>,
+    /// never a second book.</para>
+    /// </summary>
+    private void BuildMemorialWall()
+    {
+        var sprite = TownAssets2D.ForVenue(TownLayout2D.MemorialWallSpriteId);
+        MemorialWall = new Building2D();
+        // nametag "Legends" (not "Memorial Wall"): WorldInput2D's default prompt is
+        // "E · {NameLabel.Text}", and this structure's one real verb IS opening Legends — the
+        // plan's own wording for the interaction.
+        MemorialWall.Configure(
+            "memorial-wall", "Legends", sprite, TownLayout2D.TileToWorld(TownLayout2D.MemorialWallTile));
+        MemorialWall.Picked += _ => MemorialWallClicked?.Invoke();
+        YSort.AddChild(MemorialWall);
+
+        // Filed under its own key in the SAME dictionary the five venues share (never a second
+        // interact mechanism): WorldInputNode.Configure's later call (Build/Refresh, both already
+        // walk _buildingsByKey.Values) proximity-scans and E-interacts this exactly like a venue,
+        // even though it never routes through TownLayout2D.Venues or BuildingClicked.
+        _buildingsByKey[TownLayout2D.MemorialWallSpriteId] = MemorialWall;
+
+        RefreshMemorialWallLanterns(Adapter!.CurrentState, force: true);
+    }
+
+    /// <summary>
+    /// P2-MEMORY-22: rebuilds <see cref="MemorialWall"/>'s lantern row iff the sim's own fallen-hero
+    /// count (<see cref="DramaState.Memorials"/> — the SAME list <see
+    /// cref="GodotClient.Panels.LegendsWall"/> renders, LAW 4: show only what the sim decided,
+    /// never a second count) has changed since the last check — same cheap per-tick gate idiom as
+    /// <see cref="RefreshAssessorLine"/> just above. A campaign with zero deaths still gets the
+    /// wall itself (<see cref="BuildMemorialWall"/> always builds it); this only ever changes how
+    /// many lanterns sit on it, including down to zero for a fresh campaign — an empty memorial is
+    /// honest, never hidden.
+    /// </summary>
+    private void RefreshMemorialWallLanterns(GameState state, bool force = false)
+    {
+        if (MemorialWall is null)
+        {
+            return;
+        }
+
+        var count = state.Drama.Memorials.Count;
+        if (!force && count == _memorialLanternsBuiltFor)
+        {
+            return;
+        }
+
+        _memorialLanternsBuiltFor = count;
+
+        foreach (var lantern in _memorialLanterns)
+        {
+            lantern.QueueFree();
+        }
+
+        _memorialLanterns.Clear();
+
+        if (count == 0)
+        {
+            return;
+        }
+
+        var lanternTexture = TownAssets2D.ForProp(TownLayout2D.MemorialLanternSpriteId);
+        var wallHeight = MemorialWall.Sprite.Texture?.GetSize().Y ?? 32f;
+        var startX = -(count - 1) * TownLayout2D.MemorialLanternSpacingPx / 2f;
+
+        for (var i = 0; i < count; i++)
+        {
+            var lantern = new Sprite2D
+            {
+                Name = $"MemorialLantern_{i}",
+                Texture = lanternTexture,
+                Centered = true,
+                // Mounted at the wall's own vertical centroid (mirrors Building2D.BuildTell's
+                // "-size.Y/2" anchor), spread horizontally around the wall's center.
+                Position = new Vector2(startX + i * TownLayout2D.MemorialLanternSpacingPx, -wallHeight * 0.5f),
+            };
+            MemorialWall.AddChild(lantern);
+            _memorialLanterns.Add(lantern);
+        }
     }
 
     /// <summary>U6: mounts <see cref="TavernLife2D"/> at the tavern room's own "Patron Table"

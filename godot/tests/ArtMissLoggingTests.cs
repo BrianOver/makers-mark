@@ -65,8 +65,8 @@ public class ArtMissLoggingTests
             .IsEqual(1);
         AssertThat(warnings[0]).StartsWith("WARNING: [UiKit] no committed art for");
 
-        first.QueueFree();
-        second.QueueFree();
+        first.Free();
+        second.Free();
     }
 
     [TestCase]
@@ -83,7 +83,7 @@ public class ArtMissLoggingTests
         AssertThat(EngineDistress.Messages.Where(m => m.Contains(KnownLadderArtKey)).ToList())
             .IsEmpty();
 
-        control.QueueFree();
+        control.Free();
     }
 
     /// <summary>

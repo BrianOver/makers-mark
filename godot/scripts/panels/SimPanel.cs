@@ -339,14 +339,20 @@ public abstract partial class SimPanel : Control
     }
 
     /// <summary>A fitted modal card: <paramref name="Body"/> for the content, <paramref name="ActionRow"/> for
-    /// the controls that must never leave the screen.</summary>
-    protected readonly record struct ModalCard(VBoxContainer Body, Control ActionRow);
+    /// the controls that must never leave the screen, and <paramref name="Panel"/> — the outer bounded region
+    /// itself — for a caller that needs to dock the card's own height to its content (see
+    /// <c>CampPanel.SizeCardToContent</c>, the visfix5 fix for a card that used to always be exactly
+    /// window-minus-margin tall regardless of how little was inside it).</summary>
+    protected readonly record struct ModalCard(VBoxContainer Body, Control ActionRow, Control Panel);
 
     /// <summary>Inset (px) from each window edge for a fitted modal card.</summary>
     private const float ModalMargin = 64f;
 
-    /// <summary>Height (px) reserved for a fitted modal's bottom action row.</summary>
-    private const float ModalActionRowHeight = 40f;
+    /// <summary>Height (px) reserved for a fitted modal's bottom action row. Protected (visfix5): a
+    /// caller docking its own card height to content still needs to budget this same row, which is
+    /// reserved via <c>body.OffsetBottom</c> below rather than via anything the row's own children
+    /// report — the OFFSET is the one true source, not the row's live minimum size.</summary>
+    protected const float ModalActionRowHeight = 40f;
 
     /// <summary>
     /// Build a modal card that CANNOT outgrow the window, with its dismiss controls anchored to the bottom.
@@ -391,7 +397,7 @@ public abstract partial class SimPanel : Control
         actionRow.OffsetTop = -ModalActionRowHeight;
         host.AddChild(actionRow);
 
-        return new ModalCard(body, actionRow);
+        return new ModalCard(body, actionRow, panel);
     }
 
     protected static HBoxContainer AddRow(Node parent)
@@ -430,6 +436,9 @@ public abstract partial class SimPanel : Control
         {
             Texture = texture,
             CustomMinimumSize = new Vector2(size, size),
+            // P2-SCREEN-29: without ExpandMode, KeepSize's GetMinimumSize() reports the source
+            // texture's own pixel size instead of the requested `size` — see UiKit.ArtRect.
+            ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
             StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
             MouseFilter = MouseFilterEnum.Ignore,
         };
@@ -491,11 +500,15 @@ public abstract partial class SimPanel : Control
     /// <see cref="PortraitFrame"/> passthrough just above — previously this was the one ArtRect
     /// caller that could never opt into the single-line ellipsized caption
     /// <see cref="UiKit.ArtRect"/> already supports. Default false keeps every existing caller
-    /// byte-identical.</summary>
+    /// byte-identical. Widened again (visfix4) to forward <paramref name="stretchMode"/> the same
+    /// way, so a panel cropping a wide banner-shaped source into a square-ish box can opt into
+    /// <see cref="TextureRect.StretchModeEnum.KeepAspectCovered"/> without a second, hand-rolled
+    /// cropping rule — see <see cref="UiKit.ArtRect"/>'s own remarks.</summary>
     protected static Control ArtRect(
         string artKey, Vector2 size, Texture2D? fallbackIcon = null, string? caption = null,
-        bool ellipsizeCaption = false) =>
-        UiKit.ArtRect(artKey, size, fallbackIcon, caption, ellipsizeCaption);
+        bool ellipsizeCaption = false,
+        TextureRect.StretchModeEnum stretchMode = TextureRect.StretchModeEnum.KeepAspectCentered) =>
+        UiKit.ArtRect(artKey, size, fallbackIcon, caption, ellipsizeCaption, stretchMode);
 
     // ── UI-2: cozy list/HUD builder passthroughs ──────────────────────────────────────────────
 

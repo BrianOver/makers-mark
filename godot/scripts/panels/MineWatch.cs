@@ -1127,6 +1127,9 @@ public partial class MineWatch : SubViewportContainer
                 Name = "DepartureSlateEmptyIcon",
                 Texture = IconRegistry.Glyph("rune"),
                 CustomMinimumSize = new Vector2(16f, 16f),
+                // P2-SCREEN-29: without ExpandMode, KeepSize's GetMinimumSize() reports the rune
+                // glyph's own pixel size instead of the requested 16px — see UiKit.ArtRect.
+                ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
                 StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
                 MouseFilter = MouseFilterEnum.Ignore,
             });
@@ -1215,6 +1218,8 @@ public partial class MineWatch : SubViewportContainer
                 Name = "DeepStakesSlateEmptyIcon",
                 Texture = IconRegistry.Glyph("rune"),
                 CustomMinimumSize = new Vector2(16f, 16f),
+                // P2-SCREEN-29: same fix as DepartureSlateEmptyIcon above — see UiKit.ArtRect.
+                ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
                 StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
                 MouseFilter = MouseFilterEnum.Ignore,
             });
