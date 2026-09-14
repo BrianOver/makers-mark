@@ -25,9 +25,9 @@
 #   Counter, Demand, DepthsPanel, Docket, ForgeAnvil, ForgeAnvilEmpty, ForgeEcho, ForgeExit,
 #   ForgeFlavor, ForgeLadder, ForgePanel, ForgeShelf, ForgeTrinket, GatedCounterEmptyShelf,
 #   GateHeldStreak, GateNight, Graduation, HeroCandidateOpen, HeroCards, HeroErrand, HeroTrinket,
-#   Ledger, LedgerProvenance, Lessons, MemoryRow, MineGateFocus, Mirror, OccupancyCorner, Primer,
-#   Provenance, ReturnAtNight, ReturnEmerge, ReturnQuestEmpty, SendOff, ShopPanel, ShopTrinket,
-#   SplitLessons, Storied, StoriedCard, StoriedRefusal, SystemMenu, TavernPanel, TavernScene,
+#   Ledger, LedgerProvenance, Lessons, Memorial, MemoryRow, MineGateFocus, Mirror, OccupancyCorner,
+#   Primer, Provenance, ReturnAtNight, ReturnEmerge, ReturnQuestEmpty, SendOff, ShopPanel,
+#   ShopTrinket, SplitLessons, Storied, StoriedCard, StoriedRefusal, SystemMenu, TavernPanel, TavernScene,
 #   TavernSceneAtBar, Telling, TellingFall, TellingFork, TellingVerdict, TownOverview,
 #   TutorialLookIn, TutorialOffCamera, Watch, WarrantFirstMorning
 # END KNOWN_STATES
