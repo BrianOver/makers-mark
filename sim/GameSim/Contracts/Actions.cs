@@ -46,8 +46,12 @@ public abstract record PlayerAction;
 /// Phase B — strictly better balance-gate coverage). Abstract polymorphic; ZERO derived types in
 /// Phase A (always null); Phase B registers derived types via a contracts micro-PR.</para>
 /// <para><paramref name="SubScores"/> is the three forge-beat scores (smelt/forge/quench), stored
-/// verbatim on the crafted item for Evening ledger flavor ("edge quenched brittle") — DATA, never
-/// rules.</para>
+/// verbatim on the crafted item — DATA, never rules. They render as the numeric Smelt/Forge/Quench
+/// chips on <c>ProvenanceCard</c>. This used to say they were "for Evening ledger flavor ('edge
+/// quenched brittle')"; both halves were wrong. The Evening flavor rides <c>Item.History</c>'s
+/// <c>"forged"</c> entry, not these scores, and no code path in either direction has ever produced
+/// the phrase "edge quenched brittle" — the real vocabulary is <c>ForgeMomentLine</c>'s four
+/// phrases.</para>
 /// <para>Phase C U-C1 slice 2: <paramref name="RequestQuenchOil"/>/<paramref name="RequestRune"/>/
 /// <paramref name="RequestFitting"/> are the craft-modifier ids the player composes onto this craft
 /// (see <c>GameSim.Crafting.CraftModifiers</c>). <see cref="Crafting.CraftingHandlers"/> validates
