@@ -156,6 +156,20 @@ public partial class ForgePanel : SimPanel
     private Control? _needsSectionRoot;
     private VBoxContainer? _needsRows;
 
+    /// <summary>The 481px-drawer re-lay (owner ruling 2026-09-14): "What This Needs" is a
+    /// <see cref="UiKit.Disclosure"/> now, so the block that used to cost 129px of a 386px visible
+    /// scroll costs a header row. <see cref="_needsSummary"/> is the line that never collapses —
+    /// it carries the shortfall (and, when the buy is refused, the reason verbatim, P2-SCREEN-23),
+    /// so the craft decision stays informed with the body shut (law 7). <see cref="_needsVerbSlot"/>
+    /// holds the day-1 <c>BuyMat_</c> button in that same never-collapsing header, which is what
+    /// keeps <c>TutorialKeepsUpTests</c> honest without moving the section anywhere.</summary>
+    private Label? _needsSummary;
+    private HBoxContainer? _needsVerbSlot;
+
+    /// <summary>The Modifiers disclosure's never-collapsing summary line — see
+    /// <see cref="UpdateModifiersSummary"/>.</summary>
+    private Label? _modifiersSummary;
+
     /// <summary>The section a bare (non-station) open lands on -- see <see cref="ResetFocus"/>.
     /// "craft" because all three bare-open callers say so in their own copy: Camp's "Forge
     /// something for them", the Forecast board's "Forge one", and the Docket's.</summary>
@@ -609,7 +623,15 @@ public partial class ForgePanel : SimPanel
         }
 
         var state = _devStagedState ?? Adapter.CurrentState;
-        _waitingCustomerLine!.Text = WaitingCustomerLine(state);
+        // 481px re-lay (owner ruling 2026-09-14): P2-PEOPLE-21's line is EMPTY whenever no customer
+        // is actually waiting — which is most opens — and a Container still reserves a full text
+        // row for an empty Label. That was 27px off the top of a 425px drawer body for a sentence
+        // nobody is reading, and this panel's own ForgeFeedback already fixed exactly this
+        // (register #149). Toggling Visible with the text keeps the line identical when there IS a
+        // customer and costs nothing when there is not.
+        var waitingLine = WaitingCustomerLine(state);
+        _waitingCustomerLine!.Text = waitingLine;
+        _waitingCustomerLine.Visible = !string.IsNullOrEmpty(waitingLine);
         // UI-5: the running materials list is now redundant with each vendor ListRow's own
         // "owned" column below — this line stays only as the empty-inventory hint (no full
         // "copper x4, iron x2" prose dump once there IS stock to read off the rows instead).
@@ -799,6 +821,7 @@ public partial class ForgePanel : SimPanel
         Clear(_recipeRows!);
         Clear(_talentRows!);
         Clear(_needsRows!);
+        Clear(_needsVerbSlot!);
         // U-T7-2: the needs row names the material the FIRST rendered, tier-unlocked recipe card
         // consumes -- the same recipe/material pair the card right below it shows, resolved through
         // SelectedMaterialOr so the material dropdown moves the needs row with it. Captured inside
@@ -1197,17 +1220,36 @@ public partial class ForgePanel : SimPanel
         {
             var needsHave = state.Player.Materials.TryGetValue(needsKey, out var needsStock) ? needsStock : 0;
             var needsGate = MaterialGate(needsKey, 1);
+            var needsName = MaterialRegistry.Require(needsKey).DisplayName.ToLowerInvariant();
             var needsBuy = new Button { Name = $"BuyMat_{needsKey}", Text = "Buy 1" };
             var needsMaterial = needsKey;
             needsBuy.Pressed += () => OnBuyMaterialPressed(needsMaterial, 1);
-            _needsRows!.AddChild(ListRow(
-                IconRegistry.Ore(needsKey),
-                $"{MaterialRegistry.Require(needsKey).DisplayName.ToLowerInvariant()} — {needsRecipeName} needs {needsQuantity}",
-                $"{needsGate.Quote}g",
-                $"{needsHave}/{needsQuantity}",
-                needsBuy,
-                needsGate.Legal,
-                needsGate.WhyNot));
+            // 481px re-lay (owner ruling 2026-09-14): the buy button and the shortfall go in the
+            // disclosure HEADER, which never collapses. That is what keeps law 7 honest with the
+            // body shut — the cost of not buying ("you have 0 of 2") is on screen, in copy, whether
+            // or not the player ever presses More — and it is also why the day-1 purchase
+            // TutorialKeepsUpTests follows is still one click away with the section collapsed. The
+            // refusal reason rides the same line verbatim (P2-SCREEN-23); a collapsed section may
+            // shorten an explanation, never swallow a refusal.
+            _needsSummary!.Text = needsGate.Legal
+                ? $"{needsName} {needsHave}/{needsQuantity} · {needsGate.Quote}g"
+                : $"{needsName} {needsHave}/{needsQuantity} · {needsGate.Quote}g — {needsGate.WhyNot}";
+            needsBuy.Disabled = !needsGate.Legal;
+            needsBuy.TooltipText = needsGate.Legal ? string.Empty : needsGate.WhyNot;
+            _needsVerbSlot!.AddChild(needsBuy);
+
+            // The body is everything the always-expanded Section used to show and the header line
+            // does not repeat: the ore's own icon, the full sentence naming which recipe wants it,
+            // and the refusal reason again beside the detail it explains.
+            var detailRow = AddRow(_needsRows!);
+            AddIcon(detailRow, IconRegistry.Ore(needsKey));
+            AddLabel(detailRow, $"{needsName} — {needsRecipeName} needs {needsQuantity}");
+            AddLabel(_needsRows!, $"You have {needsHave} of the {needsQuantity} this recipe needs.");
+            AddLabel(_needsRows!, $"{needsGate.Quote}g each from the Morning Vendor.");
+            if (!needsGate.Legal)
+            {
+                AddLabel(_needsRows!, needsGate.WhyNot);
+            }
         }
     }
 
@@ -2260,6 +2302,31 @@ public partial class ForgePanel : SimPanel
     }
 
     /// <summary>
+    /// Re-states the Modifiers disclosure's collapsed header line off the three selects themselves —
+    /// "(none chosen)" or the chosen ids, joined. The 481px re-lay folds those selects away by
+    /// default, so this is the one line that keeps a choice the player already made visible while
+    /// the body is shut; anything it did not say would be a decision hidden behind a toggle.
+    /// </summary>
+    private void UpdateModifiersSummary()
+    {
+        if (_modifiersSummary is null)
+        {
+            return;
+        }
+
+        var chosen = new[]
+        {
+            SelectedModifierId(_oilSelect, GameSim.Contracts.ModifierFamily.QuenchOil),
+            SelectedModifierId(_runeSelect, GameSim.Contracts.ModifierFamily.Rune),
+            SelectedModifierId(_fitSelect, GameSim.Contracts.ModifierFamily.Fitting),
+        }.Where(id => id is not null).ToList();
+
+        _modifiersSummary.Text = chosen.Count == 0
+            ? "none chosen — optional"
+            : string.Join(", ", chosen);
+    }
+
+    /// <summary>
     /// P2-PEOPLE-21 ("Forge it — Torvald waits"): what the pinned header says, derived fresh every
     /// Refresh straight off <see cref="CounterState"/> rather than carried as a payload on
     /// <see cref="RaidForecastBoard.ForgeOneRequested"/>-shaped events (<see
@@ -2346,11 +2413,19 @@ public partial class ForgePanel : SimPanel
         // left open — see WaitingCustomerLine's own doc for why this is derived every Refresh
         // rather than carried as a snapshot on that event. Above ForgeFeedback: this is context the
         // player needs BEFORE reading anything below, the same "speaks first" ordering CampPanel's
-        // own narrator line uses. Empty text collapses to zero height (same CampPanel precedent),
-        // so a Forge open with no one waiting costs no space.
+        // own narrator line uses.
+        //
+        // 481px re-lay (owner ruling 2026-09-14): this shipped with the claim that "empty text
+        // collapses to zero height, so a Forge open with no one waiting costs no space" — measured
+        // false. A Godot Container reserves a full text row for an empty Label; it was 27px of the
+        // 425px drawer body on every open with nobody at the counter, which is most of them. The
+        // only thing that actually collapses a row is Visible=false, which is why ForgeFeedback
+        // right below already does it (register #149) — so this does too, toggled with its text in
+        // Refresh.
         _waitingCustomerLine = AddLabel(root, string.Empty);
         _waitingCustomerLine.Name = "ForgeWaitingCustomer";
         _waitingCustomerLine.AddThemeColorOverride("font_color", GameTheme.AccentColor);
+        _waitingCustomerLine.Visible = false;
 
         _feedback = AddLabel(root, string.Empty);
         _feedback.Name = "ForgeFeedback";
@@ -2436,10 +2511,22 @@ public partial class ForgePanel : SimPanel
         // [Craft | Materials | Foundry]"). It also belongs here on merit: the buy the tutorial's own
         // day-1 instruction demands outranks three optional selects for a recipe nobody has chosen
         // yet, which is the arrangement the owner's jank_menu.jpg was complaining about.
-        var needsSection = Section("What This Needs");
+        //
+        // 481px re-lay (owner ruling 2026-09-14): a Disclosure, not a Section. The ordering above is
+        // unchanged — deliberately. Moving this block down is the one fix that is already known to
+        // fail (see the paragraph above, and TutorialKeepsUpTests' own report), so what shrinks is
+        // its HEIGHT, not its address: the header strip stays, carrying the shortfall and the buy
+        // button itself, and only the explanatory detail folds away.
+        var needsSection = UiKit.Disclosure("What This Needs");
         needsSection.Root.Name = "NeedsSection";
         _craftViewRoot.AddChild(needsSection.Root);
         _needsSectionRoot = needsSection.Root;
+        _needsSummary = needsSection.Summary;
+        // The verb lives in the header, LEFT of the More/Less toggle — so a collapsed disclosure
+        // still offers the one purchase day 1 instructs the player to make.
+        _needsVerbSlot = new HBoxContainer { Name = "NeedsVerbSlot" };
+        needsSection.Header.AddChild(_needsVerbSlot);
+        needsSection.Header.MoveChild(_needsVerbSlot, needsSection.Toggle.GetIndex());
         _needsRows = new VBoxContainer { Name = "NeedsRows" };
         needsSection.Body.AddChild(_needsRows);
 
@@ -2447,7 +2534,14 @@ public partial class ForgePanel : SimPanel
         // "(none)" plus the registered modifiers of that family. Read in OnCraftPressed.
         // UI-5: Title Case Section wrapper (was an ALL-CAPS AddHeader label) — matches ShopPanel's
         // existing Section-based screens.
-        var modifiersSection = Section("Modifiers (Optional)");
+        //
+        // 481px re-lay (owner ruling 2026-09-14): a Disclosure. Three "(none)" selects for a recipe
+        // nobody has chosen yet cost 92px above the recipe list; collapsed they cost a header row,
+        // and the header says so ("none chosen") rather than leaving the player to guess whether
+        // there was anything to pick. Deliberately NOT moved below the recipe list — that list
+        // measures ~5909px, so "below" is "unreachable".
+        var modifiersSection = UiKit.Disclosure("Modifiers (Optional)");
+        _modifiersSummary = modifiersSection.Summary;
         _craftViewRoot.AddChild(modifiersSection.Root);
         // Register #149: was a plain AddRow of three bare OptionButtons — three anonymous "(none)"
         // boxes with nothing beside them naming what any of them were (the owner's own screenshot:
@@ -2461,6 +2555,15 @@ public partial class ForgePanel : SimPanel
         modRow.AddChild(ModifierSelectGroup(_oilSelect, GameSim.Contracts.ModifierFamily.QuenchOil));
         modRow.AddChild(ModifierSelectGroup(_runeSelect, GameSim.Contracts.ModifierFamily.Rune));
         modRow.AddChild(ModifierSelectGroup(_fitSelect, GameSim.Contracts.ModifierFamily.Fitting));
+        // The collapsed header has to say what the folded-away selects currently hold, or shutting
+        // them would hide a choice the player already made (law 3 — the verb reveals the stake).
+        // Every select re-states it on change, and the initial call sets the "(none)" baseline.
+        foreach (var select in new[] { _oilSelect, _runeSelect, _fitSelect })
+        {
+            select.ItemSelected += _ => UpdateModifiersSummary();
+        }
+
+        UpdateModifiersSummary();
 
         var vendorSection = Section("Morning Vendor");
         // U3: a short, hand-picked name for FocusSection/test/diagnostic lookup, kept even though U8
