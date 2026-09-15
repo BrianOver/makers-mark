@@ -305,5 +305,81 @@ public class NameplateTests
             .OverrideFailureMessage("a lone nameplate with nothing nearby must never be nudged")
             .IsEqual(0f);
     }
+
+    // ── Scenario 11: a caption's rendered box stays centred on its owner (stale-position fix) ────
+
+    /// <summary>
+    /// Found 2026-09-14 via a live GPU capture of a plain town: every caption whose owner sprite was
+    /// narrower than Godot's own font-driven minimum size rendered visibly RIGHT of its owner —
+    /// "Brunhilde" (9 chars) sat further right of her icon than "Elowen" (6) or "Torvald" (7), shift
+    /// growing monotonically with name length. Root cause: <see cref="Building2D.BuildLabel"/> used
+    /// to compute <c>Position.X</c> from the CALLER's sprite-width argument, while Godot's own <see
+    /// cref="Control.Size"/> setter separately clamps <c>Size.X</c> UP to <see
+    /// cref="Control.GetCombinedMinimumSize"/> at assignment time — the two fell out of sync the
+    /// moment a caption's real content needed more room than its owner's sprite, and nothing ever
+    /// recentred <see cref="Control.Position"/> once that happened.
+    ///
+    /// <para>Pinned as a property over caption LENGTH crossed with sprite width, never one
+    /// hand-picked name — this campaign's own hero roster is generated fresh every game and would
+    /// stop covering the defect the moment a fresh seed picked different names. Lengths span short
+    /// (2 chars) through medium (6, 9 — "Elowen"/"Brunhilde"'s own lengths) to long (20) and a
+    /// rival-smith-tagline-scale very-long station caption (94, this repo's own measured worst
+    /// case). Sprite widths cover every real caller's own argument: 20px (hero/townsfolk body,
+    /// <c>TownSpriteArtTests.BodyWidth</c> — the narrowest real caller, and the one the live capture
+    /// actually measured against), 76px (the narrowest real venue door label, already wide enough
+    /// that the clamp never used to bite), and 168px (<c>TownsfolkNpc2D.CaptionWidth</c>, the rival
+    /// smith's own speech-caption box). Asserted against THIS RUN's own measured <see
+    /// cref="Label.Size"/> — never a pixel constant chosen ahead of time — because the clamp's exact
+    /// output is font-metric dependent and a literal tuned on one machine's font would not be
+    /// portable to CI's.</para>
+    /// </summary>
+    [TestCase]
+    public void BuildLabel_CentersItsRenderedBoxOnItsOwner_AcrossCaptionLengthsAndSpriteWidths()
+    {
+        var lengths = new[] { 2, 6, 9, 20, 94 };
+        var spriteWidths = new[] { 20f, 76f, 168f };
+        var everClamped = false;
+
+        foreach (var spriteWidthX in spriteWidths)
+        {
+            foreach (var length in lengths)
+            {
+                // 'M' -- a wide glyph -- so a short repeat count is never an UNDER-estimate of a
+                // real caption's rendered width at the same character count.
+                var text = new string('M', length);
+                var label = Building2D.BuildLabel(text, new Vector2(spriteWidthX, 32f));
+                try
+                {
+                    if (label.Size.X > spriteWidthX)
+                    {
+                        everClamped = true;
+                    }
+
+                    var center = label.Position.X + label.Size.X / 2f;
+                    AssertThat(center)
+                        .OverrideFailureMessage(
+                            $"a {length}-char caption on a {spriteWidthX}px-wide owner rendered its " +
+                            $"box centred at local X={center} (Position.X={label.Position.X}, " +
+                            $"Size.X={label.Size.X}) instead of on its owner (local X=0) -- the " +
+                            "stale-position defect, or a regression to it.")
+                        .IsEqual(0f);
+                }
+                finally
+                {
+                    // Free() (not QueueFree()) -- this label was never parented into a live tree
+                    // (BuildLabel only constructs it), so an immediate free is safe and avoids
+                    // leaking it as a same-test orphan the way a deferred QueueFree() would.
+                    label.Free();
+                }
+            }
+        }
+
+        AssertThat(everClamped)
+            .OverrideFailureMessage(
+                "no (length, spriteWidth) combination in this matrix ever clamped Size.X past its " +
+                "own sprite-width argument -- this test would pass vacuously without ever exercising " +
+                "the defect (a caption needing more room than its owner's sprite).")
+            .IsTrue();
+    }
 }
 #endif
