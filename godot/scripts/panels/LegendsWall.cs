@@ -55,8 +55,15 @@ namespace GodotClient.Panels;
 /// and Reforge rows now live — moved off the flat wall, not changed. The item-level sections
 /// (<see cref="RenderLegendItems"/>/<see cref="RenderStoriedItems"/>) are untouched by this unit and
 /// still render on the index; <see cref="ProvenanceCard"/> becoming the book's own item-page
-/// renderer, and richer per-actor page content, are later units' work
-/// (<c>docs/design/MAKERS-MARK.md</c> §11, P2-MEMORY-11/-12/-14).</para>
+/// renderer is P2-MEMORY-11's own work, below.</para>
+///
+/// <para>P2-MEMORY-11 (the item pages): a LEGENDARY GEAR / STORIED GEAR row used to pop <see
+/// cref="ProvenanceCard"/> open as a modal over the index — the one item view this book still
+/// showed as a popup instead of a page. <see cref="ShowItemPage"/> replaces that: the SAME
+/// navigation shell <see cref="ShowActorPage"/> already established (clear the body, a Back
+/// button, a header), with <see cref="ProvenanceCard.RenderInto"/> supplying the content — the
+/// popup itself is never opened from here anymore (it still is everywhere else: Shop/Heroes/
+/// Tavern/Mirror). One render, reached two ways, never two renders that could drift apart.</para>
 ///
 /// <para>P2-MEMORY-21: each Reforge row (<see cref="RenderReforgeOptions"/>) now shows the lineage
 /// sentence it will write BEFORE the press — built by calling <see
@@ -73,7 +80,6 @@ public partial class LegendsWall : Control
     private Label? _title;
     private Label? _caption;
     private VBoxContainer? _body;
-    private ProvenanceCard? _provenance;
 
     /// <summary>Set by <c>MainUi</c> after construction so Honor/Reforge can queue actions.
     /// Null-safe: a wall shown before this is wired simply renders with disabled buttons
@@ -247,10 +253,10 @@ public partial class LegendsWall : Control
 
     /// <summary>Escape closes the legends wall — the shared mechanism (<see
     /// cref="ModalEscape"/>). Before this it only closed via its own ✕ button (the whole-game
-    /// sweep's own recorded finding). <see cref="_provenance"/> is added AFTER this wall's own
-    /// content and gets first crack at the same key (Godot's reverse-tree-order <c>_Input</c>
-    /// dispatch), so Escape while the provenance popup is open closes THAT first, never both at
-    /// once.</summary>
+    /// sweep's own recorded finding). P2-MEMORY-11: this wall no longer hosts a nested <see
+    /// cref="ProvenanceCard"/> popup of its own (its item rows navigate the book instead — see
+    /// <see cref="ShowItemPage"/>), so Escape here always closes the whole wall, index or any page
+    /// alike — there is no second overlay on top of it left to intercept the key first.</summary>
     public override void _Input(InputEvent @event) => ModalEscape.TryClose(@event, GetViewport(), Visible, Close);
 
     /// <summary>P2-MEMORY-10 (book shell): the book's own navigation spine — browsable by actor.
@@ -308,9 +314,9 @@ public partial class LegendsWall : Control
     /// <summary>P2-MEMORY-10 (book shell): one actor's page — the destination every
     /// <see cref="RenderActorBook"/> row opens. Hosts exactly what the flat wall used to render for
     /// this one hero: their memorial line and Honor button (if unhonored), their Reforge rows (if
-    /// any worn gear is still eligible), and their depths record. A later unit (P2-MEMORY-11) is
-    /// free to enrich what a page shows; this one only moves the pre-existing verbs onto it,
-    /// unchanged.</summary>
+    /// any worn gear is still eligible), and their depths record. This one only moves the
+    /// pre-existing verbs onto it, unchanged; <see cref="ShowItemPage"/> is the book's other page
+    /// kind, for an item rather than an actor.</summary>
     private void ShowActorPage(GameState state, HeroId hero)
     {
         Clear(_body!);
@@ -374,6 +380,32 @@ public partial class LegendsWall : Control
             // (ArcScenes.FloorCaption), so the two copies of this board cannot drift apart.
             AddLabel(pageSection, $"  floor {floor}{GodotClient.Ui.ArcScenes.FloorCaption(name, floor)}");
         }
+    }
+
+    /// <summary>P2-MEMORY-11: an item's own page in the book — where every LEGENDARY GEAR / STORIED
+    /// GEAR row on the index now leads, replacing the <see cref="ProvenanceCard"/> popup those rows
+    /// used to open over the flat index. Same navigation shell as <see cref="ShowActorPage"/> (clear
+    /// the body, a Back button, a header) and the SAME content <see cref="ProvenanceCard"/>'s own
+    /// popup still shows everywhere else it opens (ShopPanel/HeroesPanel/TavernPanel/ScryingMirror)
+    /// — <see cref="ProvenanceCard.RenderInto"/> is the one place that content is built, so the page
+    /// and the popup can never disagree about the same item. A dangling item id (defensive; the
+    /// caller's own list should never offer one) returns to the index rather than rendering a page
+    /// for nothing.</summary>
+    private void ShowItemPage(GameState state, ItemId itemId)
+    {
+        if (!state.Items.TryGetValue(itemId.Value, out var item))
+        {
+            ShowIndex(state);
+            return;
+        }
+
+        Clear(_body!);
+        AddButton(_body!, "LegendsWallBack", "‹ Back to the book", () => ShowIndex(state));
+        AddHeader(_body!, ProvenanceCard.TitleFor(item));
+
+        var pageSection = new VBoxContainer { Name = "ItemPageSection" };
+        _body!.AddChild(pageSection);
+        ProvenanceCard.RenderInto(pageSection, state, item);
     }
 
     /// <summary>Wave 4c (U20) / U8b: one "Reforge" row per still-eligible piece of
@@ -649,7 +681,7 @@ public partial class LegendsWall : Control
             var label = item.IsSigned
                 ? $"✦ {item.Name} — \"{item.SignedName}\""
                 : $"★ {item.Name} — {AttributionBeatCount(state, item.Id)} proven beats";
-            var button = AddButton(row, $"Legend_{item.Id.Value}", label, () => OnShowProvenance(state, item.Id));
+            var button = AddButton(row, $"Legend_{item.Id.Value}", label, () => ShowItemPage(state, item.Id));
             button.SizeFlagsHorizontal = SizeFlags.ExpandFill;
             button.Alignment = HorizontalAlignment.Left;
         }
@@ -698,7 +730,7 @@ public partial class LegendsWall : Control
             var label = $"◆ {name} — {storied.BearerName} has carried it through "
                         + $"{storied.Deeds} {StoriedGear.FightsWord(storied.Deeds)}.";
             var button = AddButton(storiedSection, $"Storied_{storied.Item.Value}", label,
-                () => OnShowProvenance(state, storied.Item));
+                () => ShowItemPage(state, storied.Item));
             button.SizeFlagsHorizontal = SizeFlags.ExpandFill;
             button.Alignment = HorizontalAlignment.Left;
         }
@@ -747,12 +779,6 @@ public partial class LegendsWall : Control
     private static int AttributionBeatCount(GameState state, ItemId item) =>
         state.EventLog.OfType<AttributionBeatEvent>().Count(b => b.Item == item);
 
-    private void OnShowProvenance(GameState state, ItemId itemId)
-    {
-        EnsureBuilt();
-        _provenance!.ShowFor(state, itemId);
-    }
-
     private void EnsureBuilt()
     {
         if (_body is not null)
@@ -799,11 +825,6 @@ public partial class LegendsWall : Control
         scroll.AddChild(_body);
 
         AddButton(box, "LegendsWallClose", "Close", Close);
-
-        // Added LAST (after the panel body) so it draws over the wall, self-contained
-        // (ScryingMirror precedent), hidden until a legend-item row opens it.
-        _provenance = new ProvenanceCard { Visible = false };
-        AddChild(_provenance);
     }
 
     // ── minimal self-contained widget helpers (mirrors ProvenanceCard/RaidForecastBoard) ──

@@ -25,23 +25,47 @@ namespace GodotClient.Tests;
 [RequireGodotRuntime]
 public class ModalOwnershipArbiterTests
 {
-    private static readonly ItemId SignedItemId = new(901);
+    private static readonly ItemId ManifestItemId = new(902);
+    private static readonly HeroId ManifestHeroId = new(21);
 
-    private static Item SignedItem() => new(
-        SignedItemId, "recipe-signed", "Longsword", ItemSlot.Weapon, QualityGrade.Masterwork,
-        new ItemStats(20, 0, 5), new MakersMark("You", 1), ImmutableList<ItemHistoryEntry>.Empty)
+    private static Item ManifestItem() => new(
+        ManifestItemId, "recipe-manifest", "Iron Blade", ItemSlot.Weapon, QualityGrade.Fine,
+        new ItemStats(10, 0, 3), new MakersMark("You", 1), ImmutableList<ItemHistoryEntry>.Empty);
+
+    /// <summary>A staged party wearing one player-marked weapon — the minimal fixture <see
+    /// cref="ScryingMirror"/>'s own Manifest section renders unconditionally (a roster fact, not a
+    /// beat — see that panel's own doc), giving a <c>ManifestLine_</c> button the instant the
+    /// Mirror opens, with no tick and no reveal wait (the <c>JourneyStreamTests</c>
+    /// <c>Camp_Phase_StagedParty_ManifestAlsoPresent...</c> precedent: <c>InFlight</c> + <c>Phase
+    /// == Camp</c> is enough, <c>Adapter.LastEvents</c> can stay empty).</summary>
+    private static GameState ManifestWorld()
     {
-        SignedName = "Emberfall",
-    };
+        var hero = new Hero(
+            ManifestHeroId, "Wearer", "vanguard", Level: 3, MaxHp: 40, Gold: 10,
+            new GearSet(ManifestItemId, null, null), ImmutableList<ItemMemory>.Empty,
+            Alive: true, DeepestFloorReached: 1, DiedOnDay: null);
 
-    /// <summary>A world with one Signed Work — the minimal fixture <see
-    /// cref="LegendsWallTests"/>'s own <c>PopulatedWorld</c> already proves opens a legend row's
-    /// <see cref="ProvenanceCard"/>.</summary>
-    private static GameState SignedItemWorld() =>
-        GameFactory.NewGame(9401) with
+        var inFlight = new InFlightExpedition(
+            Party: ImmutableList.Create(ManifestHeroId),
+            TargetFloor: 2,
+            CheckpointFloor: 1,
+            VenueId: "mine",
+            Hp: ImmutableSortedDictionary<int, int>.Empty.Add(ManifestHeroId.Value, 40),
+            Packs: ImmutableSortedDictionary<int, ImmutableList<ItemId>>.Empty,
+            Gold: ImmutableSortedDictionary<int, int>.Empty,
+            Dead: ImmutableSortedSet<int>.Empty,
+            Floors: ImmutableList<FloorOutcome>.Empty,
+            Loot: ImmutableList<OreLoot>.Empty,
+            DeepestFloorCleared: 1);
+
+        return GameFactory.NewGame(9402) with
         {
-            Items = ImmutableSortedDictionary<int, Item>.Empty.Add(SignedItemId.Value, SignedItem()),
+            Phase = DayPhase.Camp,
+            Heroes = ImmutableSortedDictionary<int, Hero>.Empty.Add(ManifestHeroId.Value, hero),
+            Items = ImmutableSortedDictionary<int, Item>.Empty.Add(ManifestItemId.Value, ManifestItem()),
+            InFlight = ImmutableList.Create(inFlight),
         };
+    }
 
     [TestCase]
     public void OpeningChronicle_HoldsTheClock_BlocksWorldInput_SuppressesPip_AndHidesTheObjectiveCard()
@@ -109,40 +133,43 @@ public class ModalOwnershipArbiterTests
     }
 
     /// <summary>Proof requirement 2: a <see cref="ProvenanceCard"/> open over its host does NOT
-    /// release the host's own ownership. Legends is a real <see cref="SurfaceRegion.FullScreenModal"/>
-    /// claim (unlike three of ProvenanceCard's other four hosts, which are drawer panels with no
-    /// arbiter claim of their own) — the host this test can actually prove the invariant against.</summary>
+    /// release the host's own ownership. P2-MEMORY-11 moved <c>LegendsWall</c>'s own item rows off
+    /// this popup and onto the book's own pages instead (<c>LegendsWall.ShowItemPage</c>), so this
+    /// invariant needs a different live host to prove itself against — the Mirror is the other real
+    /// <see cref="SurfaceRegion.FullScreenModal"/> claim among ProvenanceCard's remaining hosts
+    /// (unlike Shop/Heroes/Tavern, drawer panels with no arbiter claim of their own).</summary>
     [TestCase]
-    public void ProvenanceCardOverLegends_DoesNotReleaseTheHostsOwnClaim()
+    public void ProvenanceCardOverMirror_DoesNotReleaseTheHostsOwnClaim()
     {
-        var ui = MountMainUi();
+        var ui = MountMainUi(new SimAdapter(ManifestWorld()));
         try
         {
-            ui.Legends.ShowWall(SignedItemWorld());
-            AssertThat(ui.Legends.Visible)
-                .OverrideFailureMessage("setup check: the Signed Work fixture must open the wall.")
+            ui.Mirror.Refresh(); // pure read off Adapter.CurrentState — no tick needed
+            ui.Mirror.ShowMirror();
+            AssertThat(ui.Mirror.Visible)
+                .OverrideFailureMessage("setup check: the staged-party fixture must open the mirror.")
                 .IsTrue();
             AssertThat(ui.Clock.Engaged)
-                .OverrideFailureMessage("setup check: opening Legends must already hold the clock.")
+                .OverrideFailureMessage("setup check: opening the Mirror must already hold the clock.")
                 .IsTrue();
 
-            PressEnabled(ui.Legends, $"Legend_{SignedItemId.Value}");
+            PressEnabled(ui.Mirror, $"ManifestLine_{ManifestItemId.Value}_{ManifestHeroId.Value}");
 
-            var card = Find<ProvenanceCard>(ui.Legends, "ProvenanceCard");
+            var card = Find<ProvenanceCard>(ui.Mirror, "ProvenanceCard");
             AssertThat(card.Visible)
-                .OverrideFailureMessage("setup check: the History press must open the provenance card.")
+                .OverrideFailureMessage("setup check: the manifest press must open the provenance card.")
                 .IsTrue();
 
             // The host's OWN claim must still be discovered, and still visible — opening the card
-            // never touched Legends.Visible, and nothing in the arbiter should read the presence of
+            // never touched Mirror.Visible, and nothing in the arbiter should read the presence of
             // a higher-precedence ChildModal claim as the host's own claim disappearing.
-            var legendsClaim = SurfaceArbiter.Discover(ui.GetTree())
-                .FirstOrDefault(c => c.Claim.Id == "Legends");
-            AssertThat(legendsClaim.Surface)
-                .OverrideFailureMessage("The Legends claim vanished from Discover() while its ProvenanceCard was open.")
+            var mirrorClaim = SurfaceArbiter.Discover(ui.GetTree())
+                .FirstOrDefault(c => c.Claim.Id == "Mirror");
+            AssertThat(mirrorClaim.Surface)
+                .OverrideFailureMessage("The Mirror claim vanished from Discover() while its ProvenanceCard was open.")
                 .IsNotNull();
-            AssertThat(legendsClaim.Surface!.Visible)
-                .OverrideFailureMessage("Legends reads as closed while its own ProvenanceCard is open over it.")
+            AssertThat(mirrorClaim.Surface!.Visible)
+                .OverrideFailureMessage("Mirror reads as closed while its own ProvenanceCard is open over it.")
                 .IsTrue();
 
             var cardClaim = SurfaceArbiter.Discover(ui.GetTree())
@@ -153,10 +180,10 @@ public class ModalOwnershipArbiterTests
             // AnOverlayOwnsTheScreen()'s own effects must still hold too — the card sitting on top
             // changes nothing about the fact the screen is owned.
             AssertThat(ui.Clock.Engaged)
-                .OverrideFailureMessage("The clock released while a ProvenanceCard sat open over Legends.")
+                .OverrideFailureMessage("The clock released while a ProvenanceCard sat open over Mirror.")
                 .IsTrue();
             AssertThat(ui.Town.WorldInputNode.Enabled)
-                .OverrideFailureMessage("World input re-enabled while a ProvenanceCard sat open over Legends.")
+                .OverrideFailureMessage("World input re-enabled while a ProvenanceCard sat open over Mirror.")
                 .IsFalse();
         }
         finally

@@ -28,9 +28,10 @@ public class SurfaceArbiterDiscoveryTests
         try
         {
             // P2-SCREEN-04: filtered to FullScreenModal first — MountMainUi now also constructs
-            // CompanionDock's own HudDock claim and up to five ChildModal ProvenanceCard claims
-            // (one per hosting panel, all built eagerly at boot), so an unfiltered Discover() is no
-            // longer exactly nine. The NINE full-rect modals this test pins are unaffected by either.
+            // CompanionDock's own HudDock claim and up to four ChildModal ProvenanceCard claims
+            // (one per hosting panel, all built eagerly at boot — P2-MEMORY-11 dropped LegendsWall
+            // from that list), so an unfiltered Discover() is no longer exactly nine. The NINE
+            // full-rect modals this test pins are unaffected by either.
             var claims = SurfaceArbiter.Discover(ui.GetTree())
                 .Where(c => c.Claim.Region == SurfaceRegion.FullScreenModal)
                 .ToList();
@@ -112,15 +113,17 @@ public class SurfaceArbiterDiscoveryTests
         }
     }
 
-    /// <summary>P2-SCREEN-04 proof requirement: a provenance card opened from any of its five hosts
-    /// registers a claim. All five (<c>ShopPanel</c>/<c>HeroesPanel</c>/<c>TavernPanel</c>/
-    /// <c>LegendsWall</c>/<c>ScryingMirror</c>) build their own <c>ProvenanceCard</c> child eagerly at
-    /// boot (mirroring the eight modals' own eager construction), so all five claims are discoverable
-    /// the instant <c>MainUi</c> mounts — proof that the claim lives on <c>ProvenanceCard</c>'s own
-    /// constructor rather than on any one host, the fix for a class that "cannot be hand-listed,
-    /// being instantiated per hosting panel" (unit body).</summary>
+    /// <summary>P2-SCREEN-04 proof requirement: a provenance card opened from any of its hosts
+    /// registers a claim. All four (<c>ShopPanel</c>/<c>HeroesPanel</c>/<c>TavernPanel</c>/
+    /// <c>ScryingMirror</c> — P2-MEMORY-11 moved <c>LegendsWall</c>'s own item rows onto book pages
+    /// instead of this popup, so it is no longer one of them) build their own
+    /// <c>ProvenanceCard</c> child eagerly at boot (mirroring the eight modals' own eager
+    /// construction), so all four claims are discoverable the instant <c>MainUi</c> mounts — proof
+    /// that the claim lives on <c>ProvenanceCard</c>'s own constructor rather than on any one host,
+    /// the fix for a class that "cannot be hand-listed, being instantiated per hosting panel" (unit
+    /// body).</summary>
     [TestCase]
-    public void ProvenanceCard_RegistersAClaim_FromEveryOneOfItsFiveHosts()
+    public void ProvenanceCard_RegistersAClaim_FromEveryOneOfItsHosts()
     {
         var ui = MountMainUi();
         try
@@ -131,8 +134,8 @@ public class SurfaceArbiterDiscoveryTests
 
             AssertThat(cardClaims.Count)
                 .OverrideFailureMessage(
-                    $"Expected 5 ProvenanceCard claims (one per host), found {cardClaims.Count}.")
-                .IsEqual(5);
+                    $"Expected 4 ProvenanceCard claims (one per host), found {cardClaims.Count}.")
+                .IsEqual(4);
             foreach (var (claim, _) in cardClaims)
             {
                 AssertThat(claim.Region).IsEqual(SurfaceRegion.ChildModal);

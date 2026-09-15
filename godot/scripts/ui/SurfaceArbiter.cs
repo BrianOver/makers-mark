@@ -34,8 +34,9 @@ public static class SurfaceRegion
     public const string FullScreenModal = "FullScreenModal";
 
     /// <summary>P2-SCREEN-04: <c>ProvenanceCard</c>'s own region — a modal nested inside whichever
-    /// surface constructed it (five hosts: <c>ShopPanel</c>/<c>HeroesPanel</c>/<c>TavernPanel</c>/
-    /// <c>LegendsWall</c>/<c>ScryingMirror</c>), added LAST there so it sees Escape first (see
+    /// surface constructed it (four hosts: <c>ShopPanel</c>/<c>HeroesPanel</c>/<c>TavernPanel</c>/
+    /// <c>ScryingMirror</c> — P2-MEMORY-11 moved <c>LegendsWall</c>'s own item rows onto book pages
+    /// instead of this popup), added LAST there so it sees Escape first (see
     /// <c>ProvenanceCard</c>'s own <c>_Input</c> doc). Kept out of <see cref="FullScreenModal"/> on
     /// purpose: <c>MainUi.OverlaySurfaces()</c> projects that region alone, and a host's own claim
     /// already carries "the screen is owned" for as long as the host stays visible — the nested card

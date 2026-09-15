@@ -126,8 +126,13 @@ public class LegendsWallTests
         }
     }
 
+    // ── P2-MEMORY-11 (the item pages): LEGENDARY GEAR / STORIED GEAR rows navigate the book,
+    // rather than opening a ProvenanceCard popup over the index (the modal popup is still how
+    // ShopPanel/HeroesPanel/TavernPanel/ScryingMirror show an item — only the book's OWN index
+    // changed here) ───────────────────────────────────────────────────────────────────────────
+
     [TestCase]
-    public void LegendItemRow_OpensItsOwnProvenanceCard()
+    public void LegendItemRow_OpensTheItemsOwnPage_NotTheOldPopup()
     {
         var ui = MountMainUi();
         try
@@ -136,9 +141,97 @@ public class LegendsWallTests
 
             PressEnabled(ui.Legends, $"Legend_{SignedItemId.Value}");
 
-            var card = Find<ProvenanceCard>(ui.Legends, "ProvenanceCard");
-            AssertThat(card.Visible).IsTrue();
-            AssertThat(card.ShownItemId).IsEqual(SignedItemId);
+            // The book's own page shell (P2-MEMORY-10's), never the popup: a Back button, the
+            // item's title, its maker's mark legible (link 5), and no nested ProvenanceCard.
+            AssertThat(Find<Button>(ui.Legends, "LegendsWallBack"))
+                .OverrideFailureMessage("The item's page has no way back to the book.")
+                .IsNotNull();
+
+            var text = RenderedText(ui.Legends);
+            AssertThat(text).Contains("Longsword");
+            AssertThat(text).Contains("Emberfall"); // the Signed Work marker
+            AssertThat(text).Contains("Forged by You on day 1"); // the maker's mark, legible on the page
+
+            AssertThat(ui.Legends.FindChild("ProvenanceCard", recursive: true, owned: false))
+                .OverrideFailureMessage("The old modal popup opened instead of navigating the book.")
+                .IsNull();
+
+            PressEnabled(ui.Legends, "LegendsWallBack");
+            AssertThat(Find<Button>(ui.Legends, $"Legend_{SignedItemId.Value}"))
+                .OverrideFailureMessage("Back did not return to the index.")
+                .IsNotNull();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>The property this unit promises: navigation reaches EVERY item the index lists, not
+    /// just a hand-picked one — phrased against whatever <c>Legend_*</c> buttons the index itself
+    /// builds (mirrors <see cref="ChoosingAnyActorFromTheIndex_ReachesThatActorsOwnPage"/>'s own
+    /// shape for actors), so a third legend item added to the fixture later is covered
+    /// automatically, with no edit to this test.</summary>
+    [TestCase]
+    public void ChoosingAnyLegendItemFromTheIndex_ReachesThatItemsOwnPage()
+    {
+        var world = PopulatedWorld();
+        var ui = MountMainUi(new SimAdapter(world));
+        try
+        {
+            ui.Legends.ShowWall(world);
+
+            var itemButtons = ui.Legends.FindChildren("Legend_*", "Button", recursive: true, owned: false)
+                .OfType<Button>()
+                .Select(b => b.Name.ToString())
+                .ToList();
+
+            AssertThat(itemButtons.Count)
+                .OverrideFailureMessage("PopulatedWorld's own LEGENDARY GEAR section lost a row.")
+                .IsGreater(0);
+
+            foreach (var buttonName in itemButtons)
+            {
+                var itemId = int.Parse(buttonName["Legend_".Length..]);
+                var expectedName = world.Items[itemId].Name;
+
+                PressEnabled(ui.Legends, buttonName);
+
+                AssertThat(RenderedText(ui.Legends))
+                    .OverrideFailureMessage($"{buttonName}'s page never named its own item ({expectedName}).")
+                    .Contains(expectedName);
+                AssertThat(Find<Button>(ui.Legends, "LegendsWallBack"))
+                    .OverrideFailureMessage($"{buttonName}'s page has no way back to the index.")
+                    .IsNotNull();
+
+                PressEnabled(ui.Legends, "LegendsWallBack");
+            }
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>Honest-empty-state contract, on the book's own page this time (<see
+    /// cref="ProvenanceCardTests"/> already pins it for the popup): an item with no recorded <see
+    /// cref="Item.History"/> says so, rather than inventing an entry. <see cref="FamousBeatItem"/>
+    /// earns its legend row from <see cref="AttributionBeatEvent"/>s hand-inserted straight into
+    /// the event log (never run through the reveal system), so its own <c>Item.History</c> stays
+    /// genuinely empty — the exact shape that would tempt a fabricated line.</summary>
+    [TestCase]
+    public void ItemPage_WithNoRecordedHistory_RendersTheHonestEmptyState_NotAFabricatedOne()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.Legends.ShowWall(PopulatedWorld());
+
+            PressEnabled(ui.Legends, $"Legend_{FamousBeatItemId.Value}");
+
+            AssertThat(RenderedText(ui.Legends))
+                .OverrideFailureMessage("An item with no recorded History must say so, not invent an entry.")
+                .Contains("Fresh off the forge — no history yet.");
         }
         finally
         {

@@ -551,7 +551,7 @@ public sealed partial class TellingPanel : SimPanel
         MouseFilter = MouseFilterEnum.Stop;
 
         // P2-SCREEN-04: this panel has exactly one host (LedgerModal), but claims itself the same
-        // way ProvenanceCard's five hosts each claim theirs -- the claim belongs to the surface,
+        // way ProvenanceCard's own hosts each claim theirs -- the claim belongs to the surface,
         // never to whichever caller happened to construct it. ChildModal / precedence 100 mirrors
         // ProvenanceCard's own rank: strictly above every FullScreenModal precedence, and this panel
         // is added to LedgerModal LAST (see EnsureBuilt below), so it sees Escape first.

@@ -22,6 +22,13 @@ namespace GodotClient.Panels;
 /// <see cref="GameState"/> and the clicked <see cref="ItemId"/> — mirroring the code-built modal
 /// idiom every other overlay in this codebase already uses (<c>LedgerModal</c>/<c>CampPanel</c>/
 /// <c>ScryingMirror</c>: dim backdrop, centered themed panel, a Close button).</para>
+///
+/// <para>P2-MEMORY-11: <see cref="LegendsWall"/> is no longer one of those popup hosts. Its own
+/// LEGENDARY GEAR / STORIED GEAR rows now navigate to the item's own page inside the book (the
+/// same "clear the body, add a Back button" shell <c>ShowActorPage</c> already uses) instead of
+/// opening this card over the index — <see cref="RenderInto"/> is what makes that possible without
+/// a second, hand-copied render: the book's page and this card's popup (still opened everywhere
+/// else) build their content from the exact same static method.</para>
 /// </summary>
 public partial class ProvenanceCard : Control
 {
@@ -66,20 +73,41 @@ public partial class ProvenanceCard : Control
     private void Render(GameState state, Item item)
     {
         Clear(_body!);
-        _title!.Text = $"{item.Name} [{ItemVocab.Display(item.Quality)}] — {ItemVocab.Display(item.Slot)}";
+        _title!.Text = TitleFor(item);
+        RenderInto(_body!, state, item);
+    }
 
+    /// <summary>The title line for <paramref name="item"/> — <see cref="GodotClient.Panels.LegendsWall"/>'s
+    /// own item page (P2-MEMORY-11) uses the SAME line as this popup's own <see cref="_title"/>, so
+    /// an item reads identically whichever of the two ways it was reached.</summary>
+    public static string TitleFor(Item item) =>
+        $"{item.Name} [{ItemVocab.Display(item.Quality)}] — {ItemVocab.Display(item.Slot)}";
+
+    /// <summary>
+    /// P2-MEMORY-11: the item's whole story — everything this card shows below its own title —
+    /// built once and mounted wherever an item needs to be shown in full: this popup's own <see
+    /// cref="_body"/> (via <see cref="Render"/>) and <see cref="GodotClient.Panels.LegendsWall"/>'s
+    /// own book page (<c>ShowItemPage</c>). One render, two mount points: the popup every other
+    /// panel still opens (ShopPanel/HeroesPanel/TavernPanel/ScryingMirror) and the book's own item
+    /// page show exactly the same facts, in the same order, for the same item, because they call
+    /// exactly the same code — a second, hand-copied render for the book would be free to drift
+    /// from this one the next time either side changed alone (the exact bug family <see
+    /// cref="LegendsWall.RenderReforgeOptions"/>'s own lineage-preview doc already names).
+    /// </summary>
+    public static void RenderInto(Node parent, GameState state, Item item)
+    {
         // Wave 4 (U19, "Signed Works"): a rare craft's earned legend name — the inscription IS
         // the History/sub-scores already rendered below, so this is a marker + name only, no new
         // section. Rendered first (right under the title) so a Signed Work reads as special
         // before the player even reaches its history.
         if (item.IsSigned)
         {
-            var signedLabel = AddLabel(_body!, $"✦ SIGNED WORK — \"{item.SignedName}\"");
+            var signedLabel = AddLabel(parent, $"✦ SIGNED WORK — \"{item.SignedName}\"");
             signedLabel.Name = "ProvenanceSignedWork";
             signedLabel.AddThemeColorOverride("font_color", GameTheme.HeaderColor);
         }
 
-        var markRow = AddRow(_body!);
+        var markRow = AddRow(parent);
         markRow.AddChild(ItemIcon(item));
         AddLabel(markRow, item.Mark is { } mark
             ? $"Forged by {mark.CrafterName} on day {mark.CraftedOnDay}."
@@ -101,7 +129,7 @@ public partial class ProvenanceCard : Control
         var channelLine = string.Join(' ', new[] { channelClause, presenceClause }.Where(clause => clause.Length > 0));
         if (channelLine.Length > 0)
         {
-            var channelLabel = AddLabel(_body!, channelLine);
+            var channelLabel = AddLabel(parent, channelLine);
             channelLabel.Name = "ProvenanceChannelLine";
         }
 
@@ -113,14 +141,14 @@ public partial class ProvenanceCard : Control
         // same honest-empty-state contract as the channel and heirloom clauses above.
         if (StoriedGear.Clause(StoriedGear.For(state, item.Id)) is { Length: > 0 } storiedClause)
         {
-            var storiedLabel = AddLabel(_body!, storiedClause);
+            var storiedLabel = AddLabel(parent, storiedClause);
             storiedLabel.Name = "ProvenanceStoriedLine";
             storiedLabel.AddThemeColorOverride("font_color", GameTheme.HeaderColor);
         }
 
         if (ProvenanceQuery.HeirloomClause(item) is { } heirloomClause)
         {
-            var heirloomLabel = AddLabel(_body!, heirloomClause);
+            var heirloomLabel = AddLabel(parent, heirloomClause);
             heirloomLabel.Name = "ProvenanceHeirloomLine";
         }
 
@@ -129,24 +157,24 @@ public partial class ProvenanceCard : Control
         // contract's own doc); a missing record renders no section, never an error.
         if (item.CraftSubScores.Count == 3)
         {
-            AddHeader(_body!, "FORGE-BEAT SCORES:");
-            var scoreRow = AddRow(_body!);
+            AddHeader(parent, "FORGE-BEAT SCORES:");
+            var scoreRow = AddRow(parent);
             scoreRow.AddChild(StatChip("Smelt", $"{item.CraftSubScores[0]}‰"));
             scoreRow.AddChild(StatChip("Forge", $"{item.CraftSubScores[1]}‰"));
             scoreRow.AddChild(StatChip("Quench", $"{item.CraftSubScores[2]}‰"));
         }
 
-        AddHeader(_body!, "HISTORY:");
+        AddHeader(parent, "HISTORY:");
         var timeline = HistoryTimeline(state, item);
         if (timeline.Length == 0)
         {
-            AddLabel(_body!, "Fresh off the forge — no history yet.");
+            AddLabel(parent, "Fresh off the forge — no history yet.");
         }
         else
         {
             foreach (var line in timeline)
             {
-                AddLabel(_body!, line);
+                AddLabel(parent, line);
             }
         }
     }
