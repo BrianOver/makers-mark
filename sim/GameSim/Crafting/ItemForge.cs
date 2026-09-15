@@ -29,8 +29,15 @@ public static class ItemForge
 
     /// <summary>Mint the item record. Pure: no RNG, no state — callers allocate the id.
     /// <paramref name="subScores"/> is the PA2 forge-beat data (smelt/forge/quench), stamped
-    /// verbatim onto <see cref="Item.CraftSubScores"/> for Evening ledger flavor — data, never
-    /// rules; <see langword="null"/> (auto-craft, rival goods, pre-Phase-A) yields empty.</summary>
+    /// verbatim onto <see cref="Item.CraftSubScores"/> — data, never rules; <see langword="null"/>
+    /// (auto-craft, rival goods, pre-Phase-A) yields empty.
+    ///
+    /// <para>This used to claim the sub-scores were "for Evening ledger flavor". They are not, and
+    /// were not: <see cref="Item.CraftSubScores"/> surfaces as the numeric Smelt/Forge/Quench
+    /// per-mille chips on <c>ProvenanceCard</c>, never as prose and never on the Evening ledger.
+    /// The Evening flavor is carried by <see cref="Item.History"/>'s <c>"forged"</c> entry, written
+    /// by <c>CraftingHandlers</c> from <c>ForgeMomentLine</c>, and rendered on the beat row by
+    /// <c>LedgerModal</c> since P2-PROOF-16.</para></summary>
     public static Item Forge(ItemId id, Recipe recipe, QualityGrade quality, int day, ImmutableList<int>? subScores = null)
     {
         var pct = QualityPercent(quality);
