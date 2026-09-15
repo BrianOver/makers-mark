@@ -714,6 +714,62 @@ public class ForgeCraftTests
         finally { Unmount(ui); }
     }
 
+    /// <summary>P2-SCREEN-27 (owner GPU capture, ForgePanel materials tab): the quantity stepper
+    /// used to draw as its own thin row underneath the ListRow it re-gates — a bare "qty:" line
+    /// orphaned between one material and the next, with nothing tying it back to the button it
+    /// modifies. Phrased against the property, not the instance ("the Copper row" would miss the
+    /// other eighteen): every priced material's stepper must share the SAME ListRow ancestor as
+    /// its own Buy button, not float in a row of its own.</summary>
+    [TestCase]
+    public void EveryVendorRow_QuantityStepperSharesItsListRow_WithTheBuyButtonItRegates()
+    {
+        var ui = MountMainUi(FoundryCampaign(gold: 999_999));
+        try
+        {
+            ui.OpenPanel("Forge");
+            Press(ui.Forge, "ForgeTab_materials");
+
+            foreach (var key in MaterialRegistry.PricedPool)
+            {
+                var buy = Find<Button>(ui.Forge, $"BuyMat_{key}");
+                var spin = Find<SpinBox>(ui.Forge, $"BuyMatQty_{key}");
+
+                var buyRow = NearestListRowAbove(buy);
+                var spinRow = NearestListRowAbove(spin);
+
+                AssertThat(spinRow)
+                    .OverrideFailureMessage($"'{key}' quantity stepper is not inside the same ListRow as its Buy button")
+                    .IsEqual(buyRow);
+            }
+        }
+        finally { Unmount(ui); }
+    }
+
+    /// <summary>Walks up from <paramref name="node"/> to the <c>UiKit.ListRow</c> row it draws in
+    /// — identified by that row's own <c>ListRowContent</c> HBox, not by the outer row node.
+    ///
+    /// <para><b>Why not the row itself.</b> Every <c>UiKit.ListRow</c> asks to be named "ListRow"
+    /// and they are all added to ONE parent, so only the first of the nineteen keeps that name:
+    /// <c>AddChild</c> without <c>forceReadableName</c> resolves a sibling collision by rewriting
+    /// the name to <c>@&lt;ClassName&gt;@&lt;n&gt;</c> — measured 2026-09-14, and note it is the
+    /// CLASS name, so the rewritten name does not contain "ListRow" at all. This test's first
+    /// version walked for the literal name and failed on <c>BuyMat_iron</c> with "no ancestor
+    /// named 'ListRow'" while the defect it hunts was entirely absent. Each row's content HBox is
+    /// an only child of its own row, so no collision ever renames it.</para></summary>
+    private static Node NearestListRowAbove(Node node)
+    {
+        var current = node.GetParent();
+        while (current is not null && current.Name.ToString() != "ListRowContent")
+        {
+            current = current.GetParent();
+        }
+
+        AssertThat(current)
+            .OverrideFailureMessage($"no UiKit.ListRow ancestor above {node.Name}")
+            .IsNotNull();
+        return current!;
+    }
+
     /// <summary>Select a <c>MaterialSelect</c> item by its displayed text (never a hardcoded
     /// index — <c>RecipeTable.MaterialGrades</c> is alphabetical, not insertion-order) and emit
     /// the same <c>ItemSelected</c> signal a real dropdown pick fires, driving the panel's

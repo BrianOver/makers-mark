@@ -708,17 +708,29 @@ public partial class ForgePanel : SimPanel
             var buy = new Button { Name = $"BuyMat_{key}", Text = "Buy 1" };
             buy.Pressed += () => OnBuyMaterialPressed(key, (int)qtySpin.Value);
 
+            // P2-SCREEN-27: the stepper draws INSIDE the same ListRow as the Buy button it
+            // re-gates (UiKit.ListRow's inlineExtra slot) — it used to be a thin row underneath
+            // with nothing tying it back to the button it modifies (a bare "qty:" line orphaned
+            // between this material and the next one down the list).
+            //
+            // Deliberately NOT this file's own AddLabel helper: that defaults to WordSmart
+            // autowrap + ExpandFill (SimPanel.AddLabel's own doc — needed so a body-text label
+            // fills leftover row width instead of collapsing to one character per line) — exactly
+            // wrong for a short, static "qty:" caption sitting in an already-narrow inline slot
+            // alongside four other fixed columns, where it collapsed to one letter per line
+            // instead. This one stays its own tiny natural width, and the SpinBox gets a floor
+            // wide enough for its up/down arrows plus a 4-digit value.
+            var qtyBox = new HBoxContainer { Name = $"BuyMatQtyBox_{key}" };
+            qtyBox.AddThemeConstantOverride("separation", GameTheme.Space4);
+            qtyBox.AddChild(new Label { Name = "QtyCaption", Text = "qty:" });
+            qtySpin.CustomMinimumSize = new Vector2(64f, 0);
+            qtyBox.AddChild(qtySpin);
+
             var initial = MaterialGate(key, 1);
             _vendorRows!.AddChild(ListRow(
                 IconRegistry.Ore(key), MaterialRegistry.Require(key).DisplayName.ToLowerInvariant(), $"{initial.Quote}g",
-                have.ToString(), buy, initial.Legal, initial.WhyNot));
+                have.ToString(), buy, initial.Legal, initial.WhyNot, qtyBox));
 
-            // The stepper itself — a thin row right under the ListRow (ShopPanel's priceSpin
-            // precedent), re-gating the SAME Buy button live against whatever quantity is dialed
-            // in, rather than only ever the 1-unit default.
-            var qtyRow = AddRow(_vendorRows!);
-            AddLabel(qtyRow, "  qty:");
-            qtyRow.AddChild(qtySpin);
             qtySpin.ValueChanged += value =>
             {
                 var qty = (int)value;

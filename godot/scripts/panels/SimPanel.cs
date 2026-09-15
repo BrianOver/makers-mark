@@ -519,8 +519,8 @@ public abstract partial class SimPanel : Control
     /// <summary>A themed shop/recipe/vendor row — see <see cref="UiKit.ListRow"/>.</summary>
     protected static Control ListRow(
         Texture2D? icon, string name, string price, string owned, Button action, bool enabled,
-        string whyNot = "") =>
-        UiKit.ListRow(icon, name, price, owned, action, enabled, whyNot);
+        string whyNot = "", Control? inlineExtra = null) =>
+        UiKit.ListRow(icon, name, price, owned, action, enabled, whyNot, inlineExtra);
 
     /// <summary>A drawer's title strip — see <see cref="UiKit.DrawerHeader"/>.</summary>
     protected static Control DrawerHeader(string title, Texture2D? icon, Action onClose) =>

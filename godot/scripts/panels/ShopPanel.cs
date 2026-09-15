@@ -158,7 +158,12 @@ public partial class ShopPanel : SimPanel
 
         var passesToday = PassesToday(state);
 
-        // 481px re-lay (owner ruling 2026-09-14). Order matters here for one reason and it is
+        // P2-SCREEN-27: the "First at the counter" line moved to CounterPanel.BuildCounterHeaderLine
+        // — it names the SAME card CounterPanel renders, and used to sit here, outside it, flush to
+        // the drawer edge between the counter card and this panel's own shelf section below. The
+        // old ShopPanel.BuildCounterHeaderSection is gone with it; _counter renders that line now.
+        //
+        // 481px re-lay (owner ruling 2026-09-14). The ORDER below matters for one reason and it is
         // measured, not aesthetic: this panel's primary verb is drag-to-shelve (U5, "restock as
         // placement"), and a drag needs its SOURCE (an unshelved card) and its TARGET (an empty
         // shelf slot) on screen AT THE SAME TIME. "Who Would Buy This" used to render between them
@@ -167,7 +172,6 @@ public partial class ShopPanel : SimPanel
         // folded, so the two halves of the gesture are adjacent. (Putting Unshelved FIRST was tried
         // before and reverted for the same co-visibility reason, from the other side — see
         // HudBoundsTests' own note; the shelf stays first, the forecast moves, nothing else does.)
-        BuildCounterHeaderSection(state);
         BuildShelfSection(state, passesToday);
         BuildUnshelvedSection(state);
         BuildForecastSection(state);
@@ -181,56 +185,6 @@ public partial class ShopPanel : SimPanel
         _feedback!.Text = text;
         _feedback.Visible = !string.IsNullOrEmpty(text);
     }
-
-    /// <summary>
-    /// U1 (§11.11, "tomorrow's asks, in front of tonight's shelf"): a persistent, read-only header
-    /// naming who the counter will seat FIRST and what they will ask for — the SAME
-    /// <see cref="CounterForecast.Queue"/> projection <c>CounterHandlers.ApplyOpen</c> builds the
-    /// instant the counter opens, so this can never name a different hero than the one who
-    /// actually sits down (U1 test 7). Morning-only, mirroring <c>ActionLegality</c>'s own
-    /// <c>OpenCounterAction</c> gate (sim/GameSim/Advisor/ActionLegality.cs:67 —
-    /// <c>phase == DayPhase.Morning</c>) rather than asserting an independent rule: outside Morning
-    /// the counter cannot open at all, so naming a "first customer" would be a fact about a phase
-    /// the player cannot currently act on. Read-only — no verb here; the verb is the counter button
-    /// (OpenCounter/Present/Suggest) already on this same panel.
-    /// </summary>
-    private void BuildCounterHeaderSection(GameState state)
-    {
-        if (state.Phase != DayPhase.Morning)
-        {
-            return;
-        }
-
-        var queue = CounterForecast.Queue(state);
-        if (queue.IsEmpty)
-        {
-            return;
-        }
-
-        var first = queue[0];
-        if (!state.Heroes.TryGetValue(first.Hero.Value, out var hero))
-        {
-            return;
-        }
-
-        var wantText = first.WantSlot is { } slot ? $"wants {CounterHeaderSlotArticle(slot)}" : "is just browsing";
-        var header = AddLabel(_content!, $"First at the counter: {hero.Name} — {wantText}, {first.Gold}g on hand.");
-        header.Name = "CounterHeader";
-        header.AddThemeColorOverride("font_color", GameTheme.HeaderColor);
-    }
-
-    /// <summary>Cosmetic slot phrasing for <see cref="BuildCounterHeaderSection"/> — mirrors
-    /// <c>CustomerVoice.SlotArticle</c>'s wording (godot/scripts/ui/CustomerVoice.cs) without a
-    /// second implementation of the WANT decision itself (that stays <see cref="CounterForecast.Wants"/>
-    /// alone); this only turns an already-decided <see cref="ItemSlot"/> into English.</summary>
-    private static string CounterHeaderSlotArticle(ItemSlot slot) => slot switch
-    {
-        ItemSlot.Weapon => "a weapon",
-        ItemSlot.Shield => "a shield",
-        ItemSlot.Armor => "some armor",
-        ItemSlot.Trinket => "a trinket",
-        _ => "some gear",
-    };
 
     /// <summary>
     /// U2 (plan "who would buy this"): surfaces <see cref="HeroForecast.ForShelfAsItStands"/> —
