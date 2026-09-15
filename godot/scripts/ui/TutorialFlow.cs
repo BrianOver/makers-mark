@@ -2550,6 +2550,24 @@ public sealed partial class TutorialFlow : PanelContainer
             pending.Add(ActVoiceKind.CommissionFulfilled);
         }
 
+        // U33 (§11.14.14): the graduation goodbye's own candidacy — armed on the ONE fact U32 made
+        // event-shaped and persisted, <see cref="Completed"/>, read straight off this object's own
+        // save-backed flag rather than re-derived from the log (the course's own end is not a
+        // GameEvent; Advance's own U32 block is what writes it). Unlike every sibling above it, this
+        // candidate needs no second "has the fact landed" read at all: Completed IS the fact.
+        //
+        // !Dismissed mirrors HeroDeath/CommissionFulfilled rather than Proof, and here it is a
+        // belt-and-braces restatement of something Advance already guarantees — a dismissed course
+        // returns early from Advance and therefore never reaches Complete(), so Completed and
+        // Dismissed are mutually exclusive by construction. Stated anyway because the law it serves
+        // is not an invariant of this file: skipping stays legal AND free (law 7), and a returning
+        // smith (ResetForReturningSmith writes Dismissed = true) must never be handed the farewell
+        // of a mentor they declined to meet.
+        if (!Dismissed && _graduationBeatDay == 0 && Completed)
+        {
+            pending.Add(ActVoiceKind.Graduation);
+        }
+
         return pending;
     }
 
@@ -3106,6 +3124,106 @@ public sealed partial class TutorialFlow : PanelContainer
     public static TutorialAnchor MemoryRecordAnchor(string? openPanelId) =>
         AimAnchor(TutorialAnchor.ForPanelSection("Legends", "LegendItemsSection"), openPanelId);
 
+    // ── U33 (§11.14.14, R24): her graduation goodbye ────────────────────────────────────────────
+    //
+    // The gap this closes, measured rather than assumed: ActVoiceKind.Graduation was declared by
+    // U29 and had NO production producer — PendingActVoiceCandidates never added it, so the only
+    // references outside this file were synthetic literals in a precedence test. U32 then made the
+    // course's own end event-shaped and persisted (Advance's own U32 block writes Completed the day
+    // the Memory act's row settles), and nothing spoke over it. The mentor's whole arc ended in
+    // silence; her de facto last word was a quick-travel tooltip, which U33's own row exists to
+    // displace. This section is the producer.
+
+    /// <summary>
+    /// U33: the day <see cref="ConsumeGraduationBeat"/> actually committed, or 0 (not yet spoken) —
+    /// the identical "commit day, not fact day" contract <see cref="_proofBeatDay"/> and <see
+    /// cref="_ruleRevisedDay"/> already carry, so losing a night's budget defers the goodbye to the
+    /// next call rather than burning it.
+    /// </summary>
+    private int _graduationBeatDay;
+
+    /// <summary>
+    /// U33: Bryn's farewell — armed on <see cref="Completed"/>, the one durable fact U32 shipped,
+    /// and gated through the SAME <see cref="ResolveTonightsActVoices"/> budget every other act
+    /// voice in this file already asks (losing the slot means staying silent and NOT committing
+    /// <see cref="_graduationBeatDay"/>; the next call, ordinarily the next night's reveal, re-asks
+    /// fresh).
+    ///
+    /// <para><b>Precedence, and the question this unit had to answer before adding anything to the
+    /// pool at all:</b> can the goodbye ever bin the proof or the death beat — the game's two most
+    /// earned moments? No, and not by luck. <see cref="ActVoiceKind.Graduation"/> is declared BELOW
+    /// both, and the budget is two: with <see cref="ActVoiceKind.HeroDeath"/> absent, <see
+    /// cref="ActVoiceKind.Proof"/> is the highest-ranked candidate that can exist and always takes a
+    /// slot; with it present, Proof is removed by the death/proof exclusion before precedence is
+    /// even consulted — which is R21's own corollary, not this unit's doing — and HeroDeath itself
+    /// outranks everything. So the worst this candidate can ever displace is <see
+    /// cref="ActVoiceKind.WarrantEnded"/> and below, each of which already defers to tomorrow by
+    /// its own caller's contract. <c>BrynGraduationGoodbyeTests</c> pins both directions.</para>
+    ///
+    /// <para>Returns the RAW, unattributed line — same "TutorialFlow hands back plain copy, the
+    /// caller decides attribution" contract <see cref="ConsumeProofBeat"/> keeps.</para>
+    /// </summary>
+    public string? ConsumeGraduationBeat(GameState state)
+    {
+        if (_graduationBeatDay > 0)
+        {
+            return null;
+        }
+
+        if (!ResolveTonightsActVoices(PendingActVoiceCandidates(state)).Contains(ActVoiceKind.Graduation))
+        {
+            return null;
+        }
+
+        var line = GraduationBeatText;
+        _graduationBeatDay = state.Day;
+        Save();
+        return line;
+    }
+
+    /// <summary>
+    /// U33: which farewell she actually has standing to say, decided by what THIS campaign proved —
+    /// the identical two-variant shape <see cref="LossVoiceLine"/> already established (the fallen
+    /// carried the player's work, or did not), and for the identical reason: a single fixed string
+    /// would assert a fact the sim may never have produced.
+    ///
+    /// <para>The plan's own quoted goodbye (§11.15) names "the one thing I taught you wrong; you
+    /// caught it faster than I did" — true only in a campaign where her greedy rule was actually
+    /// disproved, i.e. exactly where <see cref="ConsumeRuleRevisedBeat"/> already armed
+    /// (<see cref="_ruleRevisedDay"/>). A player who never pinned a counter close never saw that
+    /// correction, and telling them they caught her out would be copy asserting something the sim
+    /// did not decide. It would also break P2-ONBOARD-07's own discipline from the other end: the
+    /// one place the word may appear is AFTER the sim has already proven it, never before.</para>
+    /// </summary>
+    public string GraduationBeatText => GraduationBeatTextFor(_ruleRevisedDay > 0);
+
+    /// <summary>
+    /// U33: the variant chooser itself — pure and static, so a test can read BOTH farewells against
+    /// the imperative register without manufacturing two campaigns to reach them (the same
+    /// "measure the mechanism, not the whole harness" seam <see cref="ResolveTonightsActVoices"/>
+    /// already exposes for the budget).
+    ///
+    /// <para><b>The plan's own line, and the one clause of it that changed.</b> §11.15 quotes the
+    /// goodbye ending "Price them fair. Watch the wall." Both are bare imperatives, and this repo
+    /// already classifies the first as one — <c>MentorVoiceTests
+    /// .FirstMorningBeatText_NeverReadsAsAnImperative_BeyondWhatTheRegisterCheckCatches</c> lists
+    /// <c>"Price "</c> among the openers it rejects for exactly this reason. Law 1 is not "influence
+    /// never orders unless the register happens to be missing the verb," so those two sentences are
+    /// restated as what is now true rather than what to do, and nothing else about the plan's line
+    /// moves. <c>BrynGraduationGoodbyeTests</c> checks both variants against the full advisor
+    /// register with those verbs added back.</para>
+    /// </summary>
+    public static string GraduationBeatTextFor(bool ruleWasRevised) =>
+        ruleWasRevised
+            ? "That's the week, and the bench was only ever borrowed — it's yours. The Lessons book "
+              + "keeps everything I taught you, including the one thing I taught you wrong; you "
+              + "caught it faster than I did. Fair prices, and the wall — those are yours to mind "
+              + "now, not mine."
+            : "That's the week, and the bench was only ever borrowed — it's yours. The Lessons book "
+              + "keeps everything I taught you, my own rules included, and you'll find out for "
+              + "yourself which of them hold. Fair prices, and the wall — those are yours to mind "
+              + "now, not mine.";
+
     /// <summary>
     /// U25 (§11.14.14, KTD2): the counter's own dormant act — armed the first time EVER a haggle
     /// closes as a fleece. <see cref="CounterSaleClosed"/> carries no explicit "fleeced" flag (only
@@ -3512,6 +3630,11 @@ public sealed partial class TutorialFlow : PanelContainer
             // just above already established.
             _memoryRowArmedDay = data.MemoryRowArmedDay;
             _memoryRowCardOpened = data.MemoryRowCardOpened;
+            // U33: an old save without this property deserializes to 0 (never spoken) — the same
+            // safe default every dormant-act int field above already uses. A campaign that had
+            // already graduated before this unit existed therefore hears the goodbye once, at its
+            // next evening reveal, rather than never; that is the correct reading of "owed it".
+            _graduationBeatDay = data.GraduationBeatDay;
             // U24 (§11.14.14): an old save without any of these four properties deserializes to
             // the shared-across-C# defaults (0/false) — safe, the same "never armed yet" starting
             // point a fresh campaign already has for every dormant act in this file.
@@ -3557,6 +3680,7 @@ public sealed partial class TutorialFlow : PanelContainer
                 ProofBeatDay = _proofBeatDay, ProofBeatCardOpened = _proofBeatCardOpened,
                 RuleRevisedDay = _ruleRevisedDay,
                 MemoryRowArmedDay = _memoryRowArmedDay, MemoryRowCardOpened = _memoryRowCardOpened,
+                GraduationBeatDay = _graduationBeatDay,
                 DeliveryLessonHero = _deliveryLessonHero, DeliveryLessonSlot = _deliveryLessonSlot,
                 DeliveryLessonMinQuality = _deliveryLessonMinQuality,
                 DeliveryLessonDeadlineDay = _deliveryLessonDeadlineDay,
@@ -3863,6 +3987,13 @@ public sealed partial class TutorialFlow : PanelContainer
         /// arming" ratchet — false is the safe default for a save from before this property
         /// existed (a pre-U32 campaign never tracked this fact either).</summary>
         public bool MemoryRowCardOpened { get; set; }
+
+        /// <summary>U33 (§11.14.14, R24): the graduation goodbye's own place — 0 (never spoken) is
+        /// the safe default for a save from before this property existed, the identical precedent
+        /// <see cref="ProofBeatDay"/> already set. A campaign that graduated under an earlier build
+        /// loads with 0 and is therefore still OWED the farewell, which is the right answer: the
+        /// line never fired for it, and <see cref="Completed"/> is still true.</summary>
+        public int GraduationBeatDay { get; set; }
 
         /// <summary>U26 (§11.14.14): the demand-board beat's own once-ever flag — an old save
         /// without this property deserializes to false, the same safe default every sibling flag
