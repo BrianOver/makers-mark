@@ -1160,6 +1160,28 @@ public partial class MainUi : Control
         return true;
     }
 
+    /// <summary>
+    /// U33 (§11.14.14, R24) shot-harness bridge: her graduation goodbye, live. In real play this
+    /// rides the automatic Return-Ritual reveal (see its own call site above), which the
+    /// <c>Graduation</c> shot state cannot reach — that state graduates the course off-HUD at
+    /// frame 60 and then presses the bell once, which advances Morning to Expedition, not to the
+    /// Evening the reveal belongs to. Same "hand the live state straight to the real consumer, then
+    /// the real banner" idiom <see cref="Dev_ShowRuleRevisedBeat"/> already uses, and the identical
+    /// rank/attribution production takes. Returns whether the beat actually armed, so the harness
+    /// fails loudly rather than photographing a course that graduated in silence — which is exactly
+    /// the defect this unit exists to fix.
+    /// </summary>
+    public bool Dev_ShowGraduationBeat()
+    {
+        if (Tutorial.ConsumeGraduationBeat(Adapter.CurrentState) is not { } line)
+        {
+            return false;
+        }
+
+        Mentor.Show(MentorVoice.Speak(line), rank: MentorVoiceRank.Act);
+        return true;
+    }
+
     public override void _Process(double delta)
     {
         if (Clock is null)
@@ -1254,6 +1276,20 @@ public partial class MainUi : Control
                 if (Tutorial.ConsumeRuleRevisedBeat(Adapter.CurrentState) is { } ruleRevisedBeat)
                 {
                     Mentor.Show(MentorVoice.Speak(ruleRevisedBeat), rank: MentorVoiceRank.Act);
+                }
+
+                // U33 (§11.14.14, R24): her graduation goodbye — the last of her six arc lines, and
+                // the ONLY producer ActVoiceKind.Graduation has ever had (it was declared by U29 and
+                // left with none, so TutorialFlow.Complete fired silently and a quick-travel tooltip
+                // was her de facto last word). Rides the SAME automatic-reveal-only wiring as the
+                // four acts above it, deliberately: the course's own end is written by
+                // TutorialFlow.Advance, which runs on every HUD tick wherever the player happens to
+                // be standing, and a farewell that can arrive mid-walk is the stray-toast shape U30
+                // already removed from the proof. The reveal is the one moment the day is over.
+                // No anchor — like "eating her rule" above, this is a reflection, not a pointer.
+                if (Tutorial.ConsumeGraduationBeat(Adapter.CurrentState) is { } graduationBeat)
+                {
+                    Mentor.Show(MentorVoice.Speak(graduationBeat), rank: MentorVoiceRank.Act);
                 }
 
                 // Only the automatic Return-Ritual reveal speaks. Reopening the ledger from the tray
@@ -4978,7 +5014,13 @@ public partial class MainUi : Control
             // this line at all, so it is unaffected.
             if (venueKey == "market")
             {
-                Mentor.ShowFirstTouch(Tutorial.ConsumeGreedyRuleLesson());
+                // U33 (§11.14.14, R24): Act rank, not the ShowFirstTouch default of Lesson. Her six
+                // arc lines are act voices by U33's own verification ("none at lesson rank") — this
+                // is beat 3 of that arc, an opinion she is staking her credibility on and the whole
+                // setup for "eating her rule," not a surface explaining itself. Rank changes only
+                // which line survives a crowded banner (MentorBanner.Enqueue's own cap rule); the
+                // words, the once-ever id and the Lessons-book entry are all untouched.
+                Mentor.ShowFirstTouch(Tutorial.ConsumeGreedyRuleLesson(), rank: MentorVoiceRank.Act);
             }
 
             RefreshObjectiveLine();

@@ -589,6 +589,19 @@ func _process(_delta: float) -> bool:
 					push_error("[shot] SHOT_STATE=Graduation: Dev_GraduateViaMemoryRow returned false -- "
 						+ "the course did not actually graduate, and the shot below proves nothing.")
 				legends_graduate.call("Close")
+				# U33 (§11.14.14, R24): her goodbye. In real play this rides the Evening
+				# Return-Ritual reveal, which this state never reaches (the bell press at frame
+				# 90 below only moves Morning -> Expedition), so it goes through MainUi's own
+				# dev bridge -- the SAME TutorialFlow.ConsumeGraduationBeat + MentorBanner at Act
+				# rank production uses. Loud on a no-op: a silent graduation is the exact defect
+				# U33 exists to fix, so photographing one would prove the opposite of the point.
+				if _ui.has_method("Dev_ShowGraduationBeat"):
+					if not _ui.call("Dev_ShowGraduationBeat"):
+						push_error("[shot] SHOT_STATE=Graduation: Dev_ShowGraduationBeat returned false -- "
+							+ "the course graduated and Bryn said nothing, which is the defect, not the shot.")
+				else:
+					push_error("[shot] SHOT_STATE=Graduation could not reach MainUi.Dev_ShowGraduationBeat -- "
+						+ "the shot below proves nothing about her farewell.")
 			else:
 				push_error("[shot] SHOT_STATE=Graduation could not reach LegendsWall.Dev_GraduateViaMemoryRow -- "
 					+ "the shot below is the plain town and proves nothing about graduation.")
