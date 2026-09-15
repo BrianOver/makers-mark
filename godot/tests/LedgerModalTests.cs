@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using GameSim.Advisor;
 using GameSim.Classes;
 using GameSim.Contracts;
 using GameSim.Drama;
@@ -611,6 +612,185 @@ public class LedgerModalTests
         {
             Unmount(ui);
         }
+    }
+
+    // ── P2-HONEST-27 (the ore row learns what the morning spent) ──────────────────────────────
+
+    /// <summary>
+    /// The defect this unit fixes: <c>LedgerModal.BuyOreLegal</c> checked phase, offer, seller and
+    /// gold but never <see cref="GameState.ActionSlotsRemaining"/>, while the sim
+    /// (<c>OreMarketHandlers.Apply</c>, mirrored by <c>ActionLegality.IsLegal</c>) always refused a
+    /// 0-slot buy. At a 0-slot Evening the Buy button must now read Disabled, and the reason must
+    /// name the actual stake (the offer is swept at the next dawn — <see
+    /// cref="ExpeditionRevealSystem"/>'s own "yesterday's unsold offers are gone") rather than a
+    /// generic "no slots" line that would be FALSE here (unlike a craft or a material buy, this
+    /// offer does not survive to be tried again).
+    /// </summary>
+    [TestCase]
+    public void OreOffer_ZeroActionSlots_ButtonDisabled_ReasonNamesTheStake()
+    {
+        var ui = MountMainUi(new SimAdapter(OreOfferDay(standing: 0, quantity: 3, unitPrice: 5) with { ActionSlotsRemaining = 0 }));
+        try
+        {
+            ui.Ledger.ShowFor(1);
+
+            var buy = Find<Button>(ui.Ledger, BuyButtonName);
+            AssertThat(buy.Disabled)
+                .OverrideFailureMessage(
+                    "0 action slots left, but the Buy button stayed live — the kernel would have "
+                    + "silently refused the click at the next AdvancePhase with nothing on screen "
+                    + "saying why.")
+                .IsTrue();
+            AssertThat(buy.TooltipText).Contains("gone at dawn");
+            AssertThat(buy.TooltipText).Contains("Vendra"); // OreOfferDay's own seller name
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>The other side of the same pin: slots still on the clock, the button reads exactly
+    /// as live as every pre-existing ore test already expects (<c>OreOfferDay</c>'s default
+    /// <see cref="GameState.ActionSlotsRemaining"/> is <c>ActionBudget.SlotsPerDay</c>, unchanged).</summary>
+    [TestCase]
+    public void OreOffer_ActionSlotsAvailable_ButtonRendersLive()
+    {
+        var ui = MountMainUi(new SimAdapter(OreOfferDay(standing: 0, quantity: 3, unitPrice: 5)));
+        try
+        {
+            ui.Ledger.ShowFor(1);
+
+            var buy = Find<Button>(ui.Ledger, BuyButtonName);
+            AssertThat(buy.Disabled).IsFalse();
+            AssertThat(buy.TooltipText).IsEqual(string.Empty);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>
+    /// The anti-drift guard itself: the client's verdict must equal <c>ActionLegality.IsLegal</c>'s
+    /// across a table of states that flip ONE gating fact each (phase, the offer's own presence,
+    /// the seller's life, the purse, the day's action-slot budget) off the SAME base fixture — the
+    /// exact shape of table #742 proved this codebase needs (a single hand-picked instance does not
+    /// prove a mirror stays honest as the state space moves).
+    /// </summary>
+    [TestCase]
+    public void OreOfferButton_LegalityMatchesActionLegality_AcrossATableOfStates()
+    {
+        var baseState = OreOfferDay(standing: 0, quantity: 3, unitPrice: 5);
+        var sellerId = new HeroId(1);
+        var action = new BuyOreAction(sellerId, MaterialRegistry.Copper, 3);
+
+        var cases = new (string Label, GameState State)[]
+        {
+            ("Evening, slots and gold both fine", baseState),
+            ("wrong phase", baseState with { Phase = DayPhase.Expedition }),
+            ("zero action slots", baseState with { ActionSlotsRemaining = 0 }),
+            ("offer already gone", baseState with { OpenOreOffers = ImmutableList<OreOffered>.Empty }),
+            ("seller did not make it home", baseState with
+            {
+                Heroes = baseState.Heroes.SetItem(sellerId.Value, baseState.Heroes[sellerId.Value] with { Alive = false }),
+            }),
+            ("can't afford it", baseState with { Player = baseState.Player with { Gold = 0 } }),
+        };
+
+        var offenders = new SortedDictionary<string, string>(StringComparer.Ordinal);
+        foreach (var (label, state) in cases)
+        {
+            var expectedLegal = ActionLegality.IsLegal(state, action, state.Phase);
+
+            var ui = MountMainUi(new SimAdapter(state));
+            try
+            {
+                ui.Ledger.ShowFor(1);
+                var buy = Find<Button>(ui.Ledger, BuyButtonName);
+                if (buy.Disabled == expectedLegal) // Disabled means NOT legal
+                {
+                    offenders[label] = $"ActionLegality said legal={expectedLegal}, button.Disabled={buy.Disabled}";
+                }
+            }
+            finally
+            {
+                Unmount(ui);
+            }
+        }
+
+        AssertThat(offenders.Count)
+            .OverrideFailureMessage(
+                "LedgerModal's Buy button drifted from ActionLegality.IsLegal (the one legality "
+                + "authority) for:\n  " + string.Join("\n  ", offenders.Select(kv => $"{kv.Key}: {kv.Value}")))
+            .IsEqual(0);
+    }
+
+    /// <summary>
+    /// LAW:influence-never-orders. Same register <c>AdvisorNeverOrdersTests</c>
+    /// (sim/GameSim.Tests/Advisor/) and <c>ForgeMarcherLineTests</c> (godot/tests/) already check —
+    /// duplicated locally per this repo's own established idiom (a shared assembly reference does
+    /// not exist between the sim test project and this one) — checked against the SHAPE of an
+    /// order, never against the one sentence this unit happened to ship, and against the copy the
+    /// panel ACTUALLY rendered rather than a hand-retyped copy of it.
+    /// </summary>
+    [TestCase]
+    public void OreOffer_ZeroActionSlots_ReasonNeverOrdersThePlayer()
+    {
+        var ui = MountMainUi(new SimAdapter(OreOfferDay(standing: 0, quantity: 3, unitPrice: 5) with { ActionSlotsRemaining = 0 }));
+        try
+        {
+            ui.Ledger.ShowFor(1);
+            var reason = Find<Button>(ui.Ledger, BuyButtonName).TooltipText;
+
+            AssertThat(reason).OverrideFailureMessage("fixture drifted — no reason to check").IsNotEmpty();
+            AssertThat(IsImperative(reason, out var why))
+                .OverrideFailureMessage($"\"{reason}\" orders the player ({why}) — restate as a fact or a stake.")
+                .IsFalse();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>Every base-form command verb this repo's own advisor register bans
+    /// (<c>AdvisorNeverOrdersTests.ImperativeVerbs</c>, sim/GameSim.Tests/Advisor/), same local-copy
+    /// idiom <c>ForgeMarcherLineTests</c> already uses for a Godot-side line the sim test project
+    /// cannot see.</summary>
+    private static readonly System.Collections.Generic.HashSet<string> ImperativeVerbs = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Accept", "Buy", "Craft", "Honor", "Shelve", "Stock", "Sell", "Post", "Send", "Unlock",
+        "Upgrade", "Raise", "Go", "Take", "Use", "Equip", "Wear", "Pay", "Trade", "Visit", "Talk",
+        "Recall", "Retreat", "Flee", "Attack", "Defend", "Check", "Look", "Consider", "Try", "Make",
+        "Get", "Bring", "Keep", "Choose", "Pick", "Grab", "Move", "Walk", "Press", "Click", "Spend",
+        "Wait",
+    };
+
+    private static readonly Regex SecondPersonDirective = new(
+        @"\byou (should|must|need to)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private static bool IsImperative(string line, out string why)
+    {
+        if (SecondPersonDirective.IsMatch(line))
+        {
+            why = "second-person directive (\"you should/must/need to\")";
+            return true;
+        }
+
+        foreach (var clause in Regex.Split(line, @"(?:\. |; | — |—)"))
+        {
+            var trimmed = clause.TrimStart('*', ' ', '\'', '"');
+            var firstWord = trimmed.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+            if (firstWord is not null && ImperativeVerbs.Contains(firstWord.TrimEnd('.', ',', ':', '\'')))
+            {
+                why = $"a clause opens on a bare command verb (\"{firstWord}\")";
+                return true;
+            }
+        }
+
+        why = string.Empty;
+        return false;
     }
 
     // ── Refresh staleness (KTD-fix, playtest-pilot3 finding 1) ────────────────────────────────

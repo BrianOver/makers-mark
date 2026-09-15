@@ -5,6 +5,7 @@ using System.Linq;
 using GameSim;
 using GameSim.Contracts;
 using GameSim.Factions;
+using GameSim.Materials;
 using GameSim.Presentation;
 using GameSim.Venues;
 using Godot;
@@ -578,7 +579,53 @@ public partial class MainUi : Control
             state = StageMemorialDeathsReceipt(state, memorialDeathCount);
         }
 
+        // P2-HONEST-27 receipt seam ONLY, same never-in-real-play contract as the five above: a
+        // real 0-slot Evening with an ore offer still open costs five real workshop actions (or a
+        // day of real play) a screenshot has no business driving. This parks the LIVE state itself
+        // (not LedgerModal's own _devStagedState, which the Buy gate deliberately does NOT read —
+        // see BuyOreLegal's own doc) at day 1's Evening with the offer open and the slots spent, so
+        // LedgerModal.BuyOreLegal decides the button's Disabled state and reason for itself, exactly
+        // as it would in play.
+        if (System.Environment.GetEnvironmentVariable("SHOT_ORE_SLOT_GATE") == "1")
+        {
+            state = StageOreZeroSlotEveningReceipt(state);
+        }
+
         return new SimAdapter(state);
+    }
+
+    /// <summary>
+    /// Dev/receipt tool only (never called from real play): parks a fresh campaign directly at day
+    /// 1's own Evening with Torvald selling mithril and the day's action-slot budget already spent
+    /// — the exact moment P2-HONEST-27 fixes (the Buy button used to stay live here; the kernel would
+    /// have silently refused the click). No system runs and no tick is applied — the offer and the
+    /// survivor card come from hand-built <see cref="OreOffered"/>/<see cref="PartyReturned"/>
+    /// events, the same shape <see cref="GameSim.Drama.ExpeditionRevealSystem"/> itself emits on a
+    /// real Evening reveal, just staged directly rather than driving a whole day. Deliberately does
+    /// NOT press <c>AdvancePhase</c> (unlike <see cref="StageGateHeldStreakReceipt"/>): doing so
+    /// would roll the day over and refill the very slots this receipt exists to show empty.
+    /// </summary>
+    private static GameState StageOreZeroSlotEveningReceipt(GameState state)
+    {
+        var hero = state.Heroes.Values.OrderBy(h => h.Id.Value).FirstOrDefault();
+        if (hero is null)
+        {
+            return state; // defensive -- a fresh campaign always seeds the starting six
+        }
+
+        const int day = 1;
+        var offer = new OreOffered(hero.Id, MaterialRegistry.Mithril, Quantity: 2, UnitPrice: 20);
+        var returned = new PartyReturned(ImmutableList.Create(hero.Id)) with { Id = new EventId(1), Day = day };
+        var offerEvent = offer with { Id = new EventId(2), Day = day };
+
+        return state with
+        {
+            Day = day,
+            Phase = DayPhase.Evening,
+            ActionSlotsRemaining = 0,
+            OpenOreOffers = ImmutableList.Create(offer),
+            EventLog = state.EventLog.AddRange([returned, offerEvent]),
+        };
     }
 
     /// <summary>
