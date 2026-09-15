@@ -3995,8 +3995,21 @@ public partial class MainUi : Control
         // stacks). Dim-under (LedgerModal precedent) + click-out/Esc close; the click-out consumes
         // the input event structurally (the dim veil's default Stop mouse filter), so it never
         // reaches the 3D world's own click-to-move/interact input underneath. -------------------
+        //
+        // fix/visfix1: parented under `worldSlot`, NOT added straight to `this` (MainUi) — the
+        // exact same KTD-C move Town2D got (see WorldSlot's own remarks above): a FullRect Control
+        // added as a MainUi-root sibling AFTER `layout` spans the header's own rows too (both
+        // occupy y=0), and since a later sibling paints over an earlier one, the drawer's opaque
+        // panel — and whatever it currently shows, e.g. MineWatch parked inside Depths — drew
+        // straight over the persistent HudHeader's right edge (measured: the action-slot pip row
+        // clipped from 5 pips to 3, and the rejection toast cut off mid-sentence, both exactly at
+        // the drawer's left edge). WorldSlot's rect already excludes the header by construction
+        // (occlusion is impossible, not merely unlikely — see HudBoundsTests
+        // .WorldRegion_NeverIntersects_TheHudHeader); anchoring the drawer to that SAME region
+        // gives it the identical guarantee instead of a second, parallel z-order rule.
         Drawer = new DrawerHost();
-        AddChild(Drawer);
+        worldSlot.AddChild(Drawer);
+        Drawer.HeaderToClear = header; // its bottom edge is the drawer's top — see DrawerHost.HeaderToClear
         Drawer.Build();
         Drawer.Register("Forge", Forge);
         Drawer.Register("Shop", Shop);
@@ -5753,6 +5766,33 @@ public partial class MainUi : Control
     }
 
     /// <summary>
+    /// <see cref="DockObjectiveHorizontally"/>'s twin for the dock stacked beneath it (the second
+    /// profession button and the quick-travel row). Same two positions, same widths — see the call
+    /// site for why it needs its own predicate rather than sharing the objective card's.
+    /// </summary>
+    private void DockTutorialHorizontally(bool toLeftEdge)
+    {
+        if (Tutorial is null)
+        {
+            return;
+        }
+
+        if (toLeftEdge)
+        {
+            Tutorial.AnchorLeft = 0f;
+            Tutorial.AnchorRight = 0f;
+            Tutorial.OffsetLeft = ObjectiveDockMargin;
+            Tutorial.OffsetRight = ObjectiveDockMargin + ObjectiveDockWidth;
+            return;
+        }
+
+        Tutorial.AnchorLeft = 1f;
+        Tutorial.AnchorRight = 1f;
+        Tutorial.OffsetLeft = -ObjectiveDockWidth - ObjectiveDockMargin;
+        Tutorial.OffsetRight = -ObjectiveDockMargin;
+    }
+
+    /// <summary>
     /// U15/U21/U22 (KTD3/AE1/R7): real drawer/interior/modal state engages <see
     /// cref="PhaseClock.Engaged"/> — the bare world (no drawer open, no interior room entered, no
     /// modal visible) is the only flowing surface; any open drawer (<see cref="DrawerHost.IsOpen"/>),
@@ -5839,6 +5879,19 @@ public partial class MainUi : Control
         Objective.Visible = !engaged || keepTutorialReadable;
         DockObjectiveHorizontally(toLeftEdge: keepTutorialReadable);
 
+        // 481px re-lay (owner ruling 2026-09-14): the SAME move, for the dock stacked under the
+        // objective card. This one is anchored TopRight too (BuildUi), but its predicate is plain
+        // `Drawer.IsOpen` rather than the tutorial-readability one above, because TutorialFlow's own
+        // Refresh keeps this panel visible for as long as quick travel is unlocked — which is
+        // exactly AFTER the tutorial chain completes, when `Tutorial.Active` is false and the
+        // predicate above would leave it sitting on the right. Measured: with the drawer now
+        // clearing the HUD header and the Forge's folded sections pulling its rows up,
+        // DeepPilotPlayTests' competent player clicked a Buy row at (1041, 345) and the press was
+        // eaten by `QuickTravel_Tavern` at (967, 342) — a HUD button painting over the drawer's own
+        // control. Same defect the objective chip had over the Forge's "Buy copper" row, same
+        // remedy: the drawer owns the right ~600px, so this docks to the free left column instead.
+        DockTutorialHorizontally(toLeftEdge: Drawer.IsOpen);
+
         // Same predicate for the journey dock. It was governed by PHASE alone, so during
         // Expedition/Camp/Deep it slid in over whatever the player had opened — a rendered playtest caught it
         // sitting on top of the Depths panel and obscuring the Gloomwood card. Redundant as well as
@@ -5849,6 +5902,14 @@ public partial class MainUi : Control
         // it for the same clicks underneath. A ROOM does not: see worldInputBlocked's own note above for
         // what using `engaged` here cost.
         Town.SetWorldInputEnabled(!worldInputBlocked);
+
+        // P2-SCREEN-21: DrawerHost is a MainUi sibling of Town2D, not a child of it (it slides in
+        // over the same full-width viewport Town2D renders into — see DrawerHost's own class doc),
+        // so Town2D cannot see it open or measure it itself. UpdateEngaged already fires on every
+        // drawer open/close (OpenPanel, Drawer.Closed) and station-click open (OnStationActivated →
+        // OnInteriorHotspotActivated → OpenPanel), so this is the one place to hand the measurement
+        // across — Town2D.ApplyDrawerBiasedRoomClamp reads it every frame and no-ops at 0.
+        Town.OpenDrawerWidthPx = Drawer.IsOpen ? DrawerHost.DrawerWidth : 0f;
 
         // U18: the engaged latch flips on this discrete event (drawer open/close / modal
         // open-close), not only on a phase tick — the waiting indicator must track it here too,
