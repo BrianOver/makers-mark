@@ -2307,6 +2307,13 @@ public partial class MainUi : Control
     /// target's screen position even while the target itself never changes; and it is hidden
     /// outright while the camera is off the player, since a target-relative chip cannot honestly
     /// point at anything while the target is not where the screen says it is.</para>
+    ///
+    /// <para><b>P2-SCREEN-30:</b> a later capture found "E · Forge" rendered over the HUD header
+    /// band, above Town2D's own world region — the Forge is tall enough that standing at its door
+    /// puts its nametag above the visible world viewport, and the clamp below used to bound
+    /// against the whole WINDOW rather than <see cref="Town2d.Town2D.ViewportScreenRect"/>, so
+    /// "clamped fully inside the viewport" silently meant the window, HUD band included. See the
+    /// clamp's own comment for the fix.</para>
     /// </summary>
     private void UpdateInteractPrompt()
     {
@@ -2346,10 +2353,25 @@ public partial class MainUi : Control
         // inside the viewport rather than left to follow its target off-screen — the same contract
         // Objective/Tutorial already keep (see UpdateTutorialSize's own viewport-relative clamp
         // above) — not a return to the old fixed CenterBottom anchor this PR replaced.
-        var viewport = GetViewportRect().Size;
+        //
+        // P2-SCREEN-30: that clamp used to bound against GetViewportRect() — the whole WINDOW,
+        // top-left (0,0) — which includes the HUD header band that sits ABOVE Town2D's own
+        // WorldSlot region (see MainUi.BuildUi's `layout` VBox and HudBoundsTests.
+        // WorldRegion_NeverIntersects_TheHudHeader). The Forge is 170 world-px tall in a
+        // ~197-px-tall world viewport, so standing at its door puts its OWN nametag above the
+        // visible world band; the old clamp answered by dragging the chip up past the world
+        // viewport entirely, into the HUD band at window y=12 — visually detached from both the
+        // player and the building it names, even though every invariant it checked still held.
+        // Bounding against Town.ViewportScreenRect instead — the world SubViewportContainer's OWN
+        // screen rect, which already starts below the header — means the worst case is the chip
+        // resting at the WORLD viewport's own top edge: still near the building (whose door row,
+        // right next to the player, is always on-screen — the same point
+        // InteractPromptAnchorTests's "chip floats above its own building" check reads), never
+        // over the HUD.
+        var worldRect = Town.ViewportScreenRect;
         var clamped = new Vector2(
-            Mathf.Clamp(wanted.X, 0f, Mathf.Max(0f, viewport.X - size.X)),
-            Mathf.Clamp(wanted.Y, 0f, Mathf.Max(0f, viewport.Y - size.Y)));
+            Mathf.Clamp(wanted.X, worldRect.Position.X, Mathf.Max(worldRect.Position.X, worldRect.End.X - size.X)),
+            Mathf.Clamp(wanted.Y, worldRect.Position.Y, Mathf.Max(worldRect.Position.Y, worldRect.End.Y - size.Y)));
 
         _interactPrompt.Size = size;
         _interactPrompt.GlobalPosition = clamped;
