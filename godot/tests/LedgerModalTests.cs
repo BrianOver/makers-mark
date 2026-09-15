@@ -1590,5 +1590,287 @@ public class LedgerModalTests
             AssertThat(text).OverrideFailureMessage($"{file} reintroduces the deleted ToggleTale button").NotContains("ToggleTale");
         }
     }
+
+    // ── P2-PROOF-15 (the night opens on the beat that proves the most) + P2-PROOF-16 (the beat
+    // remembers the hand that made it). Both land on the beat row, so they share one fixture.
+    // ─────────────────────────────────────────────────────────────────────────────────────────────
+
+    private static readonly ItemId PlainAxeId = new(501);     // player-crafted, forged with NO earned moment
+    private static readonly ItemId EmberbiteId = new(502);    // player-crafted, forged WITH an earned moment
+    private static readonly ItemId RivalBucklerId = new(503); // no maker's mark at all
+
+    /// <summary>
+    /// The exact night the old sort got wrong. Bram (HeroId 1) landed a floor-1 killing blow — the
+    /// commonest beat there is, and the one <c>TellingQuery</c> can give no second pass. Torvald
+    /// (HeroId 4) was saved from a lethal blow on floor 3 by a piece you quenched clean and true.
+    /// Both cards carry beats, so the old <c>!Beats.IsEmpty</c> sort tied them and fell through to
+    /// HeroId: the night opened on Bram's floor-1 kill, every time.
+    ///
+    /// <para>Torvald's card carries THREE beats in resolver-emission order (kill first, as the
+    /// resolver walks floors upward) so the within-card reorder is exercised too, and one of them is
+    /// pinned to a RIVAL item. A rival piece can never actually earn a beat (<c>AttributionEngine</c>
+    /// requires a player-crafted item), which is precisely why it is staged by hand here: it is the
+    /// only way to prove the forge clause's maker's-mark guard is real rather than incidental.</para>
+    /// </summary>
+    private static GameState ProofNight()
+    {
+        static Hero Survivor(int id, string name, int deepest) => new(
+            new HeroId(id), name, ClassRegistry.VanguardId, Level: 2, MaxHp: 26, Gold: 4,
+            Gear: GearSet.Empty, Memories: ImmutableList<ItemMemory>.Empty, Alive: true,
+            DeepestFloorReached: deepest, DiedOnDay: null);
+
+        var heroes = ImmutableSortedDictionary<int, Hero>.Empty
+            .Add(1, Survivor(1, "Bram", 1))
+            .Add(2, Survivor(2, "Sera", 1))
+            .Add(4, Survivor(4, "Torvald", 3));
+
+        static Item Crafted(ItemId id, string name, ItemSlot slot, string? forgedDetail, int day) => new(
+            id, "dagger", name, slot, QualityGrade.Fine, new ItemStats(9, 3, 2),
+            new MakersMark("You", day),
+            forgedDetail is null
+                ? ImmutableList<ItemHistoryEntry>.Empty
+                : ImmutableList.Create(new ItemHistoryEntry(day, "forged", forgedDetail)));
+
+        var items = ImmutableSortedDictionary<int, Item>.Empty
+            // A hand-forge that earned nothing at the Anvil Map still writes its entry — the bare
+            // form, with no moment clause to tell.
+            .Add(PlainAxeId.Value, Crafted(PlainAxeId, "Notched Axe", ItemSlot.Weapon, "Forged at the anvil.", 2))
+            // The real thing the sim writes when a moment IS earned (CraftingHandlers' ForgeMomentLine).
+            .Add(EmberbiteId.Value, Crafted(
+                EmberbiteId, "Emberbite", ItemSlot.Armor, "Forged at the anvil — quenched clean and true.", 3))
+            // No Mark: a rival's goods, carrying a forge line it has no business carrying.
+            .Add(RivalBucklerId.Value, new Item(
+                RivalBucklerId, "buckler", "Tin Buckler", ItemSlot.Shield, QualityGrade.Common,
+                new ItemStats(0, 2, 3), Mark: null,
+                ImmutableList.Create(new ItemHistoryEntry(3, "forged", "Forged at the anvil — never once scorched."))));
+
+        var events = ImmutableList.Create<GameEvent>(
+            new PartyReturned(ImmutableList.Create(new HeroId(1), new HeroId(2), new HeroId(4)))
+            { Id = new EventId(1), Day = 1 },
+            new AttributionBeatEvent(
+                BeatType.KillingBlow, PlainAxeId, new HeroId(1), Floor: 1,
+                "Notched Axe landed the killing blow on the cave rat.") { Id = new EventId(2), Day = 1 },
+            new AttributionBeatEvent(
+                BeatType.KillingBlow, PlainAxeId, new HeroId(4), Floor: 1,
+                "Notched Axe landed the killing blow on the tunnel bat.") { Id = new EventId(3), Day = 1 },
+            new AttributionBeatEvent(
+                BeatType.Provisioned, RivalBucklerId, new HeroId(4), Floor: 2,
+                "Tin Buckler kept Torvald in the fight.") { Id = new EventId(4), Day = 1 },
+            new AttributionBeatEvent(
+                BeatType.LethalSave, EmberbiteId, new HeroId(4), Floor: 3,
+                "Emberbite turned a lethal Deep Ghoul blow. Without it, Torvald falls.")
+            { Id = new EventId(5), Day = 1 });
+
+        return GameFactory.NewGame(9101, heroes) with { Items = items, EventLog = events };
+    }
+
+    /// <summary>Every <c>BeatLine_{n}</c> label on one rendered card, in render order.</summary>
+    private static Label[] BeatLinesOf(Node card)
+    {
+        var lines = new System.Collections.Generic.List<Label>();
+        for (var i = 0; card.FindChild($"BeatLine_{i}", recursive: true, owned: false) is Label label; i++)
+        {
+            lines.Add(label);
+        }
+
+        return lines.ToArray();
+    }
+
+    /// <summary>
+    /// P2-PROOF-15, the headline case: a floor-1 killing blow on HeroId 1 and a floor-3 lethal save
+    /// on HeroId 4 — the night opens on HeroId 4. Asserts against <see cref="LedgerQuery"/>'s own
+    /// output as the control, so this proves the CLIENT reordered rather than the query changing
+    /// shape underneath it (the sim stays HeroId-ordered: zero sim diff).
+    /// </summary>
+    [TestCase]
+    public void NightWithADeeperLifeSaved_OpensOnThatHero_NotOnHeroOnesFloorOneKill()
+    {
+        var ui = MountMainUi(new SimAdapter(ProofNight()));
+        try
+        {
+            ui.Ledger.ShowFor(1);
+
+            // The control: the sim's own order still leads with HeroId 1's floor-1 kill.
+            var queryOrder = LedgerQuery.ReturnCards(ui.Adapter.CurrentState, 1);
+            AssertThat(queryOrder[0].HeroName)
+                .OverrideFailureMessage("LedgerQuery stopped being HeroId-ordered — this test no longer proves anything")
+                .IsEqual("Bram");
+
+            AssertThat(RenderedText(Find<Control>(ui.Ledger, "LedgerCard_0")))
+                .OverrideFailureMessage("the night still opens on HeroId 1's floor-1 killing blow")
+                .Contains("Torvald");
+            AssertThat(RenderedText(Find<Control>(ui.Ledger, "LedgerCard_1"))).Contains("Bram");
+            // The beatless card still sorts under every beat-bearing one.
+            AssertThat(RenderedText(Find<Control>(ui.Ledger, "LedgerCard_2"))).Contains("Sera");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>P2-PROOF-15, within the card: the resolver emits floors upward, so the kill came
+    /// first off the event log. The card opens on the lethal save anyway.</summary>
+    [TestCase]
+    public void LeadCard_OpensOnItsStrongestBeat_NotTheResolversEmissionOrder()
+    {
+        var ui = MountMainUi(new SimAdapter(ProofNight()));
+        try
+        {
+            ui.Ledger.ShowFor(1);
+
+            var lines = BeatLinesOf(Find<Control>(ui.Ledger, "LedgerCard_0"));
+            AssertThat(lines.Length).IsEqual(3);
+            AssertThat(lines[0].Text)
+                .OverrideFailureMessage($"the card did not open on the lethal save: \"{lines[0].Text}\"")
+                .Contains("Emberbite turned a lethal");
+            AssertThat(lines[1].Text).Contains("Tin Buckler kept Torvald");  // Provisioned, floor 2
+            AssertThat(lines[2].Text).Contains("landed the killing blow");   // KillingBlow, floor 1
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>The lead beat is the card's headline, so it reads at the fate line's own size; the
+    /// rest stay at body size (nothing is hidden, only ranked — law 4).</summary>
+    [TestCase]
+    public void LeadBeat_ReadsAtTheFateLineSize_TheRestAtBodySize()
+    {
+        var ui = MountMainUi(new SimAdapter(ProofNight()));
+        try
+        {
+            ui.Ledger.ShowFor(1);
+
+            var lines = BeatLinesOf(Find<Control>(ui.Ledger, "LedgerCard_0"));
+            AssertThat(lines[0].GetThemeFontSize("font_size")).IsEqual(GameTheme.HudValueFontSize);
+            AssertThat(GameTheme.HudValueFontSize)
+                .OverrideFailureMessage("the lead beat's size must actually outsize body text, not just match it")
+                .IsGreater(GameTheme.BodyFontSize);
+            AssertThat(lines[1].GetThemeFontSize("font_size")).IsEqual(GameTheme.BodyFontSize);
+            AssertThat(lines[2].GetThemeFontSize("font_size")).IsEqual(GameTheme.BodyFontSize);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>
+    /// LAW 4, pinned on the surface rather than only on <c>BeatVocab.LeadFirst</c>: reordering drops
+    /// nothing. Every beat <see cref="LedgerQuery"/> reports for every card still renders, with its
+    /// <c>Detail</c> intact — enumerated from the query's own output, never a hand list.
+    /// </summary>
+    [TestCase]
+    public void EveryBeatTheSimDecided_StillRenders_AfterTheReorder()
+    {
+        var ui = MountMainUi(new SimAdapter(ProofNight()));
+        try
+        {
+            ui.Ledger.ShowFor(1);
+
+            var cards = LedgerQuery.ReturnCards(ui.Adapter.CurrentState, 1);
+            var renderedBeatLines = 0;
+            for (var i = 0; i < cards.Count; i++)
+            {
+                renderedBeatLines += BeatLinesOf(Find<Control>(ui.Ledger, $"LedgerCard_{i}")).Length;
+            }
+
+            AssertThat(renderedBeatLines)
+                .OverrideFailureMessage("the reorder dropped or duplicated a beat row")
+                .IsEqual(cards.Sum(card => card.Beats.Count));
+
+            var ledgerText = RenderedText(ui.Ledger);
+            foreach (var beat in cards.SelectMany(card => card.Beats))
+            {
+                AssertThat(ledgerText)
+                    .OverrideFailureMessage($"'{beat.Detail}' stopped rendering after the reorder")
+                    .Contains(beat.Detail);
+                AssertThat(ledgerText).Contains($"(floor {beat.Floor})");
+            }
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>
+    /// P2-PROOF-16: the forge minigame's earned moment reaches the Evening ledger at last — the one
+    /// screen the player is already reading when the proof lands. Link 1 (it came from your hands)
+    /// and link 4 (it mattered) in one sentence.
+    /// </summary>
+    [TestCase]
+    public void BeatRow_ForACraftWithAnEarnedMoment_NamesTheHandThatMadeIt()
+    {
+        var ui = MountMainUi(new SimAdapter(ProofNight()));
+        try
+        {
+            ui.Ledger.ShowFor(1);
+
+            var lead = BeatLinesOf(Find<Control>(ui.Ledger, "LedgerCard_0"))[0].Text;
+            AssertThat(lead)
+                .OverrideFailureMessage($"the beat never named the forge moment: \"{lead}\"")
+                .Contains("quenched clean and true; your anvil, day 3.");
+            // The proof itself is untouched — the clause RIDES the beat, it does not replace it.
+            AssertThat(lead).Contains("Emberbite turned a lethal Deep Ghoul blow.");
+            AssertThat(lead).Contains("(floor 3)");
+            // The fixed opening the sim writes is stripped, never parroted onto the row.
+            AssertThat(lead)
+                .OverrideFailureMessage($"the row parrots the forge line's fixed opening: \"{lead}\"")
+                .NotContains("Forged at the anvil");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>A craft that earned no moment at the Anvil Map has nothing to add, and the sim's bare
+    /// "Forged at the anvil." entry is not a moment — honest empty state, never a filler clause.</summary>
+    [TestCase]
+    public void BeatRow_ForACraftWithNoEarnedMoment_RendersNothingExtra()
+    {
+        var ui = MountMainUi(new SimAdapter(ProofNight()));
+        try
+        {
+            ui.Ledger.ShowFor(1);
+
+            // Bram's card carries exactly one beat, on the bare-forged Notched Axe.
+            var line = BeatLinesOf(Find<Control>(ui.Ledger, "LedgerCard_1"))[0].Text;
+            AssertThat(line).Contains("Notched Axe landed the killing blow on the cave rat.");
+            AssertThat(line)
+                .OverrideFailureMessage($"a momentless craft grew a forge clause anyway: \"{line}\"")
+                .IsEqual("Notched Axe landed the killing blow on the cave rat. (floor 1)");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>A rival's goods say nothing about your hands, even when the fixture hands them a
+    /// forge line — the maker's mark is the gate, not the code path that minted the item.</summary>
+    [TestCase]
+    public void BeatRow_ForARivalsItem_NeverNamesYourAnvil()
+    {
+        var ui = MountMainUi(new SimAdapter(ProofNight()));
+        try
+        {
+            ui.Ledger.ShowFor(1);
+
+            var rivalLine = BeatLinesOf(Find<Control>(ui.Ledger, "LedgerCard_0"))[1].Text;
+            AssertThat(rivalLine).Contains("Tin Buckler kept Torvald in the fight.");
+            AssertThat(rivalLine)
+                .OverrideFailureMessage($"an unmarked rival piece claimed your anvil: \"{rivalLine}\"")
+                .NotContains("your anvil");
+            AssertThat(rivalLine).NotContains("never once scorched");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
 }
 #endif

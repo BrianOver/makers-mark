@@ -258,7 +258,16 @@ public partial class LedgerModal : SimPanel
     /// carries a channel (an unpinned counter sale two days earlier) AND whose expedition already
     /// carries a presence (a bounty-driven departure, floor 1 the natural default vs floor 3
     /// actually departed for), so <c>SHOT_STATE=LedgerProvenance</c> can photograph the beat row's
-    /// two composed lines without a live combat RNG landing either one this run. Mirrors
+    /// two composed lines without a live combat RNG landing either one this run.
+    ///
+    /// <para>P2-PROOF-15/-16 extend the same staging rather than adding a second receipt state: a
+    /// DEEPER lethal save is emitted AFTER the killing blow (the order a real resolver walking
+    /// floors upward would emit them), so the photograph shows the reorder actually doing its work —
+    /// the save leads, at the fate line's size, with the kill under it. Both staged pieces carry the
+    /// "forged" history entry a hand-forge writes, so both rows show the moment clause the anvil
+    /// earned them.</para>
+    ///
+    /// <para>Mirrors
     /// <c>MainUi.Dev_ShowProvenanceCardOverLegends</c>'s own "hand-built <see cref="GameState"/>,
     /// zero sim mutation" idiom — the real hero and their real name/portrait/purse come straight
     /// off the live <c>Adapter.CurrentState</c> roster; only the item and the day's events are
@@ -281,7 +290,16 @@ public partial class LedgerModal : SimPanel
         var itemId = new ItemId(90201);
         var item = new Item(
             itemId, "recipe-receipt-blade", "Emberbite", ItemSlot.Weapon, QualityGrade.Fine,
-            new ItemStats(12, 0, 5), new MakersMark("You", CraftedOnDay: 1), ImmutableList<ItemHistoryEntry>.Empty);
+            new ItemStats(12, 0, 5), new MakersMark("You", CraftedOnDay: 1),
+            ImmutableList.Create(new ItemHistoryEntry(1, "forged", "Forged at the anvil — forged in a single heat.")));
+
+        // P2-PROOF-15/-16: the second piece — a defensive craft that saved the hero a floor DEEPER
+        // than the kill, so the receipt shows a real reorder rather than a one-beat card.
+        var saveItemId = new ItemId(90202);
+        var saveItem = new Item(
+            saveItemId, "recipe-receipt-plate", "Wardenplate", ItemSlot.Armor, QualityGrade.Superior,
+            new ItemStats(0, 9, 8), new MakersMark("You", CraftedOnDay: 2),
+            ImmutableList.Create(new ItemHistoryEntry(2, "forged", "Forged at the anvil — quenched clean and true.")));
 
         var counterSale = new CounterSaleClosed(hero, itemId, Price: 40, Pinned: false)
             with { Id = new EventId(900001), Day = soldOnDay };
@@ -291,12 +309,18 @@ public partial class LedgerModal : SimPanel
         var returned = new PartyReturned(ImmutableList.Create(hero)) with { Id = new EventId(900003), Day = day };
         var departed = new PartyDeparted(ImmutableList.Create(hero), TargetFloor: targetFloor)
             with { Id = new EventId(900004), Day = day };
+        // Emitted AFTER the kill and one floor deeper — the order a resolver walking floors upward
+        // produces, and precisely the order the old sort left on screen.
+        var saveBeat = new AttributionBeatEvent(
+                BeatType.LethalSave, saveItemId, hero, Floor: targetFloor + 1,
+                Detail: "Wardenplate turned a lethal blow. Without it, the hero falls.")
+            with { Id = new EventId(900005), Day = day };
 
         var baseState = Adapter.CurrentState;
         _devStagedState = baseState with
         {
-            Items = baseState.Items.SetItem(itemId.Value, item),
-            EventLog = baseState.EventLog.AddRange([counterSale, beat, returned, departed]),
+            Items = baseState.Items.SetItem(itemId.Value, item).SetItem(saveItemId.Value, saveItem),
+            EventLog = baseState.EventLog.AddRange([counterSale, beat, returned, departed, saveBeat]),
         };
         ShowFor(day);
     }
@@ -444,14 +468,105 @@ public partial class LedgerModal : SimPanel
             : "Returned";
 
     /// <summary>
-    /// U1 (Night leads with the mark): a beat-bearing card leads the reveal instead of whichever
-    /// hero happens to have the lowest HeroId. Client-side only — <see cref="LedgerQuery"/> stays
-    /// HeroId-ordered (zero-sim-diff) — via a STABLE sort on "carries any beat", so cards that tie
-    /// (all beat-bearing, or none at all) keep their original HeroId-ascending relative order. A
-    /// day with no beats anywhere therefore falls back to exactly the old HeroId order.
+    /// U1 (Night leads with the mark), sharpened by P2-PROOF-15: a beat-bearing card leads the
+    /// reveal instead of whichever hero happens to have the lowest HeroId — and among beat-bearing
+    /// cards, the one whose STRONGEST beat proves the most (<see cref="BeatVocab.Rank"/>), then the
+    /// one that happened deepest, then HeroId. Client-side only — <see cref="LedgerQuery"/> stays
+    /// HeroId-ordered (zero-sim-diff).
+    ///
+    /// <para><b>The defect this replaces.</b> The old sort key was the single bit
+    /// <c>!card.Beats.IsEmpty</c>. The 2026-09-11 sweep measured a median of FIVE beats per card
+    /// with 81.8% of cards carrying exactly five — so on a normal night every card ties on that
+    /// bit, the stable sort falls through to HeroId, and the night structurally opened on hero #1's
+    /// first floor-1 kill: the commonest beat there is, and the one beat <c>TellingQuery</c> cannot
+    /// even give a second pass. Ordering by what the beat PROVES is the whole of the fix; nothing is
+    /// dropped or merged (law 4 — see <see cref="BeatVocab.LeadFirst"/>).</para>
     /// </summary>
     private static ImmutableList<ReturnCard> LeadWithAttribution(ImmutableList<ReturnCard> cards) =>
-        cards.OrderByDescending(card => !card.Beats.IsEmpty).ToImmutableList();
+        cards
+            .OrderByDescending(card => LeadBeat(card) is { } beat ? BeatVocab.Rank(beat.Beat) : 0)
+            .ThenByDescending(card => LeadBeat(card)?.Floor ?? 0)
+            .ThenBy(card => card.Hero.Value)
+            .ToImmutableList();
+
+    /// <summary>
+    /// P2-PROOF-15: the one beat this card opens on — the strongest thing the night can prove about
+    /// this hero — or null for a card that earned none. <see cref="BeatVocab.LeadFirst"/> owns the
+    /// comparison so the card's OWN beat rows (which render in the same order) and this sort key can
+    /// never disagree about which beat leads. A beatless card ranks 0, below <see
+    /// cref="BeatVocab.KillingBlowRank"/>, so it still sorts under every beat-bearing card.
+    /// </summary>
+    private static AttributionBeatEvent? LeadBeat(ReturnCard card) =>
+        card.Beats.IsEmpty ? null : BeatVocab.LeadFirst(card.Beats)[0];
+
+    /// <summary>
+    /// P2-PROOF-16: one beat row's whole sentence — what the item did tonight (link 4), and then,
+    /// when the item earned one at the anvil, what YOUR hands did to it on the day you made it
+    /// (link 1). "Emberbite turned a lethal Deep Ghoul blow ... (floor 3) — quenched clean and
+    /// true; your anvil, day 3." The two halves are the point: the proof and the hand it came from,
+    /// in one line, on the one screen where the player is already looking.
+    ///
+    /// <para>Pure read: the moment clause is data the forge already wrote onto the item at craft
+    /// time (<c>Item.History</c>'s "forged" entry) and nothing here invents, re-scores, or mutates
+    /// it. <see cref="AttributionBeatEvent.Detail"/> is passed through verbatim.</para>
+    /// </summary>
+    private static string BeatLine(GameState state, AttributionBeatEvent beat)
+    {
+        var line = $"{beat.Detail} (floor {beat.Floor})";
+        return ForgeMomentClause(state, beat.Item) is { } clause ? $"{line} — {clause}" : line;
+    }
+
+    /// <summary>
+    /// The opening words the forge wrote onto this item, or null when there are none to tell.
+    ///
+    /// <para>The sim's hand-forge stamps ONE <c>ItemHistoryEntry(day, "forged", ...)</c> per craft,
+    /// reading "Forged at the anvil — quenched clean and true." when the player earned moments at
+    /// the Anvil Map and the bare "Forged at the anvil." when they did not. Only the earned half is
+    /// worth a beat row, so this strips the fixed opening and returns what is left. Same
+    /// honest-empty-state contract the beat's channel clause keeps: nothing to say draws nothing at
+    /// all, never a filler line.</para>
+    ///
+    /// <para>Nothing renders for an auto-crafted piece (no forge trace, so the sim writes no entry)
+    /// or a rival's (no <see cref="MakersMark"/> — checked explicitly rather than relied upon, since
+    /// "a rival's goods say nothing about your hands" is the claim, not an accident of which code
+    /// path happened to mint the item). Rival stock cannot earn a beat in the first place
+    /// (<c>AttributionEngine</c> requires a player-crafted item), so this is belt AND braces.</para>
+    /// </summary>
+    private static string? ForgeMomentClause(GameState state, ItemId itemId)
+    {
+        if (!state.Items.TryGetValue(itemId.Value, out var item) || item.Mark is null)
+        {
+            return null;
+        }
+
+        foreach (var entry in item.History)
+        {
+            if (entry.Kind != ForgedHistoryKind || !entry.Detail.StartsWith(ForgedOpening, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            // "Forged at the anvil — quenched clean and true." -> "quenched clean and true".
+            // The bare form ("Forged at the anvil.") trims to empty and tells nothing, which is the
+            // correct outcome: that craft earned no moment, so the beat row stays as it was.
+            var moment = entry.Detail[ForgedOpening.Length..].Trim(' ', '—', '-', '.', ',');
+            if (moment.Length == 0)
+            {
+                continue;
+            }
+
+            return $"{moment}; your anvil, day {entry.Day}.";
+        }
+
+        return null;
+    }
+
+    /// <summary><c>ItemHistoryEntry.Kind</c> the sim's forge writes (CraftingHandlers).</summary>
+    private const string ForgedHistoryKind = "forged";
+
+    /// <summary>The fixed opening of the forge's own history line, stripped before the earned
+    /// moment is quoted onto a beat row (see <see cref="ForgeMomentClause"/>).</summary>
+    private const string ForgedOpening = "Forged at the anvil";
 
     /// <summary>
     /// U-T5-6: the narrator's own line for tonight's reveal (see <see cref="_narratorLine"/>'s doc),
@@ -688,8 +803,15 @@ public partial class LedgerModal : SimPanel
             }
         }
 
-        foreach (var beat in card.Beats)
+        // P2-PROOF-15: the card opens on the beat that proves the most, not on whichever the
+        // resolver happened to emit first (which was always floor 1's kill). Every beat the sim
+        // decided still renders, in full, with its Detail untouched — only the ORDER changes, and
+        // the lead gets the fate line's own type size (law 4 holds; see BeatVocab.LeadFirst).
+        var orderedBeats = BeatVocab.LeadFirst(card.Beats);
+        for (var beatIndex = 0; beatIndex < orderedBeats.Count; beatIndex++)
         {
+            var beat = orderedBeats[beatIndex];
+
             // Attribution beats are the spine of the game (R11) — highlighted, and now carrying
             // the actual item's icon so the beat reads as THAT item's moment, not just prose.
             var beatRow = AddRow(telling.Body);
@@ -698,8 +820,18 @@ public partial class LedgerModal : SimPanel
             // REDUNDANT — Detail already carries the full sentence. Drop the prefix rather than
             // translating it in place; BeatVocab.Label exists for surfaces that need the SHORT
             // caption instead (Chronicle Night, the commendation — later units).
-            var beatLabel = AddLabel(beatRow, $"{beat.Detail} (floor {beat.Floor})");
+            var beatLabel = AddLabel(beatRow, BeatLine(state, beat));
+            // Named by POSITION within this card, so the render order is findable and not merely
+            // inferable from a concatenated text blob (P2-PROOF-15's own test contract).
+            beatLabel.Name = $"BeatLine_{beatIndex}";
             beatLabel.AddThemeColorOverride("font_color", new Color(1f, 0.85f, 0.2f));
+            if (beatIndex == 0)
+            {
+                // The lead beat reads at the fate line's size (the same HudValueFontSize step
+                // above body text that the card's headline sentence uses) — this IS the card's
+                // headline whenever the card earned one.
+                beatLabel.AddThemeFontSizeOverride("font_size", GameTheme.HudValueFontSize);
+            }
 
             // P2-MEMORY-03: the beat names its channel — a second line saying how the item
             // reached the hand that held it. Anchored to `night` (the night this card retells,
