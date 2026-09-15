@@ -71,6 +71,24 @@ public partial class ForgePanel : SimPanel
     /// </summary>
     private const float MentorBannerWrapWidth = 480f;
 
+    /// <summary>P2-SCREEN-23 wrap floor for the collapsed Masterwork/Commission summary line —
+    /// same unconstrained-Label-under-a-flow-row hazard <see cref="AddButton"/>'s own
+    /// <c>RefusedButtonWrapWidth</c> remark documents (an autowrap Control's preferred width is
+    /// its UNWRAPPED single-line width inside an <c>HFlowContainer</c> absent an explicit cap).
+    ///
+    /// <para>560 measured as the regression here (#827): a <c>CustomMinimumSize.X</c> gives the
+    /// wrap something to wrap AGAINST, but it does not CAP the control's reported combined
+    /// minimum size against the card/scroll chrome stacked around it — instrumented directly
+    /// (<c>Control.GetCombinedMinimumSize()</c> on the live tree, ForgeAnvil's day-1 buckler
+    /// card), 560 measured as <c>ForgeRoot</c>/<c>CraftScroll</c>/<c>CraftView</c> all reporting
+    /// 608px combined-minimum-width against the drawer's 601px budget — the label's own 48px of
+    /// card padding/margin overhead riding on top of its 560px floor, exactly the 7px overshoot
+    /// CI's retry reproduced. 480 (same value already proven safe for this card at this exact
+    /// nesting depth by <see cref="MentorBannerWrapWidth"/>) reproduces at 528px combined —
+    /// comfortably under 601 with margin to spare, verified by the same instrumentation.</para>
+    /// </summary>
+    private const float AdvancedVerbsSummaryWrapWidth = 480f;
+
     /// <summary>
     /// Register #160 (U-T2-4): "Open the Docket" from right inside the craft section — the third
     /// of the three ways in, and the only one this panel owns. Bare event, same shape as <see
@@ -1116,7 +1134,7 @@ public partial class ForgePanel : SimPanel
                                 : !mwGoldOk
                                     ? $"Not enough gold — need {mwSurcharge}, have {state.Player.Gold}."
                                     : $"No action slots left today (0/{ActionBudget.SlotsPerDay}) — try again once {PhaseVocab.Display(state)} ends.";
-                AddButton(controlsRow, $"Masterwork_{recipe.RecipeId}", "Masterwork Attempt (guaranteed)",
+                var masterworkButton = AddButton(controlsRow, $"Masterwork_{recipe.RecipeId}", "Masterwork Attempt (guaranteed)",
                     new Verdict(mwLegal, mwWhyNot), () => OnMasterworkPressed(recipe.RecipeId, material), onRefused: SetFeedback);
 
                 // U4 (P6b): commission one of the era's capped legendary works — same card, same
@@ -1143,9 +1161,44 @@ public partial class ForgePanel : SimPanel
                         : !legendaryGoldOk
                             ? $"Not enough gold — need {legendaryCost}, have {state.Player.Gold}."
                             : $"No action slots left today (0/{ActionBudget.SlotsPerDay}) — try again once {PhaseVocab.Display(state)} ends.";
-                AddButton(controlsRow, $"Commission_{recipe.RecipeId}",
+                var commissionButton = AddButton(controlsRow, $"Commission_{recipe.RecipeId}",
                     $"Commission Legendary ({commissionsRemaining} of {LegendaryCommissionHandlers.MaxPerCampaign} left)",
                     new Verdict(legendaryLegal, legendaryWhyNot), () => OnCommissionLegendaryPressed(recipe.RecipeId, material), onRefused: SetFeedback);
+
+                // P2-SCREEN-23: on a fresh forge these two "purchased guarantee" verbs (U4/P6b —
+                // both bonus paths standing BESIDE whichever craft path the card already offers,
+                // never the card's own core verb) were refused for entirely different reasons —
+                // Masterwork by a workshop-tier gate no same-day purchase can close, Commission by
+                // plain gold/material affordability — but rendered as two full autowrap buttons,
+                // each 2-3 lines tall, stacked under the two CRAFT buttons that are ALSO refused on
+                // day 1 (0 copper). Four such walls per card read as four errors, not as a forge
+                // with room to grow (the owner's own capture, runs/shots-2026-09-13/ForgeAnvil.png).
+                //
+                // Collapsing ONLY when BOTH are currently refused (never just one — an actionable
+                // Commission stays a normal full button beside a still-locked Masterwork, so the
+                // two are never conflated) folds them into ONE dim line naming both blockers
+                // verbatim, in the "gate reasons as text" idiom P2-SCREEN-12 already established
+                // for the Books tray rather than inventing a new vocabulary. Nothing here changes
+                // WHAT is gated or softens either reason — mwWhyNot/legendaryWhyNot are quoted
+                // exactly, and both buttons stay mounted (just Visible=false), so
+                // ZeroMaterialsAndZeroSlots_EveryRefusedVerbNamesItsBlockerInItsOwnLabel_
+                // EveryOtherOneIsLegal's tree walk (which never reads Visible) still finds
+                // Masterwork_/Commission_ refused-but-pressable with the reason baked into Text,
+                // unchanged. The Craft/Work-the-forge buttons above are deliberately NOT part of
+                // this collapse: they are the recipe's core verb, and "buy the material, then
+                // press this" is the day-1 loop the tutorial itself points at — collapsing them
+                // too would hide the one action a fresh player is actually meant to take.
+                var bothAdvancedVerbsRefused = !mwLegal && !legendaryLegal;
+                masterworkButton.Visible = !bothAdvancedVerbsRefused;
+                commissionButton.Visible = !bothAdvancedVerbsRefused;
+                if (bothAdvancedVerbsRefused)
+                {
+                    var summary = AddLabel(controlsRow,
+                        $"Not yet on this recipe — Masterwork Attempt: {mwWhyNot}\nCommission Legendary: {legendaryWhyNot}");
+                    summary.Name = $"AdvancedVerbsLocked_{recipe.RecipeId}";
+                    summary.AddThemeColorOverride("font_color", GameTheme.TextDim);
+                    summary.CustomMinimumSize = new Vector2(AdvancedVerbsSummaryWrapWidth, 0);
+                }
 
                 // Wave 5 rendering follow-up (#714 finding — batch echo was computed but never
                 // shown): tell the player their last hand-forge of THIS recipe today is still

@@ -452,6 +452,101 @@ public class ForgeCraftTests
         finally { Unmount(ui); }
     }
 
+    // ── P2-SCREEN-23: a fresh forge stacked four full-width refusal walls per recipe card (Craft,
+    // Work the forge, Masterwork, Commission), reading as four errors rather than a forge with
+    // room to grow (runs/shots-2026-09-13/ForgeAnvil.png). Masterwork and Commission — the two
+    // "purchased guarantee" verbs beside whichever craft path the card already offers (U4/P6b) —
+    // now collapse into one dim summary line ONLY when BOTH are refused, quoting each button's own
+    // reason verbatim. The recipe's own core verb (Craft/Work the forge) is never part of this:
+    // it is the day-1 loop the tutorial itself points at. ────────────────────────────────────────
+
+    /// <summary>Iterates every rendered Masterwork_/Commission_ pair — not one hand-picked recipe
+    /// — the same reflection-over-what-exists idiom <see cref="GatedVerbPrefixes"/>'s own census
+    /// above uses, so a future recipe is covered the day it ships.</summary>
+    [TestCase]
+    public void DayOne_EveryMasterworkAndCommissionPair_CollapsesTogetherNeverJustOne_SummaryQuotesBothReasonsVerbatim()
+    {
+        // Tier I (Masterwork always refused) and zero gold (Commission always refused, whatever
+        // the recipe) -- every card's pair is refused, so this fixture exercises the collapse for
+        // the whole recipe list at once.
+        var ui = MountMainUi(FoundryCampaign(gold: 0));
+        try
+        {
+            ui.OpenPanel("Forge");
+
+            var masterworks = AllButtons(ui.Forge)
+                .Where(b => b.Name.ToString().StartsWith("Masterwork_", StringComparison.Ordinal))
+                .ToList();
+            AssertThat(masterworks.Count > 0)
+                .OverrideFailureMessage("Swept zero Masterwork buttons - fixture is vacuous.")
+                .IsTrue();
+
+            foreach (var masterwork in masterworks)
+            {
+                var recipeId = masterwork.Name.ToString()["Masterwork_".Length..];
+                var commission = Find<Button>(ui.Forge, $"Commission_{recipeId}");
+
+                // Both refused today -> collapse together. Never one hidden while its sibling
+                // still renders as an available action.
+                AssertThat(masterwork.Visible).IsEqual(commission.Visible);
+                AssertThat(masterwork.Visible)
+                    .OverrideFailureMessage($"{recipeId}: Masterwork/Commission both refused but still rendered as available actions.")
+                    .IsFalse();
+
+                // Honesty guard (the one that matters most): the collapsed line is not a softer
+                // substitute — it quotes each button's OWN reason verbatim, no interaction needed.
+                var summary = Find<Label>(ui.Forge, $"AdvancedVerbsLocked_{recipeId}");
+                AssertThat(summary.Visible).IsTrue();
+                AssertThat(summary.Text).Contains(masterwork.TooltipText);
+                AssertThat(summary.Text).Contains(commission.TooltipText);
+            }
+        }
+        finally { Unmount(ui); }
+    }
+
+    [TestCase]
+    public void OnlyMasterworkRefused_CommissionStillAffordable_NeitherCollapses_BothStayDirectActions()
+    {
+        // Same fixture BelowForgeTierTwo_MasterworkRowDisabled...  uses: Tier I (Masterwork
+        // refused) but gold-rich (Commission affordable) -- the pair must NOT collapse just
+        // because one of the two is refused; an actionable verb never gets buried alongside a
+        // locked sibling.
+        var ui = MountMainUi(FoundryCampaign(gold: 999_999, copper: 100, coal: 10, flux: 10));
+        try
+        {
+            ui.OpenPanel("Forge");
+
+            var masterwork = Find<Button>(ui.Forge, $"Masterwork_{ScriptedSession.CraftRecipeId}");
+            var commission = Find<Button>(ui.Forge, $"Commission_{ScriptedSession.CraftRecipeId}");
+            AssertThat(masterwork.Visible).IsTrue();
+            AssertThat(commission.Visible).IsTrue();
+            AssertThat(ui.Forge.FindChild($"AdvancedVerbsLocked_{ScriptedSession.CraftRecipeId}", recursive: true, owned: false))
+                .IsNull();
+        }
+        finally { Unmount(ui); }
+    }
+
+    /// <summary>Negative control (the ask's own): the recipe's OWN core verb must never be swept
+    /// into the Masterwork/Commission collapse above, even on a fresh, otherwise all-refused
+    /// forge.</summary>
+    [TestCase]
+    public void AffordableCraftOnDayOne_NeverFoldedIntoTheAdvancedSummary_StaysDirectlyPressable()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.Adapter.Queue(new BuyMaterialAction(ScriptedSession.CraftMaterial, ScriptedSession.CopperNeeded));
+            ui.Adapter.AdvancePhase();
+            ui.OpenPanel("Forge");
+
+            var craft = Find<Button>(ui.Forge, $"Craft_{ScriptedSession.CraftRecipeId}");
+            AssertThat(craft.Visible).IsTrue();
+            PressEnabled(ui.Forge, $"Craft_{ScriptedSession.CraftRecipeId}");
+            AssertThat(ui.Adapter.AppliedThisPhase.OfType<CraftAction>().Count()).IsEqual(1);
+        }
+        finally { Unmount(ui); }
+    }
+
     [TestCase]
     public void FreshSave_TierChipReadsForgeI_UpgradeRowDisabled_ReasonNamesMissingCopper()
     {
