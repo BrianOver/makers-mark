@@ -4618,6 +4618,7 @@ name (§11.6 rule 4).
 | ⚑ P2-SCREEN-27 | Small placements: the wandering caption, the orphan spinner, the floating class sprite, the loose shelf label | `godot/scripts/town2d/`, `godot/scripts/panels/` | — | [G] |
 | ⚑ P2-SCREEN-28 | The capture harness's own usage header stops naming states it does not have | `tools/shoot.ps1` | — | [G] |
 | ⚑ P2-SCREEN-29 | A sized `TextureRect` cannot silently claim its texture's size | `sim/GameSim.Tests/Hygiene/TextureRectExpandModeCensusTests.cs`, `godot/scripts/MainUi.cs`, `godot/scripts/panels/MineWatch.cs`, `godot/scripts/panels/ProvenanceCard.cs`, `godot/scripts/panels/SimPanel.cs`, `godot/scripts/ui/UiKit.cs` | — | [S] |
+| ⚑ P2-SCREEN-30 | The interact prompt stops floating over the HUD when its target is taller than the view | `godot/scripts/MainUi.cs`, `godot/scripts/town2d/Town2D.cs` | — | [G] |
 | P2-ONBOARD-09 | The Goodwill chip speaks the band or dies (the beat's own half landed) | `godot/scripts/panels/CounterPanel.cs` | — | [G] |
 | P2-ONBOARD-10 | The seed becomes enterable at New Game | `godot/scripts/NewGameSelect.cs` | — | [G] |
 | P2-PROOF-03 | The stage, pass one — one duel, recorded rolls | new `godot/scripts/panels/TellingPanel.cs` (+`.uid`) | — | [G] |
@@ -6550,6 +6551,40 @@ need". And `DirectorSystem` (434 lines, one RNG draw a morning) fires five autho
 lockdown latch that by their own contract change no combat, routing or economy rule
 (`Events.cs:267,274-275`) — a candidate cut, `[S][C][GOLD]` because removing a draw moves the golden.
 Both need an owner ruling before anything is built.
+
+#### P2-SCREEN-30. The interact prompt stops floating over the HUD when its target is taller than the view
+
+Found by capturing `main @ 3ec38620` and reading the frame. The player stands at the forge door;
+`E · Forge` renders at the very top of the window, **over the HUD band**, visually detached from the
+building it names and from the player.
+
+This is `P2-SCREEN-22`'s viewport clamp behaving exactly as designed, meeting a case it was not
+sized for. The forge sprite is **170 world-px tall in a ~197-px world viewport**, so standing at its
+door puts its own nametag above the visible area; the chip anchors to that nametag, the clamp pulls
+it back on screen, and "on screen" for a chip in the HUD's coordinate space is `y=12` — above the
+world viewport, which starts at `y=222`. Every invariant holds and the result still reads wrong.
+
+Do **not** fix this by removing the clamp: without it the chip renders off-window entirely and
+`HudBoundsTests` goes red, which is the defect `P2-SCREEN-22` shipped to fix. The fix is to give the
+chip somewhere honest to go when there is no room above its target — below it, or pinned to the
+target's visible edge — and to keep it inside the **world** viewport rather than the window.
+
+Flagged during `P2-SCREEN-22`'s own work and deliberately not folded in there, since it is a
+different case from the one that unit fixed.
+
+#### Two fold budgets the 481px ruling could not close, with the arithmetic
+
+The owner ruled on 2026-09-14 that the HUD header stays visible and the drawer panels re-lay out for
+its 481px (425px of panel body). Two surfaces could not be closed by folding alone, and both are
+arithmetic rather than preference — each needs an owner call before anything is built:
+
+- **Shop.** Your Shelf 140 + unshelved header/drop-zone 96 + card-top→Stock-row 189 = **425 exactly**.
+  Getting the Stock row above the fold means deleting or burying either the 140px scene banner or the
+  103px counter body. The drag gesture itself is solved — source and target are adjacent and
+  `RealDragOntoShelfTests` is green — this is only about Stock.
+- **Depths.** With a party underground, `MineWatch` claims 260 + the once-ever caption 79 = **339px**
+  before any venue tile draws. No fold closes that. The shipped guard measures the no-party case and
+  documents why rather than asserting away the populated one.
 
 #### What this round says NOT to build
 
