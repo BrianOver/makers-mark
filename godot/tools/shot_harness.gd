@@ -126,7 +126,7 @@ const KNOWN_STATES := [
 	"HeroCandidateOpen", "HeroCards",
 	"HeroErrand", "HeroTrinket", "Ledger", "LedgerProvenance", "Lessons", "Memorial", "MemoryRow",
 	"MineGateFocus", "Mirror",
-	"OccupancyCorner", "Primer", "Provenance", "ReturnAtNight", "ReturnEmerge", "ReturnQuestEmpty",
+	"OccupancyCorner", "OreSlotGate", "Primer", "Provenance", "ReturnAtNight", "ReturnEmerge", "ReturnQuestEmpty",
 	"SendOff", "ShopPanel", "ShopTrinket", "SplitLessons", "Storied", "StoriedCard",
 	"StoriedRefusal", "SystemMenu", "TavernPanel",
 	"TavernScene", "TavernSceneAtBar", "Telling",
@@ -216,6 +216,10 @@ func _initialize() -> void:
 		# at frame 60, first non-zero at frame 90) -- so the scroll-down below waits for frame 100
 		# (comfortably past that), and this settle leaves 50 more frames for it to take before
 		# capture.
+		_settle = 150
+	elif _state == "OreSlotGate":
+		# P2-HONEST-27: same fold/settle reasoning as LedgerProvenance above -- scroll-down at
+		# frame 100, 50 more frames for the relayout to finish before capture.
 		_settle = 150
 	elif _state == "BellTray":
 		# U3 (loop-legibility plan, KTD-B): a plain HUD chip, no camera move -- but the
@@ -793,6 +797,23 @@ func _process(_delta: float) -> bool:
 					+ "proves nothing about the channel line.")
 				quit(1)
 				return false
+		elif _state == "OreSlotGate":
+			# P2-HONEST-27: MainUi.BuildDefaultAdapter (SHOT_ORE_SLOT_GATE=1) has already staged the
+			# LIVE campaign at day 1's own Evening with Torvald's mithril offer open AND the day's
+			# action slots already spent -- no day-cycle navigation or AdvancePhase press needed
+			# (pressing the real bell would roll the day over and refill the very slots this
+			# receipt exists to show empty). LedgerModal's own dev bridge just opens the Ledger on
+			# that same live state, same "call the panel's own public show method" idiom
+			# LedgerProvenance/Telling above already use.
+			var ledger_modal_ore = _ui.find_child("LedgerModal", true, false)
+			if ledger_modal_ore and ledger_modal_ore.has_method("Dev_ShowLedgerWithZeroSlotOreOffer"):
+				ledger_modal_ore.call("Dev_ShowLedgerWithZeroSlotOreOffer")
+			else:
+				push_error("[shot] SHOT_STATE=OreSlotGate could not reach "
+					+ "LedgerModal.Dev_ShowLedgerWithZeroSlotOreOffer -- the shot below is empty and "
+					+ "proves nothing about the action-slot gate.")
+				quit(1)
+				return false
 		elif _state == "Telling" or _state == "TellingFork" or _state == "TellingFall" or _state == "TellingVerdict":
 			# P2-PROOF: the Telling's own four-frame receipt (a factual round mid-play, the
 			# desaturated fork, the held fall, the stamped verdict). Real combat RNG landing a
@@ -1336,6 +1357,16 @@ func _process(_delta: float) -> bool:
 		else:
 			push_error("[shot] SHOT_STATE=LedgerProvenance could not find LedgerScroll to scroll -- "
 				+ "the beat row's second line will be clipped under the fold.")
+	if _state == "OreSlotGate" and _frames == 100:
+		# P2-HONEST-27: same fold problem LedgerProvenance hit above -- the ORE OFFERED section
+		# (and its Buy button) sits past the fitted modal's own viewport height on a fresh
+		# 1152x648 capture, same LedgerScroll idiom.
+		var ledger_scroll_ore = _ui.find_child("LedgerScroll", true, false)
+		if ledger_scroll_ore:
+			ledger_scroll_ore.scroll_vertical = 9999
+		else:
+			push_error("[shot] SHOT_STATE=OreSlotGate could not find LedgerScroll to scroll -- "
+				+ "the ore row's Buy button will be clipped under the fold.")
 	# Ledger's remaining beats: walk the rest of day 1's five phases (frame 60 above already
 	# pressed the bell once, ending Morning) at the same 30-frame spacing SendOff/Mirror use,
 	# then force the reveal open directly once day 1 has rolled over (see the elif above for

@@ -26,7 +26,7 @@
 #   ForgeFlavor, ForgeLadder, ForgePanel, ForgeShelf, ForgeTrinket, GatedCounterEmptyShelf,
 #   GateHeldStreak, GateNight, Graduation, HeroCandidateOpen, HeroCards, HeroErrand, HeroTrinket,
 #   Ledger, LedgerProvenance, Lessons, Memorial, MemoryRow, MineGateFocus, Mirror, OccupancyCorner,
-#   Primer, Provenance, ReturnAtNight, ReturnEmerge, ReturnQuestEmpty, SendOff, ShopPanel,
+#   OreSlotGate, Primer, Provenance, ReturnAtNight, ReturnEmerge, ReturnQuestEmpty, SendOff, ShopPanel,
 #   ShopTrinket, SplitLessons, Storied, StoriedCard, StoriedRefusal, SystemMenu, TavernPanel, TavernScene,
 #   TavernSceneAtBar, Telling, TellingFall, TellingFork, TellingVerdict, TownOverview,
 #   TutorialLookIn, TutorialOffCamera, Watch, WarrantFirstMorning
@@ -80,6 +80,12 @@ $env:SHOT_STORIED = if ($State -eq "Storied" -or $State -eq "StoriedCard" -or $S
 # P2-END-01 (§11.8.1, "say it out loud"): the gate-held-streak Ledger receipt -- same
 # never-in-real-play staging contract as SHOT_WATCH_FIGHT/SHOT_ARC_SCENE/SHOT_STORIED above.
 $env:SHOT_GATE_HELD_STREAK = if ($State -eq "GateHeldStreak") { "1" } else { "" }
+# P2-HONEST-27: the ore row's own action-slot gate -- Torvald's mithril offer live on day 1's
+# Evening with the day's action slots already spent (MainUi.StageOreZeroSlotEveningReceipt).
+# Reaching a real 0-slot Evening honestly costs five real workshop actions a screenshot has no
+# business driving; the Buy button's Disabled state and player-phrased reason are then decided
+# entirely by LedgerModal's own gate, exactly as they would be in play. Never reads in real play.
+$env:SHOT_ORE_SLOT_GATE = if ($State -eq "OreSlotGate") { "1" } else { "" }
 if (Test-Path $Out) { Remove-Item $Out -Force }
 
 Write-Host "capturing state='$State' -> $Out" -ForegroundColor Cyan

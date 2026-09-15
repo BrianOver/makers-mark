@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Immutable;
 using System.Linq;
+using GameSim.Advisor;
 using GameSim.Contracts;
 using GameSim.Drama;
 using GameSim.Expedition;
@@ -323,6 +324,31 @@ public partial class LedgerModal : SimPanel
             EventLog = baseState.EventLog.AddRange([counterSale, beat, returned, departed, saveBeat]),
         };
         ShowFor(day);
+    }
+
+    /// <summary>
+    /// Dev/receipt tool only (never called from real play), reachable via <c>shot_harness.gd</c>'s
+    /// <c>call()</c> bridge — P2-HONEST-27's own receipt (<c>SHOT_STATE=OreSlotGate</c>). Unlike
+    /// <see cref="Dev_ShowLedgerWithProvenanceBeat"/> above, this does NOT set
+    /// <see cref="_devStagedState"/>: <see cref="BuyOreLegal"/> deliberately reads
+    /// <c>Adapter.CurrentState</c> directly (never the dev-staged card content), because buying ore
+    /// is a real action against real live state, not a historical retelling. The 0-slot Evening
+    /// with an open offer is therefore staged one layer up, in the LIVE campaign itself
+    /// (<c>MainUi.StageOreZeroSlotEveningReceipt</c>, gated on <c>SHOT_ORE_SLOT_GATE</c>) — this
+    /// method only opens the Ledger on whatever day that staging used, the same "call the panel's
+    /// own public show method" idiom every sibling dev bridge here already uses, deliberately with
+    /// no parameters (an <c>int</c> default-valued overload of <see cref="ShowFor"/> is exactly the
+    /// GDScript-<c>call()</c>-arity hazard <c>shot_harness.gd</c>'s own "Ledger" state comment warns
+    /// against).
+    /// </summary>
+    public void Dev_ShowLedgerWithZeroSlotOreOffer()
+    {
+        if (Adapter is null)
+        {
+            return;
+        }
+
+        ShowFor(Adapter.CurrentState.Day);
     }
 
     private void RenderCards(int day)
@@ -1084,37 +1110,65 @@ public partial class LedgerModal : SimPanel
     /// (never re-implementing the rule — the kernel stays the authority on apply):
     /// Evening-only CanHandle (the queued batch lands in the CURRENT phase, per
     /// GameKernel.Tick), a live matching open offer with enough quantity, a living
-    /// seller, and the tariffed cost within the purse. Reasons are player-phrased.
+    /// seller, the tariffed cost within the purse, and the day's action-slot budget.
+    /// Reasons are player-phrased.
+    ///
+    /// <para>P2-HONEST-27: <paramref name="whyNot"/>'s chain below used to BE the legality —
+    /// four hand-checked conditions with no fifth for <see cref="GameState.ActionSlotsRemaining"/>,
+    /// while <c>OreMarketHandlers.Apply</c> (via <c>GameSim.Advisor.ActionLegality.BuyOreLegal</c>)
+    /// always refused a 0-slot buy. The Buy button stayed live, the click queued, and the kernel
+    /// silently rejected it at the next <c>AdvancePhase</c> with nothing on screen saying why —
+    /// the same SHAPE of drift #742 found (a client-side legality mirror that looked complete
+    /// while silently covering less ground than the handler it mirrors), just a missing GUARD
+    /// here instead of #742's missing pooled material key. The returned boolean now comes from
+    /// <c>ActionLegality.IsLegal</c> itself, the one legality authority (<see cref="SimPanel.Verdict"/>'s
+    /// own doc), so a FUTURE guard added to the handler and mirrored into <c>ActionLegality</c>
+    /// gates this button whether or not anyone remembers to touch this method too — the chain
+    /// below only ever picks which player-phrased sentence to print, in
+    /// <c>OreMarketHandlers.Apply</c>'s own check order (phase -> offer -> hero -> gold -> action
+    /// slots, checked last there too).</para>
     /// </summary>
     private static bool BuyOreLegal(GameState state, OreOffered offer, string heroName, out string whyNot)
     {
+        var legal = ActionLegality.IsLegal(state, new BuyOreAction(offer.From, offer.MaterialKey, offer.Quantity), state.Phase);
+
         if (state.Phase != DayPhase.Evening)
         {
             whyNot = "Ore changes hands in the Evening — reopen the ledger then.";
-            return false;
+            return legal;
         }
 
         var open = state.OpenOreOffers.FirstOrDefault(o => o.From == offer.From && o.MaterialKey == offer.MaterialKey);
         if (open is null || open.Quantity < offer.Quantity)
         {
             whyNot = "That offer is gone.";
-            return false;
+            return legal;
         }
 
         if (!state.Heroes.TryGetValue(offer.From.Value, out var seller) || !seller.Alive)
         {
             whyNot = $"{heroName} never made it home — the offer is void.";
-            return false;
+            return legal;
         }
 
         if (TariffedCost(state, offer) > state.Player.Gold)
         {
             whyNot = "You can't afford that yet.";
-            return false;
+            return legal;
+        }
+
+        // P2-HONEST-27: ExpeditionRevealSystem.Process replaces GameState.OpenOreOffers wholesale
+        // the instant Evening next turns over ("yesterday's unsold offers are gone", that system's
+        // own doc/code comment) — confirmed by reading the system, not assumed. A skipped buy is
+        // not banked for tomorrow; this line names that stake instead of a silent kernel refusal.
+        if (state.ActionSlotsRemaining <= 0)
+        {
+            whyNot = $"The day's last action slot is already spent — {heroName}'s ore won't wait. It is gone at dawn.";
+            return legal;
         }
 
         whyNot = string.Empty;
-        return true;
+        return legal;
     }
 
     /// <summary>
