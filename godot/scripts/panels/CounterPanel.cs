@@ -114,7 +114,7 @@ public partial class CounterPanel : SimPanel
         {
             var action = new OpenCounterAction();
             Adapter!.Queue(action);
-            _feedback!.Text = Confirm(action, "Opened the counter");
+            SetCounterFeedback(Confirm(action, "Opened the counter"));
         });
         // Mirrors CounterHandlers.ApplyOpen: Morning-only CanHandle, and rejects only while an
         // unclosed session is already live — which can't be true here (this branch only runs
@@ -142,7 +142,7 @@ public partial class CounterPanel : SimPanel
         {
             var action = new CloseCounterAction();
             Adapter!.Queue(action);
-            _feedback!.Text = Confirm(action, "Closed the counter");
+            SetCounterFeedback(Confirm(action, "Closed the counter"));
         });
     }
 
@@ -403,7 +403,7 @@ public partial class CounterPanel : SimPanel
             consequence = "no reaction yet — try again";
         }
 
-        _feedback!.Text = Confirm(action, $"Presented {ItemName(itemId)} — {consequence}");
+        SetCounterFeedback(Confirm(action, $"Presented {ItemName(itemId)} — {consequence}"));
     }
 
     /// <summary>The ONE seam both the Accept button and the desk's handshake click call (KTD-A) —
@@ -427,7 +427,7 @@ public partial class CounterPanel : SimPanel
         var action = new HaggleResponseAction(HaggleResponseKind.Accept);
         Adapter!.Queue(action);
 
-        _feedback!.Text = Confirm(action, $"Sold {itemName} to {heroName} for {offer}g — {DescribeNextCustomer()}");
+        SetCounterFeedback(Confirm(action, $"Sold {itemName} to {heroName} for {offer}g — {DescribeNextCustomer()}"));
     }
 
     /// <summary>Names what the counter looks like right after an action just resolved it — the
@@ -499,7 +499,7 @@ public partial class CounterPanel : SimPanel
         // never contradict the Interest chip in the same refresh.
         var reply = CustomerVoice.SuggestReply(itemName, interestRose);
 
-        _feedback!.Text = Confirm(action, $"Suggested {itemName} — {consequence} — {heroName}: \"{reply}\"");
+        SetCounterFeedback(Confirm(action, $"Suggested {itemName} — {consequence} — {heroName}: \"{reply}\""));
     }
 
     private void BuildHaggleControls(CounterState counter, Hero? hero)
@@ -545,7 +545,7 @@ public partial class CounterPanel : SimPanel
                 consequence = "no reaction yet — try again";
             }
 
-            _feedback!.Text = Confirm(action, $"Held firm — {consequence}");
+            SetCounterFeedback(Confirm(action, $"Held firm — {consequence}"));
         });
 
         // U2 (design doc §B5): a coin stack you count out, not a SpinBox you type into — the SAME
@@ -611,7 +611,7 @@ public partial class CounterPanel : SimPanel
                 consequence = "no reaction yet — try again";
             }
 
-            _feedback!.Text = Confirm(action, $"Countered at {price}g — {consequence}");
+            SetCounterFeedback(Confirm(action, $"Countered at {price}g — {consequence}"));
         });
     }
 
@@ -685,10 +685,24 @@ public partial class CounterPanel : SimPanel
 
         _feedback = AddLabel(root, string.Empty);
         _feedback.Name = "CounterFeedback";
+        // 481px re-lay (owner ruling 2026-09-14): an empty confirmation line still reserved a full
+        // text row, and this body sits ABOVE the shop's shelf sections in a 425px drawer — 27px
+        // that pushed the empty shelf slot (drag-to-shelve's drop target) past the fold by 8px.
+        // Same Visible toggle ForgePanel's ForgeFeedback already uses (register #149); the line is
+        // byte-identical the moment there is anything to confirm.
+        _feedback.Visible = false;
 
         AddHeader(root, "COUNTER SERVICE");
         _body = new VBoxContainer { Name = "CounterBody" };
         root.AddChild(_body);
+    }
+
+    /// <summary>The one place this body's confirmation line changes — and the one place it is made
+    /// visible. See <see cref="Build"/>'s note on why it starts hidden.</summary>
+    private void SetCounterFeedback(string text)
+    {
+        _feedback!.Text = text;
+        _feedback.Visible = !string.IsNullOrEmpty(text);
     }
 
     /// <summary>

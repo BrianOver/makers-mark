@@ -63,6 +63,18 @@ public static class UiKit
     public readonly record struct SectionView(PanelContainer Root, VBoxContainer Body);
 
     /// <summary>
+    /// A <see cref="Disclosure"/>'s parts. <see cref="Root"/> and <see cref="Body"/> mirror
+    /// <see cref="SectionView"/> exactly (same node names), so a section can become a disclosure
+    /// without any caller that looks one up by name noticing. <see cref="Header"/> is the always-
+    /// visible strip: a caller puts the ONE summary fact — and, when the section owns a verb, the
+    /// verb itself — there, so a collapsed disclosure never hides a cost or a decision.
+    /// <see cref="Summary"/> is the dim line beside the title, and <see cref="Toggle"/> the worded
+    /// More/Less button.
+    /// </summary>
+    public readonly record struct DisclosureView(
+        Container Root, VBoxContainer Body, HBoxContainer Header, Label Summary, Button Toggle);
+
+    /// <summary>
     /// Makes <paramref name="overlay"/> actually receive keyboard input, and keep receiving it.
     ///
     /// <para><b>Why this exists.</b> A <see cref="Control"/> only gets key events in
@@ -280,6 +292,122 @@ public static class UiKit
         }
 
         return name.Append("Section").ToString();
+    }
+
+    /// <summary>Every <see cref="Disclosure"/> toggle's <see cref="Node.Name"/> starts with this —
+    /// the handle a property-shaped guard uses to find EVERY disclosure in a panel without a
+    /// hand-listed table (the "hand-listed fixtures go green" failure shape this repo has already
+    /// shipped once).</summary>
+    public const string DisclosureTogglePrefix = "Disclose_";
+
+    /// <summary>The <see cref="Node.Name"/> <see cref="Disclosure"/> gives its toggle button, derived
+    /// from the same title <see cref="SectionName"/> derives the root's name from.</summary>
+    public static string DisclosureToggleName(string title) => DisclosureTogglePrefix + SectionName(title);
+
+    /// <summary>
+    /// The body a <see cref="Disclosure"/> toggle shows and hides, resolved from the toggle itself —
+    /// toggle → header row → outer VBox → the "SectionBody" child. Exists so a guard (or any caller
+    /// holding only the button) can reach the content without re-deriving this tree shape by hand.
+    /// Returns null for a button that is not a disclosure toggle.
+    /// </summary>
+    public static VBoxContainer? DisclosureBodyFor(Button toggle) =>
+        toggle.GetParent()?.GetParent()?.GetNodeOrNull<VBoxContainer>("SectionBody");
+
+    /// <summary>
+    /// A <see cref="Section"/> whose body collapses: an always-visible header strip (title, a dim
+    /// one-line summary, and a worded More/Less <see cref="Button"/>) over a body that starts
+    /// hidden.
+    ///
+    /// <para><b>Why this exists (owner ruling, 2026-09-14).</b> The drawer is 481px tall — the
+    /// window's 648 less the persistent HUD header's 167, which stays visible at all times so the
+    /// day clock and the Skip verb never go away while a panel is open. Measured against that
+    /// budget the Forge's first craft verb needed 554px: "What This Needs" (129px) and "Modifiers
+    /// (Optional)" (92px) rendered above the recipe list and ate 57% of the visible scroll for two
+    /// blocks the player reads once and then works past. Moving them was tried and is a dead end in
+    /// both directions — below the recipe list is 5909px down, i.e. unreachable, and moving the
+    /// needs row down re-breaks <c>TutorialKeepsUpTests</c> (day 1's instructed purchase was the
+    /// only reachable verb in the panel). Collapsing keeps the block exactly where it is, adjacent
+    /// and one press from open, and costs a header row instead of a screenful.</para>
+    ///
+    /// <para><b>What a collapsed disclosure may never hide.</b> The seven laws' third and seventh
+    /// (a verb reveals the player's stake; skipping's cost is named in copy) mean the decision has
+    /// to survive the collapse: the caller puts the shortfall — and the section's own verb, if it
+    /// has one — in <see cref="DisclosureView.Header"/>, which never hides. The body carries the
+    /// detail, and opening it must show everything the old always-expanded section showed,
+    /// refusal reasons included (P2-SCREEN-23).</para>
+    ///
+    /// <para><b>Worded, not an arrow.</b> P2-SCREEN-06 already retired
+    /// <see cref="ObjectiveTracker"/>'s icon-only "▾" for a worded More/Less control in a titled
+    /// bar; this follows that precedent rather than re-introducing a glyph whose meaning depends on
+    /// the display font having the codepoint.</para>
+    ///
+    /// <para><b>A row, not a panel.</b> The root is a thin <see cref="MarginContainer"/> where
+    /// <see cref="Section"/> uses a themed <see cref="PanelContainer"/>. That is a budget decision
+    /// with a measured price: the themed panel's own content margins are 24px, and a collapsed
+    /// disclosure is a 35px header row, so framing it spends two thirds as much again on chrome
+    /// around one line. Two of them in the Forge's craft view is 48px — the margin that keeps the
+    /// craft verb on screen once a purchase makes the feedback line appear
+    /// (<c>DeepPilotPlayTests</c>' own scenario, measured at 13px short before this). A frame
+    /// around a single row also reads as chrome-on-chrome next to the real sections beside it.</para>
+    /// </summary>
+    public static DisclosureView Disclosure(string title, bool startExpanded = false)
+    {
+        var root = new MarginContainer { Name = SectionName(title), MouseFilter = Control.MouseFilterEnum.Ignore };
+        root.AddThemeConstantOverride("margin_left", GameTheme.Space4);
+        root.AddThemeConstantOverride("margin_right", GameTheme.Space4);
+        var outer = new VBoxContainer { Name = "DisclosureOuter" };
+        root.AddChild(outer);
+
+        var header = new HBoxContainer { Name = "DisclosureHeader" };
+        header.AddThemeConstantOverride("separation", GameTheme.Space8);
+        outer.AddChild(header);
+
+        // Same Label shape Section's own header uses — so a screen-text assertion that reads the
+        // section title keeps reading the identical string whether it is a Section or a Disclosure.
+        var titleLabel = new Label { Name = "SectionHeader", Text = title };
+        titleLabel.AddThemeColorOverride("font_color", GameTheme.HeaderColor);
+        titleLabel.AddThemeFontSizeOverride("font_size", GameTheme.HeaderFontSize);
+        titleLabel.ThemeTypeVariation = GameTheme.HeaderThemeType;
+        header.AddChild(titleLabel);
+
+        // Clipped, ellipsized, never wrapping — the SAME treatment ListRow gives its own name
+        // column, and for the same reason: a plain Label's minimum width is its whole text, so a
+        // long summary (a refusal reason, say) would drag the row — and therefore the panel — past
+        // the drawer's 600px and trip
+        // HumanPlaytestTests.NoPanel_DemandsMoreWidthThanTheDrawerGivesIt. Callers put the fact that
+        // must survive FIRST in the string; the body still carries the full text, which is what the
+        // fold guarantees to give back.
+        var summary = new Label
+        {
+            Name = "DisclosureSummary",
+            SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
+            SizeFlagsVertical = Control.SizeFlags.ShrinkCenter,
+            ClipText = true,
+            TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis,
+            AutowrapMode = TextServer.AutowrapMode.Off,
+        };
+        summary.AddThemeColorOverride("font_color", GameTheme.TextDim);
+        header.AddChild(summary);
+
+        var body = new VBoxContainer { Name = "SectionBody", Visible = startExpanded };
+
+        var toggle = new Button
+        {
+            Name = DisclosureToggleName(title),
+            Text = startExpanded ? "Less" : "More",
+            ToggleMode = true,
+            ButtonPressed = startExpanded,
+            TooltipText = $"Show or hide the {title} detail.",
+        };
+        toggle.Toggled += on =>
+        {
+            body.Visible = on;
+            toggle.Text = on ? "Less" : "More";
+        };
+        header.AddChild(toggle);
+
+        outer.AddChild(body);
+        return new DisclosureView(root, body, header, summary, toggle);
     }
 
     /// <summary>A small themed pill: <paramref name="label"/> plus a <paramref name="value"/>

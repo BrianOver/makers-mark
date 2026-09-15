@@ -215,16 +215,31 @@ public partial class DepthsPanel : SimPanel
             {
                 var standings = state.Drama.DepthsBoard
                     .OrderByDescending(entry => entry.Value)
-                    .ThenBy(entry => entry.Key);
+                    .ThenBy(entry => entry.Key)
+                    .ToList();
+
+                // 481px re-lay (owner ruling 2026-09-14): a UiKit.Disclosure. A full roster puts six
+                // rows in this tile, and this tile sits under a MineWatch strip that claims 260 of
+                // the drawer's 481px while a party is underground — so on the one day the panel is
+                // most worth opening, the board pushed the venue tile's own content past the fold.
+                //
+                // P2-PEOPLE-01 is why the DEEPEST row is the summary rather than a count: that row
+                // is the game's own "Torvald — floor 3", the durable fact that never goes away, so
+                // it stays on screen verbatim — caption and all — with the body shut. The body
+                // still holds every row, this one included, so opening shows exactly what the old
+                // always-expanded list showed.
+                var board = UiKit.Disclosure("Deepest Floors");
+                infoCol.AddChild(board.Root);
                 foreach (var (heroValue, floor) in standings)
                 {
-                    // P2-PEOPLE-01: the permanent home of the durable-fact read-back. This row is
-                    // the game's own "Torvald — floor 3", it never goes away, and after he has told
-                    // you about his brother it stops saying only a number. One shared rule with the
-                    // muster board and the legends wall — see ArcScenes.FloorCaption.
                     var name = HeroName(new HeroId(heroValue));
-                    AddLabel(infoCol, $"  floor {floor} — {name}{GodotClient.Ui.ArcScenes.FloorCaption(name, floor)}");
+                    AddLabel(board.Body, $"  floor {floor} — {name}{GodotClient.Ui.ArcScenes.FloorCaption(name, floor)}");
                 }
+
+                var (deepestHero, deepestFloor) = standings[0];
+                var deepestName = HeroName(new HeroId(deepestHero));
+                board.Summary.Text =
+                    $"floor {deepestFloor} — {deepestName}{GodotClient.Ui.ArcScenes.FloorCaption(deepestName, deepestFloor)}";
             }
         }
 

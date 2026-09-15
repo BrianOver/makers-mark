@@ -167,6 +167,39 @@ jobs:
       # so the number reddens when the suite outgrows it instead of rotting in a comment.
       ENGINE_MIN_PASSED: 1650
       GUARD_MIN_PASSED: 35     # the MainUiTests subset measured 41 (run 33436660776); was 20 against a documented "~30"
+      # The gdUnit session deadline, in ms. Both engine steps below pass it, and without it they
+      # inherit GdUnit4TestExecutor's own constant:
+      #
+      #     SessionTimeout = (int)(runConfiguration.TestSessionTimeout == 0
+      #         ? DEFAULT_SESSION_TIMEOUT : runConfiguration.TestSessionTimeout)
+      #     private const int DEFAULT_SESSION_TIMEOUT = 600000;
+      #
+      # Ten minutes, after which the adapter SIGKILLs the Godot child from inside a bounded
+      # Task.WaitAll. In the log that reads "Connection interrupted by cancellation requested" +
+      # "ends with exit code: 137" (128+9), and the run reports a cheerful truncated "Passed!".
+      # It was truncating roughly half of all engine runs, ~20 min a time across both attempts.
+      #
+      # Measured on run 34895702089: the engine step ran 21:25:25 -> 21:45:37, 20m12s for two
+      # attempts, ~10m06s each. That is 600000 plus process startup, twice. (The "9m35s to 9m48s"
+      # figures in earlier notes were the visible test-output window, which starts after Godot
+      # launches; the fuse is lit before that, hence the ~20s disagreement.)
+      #
+      # 30 minutes. A healthy CI run is 7m42s for 2020-2025 tests, so the default was 1.3x
+      # headroom; when the suite was 550 tests in 3m30s the same constant was 2.9x and nobody ever
+      # hit it. The suite grew 4x into a constant nobody had set. 1800000 restores ~3.9x, and
+      # covers the worst degraded-but-still-progressing run observed (840 of 2022 tests at the ten
+      # minute mark, extrapolating to ~24 min) instead of only the healthy ones. It matches
+      # .runsettings so local and CI agree.
+      #
+      # Known cost, deliberately accepted: a session that stalls outright now burns 30 min per
+      # attempt rather than 10. The truncations measured here were progressing runs (40-88% of the
+      # suite done), not stalls, so this trades a rare slow failure for the common false red. If
+      # stalls become the dominant shape, bound the job with timeout-minutes rather than cutting
+      # this back - shortening the fuse only restores the false reds.
+      #
+      # This is NOT a licence for slow tests. If a healthy run ever approaches even half of it,
+      # that is a regression to fix, not a number to raise.
+      ENGINE_SESSION_TIMEOUT_MS: 1800000
     steps:
       # LFS on the engine lane ONLY (it renders the PNGs). Checkout skips auto-download so the
       # cache below can serve objects first, protecting the free-tier 1 GiB/month LFS bandwidth;
@@ -234,11 +267,22 @@ jobs:
           # a green 54 cannot clear a 900 floor. Local runs keep using the file, where it works.
           # If someone re-attempts this, do it in a PR whose only change is the --settings flag,
           # and expect to bisect the file section by section.
+          #
+          # RESOLVED 2026-09-14 without re-attempting it. The one thing this job actually needed
+          # from that file was the session timeout, and a settings FILE is not the only way to set
+          # a RunConfiguration value: vstest accepts inline overrides as trailing Key=Value
+          # arguments, which is what the silent-skip guard step below was already doing with
+          # TreatNoTestsAsError. So ENGINE_SESSION_TIMEOUT_MS goes in that way instead. No file is
+          # passed, so neither documented failure mode can recur: there is no EnvironmentVariables
+          # block to override the GODOT_BIN exported above, and nothing for the Linux adapter to
+          # choke on. CompileProcessTimeout stays local-only and stays covered by
+          # ENGINE_MIN_PASSED, exactly as argued above.
 
           run_engine_tests() {
             # PIPESTATUS[0] = dotnet test's own exit code, not tee's (tee itself always
             # succeeds), so the pipe through tee doesn't hide a real failure.
-            xvfb-run -a dotnet test godot/tests/GodotClient.Tests.csproj --logger "trx;LogFileName=engine-tests.trx" 2>&1 | tee "$1"
+            xvfb-run -a dotnet test godot/tests/GodotClient.Tests.csproj --logger "trx;LogFileName=engine-tests.trx" \
+              -- RunConfiguration.TestSessionTimeout="$ENGINE_SESSION_TIMEOUT_MS" 2>&1 | tee "$1"
             return "${PIPESTATUS[0]}"
           }
 
@@ -297,10 +341,15 @@ jobs:
           export GODOT_BIN=$(which godot)
           # No --settings here either -- see the main engine step's note for the two measured
           # failure modes. This guard's own floor (GUARD_MIN_PASSED + TreatNoTestsAsError)
-          # covers the green-54 lie the settings file would have guarded against.
+          # covers the green-54 lie the settings file would have guarded against. The trailing
+          # Key=Value overrides are how RunConfiguration values reach the adapter without a file;
+          # TestSessionTimeout is here because this step has been cut by the ten minute default
+          # too, on a run of eight tests (PR #314, cut at 9m48s) -- a stalled session and a slow
+          # one die identically, because the deadline does not care which it is.
           xvfb-run -a dotnet test godot/tests/GodotClient.Tests.csproj \
             --filter "FullyQualifiedName~MainUiTests" \
-            -- RunConfiguration.TreatNoTestsAsError=true 2>&1 | tee guard.log
+            -- RunConfiguration.TreatNoTestsAsError=true \
+               RunConfiguration.TestSessionTimeout="$ENGINE_SESSION_TIMEOUT_MS" 2>&1 | tee guard.log
           exit_code="${PIPESTATUS[0]}"
           [ "$exit_code" -eq 0 ] && exit 0
 
