@@ -93,6 +93,78 @@ public class InteractPromptAnchorTests
     }
 
     /// <summary>
+    /// P2-SCREEN-30: the check above only proves the chip floats ABOVE its own building's screen
+    /// row — a chip clamped to window y=0 still satisfies "less than buildingScreen.Y" whenever
+    /// the building itself sits mid-viewport, which is exactly how this bug shipped and stayed
+    /// green (the design doc's own capture: "E · Forge" at window y=12, over the HUD header band).
+    /// This pins the actual bound: the chip's rect must be fully inside <see
+    /// cref="Town2D.ViewportScreenRect"/> — the world SubViewportContainer's OWN screen rect,
+    /// which starts BELOW the HUD header (see <c>HudBoundsTests.WorldRegion_NeverIntersects_
+    /// TheHudHeader</c>) — for every registered venue, never the whole window.
+    ///
+    /// <para>A property over every venue, not the one hand-picked Forge case: a negative control
+    /// proves at least one of them really does put its own nametag above the visible world band
+    /// (the Forge is 170 world-px tall in a ~197-px world viewport per the design doc), so the
+    /// enclosure assertion above it is not a property no iteration ever exercises.</para>
+    /// </summary>
+    [TestCase]
+    public async Task EveryTownVenue_PromptStaysInsideTheWorldViewport_NeverOverTheHudHeader()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            await SettleLayout(ui);
+
+            var worldRect = ui.Town.ViewportScreenRect;
+            var anyNameplateAboveWorldView = false;
+
+            foreach (var venue in TownLayout2D.Venues)
+            {
+                var building = ui.Town.FindBuilding(venue.Key);
+                ui.Town.Player.GlobalPosition = building.DoorAnchorGlobal;
+                await PumpWorldFrames(ui, 4);
+                // Same camera-glide reasoning as EveryTownVenue_PromptFloatsAboveItsOwnBuilding
+                // above — every screen position read here is projected through the camera.
+                await SettleCamera(ui);
+                await SettleLayout(ui);
+
+                AssertThat(ui.Town.WorldInputNode.ActiveTarget?.Key)
+                    .OverrideFailureMessage(
+                        $"Setup check: standing at '{venue.Key}'s door anchor never made it the " +
+                        "active target — this iteration would prove nothing about its own prompt position.")
+                    .IsEqual(venue.Key);
+
+                var nameplateScreen = ui.Town.WorldToScreen(building.NameLabel.GlobalPosition);
+                if (nameplateScreen.Y < worldRect.Position.Y)
+                {
+                    anyNameplateAboveWorldView = true;
+                }
+
+                var chipRect = ui.InteractPromptLabel.GetGlobalRect();
+
+                // Grown by a hair to absorb sub-pixel float rounding in the world->canvas->screen
+                // chain — the same slack HudBoundsTests' own world-region check already uses,
+                // never enough to hide a real overflow into the HUD band.
+                AssertThat(worldRect.Grow(1.5f).Encloses(chipRect))
+                    .OverrideFailureMessage(
+                        $"[{venue.Key}] chip rect {chipRect} is not fully inside the world " +
+                        $"viewport {worldRect} — it is floating outside Town2D's own region (the " +
+                        "HUD header band, most likely — P2-SCREEN-30).")
+                    .IsTrue();
+            }
+
+            AssertThat(anyNameplateAboveWorldView)
+                .OverrideFailureMessage(
+                    "Setup check: every venue's own nametag stayed inside the world viewport at " +
+                    "its own door anchor — this suite never exercised the P2-SCREEN-30 case (a " +
+                    "target tall enough that its own nametag sits above the visible world band), " +
+                    "so the enclosure assertion above proved nothing about that case.")
+                .IsTrue();
+        }
+        finally { Unmount(ui); }
+    }
+
+    /// <summary>
     /// Negative control (unit's own test list, bullet 2): mirrors <see
     /// cref="InteractPromptTests.WalkingAway_ClearsThePrompt"/>'s off-grid teleport, but reads the
     /// PanelContainer's own global rect rather than just <c>IsVisibleInTree</c> — a hidden control
