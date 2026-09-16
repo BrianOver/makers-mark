@@ -103,7 +103,7 @@ public class MentorIdleVoiceTests
         // The roster is EMPTY on a fresh game -- heroes arrive by recruitment, not at creation -- so
         // reading .First() off it threw "Sequence contains no elements" and took this whole test with
         // it. The fixture has to seed its own hero, the same way every other client test that needs
-        // one does (AdventureTickerTests.Delver, CampPanelTests.Strong, ArcScenesTests.TorvaldHero).
+        // one does (UnsilencedEventTests.Delver, CampPanelTests.Strong, ArcScenesTests.TorvaldHero).
         var state = GameFactory.NewGame(1);
         var hero = new Hero(
             new HeroId(1), "Kael", "vanguard", Level: 3, MaxHp: 40, Gold: 10,

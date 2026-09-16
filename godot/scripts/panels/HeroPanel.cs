@@ -67,10 +67,11 @@ namespace GodotClient.Panels;
 /// (see <see cref="EnsureBuilt"/>'s banner remark), so a muster-floor decision belongs here as
 /// much as a shopping one. The line reuses <c>GameSim.Cli.EventNarration</c>'s exact wording for
 /// the two surfaces to never drift, only dropping the redundant hero-name prefix the CLI needs
-/// and this card already has. Deliberately NOT on <c>AdventureTicker</c>: it fires per shopping
-/// hero every morning, which would crowd the news above it out of a finite marquee — the same
-/// reason <c>MarketShareShifted</c> is a pinned ticker exclusion
-/// (<c>AdventureTickerTests</c>/<c>UnsilencedEventTests</c>).</para>
+/// and this card already has. Deliberately not one of the book's day-page lines
+/// (<c>LegendsWall.FormatLine</c>, P2-MEMORY-12): it fires per shopping hero every morning, which
+/// this panel already tells the story of on its own — the same "already said elsewhere" reasoning
+/// that keeps <c>MarketShareShifted</c>'s active-recovery half pinned silent there too
+/// (<c>UnsilencedEventTests</c>).</para>
 /// </summary>
 public partial class HeroPanel : SimPanel
 {

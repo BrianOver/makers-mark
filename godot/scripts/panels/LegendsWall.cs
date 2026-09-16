@@ -7,8 +7,10 @@ using GameSim.Chronicle;
 using GameSim.Contracts;
 using GameSim.Crafting;
 using GameSim.Drama;
+using GameSim.Heroes;
 using GameSim.Materials;
 using GameSim.Professions;
+using GameSim.Venues;
 using Godot;
 using GodotClient.Tools;
 using GodotClient.Ui;
@@ -67,6 +69,19 @@ namespace GodotClient.Panels;
 /// button, a header), with <see cref="ProvenanceCard.RenderInto"/> supplying the content — the
 /// popup itself is never opened from here anymore (it still is everywhere else: Shop/Heroes/
 /// Tavern/Mirror). One render, reached two ways, never two renders that could drift apart.</para>
+///
+/// <para>P2-MEMORY-12 (day pages, P2-OQ3): the book's third page kind, alongside the actor page
+/// and the item page. <c>AdventureTicker</c> died as a form — its scrolling strip, its
+/// 48px/s timer, its 3-day <c>MaxDaysRetained</c> window, its HUD mount — but every one of its
+/// jobs was reassigned rather than deleted with it: its <c>FormatLine</c> switch survives here as
+/// <see cref="FormatLine"/>, unchanged in what it decides to say, and <see cref="RenderDayLog"/>/
+/// <see cref="ShowDayPage"/> give it a permanent home with full retention, queryable by day,
+/// instead of a rolling 3-day window nobody could read late. The census behind the move: of the
+/// ticker's 26 composed event types, only a handful (the confidence-spiral trio) were EVER said by
+/// a second surface (<c>MainUi.WorldNotice</c>) — every other line, including ordinary sales,
+/// departures, and every one of the twelve-plus economic/lifecycle moments U3/U5(b)/U7 added, had
+/// no home but the marquee. Deleting the marquee without this page would have deleted content, not
+/// a surface (the owner ruling's own condition for when the deletion may land).</para>
 ///
 /// <para>P2-MEMORY-21: each Reforge row (<see cref="RenderReforgeOptions"/>) now shows the lineage
 /// sentence it will write BEFORE the press — built by calling <see
@@ -163,8 +178,12 @@ public partial class LegendsWall : Control
         // the sim has already decided its bearer will not give up.
         var storiedItems = StoriedItems(state);
         StoriedItemCount = storiedItems.Count;
+        // P2-MEMORY-12: the day log counts toward "is there anything in this book at all" too — a
+        // campaign with no memorial and no legendary gear yet can still have real day-to-day
+        // history (a sale, a recruit, an incident) worth a page, and the invitational placeholder
+        // below would otherwise hide it entirely.
         ShowedEmptyState = state.Drama.Memorials.IsEmpty && state.Drama.DepthsBoard.IsEmpty
-            && legendItems.Count == 0 && storiedItems.Count == 0;
+            && legendItems.Count == 0 && storiedItems.Count == 0 && !HasAnyDayLogLine(state);
 
         if (ShowedEmptyState)
         {
@@ -205,6 +224,7 @@ public partial class LegendsWall : Control
         RenderActorBook(state);
         RenderLegendItems(state, legendItems);
         RenderStoriedItems(state, storiedItems);
+        RenderDayLog(state);
     }
 
     public void Close() => Visible = false;
@@ -439,6 +459,90 @@ public partial class LegendsWall : Control
         var pageSection = new VBoxContainer { Name = "ItemPageSection" };
         _body!.AddChild(pageSection);
         ProvenanceCard.RenderInto(pageSection, state, item);
+    }
+
+    /// <summary>Whether <see cref="FormatLine"/> composes a line for ANY event ever logged — the
+    /// day log's own contribution to <see cref="ShowedEmptyState"/>: a campaign with no memorial
+    /// and no legendary gear yet can still have a real day-to-day history worth a page.</summary>
+    private static bool HasAnyDayLogLine(GameState state) =>
+        state.EventLog.Any(e => FormatLine(e, state) is not null);
+
+    /// <summary>P2-MEMORY-12 (day pages, P2-OQ3): the book's index row for the day log — one
+    /// button per day that has at least one line <see cref="FormatLine"/> composes, newest first
+    /// (the day the player is most likely here to check), opening <see cref="ShowDayPage"/>. A day
+    /// with no qualifying event (nothing in <see cref="FormatLine"/>'s allow-list fired) gets no
+    /// row at all — the same "only durable facts get a row" contract <see cref="RenderActorBook"/>
+    /// already keeps, not a padded list of every day the campaign has run.</summary>
+    private void RenderDayLog(GameState state)
+    {
+        AddHeader(_body!, "THE DAY LOG");
+
+        var daySection = new VBoxContainer { Name = "DayLogSection" };
+        _body!.AddChild(daySection);
+
+        var days = state.EventLog.Select(e => e.Day).Distinct().OrderByDescending(d => d);
+        var withLines = days.Select(day => (Day: day, Lines: DayLines(state, day)))
+            .Where(d => d.Lines.Count > 0)
+            .ToList();
+
+        if (withLines.Count == 0)
+        {
+            AddLabel(daySection, "  No day has written a line here yet — the town's daily business is about to start filling this in.");
+            return;
+        }
+
+        foreach (var (day, lines) in withLines)
+        {
+            AddButton(daySection, $"Day_{day}", $"Day {day} — {lines.Count} event(s)", () => ShowDayPage(state, day));
+        }
+    }
+
+    /// <summary>P2-MEMORY-12: one day's own page — every line <see cref="FormatLine"/> composed for
+    /// it, full retention (no 3-day window, unlike the marquee this page replaces), in log order.
+    /// Same navigation shell as <see cref="ShowActorPage"/>/<see cref="ShowItemPage"/>.</summary>
+    private void ShowDayPage(GameState state, int day)
+    {
+        Clear(_body!);
+        AddButton(_body!, "LegendsWallBack", "‹ Back to the book", () => ShowIndex(state));
+        AddHeader(_body!, $"Day {day}");
+
+        var pageSection = new VBoxContainer { Name = "DayPageSection" };
+        _body!.AddChild(pageSection);
+
+        foreach (var line in DayLines(state, day))
+        {
+            AddLabel(pageSection, $"  {line}");
+        }
+    }
+
+    /// <summary>Every line <see cref="FormatLine"/> composes for one day, in log order, same-text
+    /// deduped within the day — the marquee's own spam guard (the repo's 1,287-fire nag is the
+    /// scar this pin is against), preserved here even though retention itself is no longer the
+    /// thing doing any dropping: the underlying <see cref="GameState.EventLog"/> this reads is
+    /// never trimmed, so nothing about a day's true record is lost, only an exact-text repeat is
+    /// folded into the one row it would otherwise duplicate. Public: <c>FullPlaytest</c> reads it
+    /// too, the same "did the computed line actually reach a surface" health check the deleted
+    /// ticker's own <c>Lines</c> property used to answer.</summary>
+    public static List<string> DayLines(GameState state, int day)
+    {
+        var lines = new List<string>();
+        foreach (var evt in state.EventLog)
+        {
+            if (evt.Day != day)
+            {
+                continue;
+            }
+
+            var text = FormatLine(evt, state);
+            if (text is null || lines.Contains(text))
+            {
+                continue;
+            }
+
+            lines.Add(text);
+        }
+
+        return lines;
     }
 
     /// <summary>P2-MEMORY-14 (P2-OQ4, "the bind"): the book's own closing chapter — the composed
@@ -1162,5 +1266,211 @@ public partial class LegendsWall : Control
         // visible id rather than a plausible-looking invented name: a wrong name on this wall would
         // be a lie the player has no way to catch, while this is obviously a bug on sight.
         return $"Hero #{id.Value}";
+    }
+
+    // ── P2-MEMORY-12 (day pages, P2-OQ3): the ticker's own composer, moved not copied ──────────
+    // This switch is verbatim `AdventureTicker.FormatLine` (deleted with that file): every case,
+    // every comment explaining why an event does or does not earn a line, unchanged. Only the
+    // marquee-specific mechanics are gone — the `completedPhase` parameter and its two `when`
+    // guards on HeroDied/AttributionBeatEvent/MarketShareShifted. Those guarded against a shape
+    // the live per-tick feed could theoretically hand the marquee before a hero's death was
+    // revealed; this composer reads the PERSISTED `GameState.EventLog` instead, where the kernel
+    // has only ever stamped these events at the Evening tick that reveals them (the class's own
+    // structural guarantee, unchanged) — so every occurrence this composer ever sees already
+    // earned its line, and the guard would be dead code here, not a second lock on anything live.
+
+    /// <summary>The one place a <see cref="GameEvent"/> becomes the day log's own sentence — the
+    /// day pages' composer (moved from the deleted <c>AdventureTicker.FormatLine</c>, P2-MEMORY-12).
+    /// Unrecognized/irrelevant event types render nothing; <see cref="DayLines"/> is what turns a
+    /// day's worth of these into the page the player reads.</summary>
+    private static string? FormatLine(GameEvent evt, GameState state) => evt switch
+    {
+        // U3: the player's gold never moves on a rival sale, so the two must read differently —
+        // mirrors EventNarration's FromPlayerShop split (sim/GameSim.Cli/EventNarration.cs).
+        ItemSold e when e.FromPlayerShop =>
+            $"Your {ItemName(state, e.Item)} sold to {HeroName(state, e.Buyer)} for {e.Price}g.",
+        ItemSold e =>
+            $"Rival's {ItemName(state, e.Item)} sold to {HeroName(state, e.Buyer)} for {e.Price}g.",
+        PartyDeparted e => $"A party of {e.Party.Count} departs for floor {e.TargetFloor}.",
+        FloorRecordSet e => $"{HeroName(state, e.Hero)} sets a new depth record — floor {e.Floor}.",
+        GossipEmitted e => e.Line,
+
+        // The kernel only ever stamps HeroDied into the event log at the Evening tick that reveals
+        // it (KTD5) — see the deleted AdventureTicker's own class doc for the structural argument.
+        HeroDied e =>
+            $"{HeroName(state, e.Hero)} did not return from floor {e.Floor}.",
+
+        // U16 (Wave 4, KTD3): the attribution spotlight — "your blade turned the killing blow" —
+        // belongs to the NIGHT homecoming beat, not the Vigil, because AttributionBeatEvent is
+        // ONLY ever emitted here. AttributionEngine gates every beat to player-crafted items
+        // already (ExpeditionRevealSystem source), so no further PlayerCrafted filter is needed.
+        AttributionBeatEvent e => $"Home safe: {ItemName(state, e.Item)} — {e.Detail}.",
+
+        // ── Events that fired correctly for months and reached no player-visible surface ────────
+        // Everything below was computed by the sim and then dropped by this switch's `_ => null`.
+        // Chosen on one test: would a townsperson hear about it? A daily gauge movement would not.
+
+        RecruitArrived e => $"{HeroName(state, e.Hero)} has come to town looking for work.",
+
+        CommissionPosted e =>
+            $"{HeroName(state, e.Hero)} wants {ItemVocab.Display(e.Slot)} work, {ItemVocab.Display(e.MinQuality)} or better, by day {e.DeadlineDay} " +
+            $"— {e.PremiumGold}g over list{CommissionSystem.SlotHonestyNote(e.Slot)}.",
+        CommissionFulfilled e =>
+            $"{HeroName(state, e.Hero)} takes delivery of {ItemName(state, e.Item)} — {e.Premium}g premium.",
+        CommissionExpired e =>
+            $"{HeroName(state, e.Hero)} gave up waiting on that {ItemVocab.Display(e.Slot)} commission{CommissionSystem.SlotHonestyNote(e.Slot)}.",
+
+        // U3: these two fired into total silence for as long as they've existed (Wave 4 and
+        // Wave 4c respectively) — no ticker case, no player-visible feedback at all. Signing a
+        // work is the moment "your craft writes the legends" stops being a metaphor; honoring a
+        // memorial is a deliberate rite the player chose to perform over a named dead hero. Both
+        // clear this file's own admission test easily — a townsperson would certainly hear about
+        // either. Names come straight off the event payload (SignedName/HeroName), same as
+        // GossipEmitted above.
+        ItemSigned e =>
+            $"Your {ItemName(state, e.Item)} is signed into legend as \"{e.SignedName}\".",
+        MemorialHonored e =>
+            $"The town bids farewell to {e.HeroName} — the rite is done.",
+
+        // The drama director's daily beat. Five authored incidents, so the prose lives here as a
+        // client-side display map — DirectorSystem emits a bare snake_case id and no sim-side
+        // renderer exists (checked: nothing in Flavor/ or the CLI narrates IncidentFired).
+        IncidentFired e => IncidentLine(e),
+
+        // The confidence spiral. All three are edge-triggered — once per crossing, never per day —
+        // so they cannot flood the page.
+        RivalExpansionTriggered e =>
+            $"The rival stall is expanding — town confidence has slipped to {e.ConfidencePermille / 10}%.",
+        HeroConsideringLeaving e =>
+            $"{HeroName(state, e.Hero)} is talking about leaving town.",
+        TownConfidenceCollapsed e =>
+            $"The town has lost faith in its smith — {e.MissedAssessments} assessment(s) missed.",
+
+        // U5(b) (faction-standing plan, R9): the faction standing gauge, edge-triggered exactly
+        // like the confidence spiral above. FactionDriftSystem and OreMarketHandlers only ever
+        // stamp this event on a threshold CROSSING (FactionStandingThresholds.Crossing) — never on
+        // the daily gauge step itself — so this line can never fire from ordinary Morning drift; it
+        // passes this file's own admission test ("would a townsperson hear about it? A daily gauge
+        // movement would not."). Copy stays scoped to the one mechanism the sim actually runs — a
+        // discount rising or fading — not a reputation system it doesn't.
+        // The cooled line says the DISCOUNT fades, never that the price rises. Standing's negative
+        // half is dormant in this core (KTD8; FactionDriftSystem.StepTowardZero floors at 0), and
+        // "Cooled" fires when standing merely drops back through the favored-exit boundary — often
+        // still well above zero. So ore never costs more than the neutral base ask, and "costs more
+        // now" would advertise a surcharge mechanic the sim cannot run.
+        FactionStandingShifted e => e.Direction == StandingShiftDirection.Favored
+            ? $"The {e.FactionName} remember your custom now — their ore comes cheaper."
+            : $"The {e.FactionName} are cooling toward your shop — their ore's discount is fading.",
+
+        // U7 (moment-lines batch): four economic moments that move the player's gold and, until
+        // now, said nothing about it. RentSystem/GuildAssessmentSystem run their own cadences
+        // (10-day rent, 7-day guild dues — RentState.CadenceDays / GuildAssessmentState.CadenceDays)
+        // rather than firing every Morning, so these clear this file's own admission test: a
+        // townsperson would hear about a bill coming due, not about a gauge ticking down. Copy
+        // reads straight off each event's own payload (amount paid/owed, the next amount due, the
+        // miss count) rather than inventing numbers the sim didn't hand over.
+        RentPaid e =>
+            $"Rent paid — {e.AmountGold}g to the guild. Next due: {e.NextAmountDueGold}g.",
+        RentMissed e =>
+            $"Rent went unpaid — {e.AmountDueGold}g owed, {e.MissedPayments} missed payment(s) now. " +
+            $"The guild's patience is thinning; next due climbs to {e.NextAmountDueGold}g.",
+
+        GuildAssessmentPassed e =>
+            $"Guild Assessment paid — {e.DuesPaidGold}g. Next dues: {e.NextDuesGold}g.",
+        // P2-LONG-18: deliberately does NOT say "paid", and deliberately names no gold amount.
+        // Nothing was paid and no coin moved; a piece the player made left the world for good and
+        // bought the cycle. Saying "paid - 0g" (which is exactly what this line said while the
+        // pledge rode on GuildAssessmentPassed's optional fields) reads as a bug to a player and as
+        // a free lunch to anyone skimming, and it is neither.
+        DuesSettledByPledge e =>
+            $"The guild took {e.ItemName} against the {e.DuesCoveredGold}g dues — it hangs on their "
+            + $"wall now, where it will never turn a blow. Next dues: {e.NextDuesGold}g.",
+        GuildAssessmentMissed e =>
+            $"Guild Assessment missed — {e.DuesDueGold}g unpaid, {e.MissedAssessments} time(s) now. " +
+            $"Next dues climb to {e.NextDuesGold}g.",
+
+        // The cosmetic rank ladder (HeroRank.For, already visible in the Tavern roster) only
+        // becomes news on the CROSSING. ExpeditionRevealSystem stamps this event solely when a
+        // hero's new rank differs from their old one — ordinary XP gain within a rank emits
+        // nothing at all — so there is no per-XP-tick spam for this line to guard against.
+        HeroRankUp e => $"{HeroName(state, e.Hero)} has risen to {e.Rank}.",
+
+        // Forward-ladder plan (2026-08-10-003, L5): a party graduated to the next rung — fired at
+        // most once per venue clear (VenueGraduated's own doc comment), so this can never flood the
+        // page the way a per-day gauge would. Names the first graduate and counts the rest, the
+        // same convention GraduatesLabel uses for the tavern line — no venue name needed (the town's
+        // next muster shows where a graduate goes instead of this line inventing a destination).
+        VenueGraduated e => GraduatesLine(state, e.Graduates),
+
+        // BountyPaid is the town paying out — news, unlike its sibling BountyPosted (still silent;
+        // see UnsilencedEventTests.BountyPaid_Renders_AndBountyPosted_StillRendersNothing):
+        // posting is the player's own action read back at them, paying out is someone else's gold
+        // moving.
+        BountyPaid e => $"{HeroName(state, e.To)} collects {e.RewardGold}g on a completed bounty.",
+
+        // P2-HONEST-23 (law 7 — "skipping stays legal and its cost is named in copy, never
+        // engineered"): the idle-day HALF of MarketShareShifted only. MarketShareSystem (Evening)
+        // stamps this event on almost every day in one direction or the other — RivalGained on a
+        // day nothing was spent, the claw-back on any day that spent a slot — and the exclusion
+        // below originally silenced the WHOLE event as gauge noise on that basis. But "the rival
+        // edged up because you skipped the forge" is not a gauge tick; it is the exact charge law 7
+        // requires be named, so this direction alone gets a line.
+        MarketShareShifted e when e.RivalGained =>
+            "You were not at the anvil today. The rival's stall was.",
+
+        // DELIBERATELY still silent here, and why:
+        //  • SupplyDelivered — confirmation of the player's OWN camp action, already shown by
+        //    CampPanel. Town gossip about a thing you just did reads as noise.
+        //  • MarketShareShifted (RivalGained: false only) — the claw-back on any day that spent an
+        //    action slot. That is the mechanic rewarding ordinary work, not a cost to disclose; the
+        //    day's own actions already say what the player did. The idle-day half that IS a cost is
+        //    the case above.
+        //  • TariffApplied (U5(b)) — the per-purchase price delta that ONE buy's standing-at-the-
+        //    time produced. Like SupplyDelivered, this is confirmation of the player's OWN action
+        //    (their own buy, already reflected in their own gold total and material count on
+        //    screen) rather than town news. The actual news — that the faction's standing itself
+        //    crossed a line — is what FactionStandingShifted above already announces; voicing the
+        //    per-buy arithmetic too would say the same fact a second time in the same day's page.
+        _ => null,
+    };
+
+    /// <summary>
+    /// Prose for the drama director's five authored incidents. Presentation-only, so it belongs
+    /// client-side; the magnitude is folded into the wording rather than stated, since "Severe"
+    /// as a bare adjective reads like a debug label.
+    /// </summary>
+    private static string IncidentLine(IncidentFired e) => e.IncidentId switch
+    {
+        "whispers_in_the_dark" => "Whispers out of the dark — the miners are uneasy.",
+        "goblin_probe" => "Something probed the mine mouth in the night and withdrew.",
+        "spider_brood_swells" => "The spider brood is swelling in the upper tunnels.",
+        "ghoul_warren_breaks" => "A ghoul warren has broken open deeper down.",
+        "the_forgeworm_stirs" => "The forgeworm stirs. The deep rock is warm to the touch.",
+
+        // Unknown id: a new incident landed in DirectorSystem.Catalog without copy here. Say
+        // something true rather than nothing, so the gap surfaces in play instead of vanishing.
+        // The venue half has a registered DisplayName and always resolves (every incident fires
+        // from a real venue), so P2-HONEST-06 routes it through the registry below. The incident
+        // half genuinely has no authored copy to fall back to, so it stays a best-effort
+        // humanization of the catalog id — not a registry lookup, so outside that unit's scope.
+        _ => $"Word from {VenueRegistry.Require(e.VenueId).DisplayName.ToLowerInvariant()}: {e.IncidentId.Replace('_', ' ')}.",
+    };
+
+    private static string ItemName(GameState state, ItemId id) =>
+        state.Items.TryGetValue(id.Value, out var item) ? item.Name : $"Item #{id.Value}";
+
+    /// <summary>Forward-ladder plan (L5): the full VenueGraduated day-page line, correctly
+    /// conjugated for a solo graduate versus a whole party — names the first graduate
+    /// (GameSim.Drama.GossipGenerator's GraduatesLabel precedent) and counts the rest rather than
+    /// listing every name.</summary>
+    private static string GraduatesLine(GameState state, IReadOnlyList<HeroId> graduates)
+    {
+        var first = HeroName(state, graduates[0]);
+        return graduates.Count switch
+        {
+            1 => $"{first} has proven ready for deeper ground.",
+            2 => $"{first} and 1 other have proven ready for deeper ground.",
+            _ => $"{first} and {graduates.Count - 1} others have proven ready for deeper ground.",
+        };
     }
 }
