@@ -1,7 +1,12 @@
 #if GDUNIT_TESTS
+using System.Collections.Immutable;
+using System.Linq;
 using System.Threading.Tasks;
+using GameSim;
+using GameSim.Contracts;
 using GdUnit4;
 using Godot;
+using GodotClient;
 using GodotClient.Ui;
 using static GdUnit4.Assertions;
 using static GodotClient.Tests.UiTestSupport;
@@ -125,6 +130,106 @@ public class DepthsPanelLayoutTests
         {
             Unmount(ui);
         }
+    }
+
+    /// <summary>
+    /// Owner ruling, 2026-09-15 ("Two fold budgets the 481px ruling could not close, with the
+    /// arithmetic", <c>MAKERS-MARK.md</c>): with a party underground, <see
+    /// cref="Panels.MineWatch"/>'s 260px strip stays exactly as it is (declined: not this
+    /// panel's to shrink) — but the once-ever "read-only-surfaces" caption's own ~79px was being
+    /// reserved FOREVER once shown, on every later visit, not just the one that earned it. This
+    /// pins the reclaim: a first visit still shows the caption (unchanged), and a second visit
+    /// has the Mine's own tile higher by exactly the caption's own MEASURED height — never a
+    /// hard-coded 79, so a different font/platform re-measuring a different caption height still
+    /// pins the right relationship.
+    /// </summary>
+    [TestCase]
+    public async Task OnceEverCaption_RetiresOnSecondVisit_ReclaimingItsHeightForTheFirstTile()
+    {
+        var ui = MountMainUi(new SimAdapter(PartyDeepInTheMine()));
+        try
+        {
+            ui.Town.WorldViewport.RenderTargetUpdateMode = SubViewport.UpdateMode.Disabled;
+            ui.RefreshAll(); // MineWatch is refreshed centrally by MainUi, "regardless of host" (U9)
+
+            // First visit: a fresh campaign has never consumed "read-only-surfaces" — the
+            // caption must still fire and reserve real height, exactly as before this fix.
+            ui.OpenPanel("Depths");
+            await SettleLayout(ui);
+
+            var caption = Find<Label>(ui.Depths, "OnceEverCaption");
+            AssertThat(caption.Visible)
+                .OverrideFailureMessage(
+                    "first visit: the once-ever caption did not show at all — first view must stay " +
+                    "unchanged by this fix.")
+                .IsTrue();
+            AssertThat(caption.Text).IsNotEmpty();
+
+            var captionHeight = caption.GetGlobalRect().Size.Y;
+            AssertThat(captionHeight)
+                .OverrideFailureMessage(
+                    "the caption measured zero height while visible — this test proves nothing without a " +
+                    "real reserved height to reclaim.")
+                .IsGreater(0f);
+
+            var firstTileYWithCaption = Find<PanelContainer>(ui.Depths, "VenueTile_mine").GetGlobalRect().Position.Y;
+
+            // Leave (a real navigation — RefreshAll ticks Depths.Refresh() every frame it stays
+            // open, live party or not, so only an actual re-open counts as "come back") and
+            // return.
+            ui.OpenPanel("Heroes");
+            await SettleLayout(ui);
+            ui.OpenPanel("Depths");
+            await SettleLayout(ui);
+
+            AssertThat(caption.Visible)
+                .OverrideFailureMessage(
+                    "second visit: the once-ever caption is STILL reserving space. Owner ruling " +
+                    "2026-09-15 is to retire it once it has been read, freeing its height for the venue " +
+                    "tile below it.")
+                .IsFalse();
+
+            var firstTileYWithoutCaption =
+                Find<PanelContainer>(ui.Depths, "VenueTile_mine").GetGlobalRect().Position.Y;
+
+            const float tolerancePx = 1f;
+            AssertThat(Mathf.Abs((firstTileYWithCaption - captionHeight) - firstTileYWithoutCaption) <= tolerancePx)
+                .OverrideFailureMessage(
+                    $"first tile sat at y={firstTileYWithCaption} with the caption showing " +
+                    $"({captionHeight}px tall) and y={firstTileYWithoutCaption} on the second visit — " +
+                    "expected it to rise by exactly the caption's own measured height, not some other " +
+                    "amount.")
+                .IsTrue();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>A real party camped in the Mine (<see cref="DayPhase.Camp"/> + a live <see
+    /// cref="InFlightExpedition"/>) — the "party underground" half of the 260+79=339px
+    /// arithmetic the 2026-09-14 ruling could not close (<c>MAKERS-MARK.md</c>, "Two fold
+    /// budgets"), built off the default campaign's own heroes so <see cref="Panels.MineWatch"/>'s
+    /// Hp-driven rendering has real data to read.</summary>
+    private static GameState PartyDeepInTheMine()
+    {
+        var baseState = GameComposition.NewCampaign(seed: 9146);
+        var party = baseState.Heroes.Values.Take(3).Select(h => h.Id).ToImmutableList();
+        var camp = new InFlightExpedition(
+            Party: party,
+            TargetFloor: 2,
+            CheckpointFloor: 1,
+            VenueId: "mine",
+            Hp: party.ToImmutableSortedDictionary(id => id.Value, id => baseState.Heroes[id.Value].MaxHp),
+            Packs: ImmutableSortedDictionary<int, ImmutableList<ItemId>>.Empty,
+            Gold: ImmutableSortedDictionary<int, int>.Empty,
+            Dead: ImmutableSortedSet<int>.Empty,
+            Floors: ImmutableList<FloorOutcome>.Empty,
+            Loot: ImmutableList<OreLoot>.Empty,
+            DeepestFloorCleared: 1);
+
+        return baseState with { Phase = DayPhase.Camp, InFlight = ImmutableList.Create(camp) };
     }
 }
 #endif
