@@ -291,6 +291,30 @@ jobs:
 
           if [ "$exit_code" -ne 0 ]; then
             echo "::notice::Engine tests attempt 1 exited $exit_code — retrying once (known Godot shutdown flake)."
+
+            # A failed attempt can leave its Godot child ALIVE -- the adapter SIGKILLs or abandons the
+            # process it launched, and nothing here reaped it before the retry started a second one.
+            # Two concurrent gdUnit runs on one machine is a known failure shape in this repo: both
+            # report a cheerful "Passed!" over a short count, or one hangs outright. That made the
+            # retry -- the thing meant to RESCUE a flaky attempt -- able to manufacture a worse
+            # failure than the one it was retrying.
+            #
+            # Seen on #859 (run 35039817801): attempt 1 died in 891ms with "Failed to connect:
+            # Connection timeout" after 238 tests; attempt 2 then ran 880 tests and stalled for 25
+            # minutes until the session fuse aborted it. `docs/debugging.md` documents that same
+            # "Failed to connect" line as the signature of another Godot runtime already being live.
+            #
+            # The pgrep listing is deliberate: if a stray is found, the log should SAY so, or the next
+            # session re-derives this from scratch.
+            stray=$(pgrep -fa godot | wc -l)
+            if [ "$stray" -gt 0 ]; then
+              echo "::warning::$stray stray Godot process(es) survived attempt 1 — reaping before the retry:"
+              pgrep -fa godot || true
+              pkill -f godot || true
+              sleep 3
+              echo "::notice::after reap: $(pgrep -fa godot | wc -l) Godot process(es) alive"
+            fi
+
             run_engine_tests engine-tests-attempt2.log
             exit_code=$?
           fi
