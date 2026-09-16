@@ -4618,7 +4618,7 @@ name (§11.6 rule 4).
 | ⚑ P2-SCREEN-27 | Small placements: the wandering caption, the orphan spinner, the floating class sprite, the loose shelf label | `godot/scripts/town2d/`, `godot/scripts/panels/` | — | [G] |
 | ⚑ P2-SCREEN-28 | The capture harness's own usage header stops naming states it does not have | `tools/shoot.ps1` | — | [G] |
 | ⚑ P2-SCREEN-29 | A sized `TextureRect` cannot silently claim its texture's size | `sim/GameSim.Tests/Hygiene/TextureRectExpandModeCensusTests.cs`, `godot/scripts/MainUi.cs`, `godot/scripts/panels/MineWatch.cs`, `godot/scripts/panels/ProvenanceCard.cs`, `godot/scripts/panels/SimPanel.cs`, `godot/scripts/ui/UiKit.cs` | — | [S] |
-| ⚑ P2-SCREEN-30 | The interact prompt stops floating over the HUD when its target is taller than the view | `godot/scripts/MainUi.cs`, `godot/scripts/town2d/Town2D.cs` | — | [G] |
+| P2-SCREEN-31 | The objective rows fit the tracker's real three-line budget | `godot/scripts/ui/ObjectiveTracker.cs` corpus, `sim/GameSim/Advisor/ObjectiveAdvisor.cs`, `godot/tests/` | — | [G] |
 | P2-ONBOARD-09 | The Goodwill chip speaks the band or dies (the beat's own half landed) | `godot/scripts/panels/CounterPanel.cs` | — | [G] |
 | P2-ONBOARD-10 | The seed becomes enterable at New Game | `godot/scripts/NewGameSelect.cs` | — | [G] |
 | P2-PROOF-03 | The stage, pass one — one duel, recorded rolls | new `godot/scripts/panels/TellingPanel.cs` (+`.uid`) | — | [G] |
@@ -6524,25 +6524,24 @@ lockdown latch that by their own contract change no combat, routing or economy r
 (`Events.cs:267,274-275`) — a candidate cut, `[S][C][GOLD]` because removing a draw moves the golden.
 Both need an owner ruling before anything is built.
 
-#### P2-SCREEN-30. The interact prompt stops floating over the HUD when its target is taller than the view
+#### P2-SCREEN-31. The objective rows fit the tracker's real three-line budget
 
-Found by capturing `main @ 3ec38620` and reading the frame. The player stands at the forge door;
-`E · Forge` renders at the very top of the window, **over the HUD band**, visually detached from the
-building it names and from the player.
+Found by U39's fit gate once it rendered the real component instead of trusting a constant. The
+gate had been enforcing a **240-character** allowance (6 lines x ~40 chars) against
+`ObjectiveTracker.TutorialMaxLines`, which an earlier unit dropped from 6 to **3** without anyone
+updating the gate. Measured through the live `ObjectiveTracker` and Godot's own
+`Label.GetLineCount()`: **11 of 11 registry rows overflow today** -- worse than the "six of ten"
+this was first booked as, and the gate could not see it.
 
-This is `P2-SCREEN-22`'s viewport clamp behaving exactly as designed, meeting a case it was not
-sized for. The forge sprite is **170 world-px tall in a ~197-px world viewport**, so standing at its
-door puts its own nametag above the visible area; the chip anchors to that nametag, the clamp pulls
-it back on screen, and "on screen" for a chip in the HUD's coordinate space is `y=12` — above the
-world viewport, which starts at `y=222`. Every invariant holds and the result still reads wrong.
+U39 corrected the gate and left the copy, deliberately and reported rather than silently declared
+fixed. Trimming is its own pass because the rows are pinned elsewhere: **9 of the 11** carry gating
+clauses that `GatingFoldedIntoInstructionTests` and `TutorialFlowTests` pin verbatim, so a trim is a
+cross-suite copy edit, and the remaining **2** (`BuyMaterial`, `Craft`) are composed in
+`sim/GameSim/Advisor/ObjectiveAdvisor.cs` -- sim-side, so the shorter phrasing has to keep the
+advisor pure and its existing assertions true.
 
-Do **not** fix this by removing the clamp: without it the chip renders off-window entirely and
-`HudBoundsTests` goes red, which is the defect `P2-SCREEN-22` shipped to fix. The fix is to give the
-chip somewhere honest to go when there is no room above its target — below it, or pinned to the
-target's visible edge — and to keep it inside the **world** viewport rather than the window.
-
-Flagged during `P2-SCREEN-22`'s own work and deliberately not folded in there, since it is a
-different case from the one that unit fixed.
+The stake is small and real: the tracker is where a new player is told what to do next, and a row
+that overflows is a sentence they cannot finish reading.
 
 #### Two fold budgets the 481px ruling could not close, with the arithmetic
 
