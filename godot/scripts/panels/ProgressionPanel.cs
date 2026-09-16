@@ -270,9 +270,6 @@ public partial class ProgressionPanel : SimPanel
         Mentor?.ShowFirstTouch(
             Tutorial?.ConsumeFirstTouch(
                 "second-profession-picked",
-                MentorVoice.Speak(
-                    "A second profession adds a new craft alongside your first — it never replaces "
-                    + "what you already know. Both share the same forge and the same day's action "
-                    + "slots.")));
+                MentorVoice.Speak(MentorCorpus.SecondProfessionAddedText)));
     }
 }

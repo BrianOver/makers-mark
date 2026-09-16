@@ -548,10 +548,7 @@ public partial class LegendsWall : Control
     {
         if (Tutorial?.ConsumeFirstTouch(
                 "legends-wall-taught",
-                MentorVoice.Speak(
-                    "This is the town's memory, and it is the only permanent thing here — the fallen, "
-                    + "the deepest floors anyone reached, and the pieces that got them there with your "
-                    + "mark still on them. Nobody comes back off this wall."))
+                MentorVoice.Speak(MentorCorpus.LegendsWallCaption))
             is { } caption)
         {
             ShowHeaderCaption(caption);
@@ -575,10 +572,7 @@ public partial class LegendsWall : Control
         Mentor?.ShowFirstTouch(
             Tutorial?.ConsumeFirstTouch(
                 "honor-memorial",
-                MentorVoice.Speak(
-                    "The rite is for you, not for them — you say the name out loud once, in the "
-                    + "evening, and the town keeps it. It costs nothing and it cannot be repeated, "
-                    + "and it is the last thing anyone will do for them.")),
+                MentorVoice.Speak(MentorCorpus.LegendsRiteText)),
             preempt: true);
 
     /// <summary>U-T2 Wave E ("reforge", the long tail): fires the first time the player ever
@@ -598,10 +592,7 @@ public partial class LegendsWall : Control
         Mentor?.ShowFirstTouch(
             Tutorial?.ConsumeFirstTouch(
                 "reforge-heirloom",
-                MentorVoice.Speak(
-                    "A fallen hero's gear can be reforged into something new — pick the recipe and "
-                    + "the material, and the piece they carried becomes a fresh mark instead of "
-                    + "staying a memorial.")),
+                MentorVoice.Speak(MentorCorpus.LegendsReforgeText)),
             preempt: true);
 
     /// <summary>Mirrors <c>HeirloomHandlers.Apply</c>'s guards 4-9 (the SAME recipe/profession/

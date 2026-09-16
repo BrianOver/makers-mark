@@ -1444,11 +1444,18 @@ public partial class ForgePanel : SimPanel
     private bool ShowMaterialCeilingLesson() =>
         ShowMentorFirstTouch(
             "material-ceiling-hand-band",
-            "The material you choose sets a hard ceiling on what this craft can become — bring less "
-            + "than the recipe calls for and even a perfect hand can't reach the top grades. Match or "
-            + "better it, and every grade opens up. Inside that ceiling, how well you work the bench "
-            + "decides where you actually land.",
+            MaterialCeilingLessonText,
             TutorialAnchor.ForPanelControl("Forge", "MaterialSelect"));
+
+    /// <summary>U39 (§11.14.14, R28): pulled out of the call site above so <c>MentorCorpus</c> can
+    /// hold a single reference to it rather than a second hand-copy — this is one of the Forge's
+    /// eight fixed-prose lessons the corpus consolidation widens the never-orders/banned-token
+    /// checks to actually cover.</summary>
+    internal const string MaterialCeilingLessonText =
+        "The material you choose sets a hard ceiling on what this craft can become — bring less "
+        + "than the recipe calls for and even a perfect hand can't reach the top grades. Match or "
+        + "better it, and every grade opens up. Inside that ceiling, how well you work the bench "
+        + "decides where you actually land.";
 
     /// <summary>U23d: open the Anvil Map forge overlay for this recipe/material — the "Work the
     /// forge" path beside the auto-craft fallback. The path seed is derived from the recipe id +
@@ -1476,14 +1483,16 @@ public partial class ForgePanel : SimPanel
             // "the forge's two acts, taught inside the forge": fires the first time Act 1 is EVER
             // reachable — quotes the real controls (hammer/bellows), never a client-invented number
             // for the tempo window itself.
-            ShowMentorFirstTouch(
-                "forge-act1-shaping",
-                "This is the shaping heat. A hammer strike lands cleanest near the tempo line; too "
-                + "early or too late costs you ground. Hold the bellows when you need more heat to "
-                + "work with — it costs shape progress while you do. Nothing here is on a clock but "
-                + "your own hands.");
+            ShowMentorFirstTouch("forge-act1-shaping", ShapingHeatLessonText);
         }
     }
+
+    /// <summary>U39 (§11.14.14, R28): see <see cref="MaterialCeilingLessonText"/>'s own doc.</summary>
+    internal const string ShapingHeatLessonText =
+        "This is the shaping heat. A hammer strike lands cleanest near the tempo line; too "
+        + "early or too late costs you ground. Hold the bellows when you need more heat to "
+        + "work with — it costs shape progress while you do. Nothing here is on a clock but "
+        + "your own hands.";
 
     /// <summary>
     /// U7: Act 1 -> Act 2 handoff. <see cref="ForgeMinigame.ShapingDone"/> fires exactly once, the
@@ -1507,12 +1516,14 @@ public partial class ForgePanel : SimPanel
         LogMinigame("open", "quench", _quench.RecipeId, _quench.MaterialKey, $" strikes={result.StrikesLanded}");
         // U-T2 Wave B: Act 2 taught the same way as Act 1 — the first time the hand-off is EVER
         // reached, not a tooltip pointing at the quench from outside it.
-        ShowMentorFirstTouch(
-            "forge-act2-quench",
-            "The gauge starts moving the moment this opens — watch it and plunge once it crosses into "
-            + "the band the recipe note calls for. Early or late both cost you against that band; there's "
-            + "no separate clock beyond the one you're already watching.");
+        ShowMentorFirstTouch("forge-act2-quench", QuenchGaugeLessonText);
     }
+
+    /// <summary>U39 (§11.14.14, R28): see <see cref="MaterialCeilingLessonText"/>'s own doc.</summary>
+    internal const string QuenchGaugeLessonText =
+        "The gauge starts moving the moment this opens — watch it and plunge once it crosses into "
+        + "the band the recipe note calls for. Early or late both cost you against that band; there's "
+        + "no separate clock beyond the one you're already watching.";
 
     /// <summary>"Forge another like it" (U7 / loop-structure plan KTD-C): re-queue the EXACT trace
     /// the last completed forge of this recipe+material captured — same materials, same slot cost,
@@ -1707,13 +1718,15 @@ public partial class ForgePanel : SimPanel
         LogMinigame("open", "brew", _brewPuzzle.RecipeId, _brewPuzzle.MaterialKey);
         if (!ShowMaterialCeilingLesson())
         {
-            ShowMentorFirstTouch(
-                "alchemy-brew",
-                "Pour the reagents in the order the recipe note gives you — that order is the whole "
-                + "test here, not speed. There's no clock on reading the note twice before you start "
-                + "pouring.");
+            ShowMentorFirstTouch("alchemy-brew", AlchemyBrewLessonText);
         }
     }
+
+    /// <summary>U39 (§11.14.14, R28): see <see cref="MaterialCeilingLessonText"/>'s own doc.</summary>
+    internal const string AlchemyBrewLessonText =
+        "Pour the reagents in the order the recipe note gives you — that order is the whole "
+        + "test here, not speed. There's no clock on reading the note twice before you start "
+        + "pouring.";
 
     /// <summary>The brew overlay's ONE completed run → the ONE queued <see cref="CraftAction"/>
     /// (PKD8 single-action contract, same as <see cref="OnQuenchFinished"/>). The grade shown
@@ -1749,12 +1762,14 @@ public partial class ForgePanel : SimPanel
         LogMinigame("open", "assemble", _engineeringBench.RecipeId, _engineeringBench.MaterialKey);
         if (!ShowMaterialCeilingLesson())
         {
-            ShowMentorFirstTouch(
-                "engineering-assembly",
-                "Fit each part where it actually belongs before you crank the finale. Placement has "
-                + "no clock on it — take the time to get it right.");
+            ShowMentorFirstTouch("engineering-assembly", EngineeringAssemblyLessonText);
         }
     }
+
+    /// <summary>U39 (§11.14.14, R28): see <see cref="MaterialCeilingLessonText"/>'s own doc.</summary>
+    internal const string EngineeringAssemblyLessonText =
+        "Fit each part where it actually belongs before you crank the finale. Placement has "
+        + "no clock on it — take the time to get it right.";
 
     /// <summary>The bench overlay's ONE completed run → the ONE queued <see cref="CraftAction"/>
     /// (PKD8 single-action contract, same as <see cref="OnBrewFinished"/>). The grade shown is the
@@ -1792,12 +1807,14 @@ public partial class ForgePanel : SimPanel
         LogMinigame("open", "scrape", _tanningFrame.RecipeId, _tanningFrame.MaterialKey);
         if (!ShowMaterialCeilingLesson())
         {
-            ShowMentorFirstTouch(
-                "tanning-frame",
-                "Cover the hide, but hold back — over-scraping ruins it as surely as leaving it "
-                + "patchy. No clock here either; work the whole frame at your own pace.");
+            ShowMentorFirstTouch("tanning-frame", TanningFrameLessonText);
         }
     }
+
+    /// <summary>U39 (§11.14.14, R28): see <see cref="MaterialCeilingLessonText"/>'s own doc.</summary>
+    internal const string TanningFrameLessonText =
+        "Cover the hide, but hold back — over-scraping ruins it as surely as leaving it "
+        + "patchy. No clock here either; work the whole frame at your own pace.";
 
     /// <summary>The tanning frame's ONE completed run → the ONE queued <see cref="CraftAction"/>
     /// (PKD8 single-action contract, same as <see cref="OnQuenchFinished"/>/<see cref="OnBrewFinished"/>).
@@ -2063,13 +2080,15 @@ public partial class ForgePanel : SimPanel
     /// number, so <c>ActionBudget.SlotsPerDay</c> can change without making this prose false.</para>
     /// </summary>
     private bool ShowTalentsLesson() =>
-        ShowMentorFirstTouch(
-            "first-talent-unlock",
-            "Talent nodes build on each other — a later one needs its own prerequisite unlocked "
-            + "first. Unlocking one spends a day action slot, the same one a craft or a purchase "
-            + "would have taken, and the deeper smithing nodes want the workshop at a matching "
-            + "Forge Tier as well. Nothing on the tree expires, so banking the slot for today's "
-            + "work and unlocking tomorrow is a real choice, not a delay.");
+        ShowMentorFirstTouch("first-talent-unlock", TalentsLessonText);
+
+    /// <summary>U39 (§11.14.14, R28): see <see cref="MaterialCeilingLessonText"/>'s own doc.</summary>
+    internal const string TalentsLessonText =
+        "Talent nodes build on each other — a later one needs its own prerequisite unlocked "
+        + "first. Unlocking one spends a day action slot, the same one a craft or a purchase "
+        + "would have taken, and the deeper smithing nodes want the workshop at a matching "
+        + "Forge Tier as well. Nothing on the tree expires, so banking the slot for today's "
+        + "work and unlocking tomorrow is a real choice, not a delay.";
 
     /// <summary>The once-ever id <see cref="ShowLadderOpenedBeat"/> fires under — a
     /// <c>const</c> rather than an inline literal so the discoverability censuses that source-scan
@@ -2202,11 +2221,13 @@ public partial class ForgePanel : SimPanel
     /// all four.
     /// </summary>
     private void ShowFoundryVerbsLesson() =>
-        ShowMentorFirstTouch(
-            "foundry-four-verbs",
-            "The Foundry's four verbs — upgrading the forge, buying coal and flux, a guaranteed "
-            + "masterwork, and a legendary commission — all trade gold for certainty instead of a "
-            + "roll. None of them are worth reaching for until the gold is actually there to spend.");
+        ShowMentorFirstTouch("foundry-four-verbs", FoundryVerbsLessonText);
+
+    /// <summary>U39 (§11.14.14, R28): see <see cref="MaterialCeilingLessonText"/>'s own doc.</summary>
+    internal const string FoundryVerbsLessonText =
+        "The Foundry's four verbs — upgrading the forge, buying coal and flux, a guaranteed "
+        + "masterwork, and a legendary commission — all trade gold for certainty instead of a "
+        + "roll. None of them are worth reaching for until the gold is actually there to spend.";
 
     /// <summary>U3: coal/flux from the forge supplier — resolves immediately (mirrors
     /// <see cref="OnBuyMaterialPressed"/>'s immediate-resolve shape). Still a fixed one-unit

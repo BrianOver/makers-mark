@@ -952,6 +952,15 @@ public partial class MainUi : Control
         // and idempotent if a future test mounts a second MainUi in the same process.
         PlaytestLog.BeatProvider = () => Conductor.Current.ToString();
 
+        // U39 (§11.14.14, R36): same decoupling seam as BeatProvider above, so PlaytestLog can
+        // report which tutorial step (and act) a session was on without taking a hard dependency on
+        // Tutorial (built later in BuildUi(), same as the note above already explains) — "which step
+        // do testers stall on" needs this on every row, not a post-hoc guess from free-text notes.
+        PlaytestLog.TutorialStepProvider = () => Tutorial is { Active: true } t ? t.Step.ToString() : "-";
+        PlaytestLog.TutorialActProvider = () => Tutorial is { Active: true } t
+            ? TutorialActVocab.DisplayName(TutorialFlow.Registry.First(d => d.Step == t.Step).Act)
+            : "-";
+
         RegisterQuickTravelActions(); // U23 (KTD4): runtime InputMap only, zero project.godot contact
 
         // U4 (KTD-D): intercept the OS close request (the window's own X / Alt+F4) so it saves
@@ -1630,12 +1639,7 @@ public partial class MainUi : Control
         {
             Mentor.ShowFirstTouch(Tutorial.ConsumeFirstTouch(
                 "the-tariff-fork",
-                MentorVoice.Speak(
-                    "Every hero gets the same ask for their ore, no matter who buys it — there's no "
-                    + "haggling that trade. What moves is the standing you've been building with "
-                    + "whichever faction supplied it: buy from the same one again and their price to "
-                    + "you keeps easing. The choice was never how much to pay — it's whose favour "
-                    + "you're banking.")));
+                MentorVoice.Speak(MentorCorpus.OreStandingIsFactionFavourText)));
         }
 
         RefreshAll();
@@ -3298,10 +3302,7 @@ public partial class MainUi : Control
     {
         if (Tutorial.ConsumeFirstTouch(
                 "read-only-surfaces",
-                MentorVoice.Speak(
-                    "Nothing on this board is something to press — it only shows you what has already "
-                    + "happened. Heroes and depths are the town's own record, not a place "
-                    + "to act."))
+                MentorVoice.Speak(MentorCorpus.ReadOnlySurfacesCaption))
             is { } caption)
         {
             showCaption(caption);
@@ -3330,10 +3331,7 @@ public partial class MainUi : Control
     {
         if (Tutorial.ConsumeFirstTouch(
                 "tomorrow-at-the-counter",
-                MentorVoice.Speak(
-                    "That is tomorrow's counter, read from what the town has already decided — who is "
-                    + "coming, and what they will be asking for. It stays open while you work, so keep "
-                    + "it up while you craft and make what somebody actually wants."))
+                MentorVoice.Speak(MentorCorpus.TomorrowsCounterCaption))
             is { } caption)
         {
             Docket.SetHeaderCaption(caption);
@@ -3361,9 +3359,7 @@ public partial class MainUi : Control
         // in a pass that was only looking for "the sim").
         Mentor.ShowFirstTouch(Tutorial.ConsumeFirstTouch(
             "quick-travel-unlocked",
-            MentorVoice.Speak(
-                "A quick-travel row just opened up top — every building you have already visited is "
-                + "now one step away, no walk required.")));
+            MentorVoice.Speak(MentorCorpus.QuickTravelUnlockedCaption)));
     }
 
     /// <summary>Timed-borrow duration for <see cref="ReaskTutorial"/>'s own camera peek — a peek, not
@@ -5175,9 +5171,7 @@ public partial class MainUi : Control
         // method's own doc already states is otherwise invisible on screen.
         Mentor.ShowFirstTouch(Tutorial.ConsumeFirstTouch(
             "second-profession-picked",
-            MentorVoice.Speak(
-                "A second profession adds a new craft alongside your first — it never replaces what "
-                + "you already know. Both share the same forge and the same day's action slots.")));
+            MentorVoice.Speak(MentorCorpus.SecondProfessionAddedText)));
     }
 
     /// <summary>

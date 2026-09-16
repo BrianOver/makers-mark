@@ -2777,10 +2777,16 @@ public sealed partial class TutorialFlow : PanelContainer
         var carriedPlayerWork = new[] { died.WornGear.Weapon, died.WornGear.Shield, died.WornGear.Armor, died.WornGear.Trinket }
             .Any(slot => slot is { } itemId && state.Items.TryGetValue(itemId.Value, out var item) && item.PlayerCrafted);
 
-        return carriedPlayerWork
-            ? "They had your work on them. It wasn't enough — and it was still the best thing they carried. Both of those are true tonight."
-            : "Nothing of yours went down with them. You get to decide if that's a relief.";
+        return carriedPlayerWork ? LossVoiceCarriedWorkText : LossVoiceNoWorkText;
     }
+
+    /// <summary>U39 (§11.14.14, R28): the two <see cref="LossVoiceLine"/> variants, pulled out so
+    /// <c>MentorCorpus</c> holds one reference to each rather than a second hand-copy.</summary>
+    internal const string LossVoiceCarriedWorkText =
+        "They had your work on them. It wasn't enough — and it was still the best thing they carried. Both of those are true tonight.";
+
+    internal const string LossVoiceNoWorkText =
+        "Nothing of yours went down with them. You get to decide if that's a relief.";
 
     // ── U30 (§11.14.14): the Proof act's dormant row ─────────────────────────────────────────────
     //
@@ -2839,7 +2845,7 @@ public sealed partial class TutorialFlow : PanelContainer
     /// Given personal stake deliberately, per this unit's own direction ("what must change is that
     /// it names the engine, and that it has no stake in it") — the old line asserted the mechanism
     /// with no voice behind it at all.</summary>
-    private const string ProofBeatText =
+    internal const string ProofBeatText =
         "Look at that line. The town told the fight again with your craft pulled back out of it, and "
         + "the ending changed. Only work you actually forged earns a line like that — nothing else a "
         + "hero happens to be carrying ever will. I've never had a night like this one.";
@@ -3214,15 +3220,21 @@ public sealed partial class TutorialFlow : PanelContainer
     /// register with those verbs added back.</para>
     /// </summary>
     public static string GraduationBeatTextFor(bool ruleWasRevised) =>
-        ruleWasRevised
-            ? "That's the week, and the bench was only ever borrowed — it's yours. The Lessons book "
-              + "keeps everything I taught you, including the one thing I taught you wrong; you "
-              + "caught it faster than I did. Fair prices, and the wall — those are yours to mind "
-              + "now, not mine."
-            : "That's the week, and the bench was only ever borrowed — it's yours. The Lessons book "
-              + "keeps everything I taught you, my own rules included, and you'll find out for "
-              + "yourself which of them hold. Fair prices, and the wall — those are yours to mind "
-              + "now, not mine.";
+        ruleWasRevised ? GraduationBeatRuleRevisedText : GraduationBeatRuleHeldText;
+
+    /// <summary>U39 (§11.14.14, R28): the two <see cref="GraduationBeatTextFor"/> variants, pulled
+    /// out so <c>MentorCorpus</c> holds one reference to each rather than a second hand-copy.</summary>
+    internal const string GraduationBeatRuleRevisedText =
+        "That's the week, and the bench was only ever borrowed — it's yours. The Lessons book "
+        + "keeps everything I taught you, including the one thing I taught you wrong; you "
+        + "caught it faster than I did. Fair prices, and the wall — those are yours to mind "
+        + "now, not mine.";
+
+    internal const string GraduationBeatRuleHeldText =
+        "That's the week, and the bench was only ever borrowed — it's yours. The Lessons book "
+        + "keeps everything I taught you, my own rules included, and you'll find out for "
+        + "yourself which of them hold. Fair prices, and the wall — those are yours to mind "
+        + "now, not mine.";
 
     /// <summary>
     /// U25 (§11.14.14, KTD2): the counter's own dormant act — armed the first time EVER a haggle
@@ -3244,9 +3256,14 @@ public sealed partial class TutorialFlow : PanelContainer
 
         _hasSeenFleeceBeat = true;
         Save();
-        return "That price will be remembered, not scolded — a fair close warms every offer this "
-            + "hero makes you after; this one just cost you some of that instead.";
+        return FleeceRememberedText;
     }
+
+    /// <summary>U39 (§11.14.14, R28): pulled out of <see cref="ConsumeFirstFleeceBeat"/> so
+    /// <c>MentorCorpus</c> holds one reference to it rather than a second hand-copy.</summary>
+    internal const string FleeceRememberedText =
+        "That price will be remembered, not scolded — a fair close warms every offer this "
+        + "hero makes you after; this one just cost you some of that instead.";
 
     /// <summary>Once-ever flag backing <see cref="ConsumeFirstFleeceBeat"/> — same "never again"
     /// contract as <see cref="_hasSeenWarrantEndBeat"/>.</summary>
@@ -3306,7 +3323,7 @@ public sealed partial class TutorialFlow : PanelContainer
     /// shared shelf means nothing reserves the piece, and the two costs are not symmetric (a miss
     /// costs mood; a decline costs nothing). No sim constant is quoted (law: stakes named
     /// qualitatively).</summary>
-    private const string CommissionDeliveryLessonText =
+    internal const string CommissionDeliveryLessonText =
         "A commission is filled from your own shelf: forge the slot they named at or above the "
         + "grade they asked, and stock it — their own morning shopping checks the board before "
         + "anything else, and takes it at your list price plus their premium, guaranteed, the "
@@ -3371,10 +3388,15 @@ public sealed partial class TutorialFlow : PanelContainer
 
         _deliveryOutcomeSpoken = true;
         Save();
-        return "That commission's window closed unanswered — the promise broke, and it cost "
-            + "standing with the hero who made it. Declining costs nothing; this is what missing "
-            + "does instead.";
+        return CommissionMissedDeadlineText;
     }
+
+    /// <summary>U39 (§11.14.14, R28): pulled out of <see cref="ConsumeCommissionDeliveryOutcomeBeat"/>
+    /// so <c>MentorCorpus</c> holds one reference to it rather than a second hand-copy.</summary>
+    internal const string CommissionMissedDeadlineText =
+        "That commission's window closed unanswered — the promise broke, and it cost "
+        + "standing with the hero who made it. Declining costs nothing; this is what missing "
+        + "does instead.";
 
     /// <summary>Once-ever flag backing <see cref="ConsumeCommissionDeliveryOutcomeBeat"/> — same
     /// "never again" contract as <see cref="_hasSeenWarrantEndBeat"/>.</summary>
@@ -3419,12 +3441,16 @@ public sealed partial class TutorialFlow : PanelContainer
 
         _hasSeenDemandBoardBeat = true;
         Save();
-        return MentorVoice.Speak(
-            "A hero just passed on something — that reason isn't lost, it's logged. The Demand "
-            + "board rolls up why heroes are walking past your shelf, names the exact slot or "
-            + "quality grade holding a stalled hero's depth back, and lists the price floor every "
-            + "posted bounty gets judged against.");
+        return MentorVoice.Speak(DemandBoardExplainerText);
     }
+
+    /// <summary>U39 (§11.14.14, R28): pulled out of <see cref="ConsumeDemandBoardBeat"/> so
+    /// <c>MentorCorpus</c> holds one reference to it rather than a second hand-copy.</summary>
+    internal const string DemandBoardExplainerText =
+        "A hero just passed on something — that reason isn't lost, it's logged. The Demand "
+        + "board rolls up why heroes are walking past your shelf, names the exact slot or "
+        + "quality grade holding a stalled hero's depth back, and lists the price floor every "
+        + "posted bounty gets judged against.";
 
     /// <summary>U26: once-ever consumed flag backing <see cref="ConsumeDemandBoardBeat"/> — same
     /// persisted-flag contract as <see cref="_hasSeenWarrantEndBeat"/>.</summary>
