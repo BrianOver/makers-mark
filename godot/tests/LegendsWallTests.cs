@@ -157,7 +157,18 @@ public class LegendsWallTests
                 .OverrideFailureMessage("The old modal popup opened instead of navigating the book.")
                 .IsNull();
 
+            // Captured before the press: this "LegendsWallBack" sits on ShowItemPage, whose own
+            // Pressed handler calls ShowIndex -> Clear(_body!) on itself — the third of the four
+            // self-clearing sites LegendsWall.Clear's PanelGraveyard fix covers at once.
+            var back = Find<Button>(ui.Legends, "LegendsWallBack");
+
             PressEnabled(ui.Legends, "LegendsWallBack");
+
+            AssertThat(GodotObject.IsInstanceValid(back))
+                .OverrideFailureMessage(
+                    "LegendsWallBack (ShowItemPage) was freed while its own Pressed signal was still "
+                    + "emitting — Clear must QueueFree, never Free, a node mid-emission.")
+                .IsTrue();
             AssertThat(Find<Button>(ui.Legends, $"Legend_{SignedItemId.Value}"))
                 .OverrideFailureMessage("Back did not return to the index.")
                 .IsNotNull();
@@ -1047,8 +1058,20 @@ public class LegendsWallTests
                 .OverrideFailureMessage("Reforge did not migrate onto the fallen hero's own page.")
                 .IsNotNull();
 
-            // The way back is real, not a dead end.
+            // The way back is real, not a dead end. Captured before the press for the same reason
+            // BindTheBookButton_OpensTheClosingChapter_ReachableAndReturnable captures its own
+            // buttons: this "LegendsWallBack" sits on ShowActorPage, whose own Pressed handler calls
+            // ShowIndex -> Clear(_body!) on itself — the pre-existing twin of that unit's bug, fixed
+            // by the same LegendsWall.Clear change.
+            var back = Find<Button>(ui.Legends, "LegendsWallBack");
+
             PressEnabled(ui.Legends, "LegendsWallBack");
+
+            AssertThat(GodotObject.IsInstanceValid(back))
+                .OverrideFailureMessage(
+                    "LegendsWallBack (ShowActorPage) was freed while its own Pressed signal was "
+                    + "still emitting — Clear must QueueFree, never Free, a node mid-emission.")
+                .IsTrue();
             AssertThat(ui.Legends.FindChildren("Actor_*", "Button", recursive: true, owned: false).Count)
                 .OverrideFailureMessage("Back did not return to a live actor index.")
                 .IsGreater(0);
@@ -1070,8 +1093,24 @@ public class LegendsWallTests
         {
             ui.Legends.ShowWall(PopulatedWorld());
 
+            // Captured BEFORE the press: both "BindTheBook" and "LegendsWallBack" below rebuild
+            // _body from inside their OWN Pressed handler (ShowIndex/ShowBindPage -> Clear(_body!)),
+            // so each button is still on the call stack emitting its own signal at the moment Clear
+            // runs. Holding the reference across the press and asserting IsInstanceValid afterward is
+            // this suite's own version of ClearDuringSignalTests' pinned property: Clear must detach
+            // the button immediately but must NOT destroy it while that signal is still in flight —
+            // an immediate Free() there is the "Object was freed or unreferenced while a signal is
+            // being emitted from it" crash class, caught live during this unit's own local full-suite
+            // run and fixed by routing LegendsWall.Clear through PanelGraveyard.Bury (see its doc).
+            var bindTheBook = Find<Button>(ui.Legends, "BindTheBook");
+
             PressEnabled(ui.Legends, "BindTheBook");
 
+            AssertThat(GodotObject.IsInstanceValid(bindTheBook))
+                .OverrideFailureMessage(
+                    "BindTheBook was freed while its own Pressed signal was still emitting — Clear "
+                    + "must QueueFree (via PanelGraveyard.Bury), never Free, a node mid-emission.")
+                .IsTrue();
             AssertThat(Find<Label>(ui.Legends, "ChronicleStamp"))
                 .OverrideFailureMessage("Binding the book did not open the chronicle page.")
                 .IsNotNull();
@@ -1079,7 +1118,15 @@ public class LegendsWallTests
                 .OverrideFailureMessage("The bind page must always end on the fixed closer line.")
                 .Contains(ChronicleComposer.Closer);
 
+            var back = Find<Button>(ui.Legends, "LegendsWallBack");
+
             PressEnabled(ui.Legends, "LegendsWallBack");
+
+            AssertThat(GodotObject.IsInstanceValid(back))
+                .OverrideFailureMessage(
+                    "LegendsWallBack was freed while its own Pressed signal was still emitting — "
+                    + "same defect as BindTheBook above, same fix.")
+                .IsTrue();
             AssertThat(Find<Button>(ui.Legends, "BindTheBook"))
                 .OverrideFailureMessage("Back did not return to the index.")
                 .IsNotNull();

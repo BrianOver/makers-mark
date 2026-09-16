@@ -1071,12 +1071,26 @@ public partial class LegendsWall : Control
 
     // ── minimal self-contained widget helpers (mirrors ProvenanceCard/RaidForecastBoard) ──
 
+    /// <summary>Detach immediately, destroy later. Four call sites in this file rebuild <c>_body</c>
+    /// from inside the very button that triggered the rebuild — <c>BindTheBook</c> (<see
+    /// cref="ShowIndex(GameState, List{Item}, List{StoriedGearInfo})"/>) and the "LegendsWallBack"
+    /// button on <see cref="ShowActorPage"/>, <see cref="ShowItemPage"/>, and <see
+    /// cref="RenderBindPage"/> all navigate by calling <c>Clear</c> from their own <c>Pressed</c>
+    /// handler. An immediate <c>Free()</c> here is exactly the crash <c>ClearDuringSignalTests</c>
+    /// documents and pins for <see cref="SimPanel.Clear"/>: Godot logs "Object was freed or
+    /// unreferenced while a signal is being emitted from it" and the freed button's own emission
+    /// dereferences memory that is no longer there. This was a second, independent copy of
+    /// <c>SimPanel.Clear</c> written before that fix existed — <see cref="LegendsWall"/> extends
+    /// <see cref="Control"/>, not <see cref="SimPanel"/>, so the fix never reached it. Routing
+    /// through the same <see cref="PanelGraveyard"/> registry <c>SimPanel.Clear</c> already uses
+    /// closes all four sites at once and reuses the mount/unmount drain <c>MainUi</c> already
+    /// performs, so nothing new leaks across tests.</summary>
     private static void Clear(Node parent)
     {
         foreach (var child in parent.GetChildren())
         {
             parent.RemoveChild(child);
-            child.Free();
+            PanelGraveyard.Bury(child);
         }
     }
 
