@@ -19,13 +19,13 @@ namespace GodotClient.Tests;
 ///
 /// <para><b>Why this exists.</b> The drawer sweep found three real bugs on its first run — the Depths panel
 /// 124px too wide, the Demand panel's growing chip row, and the Shop's completely dead "Open Counter"
-/// button. It covered nine surfaces. The game has seven more that nothing was sweeping at all: the Ledger,
-/// Forecast, Commissions and Legends modals, the Scrying Mirror, the Chronicle, and the
+/// button. It covered nine surfaces. The game has more that nothing was sweeping at all: the Ledger,
+/// Forecast, Commissions and Legends modals, the Scrying Mirror, and the
 /// building interiors. Owner, bluntly: "you need to test the whole game lol".</para>
 ///
 /// <para><b>Opened the way a player opens them.</b> Where the HUD has a real button (Ledger, Forecast,
 /// Commissions, Legends) the sweep clicks it through <see cref="HumanPlayer"/>. The contextual surfaces
-/// (Mirror, Chronicle, Interior) have no HUD button — a hero click or a phase beat raises them —
+/// (Mirror, Interior) have no HUD button — a hero click or a phase beat raises them —
 /// so those are shown via the same public method their real trigger calls. That is a seam, and a defensible
 /// one: the claim under test is "once this surface is up, is it usable", not "does its trigger fire", which
 /// belongs to whatever raises it.</para>

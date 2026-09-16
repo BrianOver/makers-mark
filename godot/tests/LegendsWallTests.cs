@@ -1,5 +1,6 @@
 #if GDUNIT_TESTS
 using System.Collections.Immutable;
+using GameSim.Chronicle;
 using GameSim.Classes;
 using GameSim.Contracts;
 using GameSim.Crafting;
@@ -156,7 +157,18 @@ public class LegendsWallTests
                 .OverrideFailureMessage("The old modal popup opened instead of navigating the book.")
                 .IsNull();
 
+            // Captured before the press: this "LegendsWallBack" sits on ShowItemPage, whose own
+            // Pressed handler calls ShowIndex -> Clear(_body!) on itself — the third of the four
+            // self-clearing sites LegendsWall.Clear's PanelGraveyard fix covers at once.
+            var back = Find<Button>(ui.Legends, "LegendsWallBack");
+
             PressEnabled(ui.Legends, "LegendsWallBack");
+
+            AssertThat(GodotObject.IsInstanceValid(back))
+                .OverrideFailureMessage(
+                    "LegendsWallBack (ShowItemPage) was freed while its own Pressed signal was still "
+                    + "emitting — Clear must QueueFree, never Free, a node mid-emission.")
+                .IsTrue();
             AssertThat(Find<Button>(ui.Legends, $"Legend_{SignedItemId.Value}"))
                 .OverrideFailureMessage("Back did not return to the index.")
                 .IsNotNull();
@@ -1046,8 +1058,20 @@ public class LegendsWallTests
                 .OverrideFailureMessage("Reforge did not migrate onto the fallen hero's own page.")
                 .IsNotNull();
 
-            // The way back is real, not a dead end.
+            // The way back is real, not a dead end. Captured before the press for the same reason
+            // BindTheBookButton_OpensTheClosingChapter_ReachableAndReturnable captures its own
+            // buttons: this "LegendsWallBack" sits on ShowActorPage, whose own Pressed handler calls
+            // ShowIndex -> Clear(_body!) on itself — the pre-existing twin of that unit's bug, fixed
+            // by the same LegendsWall.Clear change.
+            var back = Find<Button>(ui.Legends, "LegendsWallBack");
+
             PressEnabled(ui.Legends, "LegendsWallBack");
+
+            AssertThat(GodotObject.IsInstanceValid(back))
+                .OverrideFailureMessage(
+                    "LegendsWallBack (ShowActorPage) was freed while its own Pressed signal was "
+                    + "still emitting — Clear must QueueFree, never Free, a node mid-emission.")
+                .IsTrue();
             AssertThat(ui.Legends.FindChildren("Actor_*", "Button", recursive: true, owned: false).Count)
                 .OverrideFailureMessage("Back did not return to a live actor index.")
                 .IsGreater(0);
@@ -1055,6 +1079,153 @@ public class LegendsWallTests
         finally
         {
             Unmount(ui);
+        }
+    }
+
+    // ── P2-MEMORY-14 (P2-OQ4, "the bind and the export"): ChronicleScroll deleted; the book's own
+    // closing chapter and its HTML export ────────────────────────────────────────────────────────
+
+    [TestCase]
+    public void BindTheBookButton_OpensTheClosingChapter_ReachableAndReturnable()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.Legends.ShowWall(PopulatedWorld());
+
+            // Captured BEFORE the press: both "BindTheBook" and "LegendsWallBack" below rebuild
+            // _body from inside their OWN Pressed handler (ShowIndex/ShowBindPage -> Clear(_body!)),
+            // so each button is still on the call stack emitting its own signal at the moment Clear
+            // runs. Holding the reference across the press and asserting IsInstanceValid afterward is
+            // this suite's own version of ClearDuringSignalTests' pinned property: Clear must detach
+            // the button immediately but must NOT destroy it while that signal is still in flight —
+            // an immediate Free() there is the "Object was freed or unreferenced while a signal is
+            // being emitted from it" crash class, caught live during this unit's own local full-suite
+            // run and fixed by routing LegendsWall.Clear through PanelGraveyard.Bury (see its doc).
+            var bindTheBook = Find<Button>(ui.Legends, "BindTheBook");
+
+            PressEnabled(ui.Legends, "BindTheBook");
+
+            AssertThat(GodotObject.IsInstanceValid(bindTheBook))
+                .OverrideFailureMessage(
+                    "BindTheBook was freed while its own Pressed signal was still emitting — Clear "
+                    + "must QueueFree (via PanelGraveyard.Bury), never Free, a node mid-emission.")
+                .IsTrue();
+            AssertThat(Find<Label>(ui.Legends, "ChronicleStamp"))
+                .OverrideFailureMessage("Binding the book did not open the chronicle page.")
+                .IsNotNull();
+            AssertThat(RenderedText(ui.Legends))
+                .OverrideFailureMessage("The bind page must always end on the fixed closer line.")
+                .Contains(ChronicleComposer.Closer);
+
+            var back = Find<Button>(ui.Legends, "LegendsWallBack");
+
+            PressEnabled(ui.Legends, "LegendsWallBack");
+
+            AssertThat(GodotObject.IsInstanceValid(back))
+                .OverrideFailureMessage(
+                    "LegendsWallBack was freed while its own Pressed signal was still emitting — "
+                    + "same defect as BindTheBook above, same fix.")
+                .IsTrue();
+            AssertThat(Find<Button>(ui.Legends, "BindTheBook"))
+                .OverrideFailureMessage("Back did not return to the index.")
+                .IsNotNull();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void ExportButton_WritesASelfContainedHtmlFile_StampedWithTheComposedDay()
+    {
+        const string path = "user://chronicle_day_7.html";
+        var world = PopulatedWorld() with { Day = 7 };
+        var ui = MountMainUi();
+        try
+        {
+            ui.Legends.ShowBindPage(world);
+            PressEnabled(ui.Legends, "ExportChronicleHtml");
+
+            AssertThat(Find<Label>(ui.Legends, "ChronicleExportStatus").Text)
+                .OverrideFailureMessage("The export button must report where it saved.")
+                .Contains("Saved to");
+
+            AssertThat(Godot.FileAccess.FileExists(path))
+                .OverrideFailureMessage("Export did not actually write a file at the expected path.")
+                .IsTrue();
+
+            using var file = Godot.FileAccess.Open(path, Godot.FileAccess.ModeFlags.Read);
+            var html = file.GetAsText();
+
+            // Self-contained (P2-OQ4): the whole document, inline style, no external references.
+            AssertThat(html).Contains("<!doctype html>");
+            AssertThat(html).Contains("<style>");
+            AssertThat(html).NotContains("<link ");
+            AssertThat(html).NotContains("<img ");
+
+            // Composed from the SAME model as the in-game page (ChronicleComposer.Compose), and
+            // stamped with the day it was composed.
+            AssertThat(html).Contains(ChronicleComposer.Closer);
+            AssertThat(html).Contains("Composed on day 7");
+        }
+        finally
+        {
+            Unmount(ui);
+            // Real user:// state (CampaignSave.Clear's own precedent) — this suite is not the
+            // player's install, so leave nothing behind for the next run to trip over.
+            if (Godot.FileAccess.FileExists(path))
+            {
+                Godot.DirAccess.RemoveAbsolute(ProjectSettings.GlobalizePath(path));
+            }
+        }
+    }
+
+    /// <summary>P2-OQ4's own naming-what-it-omitted constraint: a dangling storied-gear reference —
+    /// worn by a living hero, deed-eligible, but whose item record no longer resolves in <see
+    /// cref="GameState.Items"/> (the same silent-drop shape <see cref="LegendsWall.StoriedItems"/>
+    /// already tolerates in the live page) — must be NAMED in the export, never just dropped.
+    /// <see cref="StoriedGear.ThresholdFor"/> is read off the SAME hero this fixture builds so the
+    /// deed count clears her threshold regardless of which trait pair she happens to derive.</summary>
+    [TestCase]
+    public void Export_NamesADanglingStoriedItem_InsteadOfDroppingItSilently()
+    {
+        var danglingId = new ItemId(8801);
+        var hero = new Hero(
+            new HeroId(50), "Kestrel", ClassRegistry.StrikerId, Level: 3, MaxHp: 30, Gold: 0,
+            new GearSet(danglingId, null, null), ImmutableList<ItemMemory>.Empty,
+            Alive: true, DeepestFloorReached: 2, DiedOnDay: null);
+        var threshold = StoriedGear.ThresholdFor(hero);
+        hero = hero with { Memories = ImmutableList.Create(new ItemMemory(danglingId, Kills: threshold, Saves: 0)) };
+
+        var world = GameFactory.NewGame(6099) with
+        {
+            Heroes = ImmutableSortedDictionary<int, Hero>.Empty.Add(hero.Id.Value, hero),
+            // Deliberately no matching Items entry for danglingId — the crafted-item record is gone.
+        };
+        const string path = "user://chronicle_day_1.html";
+        var ui = MountMainUi();
+        try
+        {
+            ui.Legends.ShowBindPage(world);
+            PressEnabled(ui.Legends, "ExportChronicleHtml");
+
+            var status = Find<Label>(ui.Legends, "ChronicleExportStatus").Text;
+            AssertThat(status)
+                .OverrideFailureMessage("A dangling storied-item reference must be named, not silently dropped.")
+                .Contains("omitted");
+            AssertThat(status)
+                .OverrideFailureMessage("The omission must name WHO it belongs to.")
+                .Contains("Kestrel");
+        }
+        finally
+        {
+            Unmount(ui);
+            if (Godot.FileAccess.FileExists(path))
+            {
+                Godot.DirAccess.RemoveAbsolute(ProjectSettings.GlobalizePath(path));
+            }
         }
     }
 

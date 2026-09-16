@@ -3,13 +3,16 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using GameSim.Advisor;
+using GameSim.Chronicle;
 using GameSim.Contracts;
 using GameSim.Crafting;
 using GameSim.Drama;
 using GameSim.Materials;
 using GameSim.Professions;
 using Godot;
+using GodotClient.Tools;
 using GodotClient.Ui;
+using GodotFileAccess = Godot.FileAccess;
 
 namespace GodotClient.Panels;
 
@@ -74,6 +77,19 @@ namespace GodotClient.Panels;
 /// or its own hand-typed capitalization rule is a preview that can drift from what gets written or
 /// shown the moment either side changes alone, and this repo has paid for exactly that family of
 /// bug before.</para>
+///
+/// <para>P2-MEMORY-14 (the bind and the export, P2-OQ4): the book's own closing chapter, <see
+/// cref="ShowBindPage"/> — reached from the index's own "Bind the Book" row, or automatically when
+/// <c>MainUi</c> reads a <see cref="CampaignEnded"/> event (the reader <c>ChronicleScroll</c> used to
+/// be; that class is deleted by this unit, and its duty moves here). Composes its lines from <see
+/// cref="ChronicleComposer"/> (P2-MEMORY-13) rather than re-deriving anything, and can be opened any
+/// number of times — the ruling's own words are "the world stays open after binding", so this is a
+/// repeatable verb, never a terminal screen. <see cref="ComposeExportHtml"/> is the export half: one
+/// self-contained HTML string built from the SAME <see cref="ActorRows"/>/<see cref="LegendItems"/>/
+/// <see cref="StoriedItems"/>/<see cref="ChronicleComposer.Compose"/> read models this page renders
+/// from — never a second, hand-rolled composer — that also names anything it could not resolve
+/// (a dangling item reference) instead of degrading to a euphemism the way the live page's own
+/// <see cref="RenderStoriedItems"/> silently does, and is stamped with the day it was composed.</para>
 /// </summary>
 public partial class LegendsWall : Control
 {
@@ -184,6 +200,8 @@ public partial class LegendsWall : Control
     private void ShowIndex(GameState state, List<Item> legendItems, List<StoriedGearInfo> storiedItems)
     {
         Clear(_body!);
+        AddButton(_body!, "BindTheBook", "Bind the Book — read the chronicle, export it to keep",
+            () => ShowBindPage(state));
         RenderActorBook(state);
         RenderLegendItems(state, legendItems);
         RenderStoriedItems(state, storiedItems);
@@ -276,8 +294,26 @@ public partial class LegendsWall : Control
         var actorSection = new VBoxContainer { Name = "ActorIndexSection" };
         _body!.AddChild(actorSection);
 
-        // Recent first among the fallen (the newest loss is the one the player is most likely here
-        // to see), then everyone else the depths board remembers, deepest first.
+        var rows = ActorRows(state);
+        if (rows.Count == 0)
+        {
+            AddLabel(actorSection, "  No names on this page yet — the Mine hasn't given the town anyone to remember.");
+            return;
+        }
+
+        foreach (var (hero, name, tags) in rows)
+        {
+            AddButton(actorSection, $"Actor_{hero.Value}", $"{name} — {string.Join(", ", tags)}", () => ShowActorPage(state, hero));
+        }
+    }
+
+    /// <summary>P2-MEMORY-14: <see cref="RenderActorBook"/>'s own ordering/tagging, pulled out so
+    /// <see cref="ComposeExportHtml"/> lists the SAME actors in the SAME order rather than
+    /// re-deriving the walk a second time (the ruling's own "never a second composer"). Recent first
+    /// among the fallen (the newest loss is the one the player is most likely here to see), then
+    /// everyone else the depths board remembers, deepest first.</summary>
+    private static List<(HeroId Hero, string Name, List<string> Tags)> ActorRows(GameState state)
+    {
         var fallenIds = state.Drama.Memorials.Select(m => m.Hero).ToHashSet();
         var fallenOrdered = state.Drama.Memorials.OrderByDescending(m => m.Day).Select(m => m.Hero);
         var depthOnlyOrdered = state.Drama.DepthsBoard.Keys
@@ -287,12 +323,7 @@ public partial class LegendsWall : Control
             .ThenBy(id => HeroName(state, id), StringComparer.Ordinal);
         var actors = fallenOrdered.Concat(depthOnlyOrdered).ToList();
 
-        if (actors.Count == 0)
-        {
-            AddLabel(actorSection, "  No names on this page yet — the Mine hasn't given the town anyone to remember.");
-            return;
-        }
-
+        var rows = new List<(HeroId, string, List<string>)>();
         foreach (var hero in actors)
         {
             var name = HeroName(state, hero);
@@ -307,8 +338,10 @@ public partial class LegendsWall : Control
                 tags.Add($"floor {floor}");
             }
 
-            AddButton(actorSection, $"Actor_{hero.Value}", $"{name} — {string.Join(", ", tags)}", () => ShowActorPage(state, hero));
+            rows.Add((hero, name, tags));
         }
+
+        return rows;
     }
 
     /// <summary>P2-MEMORY-10 (book shell): one actor's page — the destination every
@@ -407,6 +440,215 @@ public partial class LegendsWall : Control
         _body!.AddChild(pageSection);
         ProvenanceCard.RenderInto(pageSection, state, item);
     }
+
+    /// <summary>P2-MEMORY-14 (P2-OQ4, "the bind"): the book's own closing chapter — the composed
+    /// three-plus-closer lines <see cref="ChronicleComposer"/> derives from <paramref name="state"/>,
+    /// never the tallies a raw <see cref="CampaignEnded"/> event carries (that was <c>ChronicleScroll</c>'s
+    /// job; this unit deletes that class and moves the duty here). Reachable from the index's own
+    /// "Bind the Book" row at any time, and also the page <c>MainUi</c> opens straight to when the
+    /// campaign actually ends — either way the SAME page, so there is never a second rendering of the
+    /// same closing chronicle. Public because both callers are outside this class.</summary>
+    public void ShowBindPage(GameState state)
+    {
+        EnsureBuilt();
+        RenderBindPage(state);
+        Visible = true;
+    }
+
+    private void RenderBindPage(GameState state)
+    {
+        Clear(_body!);
+        AddButton(_body!, "LegendsWallBack", "‹ Back to the book", () => ShowIndex(state));
+        AddHeader(_body!, "THE CHRONICLE");
+
+        // P2-OQ4's own second constraint: stamped with the day it was composed, and said plainly
+        // that the book is not finished — a file (or a page) claiming otherwise would be a lie the
+        // ruling names explicitly, because play continues after this page is read.
+        var stamp = AddLabel(_body!, $"Composed on day {state.Day}. The world is still open — bind again anytime.");
+        stamp.Name = "ChronicleStamp";
+        stamp.AddThemeColorOverride("font_color", GameTheme.TextDim);
+
+        var chronicleSection = new VBoxContainer { Name = "ChronicleSection" };
+        _body!.AddChild(chronicleSection);
+        foreach (var line in ChronicleComposer.Compose(state))
+        {
+            AddLabel(chronicleSection, line);
+        }
+
+        var exportStatus = AddLabel(_body!, string.Empty);
+        exportStatus.Name = "ChronicleExportStatus";
+        exportStatus.AddThemeColorOverride("font_color", GameTheme.HeaderColor);
+
+        AddButton(_body!, "ExportChronicleHtml", "Export as HTML", () => exportStatus.Text = WriteHtmlExport(state));
+    }
+
+    /// <summary>P2-OQ4's export, written client-side (file IO stays out of the sim by the ruling's
+    /// own words) to Godot's per-install <c>user://</c> data directory — the same mechanism <see
+    /// cref="CampaignSave"/> already uses for the sim's own autosave, one rolling file per day rather
+    /// than one per press so re-exporting the same day overwrites rather than litters. Every failure
+    /// degrades to a spoken reason, never a crash and never a silent no-op (the same contract
+    /// <c>CampaignSave.Save</c> keeps).</summary>
+    private static string WriteHtmlExport(GameState state)
+    {
+        var html = ComposeExportHtml(state, out var omitted);
+        var path = $"user://chronicle_day_{state.Day}.html";
+
+        using var file = GodotFileAccess.Open(path, GodotFileAccess.ModeFlags.Write);
+        if (file is null)
+        {
+            var reason = GodotFileAccess.GetOpenError();
+            EngineDistress.Warn($"[LegendsWall] could not open {path} for write: {reason}");
+            return $"Could not save the chronicle: {reason}.";
+        }
+
+        file.StoreString(html);
+
+        var realPath = ProjectSettings.GlobalizePath(path);
+        return omitted.Count == 0
+            ? $"Saved to {realPath}"
+            : $"Saved to {realPath} — omitted: {string.Join("; ", omitted)}";
+    }
+
+    /// <summary>The export's own composition — one self-contained HTML string (inline style, no
+    /// external references) built from the EXACT SAME read models <see cref="RenderBindPage"/> and
+    /// the index above render from: <see cref="ActorRows"/>, <see cref="LegendItems"/>, <see
+    /// cref="StoriedItems"/>, <see cref="ChronicleComposer.Compose"/>. P2-OQ4's own words: "composed
+    /// from the same model as the in-game book so the two cannot diverge" — never a second, hand-
+    /// rolled traversal of <paramref name="state"/>.
+    ///
+    /// <para><b>The naming-what-it-omitted half.</b> <see cref="StoriedItems"/> (and the live page's
+    /// own <see cref="RenderStoriedItems"/>) silently drop a <see cref="StoriedGear.All"/> entry
+    /// whose item id no longer resolves in <see cref="GameState.Items"/> — a euphemism the export
+    /// refuses per the ruling's own words ("names what it omitted... rather than degrading
+    /// silently"): every such entry is instead reported through <paramref name="omitted"/> and
+    /// printed in the document's own closing section, never just dropped.</para>
+    /// </summary>
+    private static string ComposeExportHtml(GameState state, out List<string> omitted)
+    {
+        omitted = new List<string>();
+
+        var actors = ActorRows(state);
+        var legendItems = LegendItems(state);
+        var shownStoried = StoriedItems(state);
+
+        var shownStoriedIds = shownStoried.Select(s => s.Item.Value).ToHashSet();
+        foreach (var storied in StoriedGear.All(state))
+        {
+            if (shownStoriedIds.Contains(storied.Item.Value) || state.Items.ContainsKey(storied.Item.Value))
+            {
+                continue; // shown already, or simply not the player's own marked work (not an omission)
+            }
+
+            omitted.Add(
+                $"{storied.BearerName}'s storied gear (item #{storied.Item.Value}) — the crafted-item "
+                + "record is gone, so it cannot be named here");
+        }
+
+        var sb = new System.Text.StringBuilder();
+        sb.Append("<!doctype html><html><head><meta charset=\"utf-8\"><title>The Chronicle — Day ")
+            .Append(state.Day).Append("</title><style>").Append(ExportCss).Append("</style></head><body>");
+
+        sb.Append("<h1>The Chronicle</h1><p class=\"stamp\">Composed on day ").Append(state.Day)
+            .Append(". The town is still open for business — this book is a snapshot, not an ending.</p>");
+
+        sb.Append("<h2>The closing lines</h2><ul>");
+        foreach (var line in ChronicleComposer.Compose(state))
+        {
+            sb.Append("<li>").Append(Html(line)).Append("</li>");
+        }
+
+        sb.Append("</ul><h2>Who the town remembers</h2>");
+        if (actors.Count == 0)
+        {
+            sb.Append("<p>No names on this page yet.</p>");
+        }
+        else
+        {
+            sb.Append("<ul>");
+            foreach (var (_, name, tags) in actors)
+            {
+                sb.Append("<li>").Append(Html(name));
+                if (tags.Count > 0)
+                {
+                    sb.Append(" — ").Append(Html(string.Join(", ", tags)));
+                }
+
+                sb.Append("</li>");
+            }
+
+            sb.Append("</ul>");
+        }
+
+        sb.Append("<h2>Legendary gear</h2>");
+        if (legendItems.Count == 0)
+        {
+            sb.Append("<p>No legendary gear yet.</p>");
+        }
+        else
+        {
+            sb.Append("<ul>");
+            foreach (var item in legendItems)
+            {
+                var label = item.IsSigned
+                    ? $"{item.Name} — \"{item.SignedName}\""
+                    : $"{item.Name} — {AttributionBeatCount(state, item.Id)} proven beats";
+                sb.Append("<li>").Append(Html(label)).Append("</li>");
+            }
+
+            sb.Append("</ul>");
+        }
+
+        sb.Append("<h2>Storied gear</h2>");
+        if (shownStoried.Count == 0)
+        {
+            sb.Append("<p>No storied gear yet.</p>");
+        }
+        else
+        {
+            sb.Append("<ul>");
+            foreach (var storied in shownStoried)
+            {
+                var name = state.Items[storied.Item.Value].Name; // safe: shownStoried is pre-filtered to existing items
+                sb.Append("<li>").Append(Html(name)).Append(" — ").Append(Html(storied.BearerName))
+                    .Append(" has carried it through ").Append(storied.Deeds).Append(' ')
+                    .Append(StoriedGear.FightsWord(storied.Deeds)).Append(".</li>");
+            }
+
+            sb.Append("</ul>");
+        }
+
+        if (omitted.Count > 0)
+        {
+            sb.Append("<div class=\"omitted\"><h2>What this chronicle could not find</h2><ul>");
+            foreach (var reason in omitted)
+            {
+                sb.Append("<li>").Append(Html(reason)).Append("</li>");
+            }
+
+            sb.Append("</ul></div>");
+        }
+
+        sb.Append("</body></html>");
+        return sb.ToString();
+    }
+
+    private const string ExportCss =
+        "body{font-family:Georgia,'Times New Roman',serif;background:#1b140f;color:#e8dcc8;"
+        + "max-width:760px;margin:40px auto;padding:0 24px;line-height:1.5}"
+        + "h1{color:#d8b46a;border-bottom:1px solid #5a4a34;padding-bottom:8px}"
+        + "h2{color:#c9a35c;margin-top:2em}"
+        + ".stamp{color:#a89878;font-style:italic}"
+        + ".omitted{color:#c97a5c;margin-top:2em;padding-top:1em;border-top:1px dashed #5a4a34}"
+        + "ul{padding-left:1.2em}li{margin-bottom:0.4em}";
+
+    /// <summary>Minimal HTML text escaping — the export's only string content is plain prose (hero
+    /// names, item names, chronicle lines), never markup, so this is deliberately not a general
+    /// sanitizer.</summary>
+    private static string Html(string s) => s
+        .Replace("&", "&amp;")
+        .Replace("<", "&lt;")
+        .Replace(">", "&gt;")
+        .Replace("\"", "&quot;");
 
     /// <summary>Wave 4c (U20) / U8b: one "Reforge" row per still-eligible piece of
     /// <paramref name="hero"/>'s worn-at-death gear — a real item, recorded on that hero's
@@ -829,12 +1071,26 @@ public partial class LegendsWall : Control
 
     // ── minimal self-contained widget helpers (mirrors ProvenanceCard/RaidForecastBoard) ──
 
+    /// <summary>Detach immediately, destroy later. Four call sites in this file rebuild <c>_body</c>
+    /// from inside the very button that triggered the rebuild — <c>BindTheBook</c> (<see
+    /// cref="ShowIndex(GameState, List{Item}, List{StoriedGearInfo})"/>) and the "LegendsWallBack"
+    /// button on <see cref="ShowActorPage"/>, <see cref="ShowItemPage"/>, and <see
+    /// cref="RenderBindPage"/> all navigate by calling <c>Clear</c> from their own <c>Pressed</c>
+    /// handler. An immediate <c>Free()</c> here is exactly the crash <c>ClearDuringSignalTests</c>
+    /// documents and pins for <see cref="SimPanel.Clear"/>: Godot logs "Object was freed or
+    /// unreferenced while a signal is being emitted from it" and the freed button's own emission
+    /// dereferences memory that is no longer there. This was a second, independent copy of
+    /// <c>SimPanel.Clear</c> written before that fix existed — <see cref="LegendsWall"/> extends
+    /// <see cref="Control"/>, not <see cref="SimPanel"/>, so the fix never reached it. Routing
+    /// through the same <see cref="PanelGraveyard"/> registry <c>SimPanel.Clear</c> already uses
+    /// closes all four sites at once and reuses the mount/unmount drain <c>MainUi</c> already
+    /// performs, so nothing new leaks across tests.</summary>
     private static void Clear(Node parent)
     {
         foreach (var child in parent.GetChildren())
         {
             parent.RemoveChild(child);
-            child.Free();
+            PanelGraveyard.Bury(child);
         }
     }
 
