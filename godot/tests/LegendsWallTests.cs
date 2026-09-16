@@ -1058,6 +1058,201 @@ public class LegendsWallTests
         }
     }
 
+    // ── P2-MEMORY-12 (day pages, P2-OQ3): the ticker's own composer, moved into this book ──────
+    // FormatLine itself is exercised exhaustively (every event type it composes, its exclusions,
+    // the same-day dedupe guard) by UnsilencedEventTests.cs — that file's own doc explains why it,
+    // not this one, carries that census. These pin the shape unique to THIS file: the composer
+    // reused verbatim for a handful of representative event families, plus the book's own
+    // day-page navigation (the index row, the page it opens, retention the deleted marquee's
+    // 3-day window never gave).
+
+    private static readonly HeroId DayLogHeroId = new(21);
+    private static readonly HeroId DayLogBuyerId = new(22);
+    private static readonly ItemId DayLogItemId = new(831);
+
+    private static Hero DayLogHero(HeroId id, string name) => new(
+        id, name, "vanguard", Level: 3, MaxHp: 40, Gold: 10,
+        GearSet.Empty, ImmutableList<ItemMemory>.Empty, Alive: true, DeepestFloorReached: 1, DiedOnDay: null);
+
+    private static GameState DayLogWorld(int day, params GameEvent[] events)
+    {
+        var heroes = new[] { DayLogHero(DayLogHeroId, "Torvald"), DayLogHero(DayLogBuyerId, "Sable") }
+            .ToImmutableSortedDictionary(h => h.Id.Value, h => h);
+        var item = new Item(
+            DayLogItemId, "recipe-dagger", "Emberbite", ItemSlot.Weapon, QualityGrade.Fine,
+            new ItemStats(10, 0, 3), new MakersMark("You", 1), ImmutableList<ItemHistoryEntry>.Empty);
+
+        return GameFactory.NewGame(6101) with
+        {
+            Heroes = heroes,
+            Items = ImmutableSortedDictionary<int, Item>.Empty.Add(item.Id.Value, item),
+            EventLog = events.Select((e, i) => e with { Id = new EventId(9100 + i), Day = day }).ToImmutableList(),
+        };
+    }
+
+    [TestCase]
+    public void DayLines_ComposesItemSoldPartyDepartedFloorRecordAndGossip()
+    {
+        var world = DayLogWorld(
+            1,
+            new ItemSold(DayLogItemId, DayLogBuyerId, 42, FromPlayerShop: true),
+            new PartyDeparted(ImmutableList.Create(DayLogHeroId, DayLogBuyerId), TargetFloor: 3),
+            new FloorRecordSet(DayLogHeroId, Floor: 5),
+            new GossipEmitted(new EventId(1), "The forge ran hot all night."));
+
+        var lines = LegendsWall.DayLines(world, 1);
+
+        AssertThat(lines.Count).IsEqual(4);
+        var text = string.Join(" | ", lines);
+        AssertThat(text).Contains("Your Emberbite sold to Sable for 42g.");
+        AssertThat(text).Contains("A party of 2 departs for floor 3.");
+        AssertThat(text).Contains("Torvald sets a new depth record — floor 5.");
+        AssertThat(text).Contains("The forge ran hot all night.");
+    }
+
+    [TestCase]
+    public void ItemSold_RivalShop_RendersRivalWording_NeverImpliesPlayerSold()
+    {
+        var world = DayLogWorld(1, new ItemSold(DayLogItemId, DayLogBuyerId, 42, FromPlayerShop: false));
+
+        var text = string.Join(" | ", LegendsWall.DayLines(world, 1));
+        AssertThat(text).Contains("Rival's Emberbite sold to Sable for 42g.");
+        AssertThat(text).NotContains("Your Emberbite");
+    }
+
+    [TestCase]
+    public void HeroDied_Renders()
+    {
+        var world = DayLogWorld(1, new HeroDied(DayLogHeroId, Floor: 4, Cause: "goblin", WornGear: GearSet.Empty));
+
+        AssertThat(string.Join(" | ", LegendsWall.DayLines(world, 1)))
+            .Contains("Torvald did not return from floor 4.");
+    }
+
+    [TestCase]
+    public void AttributionBeat_Renders_CitingItemAndDetail()
+    {
+        var world = DayLogWorld(
+            1,
+            new AttributionBeatEvent(
+                BeatType.KillingBlow, DayLogItemId, DayLogHeroId, Floor: 2,
+                "Emberbite landed the killing blow on the Cave Rat"));
+
+        var text = string.Join(" | ", LegendsWall.DayLines(world, 1));
+        AssertThat(text).Contains("Home safe: Emberbite");
+        AssertThat(text).Contains("landed the killing blow on the Cave Rat");
+    }
+
+    [TestCase]
+    public void ItemSigned_Renders_ItemNameAndSignedName()
+    {
+        var world = DayLogWorld(1, new ItemSigned(DayLogItemId, "Widowmaker"));
+
+        var text = string.Join(" | ", LegendsWall.DayLines(world, 1));
+        AssertThat(text).Contains("Emberbite");
+        AssertThat(text).Contains("Widowmaker");
+    }
+
+    [TestCase]
+    public void MemorialHonored_Renders_HeroName()
+    {
+        var world = DayLogWorld(1, new MemorialHonored(DayLogHeroId, "Torvald"));
+
+        AssertThat(string.Join(" | ", LegendsWall.DayLines(world, 1))).Contains("Torvald");
+    }
+
+    [TestCase]
+    public void RenderDayLog_ShowsARowForTheDayWithALine_OpensThatDaysPage()
+    {
+        var world = DayLogWorld(1, new ItemSold(DayLogItemId, DayLogBuyerId, 42, FromPlayerShop: true));
+        var ui = MountMainUi();
+        try
+        {
+            ui.Legends.ShowWall(world);
+
+            AssertThat(Find<Button>(ui.Legends, "Day_1"))
+                .OverrideFailureMessage("The book's index has no row for the one day with a composed line.")
+                .IsNotNull();
+
+            PressEnabled(ui.Legends, "Day_1");
+
+            AssertThat(RenderedText(ui.Legends)).Contains("Your Emberbite sold to Sable for 42g.");
+            AssertThat(Find<Button>(ui.Legends, "LegendsWallBack"))
+                .OverrideFailureMessage("The day page has no way back to the book.")
+                .IsNotNull();
+
+            PressEnabled(ui.Legends, "LegendsWallBack");
+            AssertThat(Find<Button>(ui.Legends, "Day_1"))
+                .OverrideFailureMessage("Back did not return to a live index.")
+                .IsNotNull();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>A day whose only event is a deliberate exclusion (<see cref="SupplyDelivered"/>,
+    /// confirmation of the player's own camp action) composes no line and earns no index row —
+    /// unlike a second day in the SAME campaign that has one, proving the absence is about that
+    /// day's own content, not a wall-wide failure.</summary>
+    [TestCase]
+    public void DayWithNoQualifyingEvent_GetsNoRow_UnlikeADayThatHasOne()
+    {
+        var world = GameFactory.NewGame(6102) with
+        {
+            Heroes = ImmutableSortedDictionary<int, Hero>.Empty.Add(DayLogHeroId.Value, DayLogHero(DayLogHeroId, "Torvald")),
+            EventLog = ImmutableList.Create<GameEvent>(
+                new SupplyDelivered(DayLogHeroId, DayLogItemId, Fee: 5) with { Id = new EventId(1), Day = 1 },
+                new RecruitArrived(DayLogHeroId) with { Id = new EventId(2), Day = 2 }),
+        };
+        var ui = MountMainUi();
+        try
+        {
+            ui.Legends.ShowWall(world);
+
+            AssertThat(ui.Legends.FindChild("Day_1", recursive: true, owned: false))
+                .OverrideFailureMessage("SupplyDelivered composes no line; day 1 should have no index row.")
+                .IsNull();
+            AssertThat(Find<Button>(ui.Legends, "Day_2"))
+                .OverrideFailureMessage("RecruitArrived composes a line; day 2 should have a row.")
+                .IsNotNull();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>The empty-state placeholder used to key ONLY on memorials/depths/legend items — a
+    /// campaign with none of those yet but real day-to-day history (a recruit arriving) would have
+    /// shown "No legends yet" over content that genuinely exists. P2-MEMORY-12 folds the day log
+    /// into that same check.</summary>
+    [TestCase]
+    public void CampaignWithOnlyDayLogContent_SkipsTheInvitationalPlaceholder()
+    {
+        var world = DayLogWorld(1, new RecruitArrived(DayLogHeroId));
+        var ui = MountMainUi();
+        try
+        {
+            ui.Legends.ShowWall(world);
+
+            AssertThat(ui.Legends.ShowedEmptyState)
+                .OverrideFailureMessage("Real day-log content exists; the invitational empty state should not show.")
+                .IsFalse();
+            AssertThat(Find<Button>(ui.Legends, "Day_1"))
+                .OverrideFailureMessage("The day log's own row should have rendered on the index.")
+                .IsNotNull();
+
+            PressEnabled(ui.Legends, "Day_1");
+            AssertThat(RenderedText(ui.Legends)).Contains("Torvald has come to town looking for work.");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
     /// <summary>Select an <see cref="OptionButton"/> item by its displayed text (never a
     /// hardcoded index) and emit the same <c>ItemSelected</c> signal a real dropdown pick fires —
     /// mirrors <c>ForgeCraftTests.SelectMaterialByKey</c>'s own idiom for the sibling picker.</summary>

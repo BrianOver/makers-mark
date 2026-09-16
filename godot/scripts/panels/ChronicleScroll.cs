@@ -67,8 +67,8 @@ public partial class ChronicleScroll : SimPanel
     public override void _Input(InputEvent @event) => ModalEscape.TryClose(@event, GetViewport(), Visible, CloseScroll);
 
     /// <summary>
-    /// Advance the staged reveal — called every frame from <c>MainUi._Process</c>, the same way
-    /// <see cref="TabFade.Tick"/> and <see cref="AdventureTicker.Tick"/> are.
+    /// Advance the staged reveal — called every frame from <c>MainUi._Process</c>, the same
+    /// accumulated-delta idiom as <see cref="TabFade.Tick"/> (no engine Tween in this codebase).
     /// </summary>
     public void Tick(double delta)
     {

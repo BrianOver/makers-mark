@@ -315,7 +315,6 @@ public partial class MainUi : Control
     /// its lessons up.</summary>
     public LessonsPanel Lessons { get; private set; } = null!;
     public TabFade TabFade { get; private set; } = null!;
-    public AdventureTicker Ticker { get; private set; } = null!;
 
     /// <summary>U18 (R11/KTD13): the top-right objective chip — <c>ObjectiveAdvisor</c>'s top
     /// pick + reason, expandable to the ranked list.</summary>
@@ -1401,9 +1400,6 @@ public partial class MainUi : Control
         // U21: tick the drawer's accumulated-delta slide (no-op unless a slide is in flight).
         Drawer.Tick(delta);
 
-        // U17: tick the bottom-edge adventure ticker marquee (no-op with no lines yet).
-        Ticker.Tick(delta);
-
         // Tick the ending chronicle's staged line reveal (no-op unless the scroll is open).
         Chronicle.Tick(delta);
 
@@ -1663,11 +1659,6 @@ public partial class MainUi : Control
         // landed in Town2D.MarketLife2D, hosted by the market room and fed every tick from
         // Town2D.Refresh() (called below via RefreshAll), not from this MainUi tick hook.
         SyncCampModal(); // V7a: raise the winch-house slate the moment a party parks at Camp
-
-        // U17: feed this tick's freshly stamped events to the bottom-edge adventure ticker.
-        // EventLog only (Adapter.LastEvents) — never PendingExpeditions — is what keeps it
-        // KTD5-safe by construction (see AdventureTicker's class doc).
-        Ticker.OnPhaseCompleted(completedPhase, completedDay, state, Adapter.LastEvents);
 
         if (completedPhase == DayPhase.Evening)
         {
@@ -2597,8 +2588,8 @@ public partial class MainUi : Control
     /// A four-second strip that tries to say three things says none of them, and this project has
     /// already been burned once by a notification that repeated itself into wallpaper. The quieter
     /// members of this same family (recruits, commissions, the director's incidents) go to the
-    /// <see cref="AdventureTicker"/> instead, where they can scroll past without demanding
-    /// attention.</para>
+    /// book's day pages instead (P2-MEMORY-12; see <see cref="GodotClient.Panels.LegendsWall"/>),
+    /// where they sit permanently without demanding attention.</para>
     /// </summary>
     /// <summary>
     /// The three campaign milestones that earn a voice: the act turn, the climax, and the ending.
@@ -3971,8 +3962,8 @@ public partial class MainUi : Control
         // hide it). NOT a persistent status readout, and never the raw kernel string.
         //
         // P2-SCREEN-11 (reclaim the height): wrapped in a plain (non-Container) Control with a
-        // fixed CustomMinimumSize — the same StatChipsWrap/TimelineWrap/TickerWrap pattern this
-        // method already uses three times, and for the identical reason (see StatChipsWrap's own
+        // fixed CustomMinimumSize — the same StatChipsWrap/TimelineWrap pattern this method
+        // already uses twice, and for the identical reason (see StatChipsWrap's own
         // remark above: a Container's reported minimum is its CONTENT'S, a plain Control's is only
         // ever its own CustomMinimumSize). Unwrapped, ToastBanner reported zero height while hidden
         // and its Label's real height — one line, or two on a long joined-rejection/gate-open
@@ -4013,18 +4004,21 @@ public partial class MainUi : Control
         _toast.AddThemeColorOverride("font_color", GameTheme.RejectionColor);
         _toastBanner.AddChild(_toast);
 
-        // U21/U2: the ExpandFill row between the header and the ticker — claims exactly the
-        // vertical space neither of those two fixed-height rows wants, so the header stays
-        // pinned top and the ticker stays pinned bottom regardless of window height.
+        // U21/U2: the ExpandFill row below the header — claims whatever vertical space the
+        // fixed-height rows above it don't want, so the header stays pinned top and the world
+        // fills the rest regardless of window height. P2-MEMORY-12 (P2-OQ3): this used to split
+        // that remainder with a bottom-edge AdventureTicker row; the ticker is deleted, its jobs
+        // moved to the book's day pages, and nothing replaces its reserved strip — WorldSlot now
+        // simply gets the full remaining height.
         //
         // U2 (shell-and-audio plan, R1/KTD-C): this USED to be a transparent, input-passthrough
         // spacer over a full-rect Town2D mounted behind the whole Layout column — the header
         // painted over the world's top band and MouseFilter.Ignore let clicks fall through to it.
         // Town2D is now this Control's own child, anchored FullRect WITHIN it (below), so
         // WorldSlot no longer needs to pass anything through to a layer behind it — it IS the
-        // world's layout box. Occlusion becomes structural: the header and the ticker each claim
-        // their own row in `layout`, WorldSlot gets whatever height is left over, and Town2D can
-        // never report a rect outside the box its own parent handed it.
+        // world's layout box. Occlusion becomes structural: the header claims its own row in
+        // `layout`, WorldSlot gets whatever height is left over, and Town2D can never report a
+        // rect outside the box its own parent handed it.
         var worldSlot = new Control
         {
             Name = "WorldSlot",
@@ -4069,31 +4063,11 @@ public partial class MainUi : Control
         Progress = new ProgressionPanel(); // U-D4: code-built (no scene deps), like RaidForecastBoard
         Lessons = new LessonsPanel(); // U2 (tutorial-revamp plan): code-built, same idiom as Progress
 
-        // U17 (KTD13): the single bottom-edge HUD line — mounted last in the layout so it sits
-        // below the world gap, the one region KTD13 reserves for it (PiP docks above it; top bar
-        // and the top-right objective chip are untouched by this unit).
-        // Menu-sizing fix (U2, playtest F1): AdventureTicker is a PanelContainer whose Label has
-        // AutowrapMode.Off (deliberate — a scrolling marquee, never wrapped), so its OWN combined
-        // minimum width is the FULL unwrapped width of the joined marquee line — once real events
-        // land (first tick) that can be 2000+px. Added straight into `layout` (a VBoxContainer),
-        // that minimum propagates upward and inflates the WHOLE layout's width past the viewport,
-        // which is what actually pushed Skip/Auto/Pause/1x/Ledger off-screen (not the stat chips —
-        // those are already capped by StatChipsWrap/TimelineWrap above). Same fix as those wraps:
-        // a plain (non-Container) Control cuts the upward minimum-size propagation at exactly this
-        // width (0 — the ticker's real minimum height, 28, still travels up so the world gap keeps
-        // reserving the right vertical space); ClipContents keeps the marquee's own scroll/clip
-        // rendering inside it exactly as before.
-        var tickerWrap = new Control
-        {
-            Name = "TickerWrap",
-            ClipContents = true,
-            CustomMinimumSize = new Vector2(0, 28),
-        };
-        layout.AddChild(tickerWrap);
-        Ticker = new AdventureTicker();
-        Ticker.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-        tickerWrap.AddChild(Ticker);
-        Ticker.Build();
+        // P2-MEMORY-12 (P2-OQ3): the bottom-edge HUD line KTD13 reserved for U17's AdventureTicker
+        // is gone along with the ticker itself — every line it used to compose now lands in the
+        // book's day pages instead (LegendsWall.FormatLine/RenderDayLog), at full retention rather
+        // than a scrolling 3-day window. Nothing replaces the strip; WorldSlot above simply keeps
+        // the height it used to give up to it.
 
         // --- U21: DrawerHost — replaces the TabContainer. A right-anchored ~600px panel that
         // slides over the permanent world; one panel at a time (OpenPanel below REPLACES, never
@@ -4346,7 +4320,7 @@ public partial class MainUi : Control
         // --- U16 (KTD11/KTD13): the scrying mirror (a third same-shaped modal overlay — Camp/
         //     Ledger/Mirror never show at once in practice, but nothing here assumes it) and its
         //     PiP dock, the ONLY new always-on HUD element this unit adds — a small bottom-right
-        //     corner Control, independent of the header/Drawer/Ticker/Objective regions U17/U18
+        //     corner Control, independent of the header/Drawer/Objective regions U17/U18
         //     touch. -----------------------------------------------------------------------
         Mirror = new ScryingMirror { Name = "ScryingMirror" };
         AddChild(Mirror);
