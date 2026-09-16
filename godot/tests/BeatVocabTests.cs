@@ -112,6 +112,90 @@ public class BeatVocabTests
     /// matter which one the sim happened to emit first. This is what makes the sort a real
     /// comparison rather than a stable pass-through of the event log.
     /// </summary>
+    /// <summary>
+    /// The killing blow ranks STRICTLY below every other beat — a tie is as fatal here as an
+    /// inversion, and until this test existed nothing caught one.
+    ///
+    /// <para><see cref="LeadFirst_LeadsWithTheHigherRankedBeat_ForEveryOrderedPair_InEitherEmissionOrder"/>
+    /// skips every pair where <c>Rank(first) &lt;= Rank(second)</c>, so flattening a beat down onto
+    /// <see cref="BeatVocab.KillingBlowRank"/> removes that pair from the sweep instead of failing
+    /// it. Measured: sabotaging <c>LethalSave =&gt; KillingBlowRank</c> passed all seven cases.
+    /// That sabotage is exactly the defect P2-PROOF-15 exists to prevent — KillingBlow is 97.5% of
+    /// all emitted beats and the one beat with no counterfactual second pass, so the moment it can
+    /// TIE the rarest thing that happened, the night can open on it again and the stable sort
+    /// decides by <c>HeroId</c>.</para>
+    /// </summary>
+    [TestCase]
+    public void KillingBlow_RanksStrictlyBelowEveryOtherBeat_SoANightNeverOpensOnIt()
+    {
+        foreach (var beat in Enum.GetValues<BeatType>())
+        {
+            if (beat == BeatType.KillingBlow)
+            {
+                continue;
+            }
+
+            AssertThat(BeatVocab.Rank(beat))
+                .OverrideFailureMessage(
+                    $"{beat} ranks {BeatVocab.Rank(beat)}, the SAME as or below the killing blow " +
+                    $"({BeatVocab.KillingBlowRank}). The killing blow is the commonest beat and the " +
+                    "least evidentiary; anything that ties it can be led past by emission order, so " +
+                    "every other beat must rank strictly above it.")
+                .IsGreater(BeatVocab.KillingBlowRank);
+        }
+    }
+
+    /// <summary>
+    /// Two DIFFERENT beat types that deliberately share a rank (the draught and the shield, both at
+    /// <see cref="BeatVocab.LifeSavedRank"/>) still lead by depth, in either emission order.
+    ///
+    /// <para>The existing equal-rank test sweeps two beats of the SAME type, so a cross-type tie —
+    /// the only kind the rank table actually declares on purpose — went unpinned. Without this, the
+    /// documented promise that "a tie between them falls to depth, never to which mechanism the
+    /// engine happened to check first" was prose, not a test.</para>
+    /// </summary>
+    [TestCase]
+    public void LeadFirst_OnACrossTypeRankTie_LeadsWithTheDeeperFloor_InEitherEmissionOrder()
+    {
+        var family = Enum.GetValues<BeatType>();
+        var checkedAnyPair = false;
+
+        foreach (var first in family)
+        {
+            foreach (var second in family)
+            {
+                if (first.Equals(second) || BeatVocab.Rank(first) != BeatVocab.Rank(second))
+                {
+                    continue;
+                }
+
+                checkedAnyPair = true;
+
+                // `first` is deeper in both arrangements, so only depth can decide the lead.
+                foreach (var emitted in new[]
+                {
+                    ImmutableList.Create(Beat(first, 4, 1), Beat(second, 2, 2)),
+                    ImmutableList.Create(Beat(second, 2, 1), Beat(first, 4, 2)),
+                })
+                {
+                    AssertThat(BeatVocab.LeadFirst(emitted)[0].Beat)
+                        .OverrideFailureMessage(
+                            $"{first} on floor 4 did not lead {second} on floor 2 — the two share " +
+                            $"rank {BeatVocab.Rank(first)}, so depth is what must break the tie, not " +
+                            $"the order the sim emitted them in ({string.Join(", ", emitted.Select(b => b.Beat))})")
+                        .IsEqual(first);
+                }
+            }
+        }
+
+        AssertThat(checkedAnyPair)
+            .OverrideFailureMessage(
+                "No two BeatTypes share a rank any more, so this test swept nothing. If the rank " +
+                "table deliberately dropped its peer tiers that is a real design change — delete " +
+                "this test with it rather than leaving a green test that asserts nothing.")
+            .IsTrue();
+    }
+
     [TestCase]
     public void LeadFirst_LeadsWithTheHigherRankedBeat_ForEveryOrderedPair_InEitherEmissionOrder()
     {
