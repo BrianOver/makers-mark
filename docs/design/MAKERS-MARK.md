@@ -4621,7 +4621,7 @@ name (§11.6 rule 4).
 | ⚑ P2-SCREEN-28 | The capture harness's own usage header stops naming states it does not have | `tools/shoot.ps1` | — | [G] |
 | ⚑ P2-SCREEN-29 | A sized `TextureRect` cannot silently claim its texture's size | `sim/GameSim.Tests/Hygiene/TextureRectExpandModeCensusTests.cs`, `godot/scripts/MainUi.cs`, `godot/scripts/panels/MineWatch.cs`, `godot/scripts/panels/ProvenanceCard.cs`, `godot/scripts/panels/SimPanel.cs`, `godot/scripts/ui/UiKit.cs` | — | [S] |
 | P2-SCREEN-31 | The objective rows fit the tracker's real three-line budget | `godot/scripts/ui/ObjectiveTracker.cs` corpus, `sim/GameSim/Advisor/ObjectiveAdvisor.cs`, `godot/tests/` | — | [G] |
-| P2-SCREEN-32 | The Shop's scene banner goes so Stock clears the fold | `godot/scripts/panels/ShopPanel.cs`, `godot/scripts/ui/UiKit.cs` | — | [G] |
+| P2-SCREEN-32 | The Shop sheds 171px of decoration (Stock still does not clear the fold) | `godot/scripts/panels/ShopPanel.cs`, `godot/scripts/panels/CounterPanel.cs` | — | [G] |
 | P2-SCREEN-33 | The once-ever caption stops reserving its height after it is read | `godot/scripts/panels/DepthsPanel.cs`, `godot/scripts/ui/UiKit.cs` | — | [G] |
 | P2-ONBOARD-09 | The Goodwill chip speaks the band or dies (the beat's own half landed) | `godot/scripts/panels/CounterPanel.cs` | — | [G] |
 | P2-ONBOARD-10 | The seed becomes enterable at New Game | `godot/scripts/NewGameSelect.cs` | — | [G] |
@@ -6582,7 +6582,10 @@ because it is what each ruling was made against:
 
 #### What this round says NOT to build
 
-Recorded so a later session cannot re-propose them as fresh ideas: a verb inside the delve; outcome
+Recorded so a later session cannot re-propose them as fresh ideas: **getting the Shop's Stock row
+above the fold by deleting surfaces** (measured three times in one night, unreachable — Shelf +
+Unshelved + card-to-Stock consume the whole 425px budget alone, so only shortening those or
+reordering the panel can do it, and neither was ordered); a verb inside the delve; outcome
 wagers; a participation counter; the rival's mirror; a scrubbable fight replay (our fight has no
 structure to scrub); medals or MVPs; a patron that changes hero behaviour; more verbs in the dead
 middle; a meta-grind for days 8–18; deeper hero simulation as the attachment fix; fan letters; a
