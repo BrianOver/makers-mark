@@ -4712,7 +4712,6 @@ name (§11.6 rule 4).
 | ⚑ P2-HONEST-24 | The advisor states the stake instead of giving the order (law 1) | `sim/GameSim/Advisor/ObjectiveAdvisor.cs`, `sim/GameSim.Tests/` | — | [S] |
 | ⚑ P2-HONEST-25 | Every ore row names the faction it feeds, not only the tariffed ones | `godot/scripts/panels/TavernPanel.cs`, `godot/scripts/panels/LedgerModal.cs` | — | [G] |
 | ⚑ P2-HONEST-26 | The night's narration is shown or stops being composed | `godot/scripts/panels/LedgerModal.cs`, `sim/GameSim/Drama/ExpeditionNarrator.cs` | — | [G] |
-| ⚑ P2-HONEST-27 | The ore row learns what the morning spent | `godot/scripts/panels/LedgerModal.cs` | — | [G] |
 
 The per-domain counts, the landed/unbuilt split, and which rows carry a Contracts micro-PR, a
 golden re-record or a balance re-baseline are **derived, not stated here**: run
@@ -6499,11 +6498,11 @@ clipping its own label.
   is a tavern station only, so the town has no outdoor memory at all. A wall in the field, one
   lantern lit per fallen hero, `E · Legends` opening the book that already exists.
 
-#### P2-HONEST-27 — link 4 is the weakest link, and why
+#### Link 4's open questions — beat volume, and crediting a save across the fight
 
 A design pass on 2026-09-14 read the five links against the running tree and judged **link 4 the
-weakest as an experience**: the proof engine is sound, and what reaches the screen is not always.
-Two facts, cited in the tree, motivate what remains open below:
+weakest as an experience**. The three fixes it booked have all shipped — P2-PROOF-15/16 in #849,
+P2-HONEST-27 in #854. Two measured facts remain, and they motivate the questions still open:
 
 - **Volume.** The 2026-09-11 sweep: 45,105 beats over 20 seeds × 100 days, **97.5% KillingBlow**,
   median **30 beats a night** and **5 per hero card**, 81.8% of cards carrying exactly five. That is
@@ -6512,18 +6511,10 @@ Two facts, cited in the tree, motivate what remains open below:
   Torvald lives"* is a LethalSave, and LethalSave is **0.87%** of beats, because AE2 only recognises
   a save when one recorded hit alone would have been fatal (`AttributionEngine.cs:101`).
 
-A third finding — crediting a save across the whole fight rather than one blow, which the
+A further finding — crediting a save across the whole fight rather than one blow, which the
 consumable branch already does at `AttributionEngine.cs:241-265` — is `[S][GOLD][BAL]` and is
 **owner-gated**: it moves hero XP through `ExpeditionRevealSystem.cs:253`. It is deliberately not
 booked as a runnable row.
-
-- **P2-HONEST-27.** The client's `BuyOreLegal` (`LedgerModal.cs:960-990`) omits the
-  `ActionSlotsRemaining` guard the sim's mirror ends on (`ActionLegality.cs:508`) and the kernel
-  enforces. Nothing renders `SimAdapter.LastRejections`. So at the one moment decision 4 bites —
-  Torvald's mithril on offer, the budget already spent at the forge — the Buy button is live, the
-  click is silently refused, and law 7's "its cost is named in copy" goes unmet. Same family as #742,
-  where the legality mirror was only ever checked on one of 19 materials. Distinct from `U47`, which
-  teaches the Morning half in `TutorialFlow`; this is the Night half, and it is a lying button.
 
 **Also found, and deliberately not booked here:** decision 5 ("buy the ore or buy the goodwill") has
 no fork for the whole first rung — `FactionRegistry.Deepvein` supplies all five Mine ores, so every
