@@ -25,11 +25,19 @@ namespace GodotClient.Ui;
 /// live <see cref="TutorialFlow"/> reference, so it can be unit-tested with no Godot node in sight.
 /// </para>
 ///
-/// <para><b>On an existing townsfolk body.</b> <see cref="Station"/>'s sprite id is
-/// <c>"town2d-townsfolk-broad"</c> — the SAME id <see cref="TownsfolkNpc2D.ResolveSprite"/> already
-/// resolves for the wandering civilian villagers (already-shipped, already-approved art, the
-/// R14.11 silhouette pass). No new art, no placeholder box: the mentor reuses a body the town
-/// already has, exactly as ruled.</para>
+/// <para><b>U36 (§11, R27): she has her own body now, not a borrowed one.</b> <see cref="Station"/>'s
+/// sprite id is <see cref="SpriteId"/> — <c>"town2d-townsfolk-bryn"</c>, a DEDICATED civilian body
+/// through the same <c>tools/art/gen_town_sprites.py</c> pipeline every other townsfolk id comes
+/// from, but never added to <see cref="TownsfolkNpc2D.CivilianIds"/> so no wandering ambient
+/// villager and no future named character can ever be handed her face. This overrides R14.5's
+/// original "on an existing townsfolk body" ruling (owner-granted 2026-08-24, OQ2): before this
+/// unit she was <c>"town2d-townsfolk-broad"</c>, the exact id <see cref="Town2d.Town2D"/>'s own
+/// <c>BuildRivalSmith</c> hands Corren, the rival smith — the town's teacher and one of its named
+/// plaza faces were, until now, visually the same person. The generated PNG is a separate,
+/// GPU-gated step (one job at a time, ≥14GB free, abort >14GB used/>83°C) and can land after this
+/// spec merges; until it does, <see cref="TownAssets2D.ForStation"/>'s existing loud
+/// magenta-bordered placeholder draws in its place — never a silent blank, and never the old
+/// borrowed body again.</para>
 ///
 /// <para><b>No step gates on her (R14.5's own second clause).</b> <see cref="Station"/>'s <c>Action</c>
 /// is <see langword="null"/> — an honest-flavor station (<see cref="InteriorLayout2D.StationSpec"/>'s
@@ -53,6 +61,30 @@ public static class MentorVoice
     /// cref="InteriorLayout2D.StationSpec.Id"/> and <see cref="Town2D.FindStation"/> use for
     /// every other station.</summary>
     public const string StationId = "mentor";
+
+    /// <summary>
+    /// U36 (§11, R27): her own dedicated world-body id — <c>"town2d-townsfolk-&lt;id&gt;"</c>, the
+    /// same naming family every civilian body in <c>tools/art/gen_town_sprites.py</c> uses, but
+    /// DELIBERATELY absent from <see cref="TownsfolkNpc2D.CivilianIds"/> (the array that array
+    /// alternates wandering ambient villagers through, and that <see cref="Town2d.Town2D"/>'s
+    /// <c>BuildRivalSmith</c>/<c>BuildAssessor</c> index into for Corren/Voss) — so no other
+    /// character, present or future, can ever be handed her face by construction, not by
+    /// convention alone. <c>MentorVoiceTests</c> pins that this differs from every id that array
+    /// actually holds, by enumerating it rather than hand-checking the two names known today.
+    /// </summary>
+    public const string SpriteId = "town2d-townsfolk-bryn";
+
+    /// <summary>
+    /// U36 (§11, R27): her small banner portrait id, generated through the SAME <c>AssetSpec</c> +
+    /// SDXL pipeline every hero class portrait uses (<c>art/specs/town/MentorSpecs.cs</c>,
+    /// <c>AssetKind.Portrait</c> — the hero-portrait precedent, not a class figure: she is one
+    /// fixed person, never tinted by a class colour). Resolved the same null-tolerant way every
+    /// other portrait in this project is (<see cref="UiKit.PortraitFrame"/>/<see
+    /// cref="UiKit.ArtRect"/>), so a checkout with no generated pixels yet still shows a loud,
+    /// captioned placeholder rather than a silent gap — never a second resolution ladder invented
+    /// just for her.
+    /// </summary>
+    public const string PortraitId = "mentor-bryn";
 
     /// <summary>Her station's on-screen label (the "E · {Label}" prompt is never shown for her —
     /// flavor stations render <see cref="HoverLine"/> instead — but the label still names her on the
@@ -100,7 +132,7 @@ public static class MentorVoice
     public static readonly InteriorLayout2D.StationSpec Station = new(
         StationId,
         Label,
-        "town2d-townsfolk-broad", // existing, already-shipped civilian body — class doc's "on an existing townsfolk body"
+        SpriteId, // U36 (R27): her own dedicated body — class doc's "she has her own body now"
         new Vector2I(12, 4),
         Action: null,
         HoverLine: HoverLine,

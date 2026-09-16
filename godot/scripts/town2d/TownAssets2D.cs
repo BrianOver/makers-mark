@@ -213,6 +213,16 @@ public static class TownAssets2D
         ["town2d-station-quench"] = (new Vector2(24, 14), new Color(0.20f, 0.32f, 0.38f)),
         ["town2d-station-shelf"] = (new Vector2(28, 32), new Color(0.38f, 0.30f, 0.20f)),
         ["town2d-station-rack"] = (new Vector2(28, 32), new Color(0.34f, 0.26f, 0.30f)),
+
+        // U36 (§11, R27): Bryn's own dedicated body (Ui.MentorVoice.SpriteId — a literal here,
+        // like every sibling key above, rather than a cross-namespace reference from this generic
+        // resolver into one specific NPC's identity class). Sized 40x64, the exact canvas every
+        // town2d-hero-*/town2d-townsfolk-* civilian body shares (tools/art/gen_town_sprites.py's
+        // WIDTH/HEIGHT), so the loud placeholder below occupies the SAME footprint her real,
+        // GPU-gated art will once it lands — no geometry shift the day it does. Distinct rose-plum
+        // tint so she reads apart from every furniture placeholder sharing this room while art is
+        // still owed.
+        ["town2d-townsfolk-bryn"] = (new Vector2(40, 64), new Color(0.46f, 0.30f, 0.34f)),
     };
 
     private static readonly Vector2 DefaultStationSize = new(24, 24);
