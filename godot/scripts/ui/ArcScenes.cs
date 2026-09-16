@@ -48,6 +48,13 @@ namespace GodotClient.Ui;
 /// one authored so far. A scene that belongs to whichever of the six living heroes earned it (the
 /// commendation) carries its hero's id directly instead, so <c>ArcHero</c> never has to guess from
 /// a name. Null for every authored, name-resolved scene — the common case, unchanged.</param>
+/// <param name="DeathTrigger">P2-PEOPLE-02: declares that this scene's trigger involves a death —
+/// the register gate's third rule reads this to find the scenes it must hold to a higher bar
+/// (<see cref="SceneRegister.DeathScenePunchlines"/>). An authored flag, not a derivation: today's
+/// corpus has no event-sourced "hero died" world fact for the gate to read (the Wake is
+/// <c>P2-PEOPLE-05..07</c>, unbuilt), so a scene about a death — "Floor three" narrates Halvar's —
+/// says so itself, the same way <see cref="ExplicitHero"/> says who a scene belongs to rather than
+/// making the engine guess. Defaults false, so silence is never mistaken for a stated fact.</param>
 public sealed record ArcScene(
     string Id,
     string HeroName,
@@ -58,7 +65,8 @@ public sealed record ArcScene(
     ImmutableArray<string> Requires,
     ImmutableArray<string> Grants,
     Func<GameState, Hero, string?>? Slot = null,
-    HeroId? ExplicitHero = null)
+    HeroId? ExplicitHero = null,
+    bool DeathTrigger = false)
 {
     /// <summary>The scene's paragraphs with its <c>{item}</c> slot filled from live state. Called
     /// only for a scene that is already eligible, so the slot resolves by construction; a slot that
@@ -349,7 +357,8 @@ public static class ArcScenes
             CloseVerb: "Sit with him a while.",
             Requires: [TorvaldWeighedYourWork, TorvaldWalkedFloorThree],
             Grants: [HalvarsFloor],
-            Slot: null),
+            Slot: null,
+            DeathTrigger: true),
 
         // ── Torvald 3: The trade ────────────────────────────────────────────────────────────
         // The arc's first payoff and its next hook. Every clause stages something the sim already

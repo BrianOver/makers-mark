@@ -403,7 +403,8 @@ public class ArcScenesTests
         }
     }
 
-    // ── the register gate's seed check (the full gate is P2-PEOPLE-02) ──────────────────────
+    // ── the register gate (P2-PEOPLE-01's jargon seed + P2-PEOPLE-02's taxonomy and punchline
+    // rules) ─────────────────────────────────────────────────────────────────────────────────
 
     [TestCase]
     public void APlantedEngineWord_FailsTheRegisterSeedCheck()
@@ -432,6 +433,154 @@ public class ArcScenesTests
 
         AssertThat(violations)
             .OverrideFailureMessage("Engine words reached authored scene prose:\n  " + string.Join("\n  ", violations))
+            .IsEmpty();
+    }
+
+    // ── P2-PEOPLE-02, rule 2: trigger-id taxonomy ───────────────────────────────────────────
+
+    [TestCase]
+    public void EveryShippedTriggerId_ConformsToTheTaxonomy()
+    {
+        var violations = SceneRegister.TriggerIdViolations(ArcScenes.Registry)
+            .Select(v => $"{v.SceneId}: \"{v.TriggerId}\" ({v.Reason})")
+            .ToList();
+
+        AssertThat(violations)
+            .OverrideFailureMessage("A shipped id failed the trigger taxonomy:\n  " + string.Join("\n  ", violations))
+            .IsEmpty();
+    }
+
+    [TestCase]
+    public void APlantedUnknownTrigger_FailsTheTaxonomyCheck()
+    {
+        // "torvald-walkd-floor-three" -- a plausible typo of the real world fact -- names nothing
+        // ArcScenes.WorldFacts or any scene's Grants ever declares. FactHolds would silently read it
+        // as "not yet true" forever; the taxonomy check is what turns that silence into a red build.
+        var planted = Scene("torvald-the-weigh") with
+        {
+            Id = "planted-unknown-trigger",
+            Requires = ImmutableArray.Create("torvald-walkd-floor-three"),
+        };
+
+        var violations = SceneRegister.TriggerIdViolations([planted]).ToList();
+
+        AssertThat(violations.Count)
+            .OverrideFailureMessage(
+                "The taxonomy check did not catch a trigger id that names no known world or arc fact.")
+            .IsEqual(1);
+        AssertThat(violations[0].TriggerId).IsEqual("torvald-walkd-floor-three");
+        AssertThat(violations[0].Reason).Contains("neither a known world fact nor granted");
+    }
+
+    [TestCase]
+    public void APlantedShapeViolation_FailsTheTaxonomyCheck()
+    {
+        // camelCase and an underscore both name a REAL, known fact -- the taxonomy still rejects
+        // them, because a membership check alone would pass an id that reads as free-form to a human
+        // editing the corpus even when it happens to resolve.
+        var camelCase = Scene("torvald-the-weigh") with
+        {
+            Id = "planted-camel-case",
+            Requires = ImmutableArray.Create("TorvaldCarriesYourMark"),
+        };
+        var underscored = Scene("torvald-floor-three") with
+        {
+            Id = "planted_with_underscore",
+            Requires = ImmutableArray<string>.Empty,
+        };
+
+        var violations = SceneRegister.TriggerIdViolations([camelCase, underscored]).ToList();
+
+        AssertThat(violations.Any(v =>
+                v.SceneId == "planted-camel-case" && v.Reason.Contains("hyphen-case")))
+            .OverrideFailureMessage("The taxonomy check did not catch a camelCase trigger id.")
+            .IsTrue();
+        AssertThat(violations.Any(v =>
+                v.SceneId == "planted_with_underscore" && v.TriggerId == "planted_with_underscore"
+                && v.Reason.Contains("scene id")))
+            .OverrideFailureMessage("The taxonomy check did not catch an underscored scene id.")
+            .IsTrue();
+    }
+
+    // ── P2-PEOPLE-02, rule 3: no punchline on a death scene ─────────────────────────────────
+
+    [TestCase]
+    public void EveryShippedDeathScene_EndsWithoutAPunchline()
+    {
+        var deathScenes = ArcScenes.Registry.Where(scene => scene.DeathTrigger).ToList();
+
+        // Non-vacuity of the FIXTURE, not the rule: if nothing in the shipped corpus ever declares
+        // DeathTrigger, the assertion below would pass for having nothing to check rather than for
+        // having checked something. "Floor three" narrates Halvar's death and must be one of these.
+        AssertThat(deathScenes.Select(s => s.Id).ToList())
+            .OverrideFailureMessage("No shipped scene declares DeathTrigger -- the corpus-side half of this rule has nothing to check.")
+            .Contains("torvald-floor-three");
+
+        var punchlines = SceneRegister.DeathScenePunchlines(ArcScenes.Registry)
+            .Select(v => $"{v.SceneId}: {v.ClosingLine}")
+            .ToList();
+
+        AssertThat(punchlines)
+            .OverrideFailureMessage("A death scene ends on a punchline:\n  " + string.Join("\n  ", punchlines))
+            .IsEmpty();
+    }
+
+    [TestCase]
+    public void APlantedJoke_ClosingADeathScene_FailsThePunchlineCheck()
+    {
+        // Halvar's death, played for a laugh -- exactly the register violation the rule exists to
+        // stop before a human is the first one to read it.
+        var planted = Scene("torvald-floor-three") with
+        {
+            Id = "planted-punchline",
+            Lines = ImmutableArray.Create(
+                "Torvald is at the bar before you get there.",
+                "\"Well,\" he says, cracking a grin, \"at least he can't complain about my singing "
+                    + "anymore!\""),
+        };
+
+        var violations = SceneRegister.DeathScenePunchlines([planted]).ToList();
+
+        AssertThat(violations.Count)
+            .OverrideFailureMessage("The punchline check did not catch a joke closing a death scene.")
+            .IsEqual(1);
+        AssertThat(violations[0].ClosingLine).Contains("singing");
+    }
+
+    [TestCase]
+    public void APlantedRimshot_ClosingADeathScene_FailsThePunchlineCheck()
+    {
+        // No comedic tell-phrase at all -- just a short, punchy line landing on an exclamation mark,
+        // the cadence of a delivered tag rather than a held sentence.
+        var planted = Scene("torvald-floor-three") with
+        {
+            Id = "planted-rimshot",
+            Lines = ImmutableArray.Create(
+                "Torvald is at the bar before you get there.",
+                "\"Three's the charm!\""),
+        };
+
+        var violations = SceneRegister.DeathScenePunchlines([planted]).ToList();
+
+        AssertThat(violations.Count)
+            .OverrideFailureMessage("The punchline check did not catch a rimshot-cadence closing line.")
+            .IsEqual(1);
+    }
+
+    [TestCase]
+    public void ASoberClosingLine_OnANonDeathScene_NeverTrips_EvenIfItWouldFailAsADeathScene()
+    {
+        // The rule's actual scope: DeathTrigger, not content-sniffing. A scene that is NOT flagged
+        // as a death trigger is never held to this bar at all, however its own last line reads.
+        var notADeathScene = Scene("torvald-the-weigh") with
+        {
+            Id = "planted-non-death-joke",
+            DeathTrigger = false,
+            Lines = ImmutableArray.Create("\"Ba dum tss,\" he says, and winks."),
+        };
+
+        AssertThat(SceneRegister.DeathScenePunchlines([notADeathScene]).ToList())
+            .OverrideFailureMessage("The punchline rule fired on a scene that never declared DeathTrigger.")
             .IsEmpty();
     }
 
