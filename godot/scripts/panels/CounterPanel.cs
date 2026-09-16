@@ -172,10 +172,42 @@ public partial class CounterPanel : SimPanel
         _ => "some gear",
     };
 
+    /// <summary>
+    /// Owner ruling 2026-09-15 ("cut both — the banner AND the counter's closed-state body"):
+    /// this used to render the "counter is quiet" label and the Open Counter button straight into
+    /// <see cref="_body"/>, ~130px measured, sitting above <c>ShopPanel</c>'s Shelf/Unshelved
+    /// sections — which by themselves already consume the Shop's whole 425px fold (measured,
+    /// correcting the design doc's own "425 exactly" arithmetic, which had left no room for this
+    /// body at ANY size). Folded the same way <c>ForgePanel</c> folds "What This Needs": collapsed
+    /// by default, one press of "More" away.
+    ///
+    /// <para>Unlike that precedent the verb does NOT live in the disclosure header. A closed
+    /// counter has no customer waiting and nothing at stake while it stays shut — folding it costs
+    /// no player a decision they can no longer see the shape of (laws 3/7 are about a VERB's own
+    /// cost, not a resting surface) — so the whole body, button included, is one deliberate click
+    /// away rather than free-standing. Decision 2 ("price for the sale or the relationship") stays
+    /// reachable, it is just no longer parked open in the Shop.</para>
+    /// </summary>
     private void BuildClosedState(GameState state)
     {
-        AddLabel(_body!, "The counter is quiet — open it to serve this morning's customers.");
-        var open = AddButton(_body!, "OpenCounter", "Open Counter", Verdict.Ok, () =>
+        var section = UiKit.Disclosure("Counter Closed");
+        _body!.AddChild(section.Root);
+        section.Summary.Text = state.Phase == DayPhase.Morning
+            ? "open it to serve today's customers"
+            : "opens in the Morning";
+        // SimPanel._GetMinimumSize's own documented hazard, retriggered: CounterPanel is a plain
+        // Control nested as a SIBLING of ShopPanel's Shelf/Unshelved sections inside a
+        // VBoxContainer, and a plain Control is never told when a child's minimum size changes.
+        // The toggle flips section.Body.Visible internally (UiKit.Disclosure's own handler, wired
+        // before this one), which changes CounterPanel's OWN combined minimum height — without
+        // this nudge the enclosing VBox keeps reserving the COLLAPSED height, so "Open Counter"
+        // renders past CounterPanel's old boundary and the shelf sections below swallow its
+        // clicks. The exact historical bug this override exists for (see SimPanel.cs), retriggered
+        // by a toggle instead of a Refresh.
+        section.Toggle.Toggled += _ => UpdateMinimumSize();
+
+        AddLabel(section.Body, "The counter is quiet — open it to serve this morning's customers.");
+        var open = AddButton(section.Body, "OpenCounter", "Open Counter", Verdict.Ok, () =>
         {
             var action = new OpenCounterAction();
             Adapter!.Queue(action);

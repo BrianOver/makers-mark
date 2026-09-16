@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using System.Text.RegularExpressions;
+using GameSim.Chronicle;
 using GameSim.Contracts;
 using GameSim.Factions;
 using GameSim.Factions.Wardens;
@@ -561,95 +562,57 @@ public class UnsilencedEventTests
         AssertThat(lines.Count).IsEqual(0);
     }
 
-    // ── the ending chronicle ────────────────────────────────────────────────────────────────────
+    // ── the campaign's ending (P2-MEMORY-14: ChronicleScroll deleted; LegendsWall.ShowBindPage is
+    // now the reader for CampaignEnded — its own class doc) ────────────────────────────────────────
 
+    /// <summary>The property this suite exists to prove, aimed at today's reader: a campaign ending
+    /// must still produce player-visible text, never a blank page. <see cref="ChronicleComposer"/>'s
+    /// own predicate logic is pinned at the sim layer (<c>ChronicleComposerTests</c>); this only
+    /// proves the Godot reader actually renders what that pure function returns — the exact gap this
+    /// suite's own class doc says a real audit once found (a tallied event with no reader at all).</summary>
     [TestCase]
-    public void Chronicle_RendersTheEventsOwnTallies_NotDerivedState()
+    public void CampaignEnding_OpensTheBook_ToPlayerVisibleChronicleText()
     {
-        var scroll = new ChronicleScroll();
+        var ui = MountMainUi();
         try
         {
-            var ending = new CampaignEnded(
-                DeepestFloorReached: 9,
-                MemorialCount: 2,
-                HonoredMemorialCount: 1,
-                AttributionBeatCount: 14,
-                GossipHighlightCount: 6,
-                LegendaryHeroCount: 1);
+            var world = GameFactory.NewGame(9420);
 
-            scroll.ShowFor(ending);
+            ui.Legends.ShowBindPage(world);
 
-            AssertThat(scroll.Visible).IsTrue();
-            AssertThat(scroll.Shown).IsEqual(ending);
-
-            // Every line starts hidden — the reveal is staged, so nothing is visible at t=0.
-            AssertThat(scroll.RevealedCount).IsEqual(0);
-
-            // Enough elapsed time to clear the title hold plus every line.
-            for (var i = 0; i < 40; i++)
-            {
-                scroll.Tick(0.2);
-            }
-
-            AssertThat(scroll.RevealedCount).IsGreater(6); // 6 tallies (memorials > 0 adds one) + closer
+            AssertThat(ui.Legends.Visible)
+                .OverrideFailureMessage("setup check: ShowBindPage must open the book.")
+                .IsTrue();
+            AssertThat(RenderedText(ui.Legends))
+                .OverrideFailureMessage("A campaign ending produced no player-visible chronicle text.")
+                .Contains(ChronicleComposer.Closer);
         }
         finally
         {
-            scroll.Free();
+            Unmount(ui);
         }
     }
 
-    /// <summary>
-    /// A clean run — nobody died — must still read as an achievement rather than a blank row, and
-    /// the "of those, honored" line must not appear when there are no memorials to honor.
-    /// </summary>
+    /// <summary>P2-OQ4's own second constraint on the bind: stamped with the day it was composed,
+    /// because the world stays open after binding and an undated page would read as more final than
+    /// it is.</summary>
     [TestCase]
-    public void Chronicle_ZeroLossRun_ReadsAsEarned_AndSkipsTheHonoredLine()
+    public void CampaignEnding_StampsTheDayItWasComposed()
     {
-        var scroll = new ChronicleScroll();
+        var ui = MountMainUi();
         try
         {
-            scroll.ShowFor(new CampaignEnded(
-                DeepestFloorReached: 4,
-                MemorialCount: 0,
-                HonoredMemorialCount: 0,
-                AttributionBeatCount: 0,
-                GossipHighlightCount: 0,
-                LegendaryHeroCount: 0));
+            var world = GameFactory.NewGame(9421) with { Day = 12 };
 
-            for (var i = 0; i < 40; i++)
-            {
-                scroll.Tick(0.2);
-            }
+            ui.Legends.ShowBindPage(world);
 
-            var text = VisibleText(scroll);
-            AssertThat(text).Contains("every one of them came home");
-            AssertThat(text).NotContains("farewell rite");
-            AssertThat(text).Contains("The forge is still warm.");
+            AssertThat(RenderedText(ui.Legends))
+                .OverrideFailureMessage("The bind page must name the day it was composed (P2-OQ4).")
+                .Contains("day 12");
         }
         finally
         {
-            scroll.Free();
-        }
-    }
-
-    private static string VisibleText(ChronicleScroll scroll)
-    {
-        var sb = new System.Text.StringBuilder();
-        Walk(scroll, sb);
-        return sb.ToString();
-
-        static void Walk(Godot.Node node, System.Text.StringBuilder sb)
-        {
-            foreach (var child in node.GetChildren())
-            {
-                if (child is Godot.Label label)
-                {
-                    sb.Append(label.Text).Append(' ');
-                }
-
-                Walk(child, sb);
-            }
+            Unmount(ui);
         }
     }
 
