@@ -49,6 +49,45 @@ $ErrorActionPreference = "Stop"
 $repo = (git rev-parse --show-toplevel)
 $godot = Join-Path $repo "godot"
 
+# ---- rebuild BEFORE anything renders ---------------------------------------------------------
+# `godot/.godot/mono/temp/bin/**/GodotClient.dll` is gitignored (.gitignore:7-8) and NOTHING
+# rebuilds it on a `git checkout`/`git fetch` -- only an explicit `dotnet build` or an editor
+# build does. This script launches the Godot binary directly against the project path, so without
+# this step it renders whatever assembly was compiled last, which may predate the commit stamped
+# below by any number of changes.
+#
+# That is not hypothetical and it is not new. receipt.ps1's own header records a before/after pair
+# that came back byte-identical because both shots ran the same stale DLL -- and it closed the hole
+# by rebuilding inside ITS ceremony, leaving this script (documented and used standalone, not only
+# as receipt.ps1's child) still able to fail exactly the same way. P2-SCREEN-02 then taught this
+# script to stamp branch@sha into the rendered frame, which made the failure MODE WORSE rather than
+# better: the watermark began vouching for a commit the running binary need not contain.
+#
+# Measured 2026-09-15: a capture of `main @ d8f401ef` carried "receipt: HEAD@d8f401ef | clean" in
+# its own pixels while rendering pre-fix IL. The frame was read as proof that a merged fix had not
+# worked, and cost a full investigation that ended in "both numbers are identical, there is no bug."
+# The shared root's DLL at that moment was 31 commits behind the sha its captures were stamping.
+#
+# So the build happens HERE, before the stamp, and a build that does not compile refuses to capture.
+# The stamp is then true by construction rather than by convention. There is deliberately no
+# -SkipBuild escape hatch: an incremental no-op build costs about a second, and the entire point is
+# that the unsafe door stops existing -- a safe wrapper beside an unsafe tool is what failed twice.
+Write-Host "==== building godot/GodotClient.csproj (stale-DLL guard) ====" -ForegroundColor Cyan
+dotnet build (Join-Path $godot "GodotClient.csproj") --nologo -v q
+if ($LASTEXITCODE -ne 0) {
+    Write-Host ""
+    Write-Host "BUILD FAILED -- refusing to capture. A frame rendered from the last assembly that" -ForegroundColor Red
+    Write-Host "happened to compile is not a picture of this commit, and the watermark stamped below" -ForegroundColor Red
+    Write-Host "would claim it was. See this block's comment for the incident that bought this check." -ForegroundColor Red
+    exit 1
+}
+# Report the assembly's own timestamp: if the build above was a no-op because nothing changed, this
+# line is what tells a reader the binary is genuinely current rather than merely unrebuilt.
+$clientDll = Join-Path $godot ".godot\mono\temp\bin\Debug\GodotClient.dll"
+if (Test-Path $clientDll) {
+    Write-Host ("client assembly: {0:yyyy-MM-dd HH:mm:ss}" -f (Get-Item $clientDll).LastWriteTime) -ForegroundColor DarkGray
+}
+
 # P2-SCREEN-02: stamp godot/assets/build_info.txt with the running branch@sha BEFORE rendering,
 # the same way receipt.ps1 does (shared code, tools/stamp-build-info.ps1 -- see its header). This
 # script did not stamp at all before: a shoot.ps1-only capture (its own documented standalone
