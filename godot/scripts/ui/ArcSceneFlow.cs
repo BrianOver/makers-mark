@@ -193,15 +193,18 @@ public static class ArcSceneFlow
 }
 
 /// <summary>
-/// The register gate's seed check (P2-PEOPLE-01's half; the full mechanical gate is
-/// <c>P2-PEOPLE-02</c>).
+/// The register gate: three rules over the same authored corpus, so a hero's voice stays a hero's
+/// voice. P2-PEOPLE-01 shipped the first (the jargon seed, below); P2-PEOPLE-02 adds the other two —
+/// <see cref="TriggerIdViolations"/> and <see cref="DeathScenePunchlines"/> — as properties over
+/// <see cref="ArcScenes.Registry"/> rather than three separate inventions, so growing the corpus
+/// grows what all three see for free.
 ///
-/// <para>A hero at a bar does not say "buff", "roll" or "tier". The text census's own jargon
-/// judgements (J1–J12) are the record of how that gets in — a developer's word reaches a player's
-/// screen through a template nobody re-read — so the banned list is seeded straight from them
-/// rather than invented here. This check runs over the authored corpus verbatim, template braces
-/// and all, because that is the artifact a writer edits; a render-time check would only see the
-/// lines a fixture happened to reach.</para>
+/// <para><b>Rule 1 — no engine words.</b> A hero at a bar does not say "buff", "roll" or "tier". The
+/// text census's own jargon judgements (J1–J12) are the record of how that gets in — a developer's
+/// word reaches a player's screen through a template nobody re-read — so the banned list is seeded
+/// straight from them rather than invented here. This check runs over the authored corpus verbatim,
+/// template braces and all, because that is the artifact a writer edits; a render-time check would
+/// only see the lines a fixture happened to reach.</para>
 ///
 /// <para>Deliberately not softened for a false positive: the fix for a legitimate word caught here
 /// is to write a different sentence. Scene prose is the one place in this game where nobody has to
@@ -269,4 +272,144 @@ public static class SceneRegister
             }
         }
     }
+
+    // ── Rule 2: trigger-id taxonomy ("the prerequisite is the trigger" — ArcScenesTests' own name
+    // for it) ────────────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>Every id in this domain — a scene's own <see cref="ArcScene.Id"/>, and every fact id
+    /// it names in <see cref="ArcScene.Requires"/> and <see cref="ArcScene.Grants"/> — is lowercase,
+    /// hyphen-separated words, no digits leading a segment: <c>torvald-the-weigh</c>,
+    /// <c>halvars-floor</c>. This is the shape half of "conforms to the taxonomy rather than a
+    /// free-form string" — a membership check alone would pass an id that happens to collide by
+    /// accident (a stray capital, a copy-pasted trailing space) while still reading as free-form to
+    /// a human editing the corpus.</summary>
+    public static readonly Regex TriggerIdShape =
+        new(@"^[a-z][a-z0-9]*(-[a-z0-9]+)*$", RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// Trigger-id taxonomy validation (P2-PEOPLE-02, rule 2 of 3).
+    ///
+    /// <para><b>What "the taxonomy" is.</b> Every <see cref="ArcScene.Requires"/> id must be a fact
+    /// this build can actually make true: a key of <see cref="ArcScenes.WorldFacts"/> (a pure read of
+    /// a recorded event — "all true recorded events", the plan's own words for the trigger family) or
+    /// a <see cref="ArcScene.Grants"/> id some scene in the SAME registry declares (an arc fact, true
+    /// once its own scene has been shown — see <see cref="ArcScenes.FactHolds"/>, which resolves a
+    /// fact id exactly this way). The taxonomy is <i>discovered</i>, never hand-listed: it is the
+    /// union of those two sources read off the registry handed in, so growing the corpus grows the
+    /// taxonomy for free and this method never needs a second edit when a scene is added.</para>
+    ///
+    /// <para><b>Why membership matters.</b> A <see cref="ArcScene.Requires"/> id that names neither is
+    /// a free-form string: <see cref="ArcScenes.FactHolds"/> falls through to
+    /// <c>ArcSceneFlow.ArcFactRevealed</c>, which simply reports "not revealed" for an id nothing ever
+    /// grants — so a typo'd requirement doesn't throw, doesn't log, and doesn't offer. It sits in the
+    /// corpus as dead content forever, with nothing on screen or in a test to say why. That is exactly
+    /// the failure class a lint exists to catch before a human ever plays it.</para>
+    ///
+    /// <para><b>Scope, stated plainly.</b> This checks the closure <see cref="ArcScenes.Registry"/>
+    /// itself declares (world facts ∪ granted arc facts) plus id shape. It is not, and cannot yet be,
+    /// a check against the plan's eventual 15-type trigger taxonomy for the full ~150-scene corpus
+    /// (§11 P2-PEOPLE) — today's shipped engine has exactly 3 world facts and no formal trigger-kind
+    /// enum anywhere in the code. A future unit that introduces one should extend this method rather
+    /// than add a second gate beside it.</para>
+    /// </summary>
+    public static IEnumerable<(string SceneId, string TriggerId, string Reason)> TriggerIdViolations(
+        IEnumerable<ArcScene> registry)
+    {
+        var scenes = registry as IReadOnlyCollection<ArcScene> ?? registry.ToImmutableArray();
+        var known = ArcScenes.WorldFacts.Keys
+            .Concat(scenes.SelectMany(scene => scene.Grants))
+            .ToImmutableHashSet(StringComparer.Ordinal);
+
+        foreach (var scene in scenes)
+        {
+            if (!TriggerIdShape.IsMatch(scene.Id))
+            {
+                yield return (scene.Id, scene.Id, "scene id is not lowercase hyphen-case");
+            }
+
+            foreach (var grant in scene.Grants)
+            {
+                if (!TriggerIdShape.IsMatch(grant))
+                {
+                    yield return (scene.Id, grant, "granted fact id is not lowercase hyphen-case");
+                }
+            }
+
+            foreach (var trigger in scene.Requires)
+            {
+                if (!TriggerIdShape.IsMatch(trigger))
+                {
+                    yield return (scene.Id, trigger, "trigger id is not lowercase hyphen-case");
+                }
+                else if (!known.Contains(trigger))
+                {
+                    yield return (scene.Id, trigger,
+                        "trigger id is neither a known world fact nor granted by any scene in this registry");
+                }
+            }
+        }
+    }
+
+    // ── Rule 3: no punchline on a scene whose trigger involves a death ─────────────────────────
+
+    /// <summary>Structural tells for a punchline, checked ONLY against a scene's closing line — never
+    /// the body — because comedy here is a question of placement (the beat right before the button),
+    /// not vocabulary. Two independent tells, deliberately not a banned-words list:
+    /// <list type="bullet">
+    /// <item>a comedic turn — an explicit walk-back, a wink, a stated laugh — wherever it falls in the
+    /// line;</item>
+    /// <item>a rimshot cadence — a short (≤8-word) line landing on an exclamation mark, the shape of a
+    /// delivered tag rather than a held sentence. Grief and awe read on the page as a longer sentence,
+    /// a trailed-off one, or silence — not as a quick punchy bark.</item>
+    /// </list>
+    /// <b>Scope, stated plainly.</b> This is a floor, not a reader: it catches an explicit comedic
+    /// marker or a rimshot-shaped line, and nothing subtler — dry irony, a joke with no tell-word, or
+    /// a punchline disguised as a heartfelt line all pass it clean. It does not replace the human read
+    /// every batch still gets before it freezes (11.7.6's curate step); it only guarantees the human
+    /// is never the FIRST reader of an obvious one.</summary>
+    public static readonly Regex ComedicTurn = new(
+        @"(just kidding|only kidding|kidding aside|or so (he|she|they) claims?|ba+\s?dum\s?tss|" +
+        @"get it\?|who'?s laughing now|joke'?s on (you|him|her|me|us)|cue the laugh|nudge nudge|" +
+        @"wink(s|ed|ing)?( at you)?|crack(s|ed|ing)? a (grin|smile)|snickers?|chuckles?)",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    /// <summary>Whether a scene's closing line reads as a punchline — see <see cref="ComedicTurn"/>
+    /// for what "reads as" means and what it deliberately does not catch.</summary>
+    public static bool ReadsAsPunchline(string closingLine)
+    {
+        if (string.IsNullOrWhiteSpace(closingLine))
+        {
+            return false;
+        }
+
+        var trimmed = closingLine.TrimEnd();
+        if (ComedicTurn.IsMatch(trimmed))
+        {
+            return true;
+        }
+
+        if (!trimmed.EndsWith('!') && !trimmed.EndsWith("!\"", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var wordCount = trimmed.Split(
+            [' ', '\t'], StringSplitOptions.RemoveEmptyEntries).Length;
+        return wordCount <= 8;
+    }
+
+    /// <summary>
+    /// No-punchline-on-death validation (P2-PEOPLE-02, rule 3 of 3). Filters
+    /// <paramref name="registry"/> to scenes declaring <see cref="ArcScene.DeathTrigger"/> — an
+    /// enumerated property of the registry, never a hand-listed scene id — and flags any whose last
+    /// paragraph <see cref="ReadsAsPunchline"/>. Empty <see cref="ArcScene.Lines"/> yields nothing:
+    /// that is <see cref="ArcScenesTests.EveryShippedScene_HasWordsInEverySlotAPlayerReads"/>'s
+    /// failure to catch, not this one's.
+    /// </summary>
+    public static IEnumerable<(string SceneId, string ClosingLine)> DeathScenePunchlines(
+        IEnumerable<ArcScene> registry) =>
+        registry
+            .Where(scene => scene.DeathTrigger && scene.Lines.Length > 0)
+            .Select(scene => (scene.Id, Closing: scene.Lines[^1]))
+            .Where(row => ReadsAsPunchline(row.Closing));
 }

@@ -4628,8 +4628,6 @@ name (§11.6 rule 4).
 | ⚑ P2-PROOF-11 | Legible defeat — the death names its margin (research M4) | `godot/scripts/panels/LedgerModal.cs`, `sim/GameSim/Expedition/TellingQuery.cs` (read-only) | — | [G] |
 | ⚑ P2-PROOF-13 | The maker names the signed work — the glossary's own sentence becomes true | `sim/GameSim/Contracts/Actions.cs`, `sim/GameSim/Crafting/CraftingHandlers.cs`, `godot/scripts/panels/ForgePanel.cs` | P4 | [S][C] |
 | ⚑ P2-PROOF-14 | The counterfactual reaches the ledger — the beat carries its own arithmetic | `sim/GameSim/Expedition/AttributionEngine.cs`, `godot/scripts/panels/LedgerModal.cs` | — | [S][GOLD] |
-| ⚑ P2-PROOF-15 | The night opens on the beat that proves the most | `godot/scripts/ui/BeatVocab.cs`, `godot/scripts/panels/LedgerModal.cs` | — | [G] |
-| ⚑ P2-PROOF-16 | The beat remembers the hand that made it | `godot/scripts/panels/LedgerModal.cs` | — | [G] |
 | P2-MEMORY-02 | The death card reads the pack and the last blow | `godot/scripts/panels/LedgerModal.cs` | — | [G] |
 | P2-MEMORY-05 | The Signed Work speaks; the idle line varies | `godot/scripts/panels/ForgePanel.cs`, advisor idle copy | — | [G] |
 | P2-MEMORY-06 | Provenance derives sales instead of omitting them | `godot/scripts/panels/ProvenanceCard.cs` | — | [G] |
@@ -6501,41 +6499,24 @@ clipping its own label.
   is a tavern station only, so the town has no outdoor memory at all. A wall in the field, one
   lantern lit per fallen hero, `E · Legends` opening the book that already exists.
 
-#### P2-PROOF-15/16 and P2-HONEST-27 — link 4 is the weakest link, and why
+#### P2-HONEST-27 — link 4 is the weakest link, and why
 
 A design pass on 2026-09-14 read the five links against the running tree and judged **link 4 the
-weakest as an experience**: the proof engine is sound, and what reaches the screen is not. Three
-facts, all cited in the tree, and none of them a matter of taste:
+weakest as an experience**: the proof engine is sound, and what reaches the screen is not always.
+Two facts, cited in the tree, motivate what remains open below:
 
 - **Volume.** The 2026-09-11 sweep: 45,105 beats over 20 seeds × 100 days, **97.5% KillingBlow**,
   median **30 beats a night** and **5 per hero card**, 81.8% of cards carrying exactly five. That is
   the pending owner ruling above, not a unit, and nothing here pre-empts it.
-- **Flat weight.** Nothing on any surface separates a rat killed on floor 1 from a life saved on
-  floor 5. `BeatVocab` has labels (`BeatVocab.cs:33-41`) and no rank; the legends wall makes an item
-  a legend at three beats; XP credits a kill and a save identically at 15.
 - **The epigraph's own shape is the rarest beat.** *"Emberbite turned the killing blow on floor 3.
   Torvald lives"* is a LethalSave, and LethalSave is **0.87%** of beats, because AE2 only recognises
   a save when one recorded hit alone would have been fatal (`AttributionEngine.cs:101`).
 
-`P2-PROOF-15` and `P2-PROOF-16` are the two `[G]` fixes that need no ceremony. The third finding —
-crediting a save across the whole fight rather than one blow, which the consumable branch already
-does at `AttributionEngine.cs:241-265` — is `[S][GOLD][BAL]` and is **owner-gated**: it moves hero XP
-through `ExpeditionRevealSystem.cs:253`. It is deliberately not booked as a runnable row.
+A third finding — crediting a save across the whole fight rather than one blow, which the
+consumable branch already does at `AttributionEngine.cs:241-265` — is `[S][GOLD][BAL]` and is
+**owner-gated**: it moves hero XP through `ExpeditionRevealSystem.cs:253`. It is deliberately not
+booked as a runnable row.
 
-- **P2-PROOF-15.** `LeadWithAttribution` sorts cards on `!card.Beats.IsEmpty` and nothing else
-  (`LedgerModal.cs:453-454`); within a card, beats render in emission order (`:691`), which is
-  floor-1 first. With five beats on every card every card ties, the stable sort falls to `HeroId`,
-  and **the night's opening sentence is structurally hero #1's first floor-1 kill** — the one beat
-  `TellingQuery` cannot even give a second pass. No engine test pins the current order. Give
-  `BeatVocab` a rank (it is exhaustive with no discard arm, so a new `BeatType` fails to compile),
-  order cards by their best beat then deepest floor then `HeroId`, and render a card's best beat
-  first at the fate-line size `LedgerModal.cs:631` already uses. Law 4 does not bend: every beat
-  still renders and the sim's `Detail` is untouched — only the order changes.
-- **P2-PROOF-16.** The forge minigame writes its earned moments onto the item at craft time
-  (`CraftingHandlers.cs:240,275-286`), and the night card never reads `Item.History`. `ItemForge.cs:32`
-  and `Actions.cs:49` both promise "Evening ledger flavor ('edge quenched brittle')" that no Evening
-  surface delivers — a rule-8 comment. Append the `"forged"` entry's moment clause to the beat row,
-  so link 1's hand and link 4's proof meet in one sentence. Read-only over data already on the item.
 - **P2-HONEST-27.** The client's `BuyOreLegal` (`LedgerModal.cs:960-990`) omits the
   `ActionSlotsRemaining` guard the sim's mirror ends on (`ActionLegality.cs:508`) and the kernel
   enforces. Nothing renders `SimAdapter.LastRejections`. So at the one moment decision 4 bites —
