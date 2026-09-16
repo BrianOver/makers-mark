@@ -4332,6 +4332,12 @@ public partial class MainUi : Control
         Tutorial.SecondProfessionPicked += OnSecondProfessionPicked;
         Tutorial.QuickTravelRequested += QuickTravel;
         Tutorial.Load(); // user:// (KTD2 — never the sim save): adopt a prior dismiss/complete
+        // U35 (R26): Town.Build already ran above with Tutorial still null (so it defaulted Bryn to
+        // present) — now that the persisted Completed/graduation state is actually loaded, correct
+        // the ALREADY-MOUNTED workshop room in place if a resumed save says she should be gone (or
+        // mid-return) from the very first frame, never waiting on the player's next door-walk.
+        Town.Tutorial = Tutorial;
+        Town.RefreshMentorPresence();
 
         // --- U16 (KTD11/KTD13): the scrying mirror (a third same-shaped modal overlay — Camp/
         //     Ledger/Mirror never show at once in practice, but nothing here assumes it) and its
@@ -5235,10 +5241,20 @@ public partial class MainUi : Control
             // more generic 'here is what this screen is' note fired moments earlier"). Pressing
             // a station IS the act, and nothing is discarded: the displaced note goes to the
             // FRONT of the queue and is the very next thing "Got it" shows.
+            //
+            // U35 (R26): reaching this branch AT ALL with Tutorial.Completed true means today is
+            // necessarily her one return day — Town.MentorVisibleToday keeps her station out of the
+            // room on every OTHER post-graduation day, so this press can never fire outside it. Her
+            // return is a goodbye, not an ambient advisor slot, so it always speaks the closing
+            // RestingLine rather than MentorIdleVoice's live objective (which stays reserved for a
+            // Dismissed player's own still-standing, never-leaving station — the one population
+            // Completed never becomes true for).
             Mentor.Show(
                 Tutorial.Active
                     ? MentorVoice.CurrentLesson(Tutorial.Step)
-                    : MentorIdleVoice.Line(Adapter.CurrentState),
+                    : Tutorial.Completed
+                        ? MentorVoice.Speak(MentorVoice.RestingLine)
+                        : MentorIdleVoice.Line(Adapter.CurrentState),
                 preempt: true);
             return;
         }

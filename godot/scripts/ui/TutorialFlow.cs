@@ -3130,6 +3130,37 @@ public sealed partial class TutorialFlow : PanelContainer
     public static TutorialAnchor MemoryRecordAnchor(string? openPanelId) =>
         AimAnchor(TutorialAnchor.ForPanelSection("Legends", "LegendItemsSection"), openPanelId);
 
+    /// <summary>
+    /// U35 (R26 — "she leaves at graduation and returns exactly once"): whether Bryn's own station
+    /// belongs in the workshop TODAY. Present for the whole apprenticeship, full stop — then gone the
+    /// moment <see cref="Completed"/>, EXCEPT for exactly one later day: the day <see
+    /// cref="_memoryRowArmedDay"/> itself lands, reusing the SAME "first record carrying the
+    /// player's mark" fact link 5 already computes (<see cref="Advance"/>'s own U32 remark) rather
+    /// than inventing a second one or a new persisted flag.
+    ///
+    /// <para><b>Why this needs no new persisted state.</b> <see cref="_memoryRowArmedDay"/> only ever
+    /// commits ONCE, the first day <see cref="Panels.LegendsWall.HasPlayerMarkedRecord"/> reads
+    /// true, and <see cref="Completed"/> only ever flips true once too — so the two orderings are
+    /// exhaustive: (1) the mark lands ON OR BEFORE the day she graduates (link 5 arming is what
+    /// usually resolves the Memory act at all) — she was already standing there to see it, so
+    /// <c>state.Day == _memoryRowArmedDay</c> is a day at or before graduation and this predicate
+    /// simply reads <see langword="true"/> straight through with no visible gap; or (2) the
+    /// <c>ChainBackstopDay</c> closes an empty run before the mark ever lands — she leaves clean on
+    /// graduation day, <see cref="_memoryRowArmedDay"/> is still 0 (never armed), and this reads
+    /// <see langword="false"/> until the one later day it finally commits, at which point it reads
+    /// <see langword="true"/> for that single day only and false forever after (days only move
+    /// forward). Either way "exactly once" falls out of the two fields' own once-ever commit
+    /// contracts — nothing here mutates state or needs its own <c>Save()</c>.</para>
+    ///
+    /// <para>A player who <see cref="Dismissed"/> the apprenticeship never sets <see
+    /// cref="Completed"/> at all (mutually exclusive by construction, same precedent as every other
+    /// arc line in this file), so this reads <see langword="true"/> for them forever — a coherent,
+    /// unchanged state: she never leaves someone who never graduated, exactly as before this unit.
+    /// </para>
+    /// </summary>
+    public bool MentorPresent(GameState state) =>
+        !Completed || (_memoryRowArmedDay > 0 && state.Day == _memoryRowArmedDay);
+
     // ── U33 (§11.14.14, R24): her graduation goodbye ────────────────────────────────────────────
     //
     // The gap this closes, measured rather than assumed: ActVoiceKind.Graduation was declared by
