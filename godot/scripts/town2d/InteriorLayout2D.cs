@@ -285,28 +285,43 @@ public static class InteriorLayout2D
     /// selection.</para>
     ///
     /// <para><b>U-T2-5 (Wave A substrate, §11.14.4, R14.5):</b> <see cref="MentorVoice.Station"/> is
-    /// appended UNCONDITIONALLY, after the profession union — Bryn is not any one profession's own
-    /// station, she is the apprenticeship's own teaching presence in whichever workshop the player
-    /// actually built, so she appears regardless of which craft(s) are selected. Her own Y row (4)
-    /// sits clear of every profession's own rows (<see cref="WorkshopVocab"/>'s row scheme: 2/3, 5/7/
-    /// 10, 9, 11), so this can never collide with any selection, and the empty-selection defensive
-    /// branch above already returns <see cref="Rooms"/>'s own "forge" row, which carries her too (see
-    /// that row's own comment for why the two are kept byte-identical on purpose).</para>
+    /// appended UNCONDITIONALLY WITH RESPECT TO PROFESSION SELECTION, after the profession union —
+    /// Bryn is not any one profession's own station, she is the apprenticeship's own teaching
+    /// presence in whichever workshop the player actually built, so she appears regardless of which
+    /// craft(s) are selected. Her own Y row (4) sits clear of every profession's own rows (<see
+    /// cref="WorkshopVocab"/>'s row scheme: 2/3, 5/7/10, 9, 11), so this can never collide with any
+    /// selection, and the empty-selection defensive branch above already returns <see cref="Rooms"/>'s
+    /// own "forge" row, which carries her too (see that row's own comment for why the two are kept
+    /// byte-identical on purpose).</para>
+    ///
+    /// <para><b>U35 (R26 — "she leaves at graduation and returns exactly once"):</b>
+    /// <paramref name="includeMentor"/> is the one axis this method DOES condition her on, and
+    /// deliberately the only one: whether she belongs in the room AT ALL is a fact about the live
+    /// campaign (<c>TutorialFlow.MentorPresent</c> — graduated or not, and her one return day), which
+    /// this pure, engine-free table has no business computing itself (class doc's own purity
+    /// contract carries over: no live <c>GameState</c>/<c>TutorialFlow</c> reference here). The
+    /// caller decides and hands down a bare bool — "adapter-side", per the plan text — <see
+    /// cref="Town2d.Town2D"/> is that adapter. Defaults to <see langword="true"/> so every existing
+    /// caller (every test in <c>WorkshopVocabTests</c>/<c>StationIdentityTests</c>, which predate
+    /// R26 and rightly know nothing about graduation) keeps today's unconditional-present output
+    /// byte-for-byte.</para>
     /// </summary>
-    public static RoomSpec WorkshopRoomFor(IReadOnlyList<string> orderedProfessions)
+    public static RoomSpec WorkshopRoomFor(IReadOnlyList<string> orderedProfessions, bool includeMentor = true)
     {
         var baseSpec = Rooms["forge"];
-        if (orderedProfessions.Count == 0)
-        {
-            return baseSpec; // defensive: every real campaign always has >=1 selected profession
-        }
+        var spec = orderedProfessions.Count == 0
+            ? baseSpec // defensive: every real campaign always has >=1 selected profession
+            : baseSpec with
+            {
+                Stations = orderedProfessions
+                    .Distinct()
+                    .SelectMany(WorkshopVocab.StationsFor)
+                    .Append(MentorVoice.Station)
+                    .ToArray(),
+            };
 
-        var stations = orderedProfessions
-            .Distinct()
-            .SelectMany(WorkshopVocab.StationsFor)
-            .Append(MentorVoice.Station)
-            .ToArray();
-
-        return baseSpec with { Stations = stations };
+        return includeMentor
+            ? spec
+            : spec with { Stations = spec.Stations.Where(s => s.Id != MentorVoice.StationId).ToArray() };
     }
 }
