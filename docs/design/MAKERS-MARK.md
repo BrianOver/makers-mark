@@ -4619,6 +4619,8 @@ name (§11.6 rule 4).
 | ⚑ P2-SCREEN-28 | The capture harness's own usage header stops naming states it does not have | `tools/shoot.ps1` | — | [G] |
 | ⚑ P2-SCREEN-29 | A sized `TextureRect` cannot silently claim its texture's size | `sim/GameSim.Tests/Hygiene/TextureRectExpandModeCensusTests.cs`, `godot/scripts/MainUi.cs`, `godot/scripts/panels/MineWatch.cs`, `godot/scripts/panels/ProvenanceCard.cs`, `godot/scripts/panels/SimPanel.cs`, `godot/scripts/ui/UiKit.cs` | — | [S] |
 | P2-SCREEN-31 | The objective rows fit the tracker's real three-line budget | `godot/scripts/ui/ObjectiveTracker.cs` corpus, `sim/GameSim/Advisor/ObjectiveAdvisor.cs`, `godot/tests/` | — | [G] |
+| P2-SCREEN-32 | The Shop's scene banner goes so Stock clears the fold | `godot/scripts/panels/ShopPanel.cs`, `godot/scripts/ui/UiKit.cs` | — | [G] |
+| P2-SCREEN-33 | The once-ever caption stops reserving its height after it is read | `godot/scripts/panels/DepthsPanel.cs`, `godot/scripts/ui/UiKit.cs` | — | [G] |
 | P2-ONBOARD-09 | The Goodwill chip speaks the band or dies (the beat's own half landed) | `godot/scripts/panels/CounterPanel.cs` | — | [G] |
 | P2-ONBOARD-10 | The seed becomes enterable at New Game | `godot/scripts/NewGameSelect.cs` | — | [G] |
 | P2-PROOF-03 | The stage, pass one — one duel, recorded rolls | new `godot/scripts/panels/TellingPanel.cs` (+`.uid`) | — | [G] |
@@ -6546,16 +6548,25 @@ that overflows is a sentence they cannot finish reading.
 #### Two fold budgets the 481px ruling could not close, with the arithmetic
 
 The owner ruled on 2026-09-14 that the HUD header stays visible and the drawer panels re-lay out for
-its 481px (425px of panel body). Two surfaces could not be closed by folding alone, and both are
-arithmetic rather than preference — each needs an owner call before anything is built:
+its 481px (425px of panel body). Two surfaces could not be closed by folding alone. **Both were ruled
+on 2026-09-15** and are booked as `P2-SCREEN-32` and `P2-SCREEN-33`; the arithmetic is kept here
+because it is what each ruling was made against:
 
 - **Shop.** Your Shelf 140 + unshelved header/drop-zone 96 + card-top→Stock-row 189 = **425 exactly**.
   Getting the Stock row above the fold means deleting or burying either the 140px scene banner or the
   103px counter body. The drag gesture itself is solved — source and target are adjacent and
   `RealDragOntoShelfTests` is green — this is only about Stock.
+  **RULED 2026-09-15: cut the 140px scene banner.** The counter body stays — decision 2 ("price for
+  the sale or the relationship") partly lives in it, and the banner is the cheaper loss: the Shop
+  reads as a list rather than a room, against every material purchase in the game costing a scroll
+  before the click. `P2-SCREEN-32`.
 - **Depths.** With a party underground, `MineWatch` claims 260 + the once-ever caption 79 = **339px**
   before any venue tile draws. No fold closes that. The shipped guard measures the no-party case and
   documents why rather than asserting away the populated one.
+  **RULED 2026-09-15: retire the once-ever caption after it is read and reclaim its 79px. The 260px
+  watch strip stays.** Collapsing the strip was offered and declined — do not re-propose it. This
+  does not close the 339 and is not meant to: the accepted outcome is a crowded map with the watch
+  intact, because the watch is what a party underground is for. `P2-SCREEN-33`.
 
 #### What this round says NOT to build
 
