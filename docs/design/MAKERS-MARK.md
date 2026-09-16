@@ -2891,7 +2891,9 @@ changes when it is done. A regression pin now holds that.
 
 #### U36. She has a body and a face
 
-- Goal: stop sharing a sprite with two named plaza townspeople.
+- Goal: stop sharing a sprite with a named plaza townsperson. (Measured 2026-09-15: the overlap is
+  **one** exact match — Corren, the rival smith, `CivilianIds[0]` = `"broad"`. Voss, the Guild
+  Assessor, uses `CivilianIds[1]` = `"slight"`, a different body, so the earlier "two" was wrong.)
 - Requirements: R27
 - Files: `art/specs/`, `godot/scripts/ui/MentorBanner.cs`, asset registry
 - Approach: a dedicated sprite set through the existing townsfolk pipeline at the size the game draws it, and
@@ -6552,14 +6554,21 @@ its 481px (425px of panel body). Two surfaces could not be closed by folding alo
 on 2026-09-15** and are booked as `P2-SCREEN-32` and `P2-SCREEN-33`; the arithmetic is kept here
 because it is what each ruling was made against:
 
-- **Shop.** Your Shelf 140 + unshelved header/drop-zone 96 + card-top→Stock-row 189 = **425 exactly**.
-  Getting the Stock row above the fold means deleting or burying either the 140px scene banner or the
-  103px counter body. The drag gesture itself is solved — source and target are adjacent and
+- **Shop.** Your Shelf 140 + unshelved header/drop-zone 96 + card-top→Stock-row 189 = **425 exactly**
+  — which is the entire budget, consumed by those three sections alone, with zero slack. The 140px
+  scene banner and the counter body both sit *on top* of that, so the original "delete the banner OR
+  the counter" framing was never sufficient; deleting one is necessary, not enough. **Measured
+  2026-09-15** against the real rendered `Drawer.CurrentContent`: Stock's top sits at **694px** today,
+  **550px** with the banner gone (still 125px past the fold), and **420px** with the counter's closed
+  body folded too — clearing 425 by 5px. The counter's real closed height is **130px**, not the 103
+  this paragraph claimed before it was measured. The drag gesture itself is solved — source and target are adjacent and
   `RealDragOntoShelfTests` is green — this is only about Stock.
-  **RULED 2026-09-15: cut the 140px scene banner.** The counter body stays — decision 2 ("price for
-  the sale or the relationship") partly lives in it, and the banner is the cheaper loss: the Shop
-  reads as a list rather than a room, against every material purchase in the game costing a scroll
-  before the click. `P2-SCREEN-32`.
+  **RULED 2026-09-15: cut BOTH the scene banner and the counter's closed-state body.** The first
+  ruling that night was "banner only, the counter stays"; the measurement above voided its premise
+  and it was re-put to the owner with the real numbers. Decision 2 ("price for the sale or the
+  relationship") keeps its verb — only the counter's resting surface in the Shop is given up. The 5px
+  of remaining slack is thin enough that the unit pins Stock's rendered position as a property rather
+  than asserting a constant. `P2-SCREEN-32`.
 - **Depths.** With a party underground, `MineWatch` claims 260 + the once-ever caption 79 = **339px**
   before any venue tile draws. No fold closes that. The shipped guard measures the no-party case and
   documents why rather than asserting away the populated one.
