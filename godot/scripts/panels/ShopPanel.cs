@@ -760,13 +760,11 @@ public partial class ShopPanel : SimPanel
         };
         scroll.AddChild(body);
 
-        // A painted interior strip so the shop reads as a PLACE, not just a list of rows. Null when
-        // the art isn't present (fresh/headless checkout) — then nothing is mounted, as before.
-        if (UiKit.SceneBanner("panel_banner_shop") is { } banner)
-        {
-            body.AddChild(banner);
-        }
-
+        // Owner ruling 2026-09-15 ("Two fold budgets the 481px ruling could not close"): the 140px
+        // scene banner is CUT so the Stock row clears the fold on open. The counter body stays —
+        // decision 2 ("price for the sale or the relationship") partly lives there. This used to
+        // mount UiKit.SceneBanner("panel_banner_shop") right here; ShopPanel no longer calls it at
+        // all (BountyPanel/HeroPanel/TavernPanel still do, so the helper itself stays).
         _feedback = AddLabel(body, string.Empty);
         _feedback.Name = "ShopFeedback";
         // 481px re-lay: an empty confirmation line still reserved a full text row at the very top of
