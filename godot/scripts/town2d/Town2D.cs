@@ -392,6 +392,24 @@ public partial class Town2D : Control
     /// "rooms are built once at startup" structural fix.</summary>
     private ImmutableSortedSet<string> _workshopBuiltFor = ImmutableSortedSet<string>.Empty;
 
+    /// <summary>U35 (R26): whether the currently-mounted workshop room includes Bryn's station —
+    /// mirrors <see cref="_workshopBuiltFor"/>'s own "what the last (re)build actually reflects"
+    /// role, compared against <see cref="MentorVisibleToday"/> so a graduation (or her one return)
+    /// that lands while the player is NOT re-entering the workshop still gets picked up the next
+    /// time they do (<see cref="RebuildWorkshopIfStale"/>), or immediately via <see
+    /// cref="RefreshMentorPresence"/> for the one case that predates any entry at all (a resumed,
+    /// already-graduated save — <see cref="Tutorial"/> is still null when <see cref="Build"/> first
+    /// mounts every room).</summary>
+    private bool _workshopMentorVisible = true;
+
+    /// <summary>U35 (R26): the shared <see cref="TutorialFlow"/> instance — the identical
+    /// "set by MainUi after construction, null-tolerant" contract <see
+    /// cref="GodotClient.Panels.LegendsWall.Tutorial"/> already carries. Read only by <see
+    /// cref="MentorVisibleToday"/> to decide whether Bryn's station belongs in the workshop right
+    /// now. Unset (or <see cref="Adapter"/> still unbound) defaults to present — every headless
+    /// caller that predates R26 and never wires either keeps today's unconditional behavior.</summary>
+    public TutorialFlow? Tutorial { get; set; }
+
     /// <summary>The workshop's current player-facing nametag (<see cref="WorkshopVocab.NametagFor"/>
     /// over <see cref="_workshopProfessionOrder"/>) — read by <c>MainUi</c> for the drawer title and
     /// pushed into <c>TutorialFlow</c> so neither surface ever derives it independently (the
@@ -565,6 +583,11 @@ public partial class Town2D : Control
         var startingProfessions = adapter.CurrentState.Player.SelectedProfessions;
         _workshopProfessionOrder = ResolveInitialWorkshopOrder(startingProfessions);
         _workshopBuiltFor = startingProfessions;
+        // U35 (R26): Tutorial is not wired yet at this point (MainUi constructs it after Town.Build
+        // — see Tutorial's own doc), so this reads the null-tolerant default (present). A resumed,
+        // already-graduated save is corrected by MainUi's own RefreshMentorPresence() call right
+        // after it wires Tutorial in.
+        _workshopMentorVisible = MentorVisibleToday();
 
         SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
 
@@ -1879,7 +1902,7 @@ public partial class Town2D : Control
             // row stays the blacksmith-only default other readers rely on — see
             // InteriorLayout2D's own doc on its "forge" entry).
             var effectiveSpec = spec.VenueKey == WorkshopVenueKey
-                ? InteriorLayout2D.WorkshopRoomFor(_workshopProfessionOrder)
+                ? InteriorLayout2D.WorkshopRoomFor(_workshopProfessionOrder, _workshopMentorVisible)
                 : spec;
             MountInteriorRoom(effectiveSpec);
         }
@@ -1947,22 +1970,55 @@ public partial class Town2D : Control
             PanelGraveyard.Bury(old);
         }
 
-        MountInteriorRoom(InteriorLayout2D.WorkshopRoomFor(_workshopProfessionOrder));
+        // U35 (R26): recomputed fresh (never the stale cache) — this is the one place that commits
+        // whichever answer MentorVisibleToday() gives right now, whatever triggered the rebuild.
+        _workshopMentorVisible = MentorVisibleToday();
+        MountInteriorRoom(InteriorLayout2D.WorkshopRoomFor(_workshopProfessionOrder, _workshopMentorVisible));
         UpdateWorkshopBuildingDressing();
+    }
+
+    /// <summary>
+    /// U35 (R26): whether Bryn's station belongs in the workshop right now, per <see
+    /// cref="TutorialFlow.MentorPresent"/> — null-tolerant on both halves (<see cref="Tutorial"/>
+    /// unset, or <see cref="Adapter"/> not yet bound at the very start of <see cref="Build"/>) so
+    /// every call site predating R26, and every headless test that wires neither, keeps today's
+    /// unconditional-present default.
+    /// </summary>
+    private bool MentorVisibleToday() =>
+        Tutorial is null || Adapter is null || Tutorial.MentorPresent(Adapter.CurrentState);
+
+    /// <summary>
+    /// U35 (R26): re-evaluates <see cref="MentorVisibleToday"/> against the currently-mounted
+    /// room's own <see cref="_workshopMentorVisible"/> and rebuilds if it has changed — for the one
+    /// case that cannot wait for <see cref="RebuildWorkshopIfStale"/>'s own "checked at the next
+    /// entry" timing: <see cref="Tutorial"/> is still null when <see cref="Build"/> first mounts
+    /// every room (<c>MainUi</c> constructs it afterward), so a RESUMED save that already graduated
+    /// would otherwise show her standing in a workshop she has already left until the player
+    /// happens to walk back out and in again. <c>MainUi</c> calls this once, right after wiring <see
+    /// cref="Tutorial"/> in.
+    /// </summary>
+    public void RefreshMentorPresence()
+    {
+        if (MentorVisibleToday() != _workshopMentorVisible)
+        {
+            RebuildWorkshopRoom();
+        }
     }
 
     /// <summary>
     /// Checked at the top of <see cref="EnterInterior"/> for the workshop venue only: if a
     /// profession has been confirmed by the sim since the room was last built/rebuilt (<see
-    /// cref="_workshopBuiltFor"/>), extend <see cref="_workshopProfessionOrder"/> (never dropping
-    /// the existing primary — new ids are only ever APPENDED) and rebuild the room in place before
-    /// the player walks in. A no-op the overwhelming majority of calls (nothing changed since the
-    /// last entry), so this never adds a per-entry cost beyond one set-equality check.
+    /// cref="_workshopBuiltFor"/>), OR Bryn's own presence has changed (U35, R26 — a graduation or
+    /// her one return, <see cref="_workshopMentorVisible"/>), extend <see
+    /// cref="_workshopProfessionOrder"/> (never dropping the existing primary — new ids are only
+    /// ever APPENDED) and rebuild the room in place before the player walks in. A no-op the
+    /// overwhelming majority of calls (nothing changed since the last entry), so this never adds a
+    /// per-entry cost beyond one set-equality check plus one cheap bool compare.
     /// </summary>
     private void RebuildWorkshopIfStale()
     {
         var current = Adapter!.CurrentState.Player.SelectedProfessions;
-        if (current.SetEquals(_workshopBuiltFor))
+        if (current.SetEquals(_workshopBuiltFor) && MentorVisibleToday() == _workshopMentorVisible)
         {
             return;
         }

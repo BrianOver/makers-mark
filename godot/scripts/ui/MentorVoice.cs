@@ -90,8 +90,12 @@ public static class MentorVoice
     /// (blacksmith: 5/7/10; alchemy: 2/3; tanning: 9; engineering: 11 — <see cref="WorkshopVocab"/>'s
     /// own row scheme), so she can never collide with any profession's stations however many are
     /// selected at once. <see cref="InteriorLayout2D.WorkshopRoomFor"/> appends her to every composed
-    /// workshop room UNCONDITIONALLY — she is not tied to any one profession's own vocab, since the
-    /// apprenticeship's forge lessons are taught in whichever craft the player actually picked.
+    /// workshop room regardless of profession selection — she is not tied to any one profession's own
+    /// vocab, since the apprenticeship's forge lessons are taught in whichever craft the player
+    /// actually picked. U35 (R26): whether she is appended AT ALL is a separate axis that method's
+    /// own <c>includeMentor</c> parameter carries, decided adapter-side (<see
+    /// cref="Town2d.Town2D"/>) from <c>TutorialFlow.MentorPresent</c> — she leaves the workshop at
+    /// graduation and returns exactly once, never computed by this pure class.
     /// </summary>
     public static readonly InteriorLayout2D.StationSpec Station = new(
         StationId,
