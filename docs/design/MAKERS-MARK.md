@@ -6554,21 +6554,24 @@ its 481px (425px of panel body). Two surfaces could not be closed by folding alo
 on 2026-09-15** and are booked as `P2-SCREEN-32` and `P2-SCREEN-33`; the arithmetic is kept here
 because it is what each ruling was made against:
 
-- **Shop.** Your Shelf 140 + unshelved header/drop-zone 96 + card-top→Stock-row 189 = **425 exactly**
-  — which is the entire budget, consumed by those three sections alone, with zero slack. The 140px
-  scene banner and the counter body both sit *on top* of that, so the original "delete the banner OR
-  the counter" framing was never sufficient; deleting one is necessary, not enough. **Measured
-  2026-09-15** against the real rendered `Drawer.CurrentContent`: Stock's top sits at **694px** today,
-  **550px** with the banner gone (still 125px past the fold), and **420px** with the counter's closed
-  body folded too — clearing 425 by 5px. The counter's real closed height is **130px**, not the 103
-  this paragraph claimed before it was measured. The drag gesture itself is solved — source and target are adjacent and
+- **Shop.** Your Shelf + the Unshelved section's own header/drop-zone + the first card's own
+  distance to its Stock row already consume the entire 425px budget by themselves, measured, with
+  zero slack. The 140px scene banner and the counter body both sit *on top* of that, so the original
+  "delete the banner OR the counter" framing was never sufficient; deleting one is necessary, not
+  enough. **Measured 2026-09-15** against the real rendered `Drawer.CurrentContent`: Stock's top sat
+  at **694px** before this ruling, **550px** with the banner cut alone (still 125px past the fold),
+  and **523px** with the counter's closed-state body folded too (behind `UiKit.Disclosure`,
+  collapsed by default) — still **98px past the fold**. An earlier same-night estimate of "420,
+  clearing by 5px" was presented before it was actually measured and was wrong; 523 is the real,
+  verified number. The drag gesture itself is solved — source and target are adjacent and
   `RealDragOntoShelfTests` is green — this is only about Stock.
-  **RULED 2026-09-15: cut BOTH the scene banner and the counter's closed-state body.** The first
-  ruling that night was "banner only, the counter stays"; the measurement above voided its premise
-  and it was re-put to the owner with the real numbers. Decision 2 ("price for the sale or the
-  relationship") keeps its verb — only the counter's resting surface in the Shop is given up. The 5px
-  of remaining slack is thin enough that the unit pins Stock's rendered position as a property rather
-  than asserting a constant. `P2-SCREEN-32`.
+  **RULED 2026-09-15: ship what was built, stop chasing zero-scroll.** Cut BOTH the scene banner and
+  the counter's closed-state body (Open Counter now costs one click — press "More" — since a closed
+  counter has no customer waiting and nothing at stake). Decision 2 ("price for the sale or the
+  relationship") keeps its verb. Stock does not clear the fold and is not going to: closing the
+  remaining 98px would mean shortening Shelf/Unshelved themselves, which this ruling does not order.
+  `DrawerFoldBudgetTests.Shop_StockRow_NeverDriftsFurtherBelowTheMeasuredPosition` pins 523 as a
+  ratchet (catches further drift), not a claim that Stock is reachable without scrolling. `P2-SCREEN-32`.
 - **Depths.** With a party underground, `MineWatch` claims 260 + the once-ever caption 79 = **339px**
   before any venue tile draws. No fold closes that. The shipped guard measures the no-party case and
   documents why rather than asserting away the populated one.
