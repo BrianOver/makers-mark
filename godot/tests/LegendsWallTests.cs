@@ -1,5 +1,6 @@
 #if GDUNIT_TESTS
 using System.Collections.Immutable;
+using GameSim.Chronicle;
 using GameSim.Classes;
 using GameSim.Contracts;
 using GameSim.Crafting;
@@ -1055,6 +1056,129 @@ public class LegendsWallTests
         finally
         {
             Unmount(ui);
+        }
+    }
+
+    // ── P2-MEMORY-14 (P2-OQ4, "the bind and the export"): ChronicleScroll deleted; the book's own
+    // closing chapter and its HTML export ────────────────────────────────────────────────────────
+
+    [TestCase]
+    public void BindTheBookButton_OpensTheClosingChapter_ReachableAndReturnable()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.Legends.ShowWall(PopulatedWorld());
+
+            PressEnabled(ui.Legends, "BindTheBook");
+
+            AssertThat(Find<Label>(ui.Legends, "ChronicleStamp"))
+                .OverrideFailureMessage("Binding the book did not open the chronicle page.")
+                .IsNotNull();
+            AssertThat(RenderedText(ui.Legends))
+                .OverrideFailureMessage("The bind page must always end on the fixed closer line.")
+                .Contains(ChronicleComposer.Closer);
+
+            PressEnabled(ui.Legends, "LegendsWallBack");
+            AssertThat(Find<Button>(ui.Legends, "BindTheBook"))
+                .OverrideFailureMessage("Back did not return to the index.")
+                .IsNotNull();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void ExportButton_WritesASelfContainedHtmlFile_StampedWithTheComposedDay()
+    {
+        const string path = "user://chronicle_day_7.html";
+        var world = PopulatedWorld() with { Day = 7 };
+        var ui = MountMainUi();
+        try
+        {
+            ui.Legends.ShowBindPage(world);
+            PressEnabled(ui.Legends, "ExportChronicleHtml");
+
+            AssertThat(Find<Label>(ui.Legends, "ChronicleExportStatus").Text)
+                .OverrideFailureMessage("The export button must report where it saved.")
+                .Contains("Saved to");
+
+            AssertThat(Godot.FileAccess.FileExists(path))
+                .OverrideFailureMessage("Export did not actually write a file at the expected path.")
+                .IsTrue();
+
+            using var file = Godot.FileAccess.Open(path, Godot.FileAccess.ModeFlags.Read);
+            var html = file.GetAsText();
+
+            // Self-contained (P2-OQ4): the whole document, inline style, no external references.
+            AssertThat(html).Contains("<!doctype html>");
+            AssertThat(html).Contains("<style>");
+            AssertThat(html).NotContains("<link ");
+            AssertThat(html).NotContains("<img ");
+
+            // Composed from the SAME model as the in-game page (ChronicleComposer.Compose), and
+            // stamped with the day it was composed.
+            AssertThat(html).Contains(ChronicleComposer.Closer);
+            AssertThat(html).Contains("Composed on day 7");
+        }
+        finally
+        {
+            Unmount(ui);
+            // Real user:// state (CampaignSave.Clear's own precedent) — this suite is not the
+            // player's install, so leave nothing behind for the next run to trip over.
+            if (Godot.FileAccess.FileExists(path))
+            {
+                Godot.DirAccess.RemoveAbsolute(ProjectSettings.GlobalizePath(path));
+            }
+        }
+    }
+
+    /// <summary>P2-OQ4's own naming-what-it-omitted constraint: a dangling storied-gear reference —
+    /// worn by a living hero, deed-eligible, but whose item record no longer resolves in <see
+    /// cref="GameState.Items"/> (the same silent-drop shape <see cref="LegendsWall.StoriedItems"/>
+    /// already tolerates in the live page) — must be NAMED in the export, never just dropped.
+    /// <see cref="StoriedGear.ThresholdFor"/> is read off the SAME hero this fixture builds so the
+    /// deed count clears her threshold regardless of which trait pair she happens to derive.</summary>
+    [TestCase]
+    public void Export_NamesADanglingStoriedItem_InsteadOfDroppingItSilently()
+    {
+        var danglingId = new ItemId(8801);
+        var hero = new Hero(
+            new HeroId(50), "Kestrel", ClassRegistry.StrikerId, Level: 3, MaxHp: 30, Gold: 0,
+            new GearSet(danglingId, null, null), ImmutableList<ItemMemory>.Empty,
+            Alive: true, DeepestFloorReached: 2, DiedOnDay: null);
+        var threshold = StoriedGear.ThresholdFor(hero);
+        hero = hero with { Memories = ImmutableList.Create(new ItemMemory(danglingId, Kills: threshold, Saves: 0)) };
+
+        var world = GameFactory.NewGame(6099) with
+        {
+            Heroes = ImmutableSortedDictionary<int, Hero>.Empty.Add(hero.Id.Value, hero),
+            // Deliberately no matching Items entry for danglingId — the crafted-item record is gone.
+        };
+        const string path = "user://chronicle_day_1.html";
+        var ui = MountMainUi();
+        try
+        {
+            ui.Legends.ShowBindPage(world);
+            PressEnabled(ui.Legends, "ExportChronicleHtml");
+
+            var status = Find<Label>(ui.Legends, "ChronicleExportStatus").Text;
+            AssertThat(status)
+                .OverrideFailureMessage("A dangling storied-item reference must be named, not silently dropped.")
+                .Contains("omitted");
+            AssertThat(status)
+                .OverrideFailureMessage("The omission must name WHO it belongs to.")
+                .Contains("Kestrel");
+        }
+        finally
+        {
+            Unmount(ui);
+            if (Godot.FileAccess.FileExists(path))
+            {
+                Godot.DirAccess.RemoveAbsolute(ProjectSettings.GlobalizePath(path));
+            }
         }
     }
 

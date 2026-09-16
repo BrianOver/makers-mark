@@ -73,9 +73,10 @@ public static class SurfaceRegion
 /// practice, but nothing here assumes it"). So today's real "who wins if two were somehow visible at
 /// once" answer is nothing more exotic than sibling paint order: later <c>AddChild</c> draws on top.
 /// The precedence values <c>MainUi.BuildUi</c> passes to <see cref="Claim"/> are exactly that call
-/// order, read off the file as of this unit: Ledger, Forecast, Chronicle, Commissions,
+/// order, read off the file as of this unit: Ledger, Forecast, Commissions,
 /// Legends, Camp, the system menu, then Mirror last — Mirror wins if this ever stops being
-/// hypothetical.</para>
+/// hypothetical. (P2-MEMORY-14 retired the Chronicle claim that used to sit between Forecast and
+/// Commissions; the gap in the raw precedence numbers is harmless — only relative order matters.)</para>
 /// </summary>
 public static class SurfaceArbiter
 {
