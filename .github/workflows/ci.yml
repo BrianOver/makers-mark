@@ -281,7 +281,17 @@ jobs:
           run_engine_tests() {
             # PIPESTATUS[0] = dotnet test's own exit code, not tee's (tee itself always
             # succeeds), so the pipe through tee doesn't hide a real failure.
+            # `console;verbosity=detailed` names every test as it runs. That is the difference
+            # between "Godot died somewhere around test 880" and "Godot died in <ThisExactTest>".
+            # The runtime exits 134 (SIGABRT) or 139 (SIGSEGV) partway through the suite, the
+            # adapter does not notice its child is gone, and vstest then waits out the full session
+            # fuse before printing a cheerful truncated "Passed!" -- so the only forensic evidence
+            # of WHERE it died is the last test named before the silence. Without this flag there
+            # is none. Seen on #857 and #859, both of which crashed after ~880 tests with an
+            # identical orphan-node fingerprint (1, 9, 1, 2) and neither of which could have caused
+            # it -- #857 changes one PowerShell script.
             xvfb-run -a dotnet test godot/tests/GodotClient.Tests.csproj --logger "trx;LogFileName=engine-tests.trx" \
+              --logger "console;verbosity=detailed" \
               -- RunConfiguration.TestSessionTimeout="$ENGINE_SESSION_TIMEOUT_MS" 2>&1 | tee "$1"
             return "${PIPESTATUS[0]}"
           }
