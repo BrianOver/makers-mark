@@ -54,8 +54,25 @@ var result = Reconciler.Reconcile(
     plan, landed, open, trackedFiles, mergedReceipts, fileOrigins, receiptRuleSince, sourceTagSites);
 
 var headSha = log.Count > 0 ? log[^1].Sha[..9] : "unknown";
+
+// Which plan text this run actually parsed. GitShell.ReadFile reads the WORKING TREE, while every
+// other input above comes from origin/main -- and the frontier's header used to claim the whole
+// render was "derived from origin/main" either way. A checkout sitting behind origin/main then
+// reports a plan nobody else can see, and an overnight session reads its "0 runnable" as "the
+// night's work is done" rather than "you are reading an old file". Comparing the two TEXTS is
+// more precise than comparing shas: only a difference in this one file can change what is parsed.
+var planOnOrigin = GitShell.ReadFileAtRef(repoRoot, planPath, "origin/main");
+var planProvenance = planOnOrigin is null
+    ? $"plan parsed from the WORKING TREE copy of {planPath} (origin/main's copy could not be read); "
+        + $"git data from origin/main@{headSha}"
+    : NormalizeNewlines(planOnOrigin) == NormalizeNewlines(planText)
+        ? $"plan parsed from {planPath} in the working tree, byte-identical to origin/main@{headSha}"
+        : $"WARNING: plan parsed from the WORKING TREE copy of {planPath}, which DIFFERS from "
+            + $"origin/main@{headSha}. If this checkout is behind, the rows below may be stale in "
+            + "both directions -- sync and re-run before dispatching anything.";
+
 Console.WriteLine(frontierOnly
-    ? Frontier.Render(Frontier.Compute(result), GitShell.Degradations)
+    ? Frontier.Render(Frontier.Compute(result, repoRoot), GitShell.Degradations, planProvenance)
     : Report.Build(result, $"{planPath} vs origin/main@{headSha}"));
 
 // A degraded read is fatal to the frontier and only advisory to the report, so the exit code
@@ -77,6 +94,12 @@ if (frontierOnly && GitShell.Degradations.Count > 0)
 var failing = result.MissingFiles.Count > 0 || result.OrderingViolations.Count > 0 || result.Collisions.Count > 0
     || result.ReceiptDispatchTraps.Count > 0 || result.FalseReceipts.Count > 0;
 return failing ? 1 : 0;
+
+// Git hands the ref copy back with whatever line endings the blob carries; the working-tree copy
+// carries whatever this platform checked out. Only a CONTENT difference should raise the staleness
+// warning, never a CRLF/LF one -- a false "your plan is stale" is exactly as misleading as the
+// silence it replaces.
+static string NormalizeNewlines(string text) => text.Replace("\r\n", "\n");
 
 static Dictionary<string, int> BuildTitleToPrMap(IReadOnlyList<GitShell.PrRecord> mergedPrs)
 {

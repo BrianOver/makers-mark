@@ -26,6 +26,13 @@ public enum UnitTable
 /// "(deleted)" marker following the backtick span.</para></summary>
 public sealed record FileRef(string Path, bool IsNew, bool IsDeleted = false);
 
+/// <summary>A unit row's own evidence marker — a `` `evidence:path[:symbol]` `` backtick span in
+/// its Key files cell (see <see cref="PlanParser"/>). <see cref="Path"/> is a file that must exist
+/// on disk for the unit to count as shipped; <see cref="Symbol"/>, when present, is a substring
+/// (a class/method/test name) that must appear somewhere inside that file — a bare path alone only
+/// proves the file exists, not that this unit is what put the relevant content there.</summary>
+public sealed record EvidenceMarker(string Path, string? Symbol);
+
 /// <summary>One successfully parsed unit-index row.</summary>
 public sealed record UnitRow(
     UnitTable Table,
@@ -36,7 +43,8 @@ public sealed record UnitRow(
     string DependsOnRaw,
     IReadOnlyList<string> Flags,
     int LineNumber,
-    IReadOnlyList<string>? UnparsedDependsOn = null)
+    IReadOnlyList<string>? UnparsedDependsOn = null,
+    IReadOnlyList<EvidenceMarker>? Evidence = null)
 {
     /// <summary>Tokens the Depends-on cell carried that are not unit rows this tool tracks — a
     /// critical-path item (<c>P4</c>), an open ruling (<c>P2-OQ1</c>), a section cite. Empty for
@@ -44,6 +52,11 @@ public sealed record UnitRow(
     /// help; <c>--frontier</c> cannot, so it refuses any row with an entry here rather than
     /// reporting an owner-gated unit as runnable.</summary>
     public IReadOnlyList<string> UnparsedDependsOn { get; init; } = UnparsedDependsOn ?? Array.Empty<string>();
+
+    /// <summary>Empty for almost every row — most units still carry no evidence marker at all, and
+    /// <c>--frontier</c> must say so out loud (UNVERIFIED) rather than pretend silence means
+    /// verified.</summary>
+    public IReadOnlyList<EvidenceMarker> Evidence { get; init; } = Evidence ?? Array.Empty<EvidenceMarker>();
 }
 
 /// <summary>A table row that looked like a unit-index row (its first cell parsed as a unit id)

@@ -17,6 +17,7 @@ public static class PlanParser
     private static readonly Regex T10IdPattern = new(@"^U\d+[a-zA-Z]?$", RegexOptions.Compiled);
     private static readonly Regex SeparatorCell = new(@"^:?-+:?$", RegexOptions.Compiled);
     private static readonly Regex BacktickSpan = new("`([^`]+)`", RegexOptions.Compiled);
+    private static readonly Regex EvidenceSpan = new(@"^evidence\s*:\s*(.+)$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex FlagToken = new(@"\[([A-Za-z][A-Za-z0-9]*)\]", RegexOptions.Compiled);
     private static readonly Regex DocMdRef = new(@"docs/[A-Za-z0-9_./\-]+\.md", RegexOptions.Compiled);
 
@@ -96,11 +97,11 @@ public static class PlanParser
             var depsCell = cells[3];
             var flags = table == UnitTable.P2 ? ExtractFlags(cells[4]) : Array.Empty<string>();
 
-            var files = ExtractFileRefs(filesCell);
+            var (files, evidence) = ExtractFileRefsAndEvidence(filesCell);
             var (deps, unparsedDeps) = ExtractDependsOn(depsCell);
 
             units.Add(new UnitRow(
-                table, idCell, title, files, deps, depsCell.Trim(), flags, lineNumber, unparsedDeps));
+                table, idCell, title, files, deps, depsCell.Trim(), flags, lineNumber, unparsedDeps, evidence));
         }
 
         return new PlanParseResult(units, unparseable, docRefs);
@@ -148,13 +149,39 @@ public static class PlanParser
 
     /// <summary>Only backtick-quoted spans that contain a '/' are treated as paths — bare
     /// backtick spans like `AddButton` or `ThreadHero` are symbol names, not files, and this
-    /// doc uses backticks for both.</summary>
-    private static IReadOnlyList<FileRef> ExtractFileRefs(string cell)
+    /// doc uses backticks for both.
+    ///
+    /// <para>One exception: a span shaped `` `evidence:path[:symbol]` `` is never a plain file
+    /// reference, however path-shaped it looks. It is the unit's own claim of proof — a file that
+    /// must exist, optionally plus a substring that must appear inside it — checked against the
+    /// WORKING TREE by <see cref="EvidenceCheck"/>, never folded into the ordinary "does this path
+    /// exist on origin/main" census in <see cref="Reconciler"/>. Kept in the same Files cell as
+    /// plain paths (not a new column) so it fits both table shapes without a schema change and
+    /// leaves every row without one to parse exactly as before.</para></summary>
+    private static (IReadOnlyList<FileRef> Files, IReadOnlyList<EvidenceMarker> Evidence) ExtractFileRefsAndEvidence(string cell)
     {
         var refs = new List<FileRef>();
+        var evidence = new List<EvidenceMarker>();
         foreach (Match m in BacktickSpan.Matches(cell))
         {
-            var path = m.Groups[1].Value.Trim();
+            var inner = m.Groups[1].Value.Trim();
+
+            var evidenceMatch = EvidenceSpan.Match(inner);
+            if (evidenceMatch.Success)
+            {
+                var spec = evidenceMatch.Groups[1].Value.Trim();
+                var colonIndex = spec.IndexOf(':');
+                var evidencePath = (colonIndex < 0 ? spec : spec[..colonIndex]).Trim();
+                var symbol = colonIndex < 0 ? null : spec[(colonIndex + 1)..].Trim();
+                if (evidencePath.Length > 0)
+                {
+                    evidence.Add(new EvidenceMarker(evidencePath, string.IsNullOrEmpty(symbol) ? null : symbol));
+                }
+
+                continue;
+            }
+
+            var path = inner;
             if (!path.Contains('/'))
             {
                 continue;
@@ -172,7 +199,7 @@ public static class PlanParser
             refs.Add(new FileRef(path, isNew, isDeleted));
         }
 
-        return refs;
+        return (refs, evidence);
     }
 
     /// <summary>Connectives and "no dependency" markers that carry no gate of their own. Anything

@@ -2,13 +2,25 @@ using System.Text;
 
 namespace Progress;
 
-/// <summary>One unit an unattended run may take right now, or one it must not.</summary>
+/// <summary>One unit an unattended run may take right now, or one it must not.
+///
+/// <para><see cref="ShippedByEvidence"/>/<see cref="EvidenceDetail"/> take priority over everything
+/// else: a row whose own evidence marker checked out against the working tree is reported done,
+/// full stop, regardless of what <see cref="RefusalReason"/> would otherwise have said. <see
+/// cref="Unverified"/> is the opposite signal — true when this row carries no evidence marker at
+/// all, so whatever <see cref="RefusalReason"/> says (including null, i.e. RUNNABLE) is still an
+/// inference from commit tags and file existence, not a check. Silence about that gap is the bug
+/// this whole change exists to fix, so it is a field on every row, not folded into the render.</para>
+/// </summary>
 public sealed record FrontierRow(
     string UnitId,
     string Title,
     IReadOnlyList<string> Flags,
     IReadOnlyList<string> Files,
-    string? RefusalReason);
+    string? RefusalReason,
+    bool ShippedByEvidence = false,
+    string? EvidenceDetail = null,
+    bool Unverified = false);
 
 /// <summary>
 /// The machine-readable half of this tool: which units an unattended session may take, derived
@@ -48,7 +60,12 @@ public static class Frontier
     /// from "soften the test", and rule 12 says the fix is never softening the test.</summary>
     private static readonly HashSet<string> CeremonyFlags = new(StringComparer.Ordinal) { "C", "GOLD", "BAL" };
 
-    public static IReadOnlyList<FrontierRow> Compute(ReconciliationResult result)
+    /// <summary><paramref name="repoRoot"/> is the working tree evidence markers are checked
+    /// against (see <see cref="EvidenceCheck"/>); it defaults to <c>""</c> because the overwhelming
+    /// majority of rows carry no marker at all and never touch disk, which keeps every existing
+    /// caller that never populates <c>UnitRow.Evidence</c> — including this tool's own test suite —
+    /// unaffected by the parameter's existence.</summary>
+    public static IReadOnlyList<FrontierRow> Compute(ReconciliationResult result, string repoRoot = "")
     {
         var status = new Dictionary<string, UnitStatus>(StringComparer.Ordinal);
         foreach (var row in result.Domains.SelectMany(d => d.Rows))
@@ -68,16 +85,30 @@ public static class Frontier
                 continue;
             }
 
+            var evidence = EvidenceCheck.Check(row.Unit.Evidence, repoRoot);
+            if (evidence.Status == EvidenceStatus.Found)
+            {
+                // Hard proof outranks every refusal reason below -- a unit that IS there does not
+                // need a sentence explaining why it can't be taken.
+                var detail = evidence.Line is { } line ? $"{evidence.Path}:{line}" : evidence.Path;
+                rows.Add(new FrontierRow(
+                    row.Unit.Id, row.Unit.Title, row.Unit.Flags,
+                    row.Unit.Files.Select(f => f.Path).ToList(),
+                    RefusalReason: null, ShippedByEvidence: true, EvidenceDetail: detail));
+                continue;
+            }
+
             rows.Add(new FrontierRow(
                 row.Unit.Id,
                 row.Unit.Title,
                 row.Unit.Flags,
                 row.Unit.Files.Select(f => f.Path).ToList(),
-                Refusal(row.Unit, status, sourceTaggedByCode)));
+                Refusal(row.Unit, status, sourceTaggedByCode),
+                Unverified: evidence.Status == EvidenceStatus.NoMarker));
         }
 
         return rows
-            .OrderBy(r => r.RefusalReason is null ? 0 : 1)
+            .OrderBy(r => r.ShippedByEvidence ? 0 : r.RefusalReason is null ? 1 : 2)
             .ThenBy(r => r.UnitId, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
@@ -124,7 +155,13 @@ public static class Frontier
     /// <summary>Plain-text render. Deliberately grep-shaped rather than JSON: the consumer is a
     /// model reading a terminal, and a line it can quote back verbatim in a PR body is worth more
     /// than a structure it has to summarise.</summary>
-    public static string Render(IReadOnlyList<FrontierRow> rows, IReadOnlyList<string>? degradations = null)
+    /// <summary><paramref name="planProvenance"/> is one sentence naming the plan text this run
+    /// parsed — see <c>Program.cs</c>, which builds it. Optional so the tool's own tests can render
+    /// rows without a repo behind them.</summary>
+    public static string Render(
+        IReadOnlyList<FrontierRow> rows,
+        IReadOnlyList<string>? degradations = null,
+        string? planProvenance = null)
     {
         var sb = new StringBuilder();
 
@@ -146,10 +183,22 @@ public static class Frontier
             return sb.ToString();
         }
 
-        var runnable = rows.Where(r => r.RefusalReason is null).ToList();
-        var refused = rows.Where(r => r.RefusalReason is not null).ToList();
+        var shipped = rows.Where(r => r.ShippedByEvidence).ToList();
+        var runnable = rows.Where(r => !r.ShippedByEvidence && r.RefusalReason is null).ToList();
+        var refused = rows.Where(r => !r.ShippedByEvidence && r.RefusalReason is not null).ToList();
+        var unverifiedRunnable = runnable.Count(r => r.Unverified);
 
-        sb.AppendLine($"# Frontier — {runnable.Count} runnable, {refused.Count} refused, derived from origin/main");
+        sb.AppendLine(
+            $"# Frontier — {runnable.Count} runnable ({unverifiedRunnable} UNVERIFIED), "
+            + $"{shipped.Count} shipped by evidence, {refused.Count} refused");
+
+        // Which plan text this run actually parsed. The git half of every other input is
+        // origin/main; the plan half is the working tree, and saying so is the whole point.
+        if (!string.IsNullOrWhiteSpace(planProvenance))
+        {
+            sb.AppendLine($"# {planProvenance}");
+        }
+
         sb.AppendLine();
 
         if (runnable.Count == 0)
@@ -160,11 +209,29 @@ public static class Frontier
         foreach (var row in runnable)
         {
             var flags = row.Flags.Count > 0 ? " [" + string.Join("][", row.Flags) + "]" : "";
-            sb.AppendLine($"RUNNABLE  {row.UnitId}{flags}  {row.Title}");
+            var mark = row.Unverified ? "  UNVERIFIED" : "";
+            sb.AppendLine($"RUNNABLE  {row.UnitId}{flags}{mark}  {row.Title}");
+            if (row.Unverified)
+            {
+                sb.AppendLine(
+                    "    note  this row carries no `evidence:` marker, so \"unbuilt\" here is an INFERENCE from "
+                    + "commit tags and file existence, not a check. Grep for the deliverable before dispatching.");
+            }
+
             foreach (var file in row.Files)
             {
                 sb.AppendLine($"    file  {file}");
             }
+        }
+
+        if (shipped.Count > 0)
+        {
+            sb.AppendLine();
+        }
+
+        foreach (var row in shipped)
+        {
+            sb.AppendLine($"SHIPPED   {row.UnitId}  evidence found at {row.EvidenceDetail} — do not dispatch.");
         }
 
         sb.AppendLine();
