@@ -68,8 +68,13 @@ public class AssetReachabilityTests
 
     /// <summary>town2d-townsfolk-&lt;civilianId&gt; — <c>TownsfolkNpc2D.CivilianIds</c>
     /// (<c>godot/scripts/town2d/TownsfolkNpc2D.cs:106</c>): "broad"/"slight" only, a fixed
-    /// 2-entry array in that file, not a sim registry.</summary>
-    private static readonly string[] Town2dTownsfolkBases = ["town2d-townsfolk-broad", "town2d-townsfolk-slight"];
+    /// 2-entry array in that file, not a sim registry. Plus U36 (§11, R27)'s
+    /// <c>town2d-townsfolk-bryn</c> — Bryn's own dedicated body (<c>Ui.MentorVoice.SpriteId</c>),
+    /// DELIBERATELY not in <c>CivilianIds</c> (never handed to a wandering villager), so it is
+    /// individually traced here rather than derived from that array — no manifest PNG exists for
+    /// it yet (generation is GPU-gated and owed), so this addition is inert until it does.</summary>
+    private static readonly string[] Town2dTownsfolkBases =
+        ["town2d-townsfolk-broad", "town2d-townsfolk-slight", "town2d-townsfolk-bryn"];
 
     /// <summary>town2d-monster-&lt;slug&gt; — <c>DelveStage.MonsterBodyId</c>
     /// (<c>godot/scripts/panels/DelveStage.cs:717</c>). Only the Mine's five floors have a

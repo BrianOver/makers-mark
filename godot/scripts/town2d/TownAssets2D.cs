@@ -213,6 +213,22 @@ public static class TownAssets2D
         ["town2d-station-quench"] = (new Vector2(24, 14), new Color(0.20f, 0.32f, 0.38f)),
         ["town2d-station-shelf"] = (new Vector2(28, 32), new Color(0.38f, 0.30f, 0.20f)),
         ["town2d-station-rack"] = (new Vector2(28, 32), new Color(0.34f, 0.26f, 0.30f)),
+
+        // U36 (§11, R27): Bryn's own dedicated body (Ui.MentorVoice.SpriteId — a literal here,
+        // like every sibling key above, rather than a cross-namespace reference from this generic
+        // resolver into one specific NPC's identity class). Sized 20x32 — the SHIPPED draw size
+        // every committed town2d-townsfolk-*/town2d-hero-* PNG actually measures (verified
+        // directly: town2d-townsfolk-broad.png and -slight.png, base and _step, all read
+        // width=0x14/height=0x20 in their PNG IHDR). This is deliberately NOT
+        // tools/art/gen_town_sprites.py's WIDTH/HEIGHT (40, 64) — that pair is the pre-halving
+        // ASCII-grid AUTHORING canvas; the 2026-08-12 asymmetric-decimation fix moved the halving
+        // OFFLINE into that generator's own rarity_downsample_2x(), so every committed PNG already
+        // ships at half that canvas and TownLayout2D.CharacterSpriteScale is 1.0 (pass-through, no
+        // runtime scale left). Citing the pre-halving constant here was the exact "art ships at
+        // draw size" mistake this project's own doc warns against — this placeholder now occupies
+        // the SAME footprint her real, GPU-gated art will once it lands. Distinct rose-plum tint so
+        // she reads apart from every furniture placeholder sharing this room while art is owed.
+        ["town2d-townsfolk-bryn"] = (new Vector2(20, 32), new Color(0.46f, 0.30f, 0.34f)),
     };
 
     private static readonly Vector2 DefaultStationSize = new(24, 24);
