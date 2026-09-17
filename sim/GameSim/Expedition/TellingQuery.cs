@@ -570,6 +570,25 @@ public static class TellingQuery
     internal static int ReplayHp(IEnumerable<CombatEvent> fight, int hpStart)
     {
         var hp = hpStart;
+        foreach (var afterRound in ReplayHpPerRound(fight, hpStart))
+        {
+            hp = afterRound;
+        }
+
+        return hp;
+    }
+
+    /// <summary>
+    /// <see cref="ReplayHp"/>'s exact same per-round formula, but yielding the hp AFTER every
+    /// round instead of only the final figure — the one extra thing a low-water-mark query needs
+    /// that a final-hp query does not. <see cref="ReplayHp"/> itself now folds this (its own last
+    /// yielded value, or <paramref name="hpStart"/> when <paramref name="fight"/> is empty), so the
+    /// two can never drift apart the way two independent copies of this loop eventually would
+    /// (P2-PROOF-11's own rule, extended to P2-PROOF-18's closest-call read).
+    /// </summary>
+    internal static IEnumerable<int> ReplayHpPerRound(IEnumerable<CombatEvent> fight, int hpStart)
+    {
+        var hp = hpStart;
         var round = 0;
         foreach (var combat in fight)
         {
@@ -592,9 +611,9 @@ public static class TellingQuery
                     hp += use.HpAfter - use.HpBefore;
                 }
             }
-        }
 
-        return hp;
+            yield return hp;
+        }
     }
 
     /// <summary>Builds the beat's own floor's factual round-by-round record: hero hp curve via

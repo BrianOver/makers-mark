@@ -320,6 +320,8 @@ public class StateFieldReachCensusTests
         ["ExpeditionResult.Floors"] = new(FieldKind.Rendered, "godot/scripts/DelveBeats.cs (floor-by-floor beat replay)"),
         ["ExpeditionResult.Halt"] = new(FieldKind.Rendered, "godot/scripts/DelveBeats.cs:149,158 (shapes the Surface beat) + LedgerModal.cs:409"),
         ["ExpeditionResult.Party"] = new(FieldKind.Rendered, "godot/scripts/panels/MineWatch.cs (\"THE SEND-OFF\" roster)"),
+        ["ExpeditionResult.PartyAtDeparture"] = new(FieldKind.Rendered,
+            "godot/scripts/panels/LedgerModal.cs (TellingPanel's raid-time gear/HP reads)"),
         ["ExpeditionResult.Survivors"] = new(FieldKind.Rendered,
             "godot/scripts/panels/TellingPanel.cs:293-294 (a wiped party is Survivors.IsEmpty, and the teller is whichever survivor the beat belongs to) + TavernPanel.cs:894 (last night's returning drinkers)."),
         ["ExpeditionResult.TargetFloor"] = new(FieldKind.Rendered, "godot/scripts/panels/CampPanel.cs / MineWatch.cs (target floor line)"),
@@ -541,7 +543,13 @@ public class StateFieldReachCensusTests
     // hero the sim never granted XP to rather than print a zeroed-out one. Already RENDERED long
     // before this unit (TellingPanel decides a wipe and picks its teller off exactly this field);
     // the census catching up to a surface that was already there, not a new one.
-    private const int ExpectedRenderedCount = 129;
+    // 129 -> 130 (P2-PROOF-18): ExpeditionResult.PartyAtDeparture newly crosses the N=3 sim-reader
+    // bar -- ClosestCallQuery joined TellingQuery and FallenQuery as a third sim reader of the
+    // raid-time snapshot, reading it for the same reason both already do (a hero's own gear and
+    // MaxHp AS THEY STOOD AT DEPARTURE, never live GameState.Heroes). Already RENDERED via
+    // TellingPanel long before this unit; the census catching up to a surface that was already
+    // there, not a new one.
+    private const int ExpectedRenderedCount = 130;
     private const int ExpectedRoutedCount = 9;
     private const int ExpectedInternalCount = 6;
     // 12 -> 8: the same join, mirrored — the four fields that left GAP for RENDERED above.
