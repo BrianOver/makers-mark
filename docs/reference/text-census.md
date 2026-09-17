@@ -369,41 +369,43 @@ The complete per-line inventory of this pack (645 template strings, every one pl
 
 The night's attribution beats also lead the reveal: the beat-bearing card sorts first (`LeadWithAttribution`, :382), the narrator's line renders above the grid (`AddNarratorLine`, :393), and the ledger tip renders once ever (§1.4).
 
-### 3.8 The ticker (the town's news marquee)
+### 3.8 The day pages (`LegendsWall`'s book — formerly the ticker)
 
-`AdventureTicker` (godot/scripts/ui/AdventureTicker.cs) renders `Day {N}: {line}` entries (:130-131). Complete line inventory (:133-303):
+`AdventureTicker` is deleted (P2-MEMORY-12, P2-OQ3): the bottom-edge marquee is gone as a form. Its `FormatLine` switch moved verbatim into `LegendsWall` (godot/scripts/panels/LegendsWall.cs:1286-1435) as the composer for the book's day pages (`RenderDayLog`/`ShowDayPage`/`DayLines`, :476,503,526) — same lines, full campaign retention instead of a rolling 3-day window, queryable by day from the book's index rather than ambient. Complete line inventory (:1286-1434):
 
 | Line (verbatim template) | file:line | Fires when |
 |---|---|---|
-| "Your {Item} sold to {Hero} for {N}g." | :138-139 | shelf sale of your stock |
-| "Rival's {Item} sold to {Hero} for {N}g." | :140-141 | rival shelf sale |
-| "A party of {N} departs for floor {N}." | :142 | departure |
-| "{Hero} sets a new depth record — floor {N}." | :143 | record |
-| gossip line verbatim (§5.1) | :144 | `GossipEmitted` |
-| "{Hero} did not return from floor {N}." | :148-149 | death, Evening only |
-| "Home safe: {Item} — {Detail}." | :159-160 | attribution beat, Evening — ex. *"Home safe: Emberbite — Emberbite landed the killing blow on the Cave Rat."* |
-| "{Hero} has come to town looking for work." | :166 | recruit |
-| "{Hero} wants {Slot} work, {Quality} or better, by day {N} — {N}g over list." | :168-170 | commission posted — ex. *"Kael wants Weapon work, Fine or better, by day 9 — 18g over list."* |
-| "{Hero} takes delivery of {Item} — {N}g premium." | :171-172 | commission fulfilled |
-| "{Hero} gave up waiting on that {Slot} commission." | :173-174 | commission expired |
-| "Your {Item} is signed into legend as \"{Name}\"." | :180-181 | a signed work — ex. *"Your Greatsword is signed into legend as \"Widowsong\"."* |
-| "The town bids farewell to {Hero} — the rite is done." | :182-183 | memorial honored |
-| incident lines (below) | :188 | drama director incident |
-| "The rival stall is expanding — town confidence has slipped to {N}%." | :192-193 | confidence crossing |
-| "{Hero} is talking about leaving town." | :194-195 | confidence crossing |
-| "The town has lost faith in its smith — {N} assessment(s) missed." | :196-197 | collapse |
-| "The {Faction} remember your custom now — their ore comes cheaper." / "The {Faction} are cooling toward your shop — their ore's discount is fading." | :212-213 | standing threshold crossing |
-| "Rent paid — {N}g to the guild. Next due: {N}g." | :223-224 | rent day |
-| "Rent went unpaid — {N}g owed, {N} missed payment(s) now. The guild's patience is thinning; next due climbs to {N}g." | :225-227 | missed rent |
-| "Guild Assessment paid — {N}g. Next dues: {N}g." | :229-230 | assessment day |
-| "Guild Assessment missed — {N}g unpaid, {N} time(s) now. Next dues climb to {N}g." | :232-234 | missed assessment |
-| "{Hero} has risen to {Rank}." | :240 | rank crossing — ex. *"Sable has risen to Veteran."* |
-| "{Hero} has proven ready for deeper ground." (+ "{Hero} and 1 other have…" / "{Hero} and {N} others have…") | :296-301 | venue graduation |
-| "{Hero} collects {N}g on a completed bounty." | :252 | bounty payout |
+| "Your {Item} sold to {Hero} for {N}g." | :1291 | shelf sale of your stock |
+| "Rival's {Item} sold to {Hero} for {N}g." | :1293 | rival shelf sale |
+| "A party of {N} departs for floor {N}." | :1294 | departure |
+| "{Hero} sets a new depth record — floor {N}." | :1295 | record |
+| gossip line verbatim (§5.1) | :1296 | `GossipEmitted` |
+| "{Hero} did not return from floor {N}." | :1301 | death, Evening only |
+| "Home safe: {Item} — {Detail}." | :1307 | attribution beat, Evening — ex. *"Home safe: Emberbite — Emberbite landed the killing blow on the Cave Rat."* |
+| "{Hero} has come to town looking for work." | :1313 | recruit |
+| "{Hero} wants {Slot} work, {Quality} or better, by day {N} — {N}g over list." | :1315-1317 | commission posted — ex. *"Kael wants Weapon work, Fine or better, by day 9 — 18g over list."* |
+| "{Hero} takes delivery of {Item} — {N}g premium." | :1318-1319 | commission fulfilled |
+| "{Hero} gave up waiting on that {Slot} commission." | :1320-1321 | commission expired |
+| "Your {Item} is signed into legend as \"{Name}\"." | :1330-1331 | a signed work — ex. *"Your Greatsword is signed into legend as \"Widowsong\"."* |
+| "The town bids farewell to {Hero} — the rite is done." | :1332-1333 | memorial honored |
+| incident lines (below) | :1338 | drama director incident |
+| "The rival stall is expanding — town confidence has slipped to {N}%." | :1342-1343 | confidence crossing |
+| "{Hero} is talking about leaving town." | :1344-1345 | confidence crossing |
+| "The town has lost faith in its smith — {N} assessment(s) missed." | :1346-1347 | collapse |
+| "The {Faction} remember your custom now — their ore comes cheaper." / "The {Faction} are cooling toward your shop — their ore's discount is fading." | :1361-1363 | standing threshold crossing |
+| "Rent paid — {N}g to the guild. Next due: {N}g." | :1372-1373 | rent day |
+| "Rent went unpaid — {N}g owed, {N} missed payment(s) now. The guild's patience is thinning; next due climbs to {N}g." | :1374-1376 | missed rent |
+| "Guild Assessment paid — {N}g. Next dues: {N}g." | :1378-1379 | assessment day |
+| "The guild took {Item} against the {N}g dues — it hangs on their wall now, where it will never turn a blow. Next dues: {N}g." | :1385-1387 | dues settled by pledge (`DuesSettledByPledge`, P2-LONG-18) — not in this census's original AdventureTicker-era table |
+| "Guild Assessment missed — {N}g unpaid, {N} time(s) now. Next dues climb to {N}g." | :1388-1390 | missed assessment |
+| "{Hero} has risen to {Rank}." | :1396 | rank crossing — ex. *"Sable has risen to Veteran."* |
+| "{Hero} has proven ready for deeper ground." (+ "{Hero} and 1 other have…" / "{Hero} and {N} others have…") | :1403 (`GraduatesLine`, :1466-1474) | venue graduation |
+| "{Hero} collects {N}g on a completed bounty." | :1409 | bounty payout |
+| "You were not at the anvil today. The rival's stall was." | :1418-1419 | idle-day market-share cost (`MarketShareShifted` when `RivalGained`, P2-HONEST-23) — not in this census's original AdventureTicker-era table |
 
-Incident prose (`IncidentLine`, :273-283): "Whispers out of the dark — the miners are uneasy." / "Something probed the mine mouth in the night and withdrew." / "The spider brood is swelling in the upper tunnels." / "A ghoul warren has broken open deeper down." / "The forgeworm stirs. The deep rock is warm to the touch." Unknown-id fallback (:287): "Word from the {venueId}: {incident id with underscores as spaces}."
+Incident prose (`IncidentLine`, :1442-1455): "Whispers out of the dark — the miners are uneasy." / "Something probed the mine mouth in the night and withdrew." / "The spider brood is swelling in the upper tunnels." / "A ghoul warren has broken open deeper down." / "The forgeworm stirs. The deep rock is warm to the touch." Unknown-id fallback (:1455) reads `"Word from {venue}: {incident id with underscores as spaces}."`, `{venue}` now the registry's lowercased `DisplayName` rather than the raw venue id (P2-HONEST-06 routed it through `VenueRegistry` at some point after this census's original AdventureTicker snapshot).
 
-Deliberately silent events, documented in-file (:253-266): `SupplyDelivered`, `MarketShareShifted`, `TariffApplied`, `BountyPosted`.
+Deliberately silent events: `SupplyDelivered`, `MarketShareShifted` (the non-idle/claw-back direction only), `TariffApplied` — documented in-file at :1421-1433. `BountyPosted` is silent too, documented beside its sibling `BountyPaid` at :1405-1406.
 
 ### 3.9 The raid, watched live
 
@@ -421,7 +423,7 @@ Deliberately silent events, documented in-file (:253-266): `SupplyDelivered`, `M
 
 ### 3.11 The campaign's ending
 
-`ChronicleScroll` (godot/scripts/panels/ChronicleScroll.cs), fired once on `CampaignEnded`: title "THE CHRONICLE" (:197); tally rows (:116-137): "The deepest floor reached" → `DepthCopy.Deepest` ("not yet" / "floor {N}", sim/GameSim/Drama/DepthCopy.cs:25); "Heroes who did not come back" → "none — every one of them came home" / "{N}"; "…of those, given their farewell rite" → "{N}"; "Blows struck with your work" → "none the heroes spoke of" / "{N} — credited to your hands"; "Stories the tavern kept" → "{N}"; "Heroes who became legends" → "none yet" / "{N}". Closer (:141): "Your craft wrote their legends. The forge is still warm." Button "Close" (:215).
+`ChronicleScroll` is deleted (P2-MEMORY-14, P2-OQ4): its job — the reader for `CampaignEnded` — moved into `LegendsWall`'s own closing chapter, the bind page (`ShowBindPage`/`RenderBindPage`, godot/scripts/panels/LegendsWall.cs:555,562), opened automatically the same way (`MainUi.cs:1577-1580`) or any time after from the book's index ("Bind the Book" row). Title "THE CHRONICLE" (LegendsWall.cs:566). The old scroll's six fixed tally rows are gone; `RenderBindPage` instead prints whatever `ChronicleComposer.Compose(state)` returns (sim/GameSim/Chronicle/ChronicleComposer.cs, P2-MEMORY-13) — the fifteen characterisation predicates named in MAKERS-MARK.md §11.15 (P2-MEMORY), not a re-derivation of the old tally rows, so this census cannot vouch for their exact wording without a separate pass over `ChronicleComposer.cs` itself. Two things the bind page adds that the scroll never had: a day-stamp line, "Composed on day {N}. The world is still open — bind again anytime." (LegendsWall.cs:571), and an "Export as HTML" button (`ExportChronicleHtml`, LegendsWall.cs:586) that writes a self-contained file to `user://chronicle_day_{N}.html` via `WriteHtmlExport`/`ComposeExportHtml` (LegendsWall.cs:595,630). No staged line-by-line reveal (the old scroll's 0.45s/line) and no dedicated "Close" button distinct from the book's own Back row — the bind page is one more page of the book, not a separate modal.
 
 ---
 
@@ -432,7 +434,7 @@ Deliberately silent events, documented in-file (:253-266): `SupplyDelivered`, `M
 - Starter roster (sim/GameSim/Heroes/HeroRoster.cs:42-47): "Torvald" (Vanguard), "Brunhilde" (Vanguard), "Kael" (Striker), "Sable" (Striker), "Elowen" (Mystic), "Moss" (Mystic).
 - Recruit name pool (HeroRoster.cs:26-30): "Astrid", "Bram", "Cedany", "Dain", "Esben", "Freya", "Gorm", "Hilde", "Ivar", "Jorunn", "Kettil", "Liv", "Magnus", "Nessa", "Orin", "Petra", "Bertha", "Pim", "Snorri", "Grimhild", "Odd", "Tove", "Ulf", "Wren".
 - Duplicate-name epithets (sim/GameSim/Heroes/HeroIdentity.cs:42-47): "the Younger", "the Third", "the Fourth", then "the {n}th" — rendered as `{Name} {epithet}` at read time; the first namesake keeps the bare name.
-- Unknown-id fallbacks, various surfaces: `Hero #{id}` (e.g. MainUi.cs:2074, AdventureTicker.cs:293, PipDock.cs:210).
+- Unknown-id fallbacks, various surfaces: `Hero #{id}` (e.g. MainUi.cs:2074, LegendsWall.cs:1268 — formerly AdventureTicker.cs, deleted P2-MEMORY-12, PipDock.cs:210).
 
 ### 4.2 Classes, ranks, moods, bands, traits
 
@@ -539,7 +541,7 @@ The 2.5D town's wandering figures carry no dialogue. Townsfolk have flavor names
 
 ### 5.1 Gossip — the tavern's morning voice
 
-`GossipGenerator` (sim/GameSim/Drama/GossipGenerator.cs) turns yesterday's real events into at most 3 lines/day (`MaxLinesPerDay`, :39), each traceable to a logged event (law: every line traces to something that happened). Rendered in the Tavern's "TAVERN GOSSIP" section as `  [day {N}] "{line}"` (TavernPanel.cs:153,171) and verbatim on the ticker (AdventureTicker.cs:144). Slot fills: hero name, `died.Cause` (e.g. "slain by a Cave Rat" — sim/GameSim/Drama/ExpeditionRevealSystem.cs:320-321, with "lost to the Mine" for an off-screen loss :317), item name, "floor {N}", faction name, and the direction words "warmed"/"cooled" (GossipGenerator.cs:234-235).
+`GossipGenerator` (sim/GameSim/Drama/GossipGenerator.cs) turns yesterday's real events into at most 3 lines/day (`MaxLinesPerDay`, :39), each traceable to a logged event (law: every line traces to something that happened). Rendered in the Tavern's "TAVERN GOSSIP" section as `  [day {N}] "{line}"` (TavernPanel.cs:153,171) and verbatim in the book's day pages (LegendsWall.cs:1296, `GossipEmitted e => e.Line` — formerly the ticker, AdventureTicker.cs:144, deleted P2-MEMORY-12). Slot fills: hero name, `died.Cause` (e.g. "slain by a Cave Rat" — sim/GameSim/Drama/ExpeditionRevealSystem.cs:320-321, with "lost to the Mine" for an off-screen loss :317), item name, "floor {N}", faction name, and the direction words "warmed"/"cooled" (GossipGenerator.cs:234-235).
 
 ### 5.2 TavernPack — the gossip template corpus (480 lines)
 

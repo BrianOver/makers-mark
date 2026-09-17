@@ -330,6 +330,68 @@ public class TutorialCopyIsFollowableTests
     }
 
     /// <summary>
+    /// P2-SCREEN-31: the real per-row gate this unit exists for. U39 measured all 11 registry rows
+    /// overflowing the tracker's real 3-line budget at its real <see cref="ObjectiveTracker.DockWidth"/>
+    /// (read through <see cref="Label.GetLineCount"/>, never a guessed characters-per-line constant —
+    /// same method as <see cref="TheFitGate_MatchesTheRenderedWidth_AndRejectsACardThatOverflowsTheRealBudget"/>
+    /// above, applied to the real corpus instead of two synthetic strings). This unit trimmed 10 of
+    /// the 11 to fit; <see cref="TutorialStep.Commission"/> is the one documented exception this test
+    /// still proves stays a REPORTED overflow, not a silently regressed one:
+    /// <c>MainUi.CommissionsTrayTooltip</c> alone is 67 characters, and
+    /// <c>GatingFoldedIntoInstructionTests</c>/<c>TutorialNeverAsksTheImpossibleTests</c> both pin
+    /// that Commission's instruction quotes it verbatim even outside Morning or with an empty board
+    /// (folding in "No one is asking today") — together they outrun the budget before this row's own
+    /// wording adds a single word, and shortening the tooltip itself is <c>MainUi.cs</c>'s call, not
+    /// this unit's (it is the tray button's own live label, not tutorial-only copy).
+    ///
+    /// <para>BuyMaterial/Craft render whichever <see cref="GameSim.Advisor.ObjectiveAdvisor.Suggest"/>
+    /// suggestion currently ranks first (<see cref="TutorialFlow.StepText"/>'s own design — the shared
+    /// slot can show ANY of several dynamic, hero/recipe-named sentences), so this pins today's real
+    /// fixture corpus, not a proof that fits for every possible hero/recipe name ever generated.</para>
+    /// </summary>
+    [TestCase]
+    public async Task TenOfElevenRegistryRows_FitTheRealThreeLineBudget_CommissionIsADocumentedException()
+    {
+        const int realLineBudget = 3;
+        var exceptions = new HashSet<TutorialStep> { TutorialStep.Commission };
+
+        var ui = MountMainUi();
+        try
+        {
+            ui.Town.WorldViewport.RenderTargetUpdateMode = SubViewport.UpdateMode.Disabled;
+            var world = ui.Adapter.CurrentState;
+
+            foreach (var step in Enum.GetValues<TutorialStep>())
+            {
+                var state = ActionableFor(world, step);
+                var copy = Plain(ui.Tutorial.CopyFor(step, state));
+                ui.Objective.Refresh(state, tutorialOverride: copy);
+                await SettleUntil(
+                    ui, () => ui.Objective.Reason.GetLineCount() > 0, frameBudget: 10,
+                    conditionDescription: $"{step}'s line to finish wrapping");
+                var lines = ui.Objective.Reason.GetLineCount();
+
+                if (exceptions.Contains(step))
+                {
+                    continue;
+                }
+
+                AssertThat(lines)
+                    .OverrideFailureMessage(
+                        $"{step} now overflows the tracker's real {realLineBudget}-line budget at " +
+                        $"{ObjectiveTracker.DockWidth}px ({lines} lines) — either shorten its copy back " +
+                        $"under budget, or add it to this test's own documented `exceptions` set with a " +
+                        $"reason, the same way Commission is: \"{copy}\"")
+                    .IsLessEqual(realLineBudget);
+            }
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>
     /// Step 5's OTHER line — the one the owner actually hit. The Watch control is on screen only
     /// while a party is underground, so in any other phase step 5 cannot name it, and for a while it
     /// named it anyway ("it auto jumped to night???? yet this is still on tutorial 5???"). What the

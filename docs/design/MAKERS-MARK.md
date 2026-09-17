@@ -71,7 +71,7 @@ never blurs the two.
 | Emberfall Foundry | **BUILT AND LIVE** — in `LiveRotation` with committed art and a priced ore ladder (firebrick..heartcoal) | `VenueRegistry.cs:50-64`, `MaterialRegistry.cs:94-105`; shipped by #453 (rung live) + #462 (Foundry art) |
 | Economy heartbeats: rent, Guild assessment + Confidence, rival share, destitution floor, bounty D_q + board minimums | **BUILT** | `RentSystem.cs`, `GuildAssessmentSystem.cs`, `BountyRules.cs` |
 | The four endgame gold sinks: UpgradeForge, BuyForgeSupply, MasterworkAttempt, CommissionLegendaryWork | **BUILT** (wave U3/U4, 2026-08-07, R2 ruled build). All four now have buttons; all 25 actions have a surface. *Corrected: this row previously said "3 of 4 have bell-tray strings waiting" — it was **2 of 4**. The third `PendingVerbVocab` entry is `SetProfessions`, not a sink, and the other two sinks resolve immediately so they never needed a tray entry — which is precisely why nothing flagged them.* | `godot/scripts/panels/ForgePanel.cs` (Foundry section); `godot/tests/ActionReachabilityCensusTests.cs` |
-| Three-act arc: act flips, ending screen (world stays open) | **BUILT** — the ending renders *when it fires*; reachability is unasserted (defect below) and unconfirmed on a real screen | `ArcDirectorSystem.cs`; `panels/ChronicleScroll.cs` |
+| Three-act arc: act flips, ending screen (world stays open) | **BUILT** — the ending renders *when it fires*; reachability is unasserted (defect below) and unconfirmed on a real screen | `ArcDirectorSystem.cs`; `panels/LegendsWall.cs` |
 | The climax's *content* (Final Commission / Warden of the Heart) | **DESIGNED** — `ClimaxReached` fires as a bare seam, by its own admission | `Contracts/Events.cs:293-297`; §9.7 |
 | Title/system menus, tutorial, audio pass one, machine playtest harness | **BUILT** | |
 | Night leads with the mark (reveal ordering — beats first, sale-and-deed grouped) | **DESIGNED** (loop-plan U5/H3) — cheapest unshipped piece of the answer half | |
@@ -1785,7 +1785,7 @@ There are exactly 25 `PlayerAction` types (`sim/GameSim/Contracts/Actions.cs`, o
 
 **Reachability verdict.** **All 25 actions have a recorded Godot surface.** The four Phase-D gold sinks (#21-24) were surfaced in the reachability wave; the table above records where each now lives. This is no longer checked by reading — `godot/tests/ActionReachabilityCensusTests.cs` reflection-enumerates every concrete `PlayerAction` and fails BY NAME on any that has neither a named surface nor a pinned exclusion with a reason. Its exclusions map is currently empty. Note the census is a *decision* census: it proves a surfacing decision was recorded for every action, not that any given button is clickable — that proof lives in the `PressEnabled` tests in `ForgeCraftTests`, `LegendsWallTests` and `LedgerModalTests`.
 
-No Godot panel is orphaned. Roughly half of the panels are pure read-only displays by design (HeroesPanel, TavernPanel, DepthsPanel, DemandPanel, HeroCards, ProgressionPanel, MineWatch, RaidForecastBoard, ChronicleScroll, ScryingMirror, DelveStage, ProvenanceCard) — they submit nothing and exist to make the sim legible. The CLI (`sim/GameSim.Cli/Program.cs`) is a strict superset of the Godot client's action reach.
+No Godot panel is orphaned. Roughly half of the panels are pure read-only displays by design (HeroesPanel, TavernPanel, DepthsPanel, DemandPanel, HeroCards, ProgressionPanel, MineWatch, RaidForecastBoard, ScryingMirror, DelveStage, ProvenanceCard) — they submit nothing and exist to make the sim legible. The CLI (`sim/GameSim.Cli/Program.cs`) is a strict superset of the Godot client's action reach.
 
 **Timing model.** 22 of 25 actions resolve instantly via `ApplyNow` (`GameKernel.cs:59-103`), which applies the one action, persists RNG + action log, and does NOT advance the phase or reset budgets. Exactly three ride the bell as deliberate ceremony: `UpgradeForgeAction`, `SetProfessionsAction`, `CommissionLegendaryWorkAction` (`ActionTiming.cs:121-128`). The list is deny-by-default: any future action type queues until someone opts it in (`ActionTiming.cs:60-62`).
 
@@ -2459,6 +2459,7 @@ changes when it is done. A regression pin now holds that.
 | U34 | She says what she's seen | `godot/scripts/ui/MentorVoice.cs` | U4, U33 |
 | U35 | She leaves | `godot/scripts/town2d/InteriorLayout2D.cs`, `godot/scripts/ui/MentorVoice.cs` | U32, U33 |
 | U36 | She has a body and a face | `art/specs/`, `godot/scripts/ui/MentorBanner.cs` | U33 |
+| P2-SCREEN-34 | The dead ASCII-grid path stops accepting town-cast ids (root cause of U36's blocked art) | `tools/art/gen_town_sprites.py` | — | [G] |
 | U37 | She is somewhere, and she remembers | `godot/scripts/town2d/`, `godot/scripts/ui/TutorialFlow.cs` | U34, U35 |
 | U38 | A harness takes the course | `godot/scripts/tools/FullPlaytest.cs` | U15, U29 |
 | U39 | Copy cannot outlive its control | `godot/tests/`, `godot/scripts/PlaytestLog.cs` | U33 |
@@ -3480,9 +3481,11 @@ in its own U-number namespace and nothing here renames or displaces its remainin
 
 Phase 2 exists because the game now earns its sentence and delivers it badly. The counterfactual
 proof — the moat — prints as one ledger line under a marquee that scrolls it off the screen
-mid-word. The campaign's closing ceremony is the one modal in the game with no ownership at all
-(`ChronicleScroll` is absent from `MainUi.OverlaySurfaces()`, so the clock runs and the interact
-prompt draws over the ending). The course teaches links 1–3 and stops the day before the game
+mid-word. The campaign's closing ceremony owned nothing for a while — `ChronicleScroll` was missing from a
+hand-written `MainUi.OverlaySurfaces()` array, so the clock ran and the interact prompt drew over
+the ending. Both halves are gone: `P2-SCREEN-04` made that array a projection over
+`SurfaceArbiter.Discover` (`MainUi.cs:4751`), so a surface can no longer omit itself, and
+P2-MEMORY-14 deleted the class outright — the ending is now `LegendsWall.ShowBindPage`. The course teaches links 1–3 and stops the day before the game
 starts proving itself. And the wall — `P2-LONG-01` re-dates the menu's own novelty to median day
 25.0 (range 13–43 across a 20-seed sweep), not the day-11 figure this section was written
 against, while `P2-LONG-26` re-dates the day's FELT routine tighter still, median day 12.0 —
@@ -3828,7 +3831,7 @@ record: *a scrolling strip is reading on a timer — it decides when you may sta
 when you must stop, in a game whose laws forbid timers on anything that matters.* Its retention is
 3 days — a memory surface that forgets — and for a dozen event types it is the only sentence the
 game ever says. The event tail moves into the book's day pages, with the ticker's own `FormatLine`
-switch (`AdventureTicker.cs:133`) surviving as their composer — full retention, queryable by day,
+switch (now `LegendsWall.cs:1286`, moved there by P2-MEMORY-12) surviving as their composer — full retention, queryable by day,
 in the surface that is already link 5's home. The genuinely urgent 0–2 lines a day are already
 covered by the ledger, the narrator and `WorldNotice`. If the feel-test misses the bottom-edge
 ambience, the cheap re-add is a single latest-line label that fades after read — not a marquee.
@@ -4246,7 +4249,7 @@ the fourth investigation.
   narrated in the CLI (`sim/GameSim.Cli/EventNarration.cs:74-75`) and it gates a one-time mentor
   line in the shipped client (`godot/scripts/MainUi.cs:1236-1245`). What it lacks is a *marquee*
   case, and that is a pinned ruling with a test, not an omission
-  (`godot/scripts/ui/AdventureTicker.cs:257-262`, `godot/tests/UnsilencedEventTests.cs:172-195`).
+  (`godot/scripts/panels/LegendsWall.cs:1421-1433`, `godot/tests/UnsilencedEventTests.cs`).
 - `QualityRoller.Roll` (`sim/GameSim/Crafting/QualityRoller.cs:46`, table at `:78-86`) is
   unreachable in production but is **not** dead code in the way `P2-HONEST-09`'s targets are. Its
   two call sites (`CraftingHandlers.cs:183`, `HeirloomHandlers.cs:136`) are the false arms of
@@ -4610,7 +4613,6 @@ name (§11.6 rule 4).
 | ⚑ P2-SCREEN-16 | The audio column gets an owner — every ceremony names its cues (P2-KTD11) | `godot/scripts/MainUi.cs` (`SoundTheTick`), `godot/scripts/audio/SfxLibrary.cs` (read-only), `godot/tests/` | — | [G] |
 | P2-SCREEN-17 | The save-replace press names the day it destroys | `godot/scripts/NewGameSelect.cs` | — | [G] |
 | ⚑ P2-SCREEN-18 | The muster names what the full slots already hold, not only the gaps | `sim/GameSim/Heroes/RaidForecast.cs`, `godot/scripts/panels/RaidForecastBoard.cs` | — | [S] |
-| ⚑ P2-SCREEN-20 | The day's thread survives being read late (research M5) | `godot/scripts/ui/AdventureTicker.cs`, `godot/scripts/panels/LegendsWall.cs` | P2-MEMORY-12 | [G] |
 | ⚑ P2-SCREEN-21 | The room you stand in stops being a sliver when a drawer is open | `godot/scripts/town2d/Town2D.cs`, `godot/scripts/town2d/InteriorLayout2D.cs` | — | [G] |
 | ⚑ P2-SCREEN-22 | The interact prompt anchors to what it names, not to the bottom of the screen | `godot/scripts/MainUi.cs` | — | [G] |
 | ⚑ P2-SCREEN-23 | The forge's Day-1 card stops reading as four error messages | `godot/scripts/panels/ForgePanel.cs` | — | [G] |
@@ -4622,7 +4624,6 @@ name (§11.6 rule 4).
 | ⚑ P2-SCREEN-29 | A sized `TextureRect` cannot silently claim its texture's size | `sim/GameSim.Tests/Hygiene/TextureRectExpandModeCensusTests.cs`, `godot/scripts/MainUi.cs`, `godot/scripts/panels/MineWatch.cs`, `godot/scripts/panels/ProvenanceCard.cs`, `godot/scripts/panels/SimPanel.cs`, `godot/scripts/ui/UiKit.cs` | — | [S] |
 | P2-SCREEN-31 | The objective rows fit the tracker's real three-line budget | `godot/scripts/ui/ObjectiveTracker.cs` corpus, `sim/GameSim/Advisor/ObjectiveAdvisor.cs`, `godot/tests/` | — | [G] |
 | P2-SCREEN-32 | The Shop sheds 171px of decoration (Stock still does not clear the fold) | `godot/scripts/panels/ShopPanel.cs`, `godot/scripts/panels/CounterPanel.cs` | — | [G] |
-| P2-SCREEN-33 | The once-ever caption stops reserving its height after it is read | `godot/scripts/panels/DepthsPanel.cs`, `godot/scripts/ui/UiKit.cs` | — | [G] |
 | P2-ONBOARD-09 | The Goodwill chip speaks the band or dies (the beat's own half landed) | `godot/scripts/panels/CounterPanel.cs` | — | [G] |
 | P2-ONBOARD-10 | The seed becomes enterable at New Game | `godot/scripts/NewGameSelect.cs` | — | [G] |
 | P2-PROOF-03 | The stage, pass one — one duel, recorded rolls | new `godot/scripts/panels/TellingPanel.cs` (+`.uid`) | — | [G] |
@@ -4639,9 +4640,7 @@ name (§11.6 rule 4).
 | P2-MEMORY-08 | The death-pool rewrite in place + the `{cause}` grammar contract | `sim/GameSim/Flavor/Packs/TavernPack.cs`, pack tests | — | [S] |
 | P2-MEMORY-10 | The book shell — `LegendsWall` refit, verbs and anchors migrated | `godot/scripts/panels/LegendsWall.cs` | — | [G] |
 | P2-MEMORY-11 | The item pages (the fallen's page is P2-MEMORY-10's shell, already shipped) | `godot/scripts/panels/LegendsWall.cs`, `godot/scripts/panels/ProvenanceCard.cs` | — | [G] |
-| P2-MEMORY-12 | Day pages absorb the ticker's composer; the marquee dies (P2-OQ3) | `godot/scripts/ui/AdventureTicker.cs` (`FormatLine` survives), `godot/scripts/MainUi.cs` | P2-MEMORY-10 | [G] |
 | P2-MEMORY-13 | `ChronicleComposer` and the fifteen predicates | new `sim/GameSim/Chronicle/ChronicleComposer.cs`, `sim/GameSim.Tests/` | — | [S] |
-| P2-MEMORY-14 | The bind and the export; `ChronicleScroll.cs` deleted (P2-OQ4) | `godot/scripts/panels/LegendsWall.cs`, `godot/scripts/panels/ChronicleScroll.cs` (deleted) | P2-MEMORY-11, P2-MEMORY-13 | [G] |
 | P2-MEMORY-15 | `BountyRefunded` — the silent refund gets an event | `sim/GameSim/Contracts/Events.cs`, `sim/GameSim/Bounties/BountySystems.cs` | — | [S][C][GOLD] |
 | P2-MEMORY-16 | `Fleeced` on the close event; fleece and pinned gossip | `sim/GameSim/Contracts/Events.cs`, `sim/GameSim/Counter/HaggleResolver.cs`, `sim/GameSim/Drama/GossipGenerator.cs` | P2-MEMORY-15 (serialize) | [S][C][GOLD] |
 | ⚑ P2-MEMORY-20 | The forecast gets a face (research M3) | `godot/scripts/ui/ArcScenes.cs`, `godot/scripts/panels/RaidForecastBoard.cs` | — | [G] |
@@ -4712,7 +4711,6 @@ name (§11.6 rule 4).
 | P2-HONEST-20 | `SHOT_STATE=PhaseN` lands somewhere its own comment does not claim — the capture harness's phase map is wrong | `godot/tools/shot_harness.gd`, `tools/shoot.ps1` | — | [G] |
 | P2-HONEST-21 | One art `.import` uid regenerates on every import, dirtying a clean tree | `godot/assets/art/item-mithril-warblade.png.import` | — | [G] |
 | ⚑ P2-HONEST-22 | The runner fee is mirrored in four files and guarded in none | `sim/GameSim/Expedition/CampHandlers.cs`, `godot/scripts/panels/CampPanel.cs`, `sim/GameSim.Tests/`, `godot/tests/` | — | [S] |
-| ⚑ P2-HONEST-23 | The idle day's cost is named, not only charged (law 7) | `sim/GameSim/Economy/MarketShareSystem.cs`, `godot/scripts/ui/AdventureTicker.cs` | — | [G] |
 | ⚑ P2-HONEST-24 | The advisor states the stake instead of giving the order (law 1) | `sim/GameSim/Advisor/ObjectiveAdvisor.cs`, `sim/GameSim.Tests/` | — | [S] |
 | ⚑ P2-HONEST-25 | Every ore row names the faction it feeds, not only the tariffed ones | `godot/scripts/panels/TavernPanel.cs`, `godot/scripts/panels/LedgerModal.cs` | — | [G] |
 | ⚑ P2-HONEST-26 | The night's narration is shown or stops being composed | `godot/scripts/panels/LedgerModal.cs`, `sim/GameSim/Drama/ExpeditionNarrator.cs` | — | [G] |
@@ -4897,8 +4895,8 @@ warn about.
 - **`P2-HONEST-17`** — `GameState.RivalMarketSharePermille` (a full idle day raises the rival's
   competitive edge, discounting their next-Morning restock; any real-work day lowers it,
   `sim/GameSim/Economy/RivalRestockSystem.cs`) has zero `godot/scripts` readers. Its own change
-  event, `MarketShareShifted`, is a *deliberate* ticker exclusion
-  (`godot/scripts/ui/AdventureTicker.cs:256`, documented in `docs/reference/surfaces-census.md` §8)
+  event, `MarketShareShifted`, is a *deliberate* day-page exclusion
+  (`godot/scripts/panels/LegendsWall.cs:1421`, documented in `docs/reference/surfaces-census.md` §8)
   — so neither the meter nor its own event ever reaches the player. `ShopPanel.cs`'s "Rival Shelf"
   shows the rival's stock and prices but never the meter setting their discount.
 - **`P2-HONEST-18`** — `InFlightExpedition.Gold` (per-hero expedition gold accumulated so far, while
@@ -5463,7 +5461,7 @@ default applied.**
   rather than a defect, and it is the owner's because both answers are defensible. The sim emits
   `HeroConsideringLeaving` (`sim/GameSim/Contracts/Events.cs:282`) from a confidence crossing
   (`sim/GameSim/Economy/GuildAssessmentSystem.cs:159`), and it renders as
-  *"{Hero} is talking about leaving town."* (`godot/scripts/ui/AdventureTicker.cs:194-195`,
+  *"{Hero} is talking about leaving town."* (`godot/scripts/panels/LegendsWall.cs:1345`,
   `godot/scripts/MainUi.cs:2127-2128`, pinned by `godot/tests/UnsilencedEventTests.cs:85`). There
   is no departure mechanism anywhere in `sim/GameSim` — no roster removal of any kind — and
   `THE-GAME.md` pins that there never will be: *"No wound outlives the night, no hero ever quits,
@@ -6216,12 +6214,6 @@ other games.
 - Approach: `"slain by a {MonsterKind}"` is the anonymous-aggregate failure in our own voice. The
   margin is already recorded. This is P2-PROOF's own chosen substitute for the rival's mirror.
 
-#### P2-SCREEN-20. The day's thread survives being read late (research M5)
-
-- Goal: Omasse's Grindcast was missed because it played while the player forged. Ours does too.
-- Approach: Godot-only; the thread is readable after the fact without becoming a summary of
-  scenes that died unshown.
-
 #### P2-PEOPLE-15. The camp speaks first
 
 - Goal: the vigil stops being a dashboard and becomes the question the middle of the day exists to
@@ -6527,6 +6519,38 @@ need". And `DirectorSystem` (434 lines, one RNG draw a morning) fires five autho
 lockdown latch that by their own contract change no combat, routing or economy rule
 (`Events.cs:267,274-275`) — a candidate cut, `[S][C][GOLD]` because removing a draw moves the golden.
 Both need an owner ruling before anything is built.
+
+#### P2-SCREEN-34. The town cast's ASCII-grid path is dead code, and U36 was authoring into it
+
+**Root cause found 2026-09-16, by probe.** Registering a new sprite id whose grid AND palette were
+held byte-identical to `slight`'s produced a PNG differing in **307 of 640 pixels**, with the opaque
+span at row y10 reading `(6, 13)` for `slight` and `(4, 16)` for the probe. A new id alone moved the
+silhouette, which is impossible from a deterministic renderer — so the two were not going through
+the same renderer.
+
+They are not. `main()` builds `_ai_composite_civilian_ids` from `CIVILIAN_HUES` and **excludes every
+one of them from `all_sprites`**, so `broad`, `slight` and their variant pools never render through
+the hand-ASCII grid path at all; their committed PNGs come from a separate AI-composite art job
+(that job's own `MANIFEST.txt`, which also added the `belder` / `bmatron` / `steen` / `selder`
+silhouettes at pool slots 6–15). The script says so in its own comment: the ASCII bodies are *"kept
+for the same reason the hero SPRITES dict is kept, not deleted — but nothing ships that output for
+those ids any longer."*
+
+Bryn was the only town-cast id NOT in that exclusion set, so she was the only one actually rendered
+by the grid path. **The "blob" is what that path emits for everybody**; it is invisible because
+every shipped townsperson is excluded from it. Three authoring attempts failed for this reason and
+no amount of pixel work would have fixed them — the downsample, the hue, the head and the bun were
+all eliminated by A/B before the probe found this.
+
+What this means for `U36`: her sprite must come from the **same AI-composite job** that produced the
+rest of the cast, not from a hand-authored grid. Her `art/specs/town/MentorSpecs.cs` entry and her
+portrait spec stay as they are; what changes is which pipeline draws the body.
+
+The open question for the owner, and the reason this is a row rather than a fix: the ASCII-grid path
+still carries live code for bodies nothing ships, so a future session can author into it again
+exactly as this one did. Either it earns a guard that refuses to emit a town-cast id the composite
+job owns, or the dead branch goes. **A guard is the cheaper half and is what this row builds; the
+deletion is an owner call.**
 
 #### P2-SCREEN-31. The objective rows fit the tracker's real three-line budget
 

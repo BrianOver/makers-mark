@@ -81,12 +81,14 @@ the invariants the six base bodies always had — it was written because the fir
 `.import` sidecars Godot had defaulted to `fix_alpha_border=true`, and a full green engine run said
 nothing, since the older guard iterates six hand-listed class ids.
 
-**Twenty-one procedural animators, all wired, zero orphans** — the wave added the monster
+**Nineteen procedural animators, all wired, zero orphans** — the wave added the monster
 idle-breathe (`DelveStage`, U6) and the forge ember glow (`ForgeEmberGlow2D`, U7). `SpriteMotion`, `TreeSway`,
 `AmbientLife2D`, `MarketLife2D`, `TavernLife2D`, `DayPhaseTint`, `MineWatch`, `DelveStage`,
 `TabFade`, `DrawerHost`, `PipDock`, `ObjectiveTracker`, `Building2D`,
-`ChronicleScroll`, `AdventureTicker`, `AudioDirector` crossfade, the gold-chip pop, the UiKit hover
-swap, and the ForgePanel focus flash.
+`AudioDirector` crossfade, the gold-chip pop, the UiKit hover
+swap, and the ForgePanel focus flash. (`ChronicleScroll`'s staged line-by-line reveal and
+`AdventureTicker`'s 48px/s scroll both died with those classes — P2-MEMORY-12/14 — and neither's
+replacement, `LegendsWall`'s day pages and bind page, animates: both render as static text.)
 
 **House rules, verified by sweep rather than assumed:**
 - **No engine `Tween` anywhere.** Every animator uses accumulated frame delta with sine/lerp, for
