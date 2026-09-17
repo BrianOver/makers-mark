@@ -418,7 +418,7 @@ public class HeroPanelTests
     // it "the guild hall the heroes drink and muster in", so it is the muster surface too.
 
     [TestCase]
-    public void SixHeroesShopping_WithStagedStock_RenderSixExplanations_NeverOnTheTicker()
+    public void SixHeroesShopping_WithStagedStock_RenderSixExplanations_NeverInTheDayLog()
     {
         // VOLUME correction: HeroShoppingSystem only stamps a card when the player's OWN shelf
         // was on one side of the decision or the other (HeroShoppingSystem.cs:213-216) — an
@@ -457,12 +457,16 @@ public class HeroPanelTests
             // Six distinct explanation lines actually rendered (not deduped/overwritten).
             AssertThat(heroCardsText.Split("‰ gap)").Length - 1).IsEqual(6);
 
-            // PLACEMENT: never on the marquee — it fires per shopping hero every morning, which
-            // would crowd the news above it out of a finite strip (the same reason
-            // MarketShareShifted is a pinned ticker exclusion, AdventureTickerTests/
-            // UnsilencedEventTests). The six ItemSold sales above DO legitimately add ticker
-            // lines; this only asserts the DECISION cards never also land there.
-            AssertThat(ui.Ticker.DisplayText).NotContains("‰ gap)");
+            // PLACEMENT: never in the book's day log either (P2-MEMORY-12) — it fires per shopping
+            // hero every morning, which this panel already tells the story of on its own (the same
+            // "already said elsewhere" reasoning that keeps MarketShareShifted's active-recovery
+            // half pinned silent there too, UnsilencedEventTests). The six ItemSold sales above DO
+            // legitimately add day-log lines; this only asserts the DECISION cards never also land
+            // there.
+            var state = ui.Adapter.CurrentState;
+            var dayLog = state.EventLog.Select(e => e.Day).Distinct()
+                .SelectMany(day => GodotClient.Panels.LegendsWall.DayLines(state, day));
+            AssertThat(string.Join(" | ", dayLog)).NotContains("‰ gap)");
         }
         finally
         {

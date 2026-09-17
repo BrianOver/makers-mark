@@ -87,7 +87,7 @@ public static class DecisionEvents
                 case AttributionBeatEvent beat:
                     // The counterfactual-proven beat this whole game is named after (PlaytestLog's
                     // own 2026-08-11 doc note). Detail already reaches the Ledger/JourneyStream/
-                    // AdventureTicker on screen; this is the first time it reaches the session log.
+                    // book's day pages on screen; this is the first time it reaches the session log.
                     PlaytestLog.Decision($"attribution-beat:{beat.Beat}",
                         $"item #{beat.Item.Value} / hero #{beat.Hero.Value} / floor {beat.Floor}", beat.Detail);
                     break;

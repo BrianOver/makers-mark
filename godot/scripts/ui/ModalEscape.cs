@@ -14,7 +14,7 @@ namespace GodotClient.Ui;
 ///
 /// <para><b>Why a static helper, not a <see cref="Panels.SimPanel"/> override.</b> <c>SimPanel</c> is
 /// the base for BOTH the true full-rect modal overlays this fixes (<c>CampPanel</c>/
-/// <c>ScryingMirror</c>/<c>LedgerModal</c>/<c>ChronicleScroll</c>) AND ordinary DRAWER CONTENT
+/// <c>ScryingMirror</c>/<c>LedgerModal</c>/<c>LegendsWall</c>) AND ordinary DRAWER CONTENT
 /// (<c>ForgePanel</c>/<c>ShopPanel</c>/<c>TavernPanel</c>/... — everything <see cref="DrawerHost"/>
 /// registers) that lives NESTED inside <see cref="DrawerHost"/>'s slot. Godot calls <c>_Input</c> in
 /// reverse tree order — children before parents — so a blanket Escape handler on <c>SimPanel</c>

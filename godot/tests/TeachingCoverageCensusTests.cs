@@ -438,10 +438,6 @@ public class TeachingCoverageCensusTests
 
     private static readonly Dictionary<Type, string> PanelUntaught = new()
     {
-        [typeof(ChronicleScroll)] =
-            "The campaign-ending chronicle is a one-time closing scroll shown once, at the campaign's " +
-            "natural end -- a first-touch lesson has no second occasion to matter and no dilemma to " +
-            "name. Read-only by construction.",
         [typeof(DemandPanel)] =
             "Read-only (pass reasons); no first-touch lesson and no numbered step opens on Demand -- " +
             "genuinely untaught, a gap for a future wave, not papered over.",
