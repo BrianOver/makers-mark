@@ -96,9 +96,15 @@ public static class ObjectiveAdvisor
             var accept = new AcceptCommissionAction(commission.Hero);
             if (ActionLegality.IsLegal(state, accept, phase))
             {
+                // P2-SCREEN-31: trimmed to help this line (and BuyMaterial/Craft's shared tutorial
+                // slot, which can render ANY top suggestion — TutorialFlow.StepText) fit the
+                // ObjectiveTracker's real 3-line tutorial budget. Every fact
+                // ObjectiveAdvisorTests.OpenCommission_TopSuggestion_... checks for (hero, slot,
+                // quality, "{premium}g", deadline day) is still present, just shorter-worded.
                 suggestions.Add(new Suggestion(accept,
-                    $"{commission.HeroName}'s commission is open — {commission.Slot} at {commission.MinQuality}+ quality " +
-                    $"for a {commission.PremiumGold}g premium (due day {commission.DeadlineDay}){GameSim.Heroes.CommissionSystem.SlotHonestyNote(commission.Slot)}."));
+                    $"{commission.HeroName}'s commission: {commission.Slot} at {commission.MinQuality}+, " +
+                    $"{commission.PremiumGold}g by day {commission.DeadlineDay}" +
+                    $"{GameSim.Heroes.CommissionSystem.SlotHonestyNote(commission.Slot)}."));
             }
         }
 
@@ -250,14 +256,19 @@ public static class ObjectiveAdvisor
             return null;
         }
 
+        // P2-SCREEN-31: both Reasons below trimmed to help the tutorial's shared BuyMaterial/Craft
+        // slot (TutorialFlow.StepText can render ANY top suggestion) fit the tracker's real 3-line
+        // budget — "aiming for floor X, missing Y gear" collapses to "missing Y gear for floor X",
+        // and "you already have enough"/"would complete" shorten without dropping a fact.
+        // Seed2026_15DayRun_TopSuggestion_... still matches on the literal word "stalled".
         var have = state.Player.Materials.TryGetValue(recipe.MaterialKey, out var stock) ? stock : 0;
         if (have >= recipe.MaterialQuantity)
         {
             var craft = new CraftAction(recipe.RecipeId, recipe.MaterialKey);
             return ActionLegality.IsLegal(state, craft, phase)
                 ? new Suggestion(craft,
-                    $"{stall.HeroName} is stalled at {DepthCopy.Deepest(stall.DeepestFloorReached)}, aiming for floor {stall.TargetFloor}, missing {slot} gear " +
-                    $"— '{recipe.Name}' is ready: you already have enough {MaterialRegistry.Require(recipe.MaterialKey).DisplayName.ToLowerInvariant()}.")
+                    $"{stall.HeroName}, stalled at {DepthCopy.Deepest(stall.DeepestFloorReached)}, needs {slot} for floor {stall.TargetFloor} " +
+                    $"— '{recipe.Name}' is ready: enough {MaterialRegistry.Require(recipe.MaterialKey).DisplayName.ToLowerInvariant()} in stock.")
                 : null;
         }
 
@@ -268,8 +279,8 @@ public static class ObjectiveAdvisor
             {
                 var cost = MaterialVendorHandlers.QuoteCost(recipe.MaterialKey, recipe.MaterialQuantity);
                 return new Suggestion(buy,
-                    $"{stall.HeroName} is stalled at {DepthCopy.Deepest(stall.DeepestFloorReached)}, aiming for floor {stall.TargetFloor}, missing {slot} gear " +
-                    $"— {recipe.MaterialQuantity} {MaterialRegistry.Require(recipe.MaterialKey).DisplayName.ToLowerInvariant()} ({cost}g) would complete '{recipe.Name}'.");
+                    $"{stall.HeroName}, stalled at {DepthCopy.Deepest(stall.DeepestFloorReached)}, needs {slot} for floor {stall.TargetFloor} " +
+                    $"— {recipe.MaterialQuantity} {MaterialRegistry.Require(recipe.MaterialKey).DisplayName.ToLowerInvariant()} ({cost}g) completes '{recipe.Name}'.");
             }
         }
 
@@ -347,9 +358,12 @@ public static class ObjectiveAdvisor
             var unlock = new UnlockTalentAction(gate, recipe.Profession);
             if (ActionLegality.IsLegal(state, unlock, phase))
             {
+                // P2-SCREEN-31: trimmed to help this line (and BuyMaterial/Craft's shared tutorial
+                // slot) fit the tracker's real 3-line budget — "carries ... gear below" / "(currently
+                // X)" / "opens the way to" shorten without dropping a fact.
                 return new Suggestion(unlock,
-                    $"{stall.HeroName} carries {targetSlot} gear below floor {nextFloor}'s {required}+ bar (currently {carried}) " +
-                    $"— '{profession.TalentNodes[gate].Name}' opens the way to '{recipe.Name}'.");
+                    $"{stall.HeroName}'s {targetSlot} is under floor {nextFloor}'s {required}+ bar ({carried} now) " +
+                    $"— '{profession.TalentNodes[gate].Name}' unlocks '{recipe.Name}'.");
             }
 
             // The rung BELOW the unlock, and the one this branch used to answer with silence. A gate
@@ -385,11 +399,18 @@ public static class ObjectiveAdvisor
                 // hero would have put the whole answer past the clamp. Every number is the sim's
                 // own (ForgeTierHandlers' cost/ore tables, and its own "Forge Tier {tierIndex + 2}"
                 // display convention for the tier a single upgrade lands on), never re-derived.
+                //
+                // P2-SCREEN-31: this used to be TWO sentences ("... opens the way to 'X'. {hero}
+                // carries ... opens that recipe once the forge can hold it.") repeating the recipe
+                // name and the "opens" verb — the single worst offender the fit-gate measurement
+                // found (~200 chars). Folded into one sentence, payload still first; every fact
+                // ObjectiveAdvisorTests.QualityStall_TopSuggestion_RaisesTheForge_... checks (the
+                // gate name, "{GoldCost}g", the hero, one Tier-2 recipe name) is still present.
                 return new Suggestion(upgrade,
                     $"Forge Tier {tierIndex + 2} ({ForgeTierHandlers.GoldCost[tierIndex]}g, " +
-                    $"{ForgeTierHandlers.OreQuantity} {MaterialRegistry.Require(ForgeTierHandlers.OreKey[tierIndex]).DisplayName.ToLowerInvariant()}) opens the way to '{recipe.Name}'. " +
-                    $"{stall.HeroName} carries {targetSlot} gear below floor {nextFloor}'s {required}+ bar " +
-                    $"(currently {carried}); '{profession.TalentNodes[gate].Name}' opens that recipe once the forge can hold it.");
+                    $"{ForgeTierHandlers.OreQuantity} {MaterialRegistry.Require(ForgeTierHandlers.OreKey[tierIndex]).DisplayName.ToLowerInvariant()}) " +
+                    $"unlocks '{profession.TalentNodes[gate].Name}' for '{recipe.Name}' — {stall.HeroName}'s {targetSlot} " +
+                    $"is under floor {nextFloor}'s {required}+ bar ({carried} now).");
             }
 
             return null;
@@ -401,11 +422,12 @@ public static class ObjectiveAdvisor
         var have = state.Player.Materials.TryGetValue(best.MaterialKey, out var stock) ? stock : 0;
         if (have >= best.MaterialQuantity)
         {
+            // P2-SCREEN-31: trimmed — same shape as the unlock case above.
             var craft = new CraftAction(best.RecipeId, best.MaterialKey);
             return ActionLegality.IsLegal(state, craft, phase)
                 ? new Suggestion(craft,
-                    $"{stall.HeroName} carries {targetSlot} gear below floor {nextFloor}'s {required}+ bar (currently {carried}) " +
-                    $"— '{best.Name}' is ready: you already have enough {MaterialRegistry.Require(best.MaterialKey).DisplayName.ToLowerInvariant()}.")
+                    $"{stall.HeroName}'s {targetSlot} is under floor {nextFloor}'s {required}+ bar ({carried} now) " +
+                    $"— '{best.Name}' is ready: enough {MaterialRegistry.Require(best.MaterialKey).DisplayName.ToLowerInvariant()} in stock.")
                 : null;
         }
 
@@ -416,8 +438,8 @@ public static class ObjectiveAdvisor
             {
                 var cost = MaterialVendorHandlers.QuoteCost(best.MaterialKey, best.MaterialQuantity);
                 return new Suggestion(buy,
-                    $"{stall.HeroName} carries {targetSlot} gear below floor {nextFloor}'s {required}+ bar (currently {carried}) " +
-                    $"— {best.MaterialQuantity} {MaterialRegistry.Require(best.MaterialKey).DisplayName.ToLowerInvariant()} ({cost}g) would complete '{best.Name}'.");
+                    $"{stall.HeroName}'s {targetSlot} is under floor {nextFloor}'s {required}+ bar ({carried} now) " +
+                    $"— {best.MaterialQuantity} {MaterialRegistry.Require(best.MaterialKey).DisplayName.ToLowerInvariant()} ({cost}g) completes '{best.Name}'.");
             }
         }
 
