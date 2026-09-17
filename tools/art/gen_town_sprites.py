@@ -1770,6 +1770,37 @@ def main() -> int:
         if name not in _ai_composite_cast_ids
     }
 
+    # P2-SCREEN-34: the human cast does not ship from this script any more, and a new id that
+    # LOOKS like one must not quietly start doing so.
+    #
+    # Everything in the exclusion set above is drawn by the AI-composite art job instead (see that
+    # set's own comment: "nothing ships that output for those ids any longer"). What the set cannot
+    # do is cover an id nobody has invented yet. U36 added `town2d-townsfolk-bryn` -- named like a
+    # townsperson, absent from CIVILIAN_HUES, therefore NOT excluded -- and became the only
+    # town-cast body this script actually rendered. The output was an unusable blob, and three
+    # separate authoring passes were spent tuning pixels before a probe found the cause: an id whose
+    # grid AND palette were held byte-identical to `slight` still differed in 307 of 640 pixels,
+    # because the two were never going through the same renderer at all.
+    #
+    # After exclusion this script legitimately emits monsters and props only -- zero town-cast ids,
+    # measured. So any survivor here is a mistake, and the families are derived from the same
+    # CIVILIAN_HUES / CLASS_HUES sources the exclusions use rather than hand-listed, so a hue added
+    # there covers this automatically.
+    _cast_prefixes = ("town2d-townsfolk-", "town2d-hero-", "player_smith")
+    _stowaways = sorted(n for n in all_sprites if n.startswith(_cast_prefixes))
+    if _stowaways:
+        die(
+            "town-cast id(s) reached this script's emit set: "
+            + ', '.join(_stowaways)
+            + ". The town cast -- townsfolk, hero bodies and the player -- ships from the "
+            "AI-COMPOSITE art job, not from these ASCII grids. The grids here are kept as source "
+            "for the monsters and props only; rendering a human body through them produces art "
+            "nothing ships (see P2-SCREEN-34). Adding a new townsperson or hero? Add the body to "
+            "the composite job and commit its PNGs, registering the id in that job's manifest -- "
+            "not here. Genuinely reviving the ASCII path for the cast is an owner decision, and "
+            "this guard is the thing to argue with."
+        )
+
     def canvas_of(sprite_name: str) -> tuple[int, int]:
         """(width, height) for one sprite. The town cast and the player are fixed-canvas; monsters
         vary in height by creature (a rat is not a worm), so their height comes from the grid
