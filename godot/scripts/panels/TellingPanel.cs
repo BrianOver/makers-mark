@@ -130,6 +130,38 @@ public sealed partial class TellingPanel : SimPanel
         b.Beat == e.Beat && b.Item == e.Item && b.Hero == e.Hero && b.Floor == e.Floor && b.Detail == e.Detail;
 
     /// <summary>
+    /// The beat-volume sweep (2026-09-11, MAKERS-MARK.md's own "beat-volume sweep" section):
+    /// KillingBlow is the ONE beat type <see cref="TellingQuery"/> cannot give a real counterfactual
+    /// second pass — <see cref="KillingBlowPayload"/> recomputes one honest epilogue number and stops
+    /// ("there the record ends"), never a replay. Whether that epilogue number actually MATTERS is
+    /// exactly <see cref="KillingBlowPayload.MonsterHpWithoutItem"/>: positive means the same
+    /// recorded roll would have left the monster standing without the item (the item was necessary —
+    /// decisive), zero or negative means the monster dies either way (a real fact, but not a proof).
+    /// <see cref="GodotClient.Panels.LedgerModal"/> reads this to decide whether a KillingBlow beat
+    /// earns its own row or folds into a per-item kill count — the SAME
+    /// <see cref="TellingQuery.Build"/> computation "Ask how it happened" itself stages, never a
+    /// second formula that could disagree with the one the button proves.
+    ///
+    /// <para>False for any beat that is not <see cref="BeatType.KillingBlow"/> (those beat types are
+    /// always decisive by construction — see each shape's own doc), and false when the beat's own
+    /// night has aged out of the retained one-night window (<see cref="FindResult"/>'s own null
+    /// case): the game shows only what it can still prove (law 4), never assumes decisiveness it can
+    /// no longer recompute.</para>
+    /// </summary>
+    public static bool IsDecisiveKillingBlow(GameState state, AttributionBeatEvent beatEvent)
+    {
+        if (beatEvent.Beat != BeatType.KillingBlow || FindResult(state, beatEvent) is not { } result)
+        {
+            return false;
+        }
+
+        var beat = result.Beats.First(b => Matches(b, beatEvent));
+        var venue = VenueRegistry.All.TryGetValue(result.VenueId, out var v) ? v : VenueRegistry.Mine;
+        var script = TellingQuery.Build(result, beat, state.Items, venue);
+        return script.Payload is KillingBlowPayload payload && payload.MonsterHpWithoutItem > 0;
+    }
+
+    /// <summary>
     /// Build the night's <see cref="TellingScript"/> (pure recomputation, <see cref="TellingQuery"/>
     /// — no draws) and open at <see cref="TellingStage.Framing"/>. A defensive no-op (panel stays
     /// hidden) when <paramref name="result"/> carries no matching beat, the beat type has no

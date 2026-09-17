@@ -1841,7 +1841,44 @@ public class LedgerModalTests
                 "Emberbite turned a lethal Deep Ghoul blow. Without it, Torvald falls.")
             { Id = new EventId(5), Day = 1 });
 
-        return GameFactory.NewGame(9101, heroes) with { Items = items, EventLog = events };
+        // The beat-volume sweep's fold gate (P2-PROOF-16): a KillingBlow beat only renders its own
+        // row when TellingPanel.IsDecisiveKillingBlow can prove it — which needs a retained
+        // ExpeditionResult to recompute against (TellingQuery.Build). Both Notched Axe kills above
+        // are genuinely decisive at these numbers: Bram/Torvald are Level 2 (base vanguard attack
+        // 4 + level*2 = 8 with no weapon at all), against the Mine's own floor-1 Cave Rat (HP 22,
+        // Defense 4) — even a generous roll leaves "without the axe" damage nowhere near 22, so the
+        // fold gate keeps both rows exactly as every OTHER test in this fixture already expects
+        // (this deliberately does not touch floors 2/3 — the Provisioned/LethalSave beats render
+        // unconditionally, no counterfactual gate applies to them).
+        var bramDeparture = new HeroAtDeparture(
+            new HeroId(1), "Bram", ClassRegistry.VanguardId, Level: 2, MaxHp: 26, Weapon: PlainAxeId, Shield: null, Armor: null);
+        var torvaldDeparture = new HeroAtDeparture(
+            new HeroId(4), "Torvald", ClassRegistry.VanguardId, Level: 2, MaxHp: 26, Weapon: PlainAxeId, Shield: null, Armor: null);
+        var bramKillRound = new CombatEvent(
+            1, new HeroId(1), "Cave Rat", ImmutableList.Create(4), DamageDealt: 30, DamageTaken: 0,
+            MonsterKilled: true, KillingItem: PlainAxeId);
+        var torvaldKillRound = new CombatEvent(
+            1, new HeroId(4), "Cave Rat", ImmutableList.Create(4), DamageDealt: 30, DamageTaken: 0,
+            MonsterKilled: true, KillingItem: PlainAxeId);
+        var floor1 = new FloorOutcome(1, Cleared: true, ImmutableList.Create(bramKillRound, torvaldKillRound));
+        var night = new ExpeditionResult(
+            ImmutableList.Create(new HeroId(1), new HeroId(4)), TargetFloor: 1, DeepestFloorCleared: 1,
+            ImmutableList.Create(floor1),
+            Survivors: ImmutableList.Create(new HeroId(1), new HeroId(4)), Deaths: ImmutableList<HeroId>.Empty,
+            Beats: ImmutableList.Create(
+                new AttributionBeat(
+                    BeatType.KillingBlow, PlainAxeId, new HeroId(1), 1, "Notched Axe landed the killing blow on the cave rat."),
+                new AttributionBeat(
+                    BeatType.KillingBlow, PlainAxeId, new HeroId(4), 1, "Notched Axe landed the killing blow on the tunnel bat.")),
+            Loot: ImmutableList<OreLoot>.Empty, GoldEarnedByHero: ImmutableSortedDictionary<int, int>.Empty)
+        {
+            PartyAtDeparture = ImmutableList.Create(bramDeparture, torvaldDeparture),
+        };
+
+        return GameFactory.NewGame(9101, heroes) with
+        {
+            Items = items, EventLog = events, LastNightExpeditions = ImmutableList.Create(night),
+        };
     }
 
     /// <summary>Every <c>BeatLine_{n}</c> label on one rendered card, in render order.</summary>
@@ -2052,5 +2089,298 @@ public class LedgerModalTests
             Unmount(ui);
         }
     }
+
+    // ── P2-PROOF-16 (beat-volume sweep, 2026-09-11): the fold ─────────────────────────────────
+    //
+    // 97.5% of every beat the sim emits is KillingBlow, with the same item repeating on 96.5% of
+    // hero-cards (MAKERS-MARK.md's own "beat-volume sweep" section) — because KillingBlow is the
+    // ONE beat type TellingQuery cannot give a real counterfactual second pass. LedgerModal now
+    // renders a KillingBlow beat as its own row only when TellingPanel.IsDecisiveKillingBlow can
+    // prove the item was necessary; every other kill folds into one line per item. Every OTHER
+    // beat type (Provisioned/LethalSave/BreakpointClear/PotionLifesave) is unconditionally its own
+    // row — no decisiveness gate applies to them.
+
+    private static readonly HeroId FoldHeroId = new(9401);
+    private static readonly ItemId FoldGreataxeId = new(9410);
+    private static readonly ItemId FoldDaggerId = new(9411);
+    private static readonly ItemId FoldSalveId = new(9412);
+
+    /// <summary>
+    /// One hero, four beats, three shapes: a Provisioned beat (always its own row), a DECISIVE
+    /// KillingBlow (Fine Dagger: +1000 Attack — the same recorded roll would NOT have killed the
+    /// Deep Ghoul without it), and two INCIDENTAL KillingBlows (Greataxe: a Level-20 hero's own
+    /// BARE attack already dwarfs floors 1-2's monster HP, so the axe proved nothing). Three
+    /// separate <see cref="ExpeditionResult"/>s because <see cref="HeroAtDeparture.Weapon"/> is
+    /// one snapshot per result — the same hero wielding a different weapon per beat needs a
+    /// different result per weapon, never a shared one (a shared result would leave the OTHER
+    /// weapon un-removed from the counterfactual, corrupting it).
+    /// </summary>
+    private static GameState FoldNight()
+    {
+        var hero = new Hero(
+            FoldHeroId, "Rook", ClassRegistry.VanguardId, Level: 3, MaxHp: 30, Gold: 0,
+            Gear: GearSet.Empty, Memories: ImmutableList<ItemMemory>.Empty, Alive: true,
+            DeepestFloorReached: 3, DiedOnDay: null);
+        var heroes = ImmutableSortedDictionary<int, Hero>.Empty.Add(FoldHeroId.Value, hero);
+
+        var greataxe = new Item(
+            FoldGreataxeId, "recipe-test-greataxe", "Greataxe", ItemSlot.Weapon, QualityGrade.Common,
+            new ItemStats(1, 0, 6), new MakersMark("You", 1), ImmutableList<ItemHistoryEntry>.Empty);
+        var dagger = new Item(
+            FoldDaggerId, "recipe-test-dagger", "Fine Dagger", ItemSlot.Weapon, QualityGrade.Fine,
+            new ItemStats(1000, 0, 1), new MakersMark("You", 1), ImmutableList<ItemHistoryEntry>.Empty);
+        var salve = new Item(
+            FoldSalveId, "recipe-test-salve", "Field Salve", ItemSlot.Consumable, QualityGrade.Common,
+            new ItemStats(0, 0, 0), new MakersMark("You", 1), ImmutableList<ItemHistoryEntry>.Empty,
+            new ConsumableEffect(ConsumableKind.Heal, 5));
+        var items = ImmutableSortedDictionary<int, Item>.Empty
+            .Add(FoldGreataxeId.Value, greataxe)
+            .Add(FoldDaggerId.Value, dagger)
+            .Add(FoldSalveId.Value, salve);
+
+        // Two INCIDENTAL kills: Level 20's own base attack (4 + 20*2 = 44) alone dwarfs the Mine's
+        // floor-1 Cave Rat (HP 22, Defense 4) and floor-2 Tunnel Spider (HP 32, Defense 6) — the
+        // Greataxe's own +1 Attack changes nothing about the outcome.
+        var greataxeDeparture = new HeroAtDeparture(
+            FoldHeroId, "Rook", ClassRegistry.VanguardId, Level: 20, MaxHp: 60,
+            Weapon: FoldGreataxeId, Shield: null, Armor: null);
+        var floor1Kill = new CombatEvent(
+            1, FoldHeroId, "Cave Rat", ImmutableList.Create(2), DamageDealt: 500, DamageTaken: 0,
+            MonsterKilled: true, KillingItem: FoldGreataxeId);
+        var floor2Kill = new CombatEvent(
+            2, FoldHeroId, "Tunnel Spider", ImmutableList.Create(2), DamageDealt: 500, DamageTaken: 0,
+            MonsterKilled: true, KillingItem: FoldGreataxeId);
+        var incidentalBeat1 = new AttributionBeat(
+            BeatType.KillingBlow, FoldGreataxeId, FoldHeroId, 1, "Greataxe landed the killing blow on the Cave Rat.");
+        var incidentalBeat2 = new AttributionBeat(
+            BeatType.KillingBlow, FoldGreataxeId, FoldHeroId, 2, "Greataxe landed the killing blow on the Tunnel Spider.");
+        var greataxeRun = new ExpeditionResult(
+            ImmutableList.Create(FoldHeroId), 2, 2,
+            ImmutableList.Create(
+                new FloorOutcome(1, true, ImmutableList.Create(floor1Kill)),
+                new FloorOutcome(2, true, ImmutableList.Create(floor2Kill))),
+            ImmutableList.Create(FoldHeroId), ImmutableList<HeroId>.Empty,
+            ImmutableList.Create(incidentalBeat1, incidentalBeat2),
+            ImmutableList<OreLoot>.Empty, ImmutableSortedDictionary<int, int>.Empty)
+        {
+            PartyAtDeparture = ImmutableList.Create(greataxeDeparture),
+        };
+
+        // One DECISIVE kill: the Fine Dagger's +1000 Attack utterly dominates floor 3's Deep Ghoul
+        // (HP 42) — without it, Level 3's own base attack (10) barely dents it.
+        var daggerDeparture = new HeroAtDeparture(
+            FoldHeroId, "Rook", ClassRegistry.VanguardId, Level: 3, MaxHp: 30,
+            Weapon: FoldDaggerId, Shield: null, Armor: null);
+        var floor3Kill = new CombatEvent(
+            3, FoldHeroId, "Deep Ghoul", ImmutableList.Create(1), DamageDealt: 5000, DamageTaken: 0,
+            MonsterKilled: true, KillingItem: FoldDaggerId);
+        var decisiveBeat = new AttributionBeat(
+            BeatType.KillingBlow, FoldDaggerId, FoldHeroId, 3, "Fine Dagger landed the killing blow on the Deep Ghoul.");
+        var daggerRun = new ExpeditionResult(
+            ImmutableList.Create(FoldHeroId), 3, 3,
+            ImmutableList.Create(new FloorOutcome(3, true, ImmutableList.Create(floor3Kill))),
+            ImmutableList.Create(FoldHeroId), ImmutableList<HeroId>.Empty,
+            ImmutableList.Create(decisiveBeat),
+            ImmutableList<OreLoot>.Empty, ImmutableSortedDictionary<int, int>.Empty)
+        {
+            PartyAtDeparture = ImmutableList.Create(daggerDeparture),
+        };
+
+        // The Provisioned beat: always its own row — no decisiveness gate applies to it (only
+        // KillingBlow is gated). Floors stays empty: a RENDERED (non-folded) beat never asks
+        // TellingQuery to recompute anything at render time, only FindResult's own match is needed
+        // for the "Ask how it happened" button to show.
+        var provisionedBeat = new AttributionBeat(
+            BeatType.Provisioned, FoldSalveId, FoldHeroId, 4, "Field Salve kept Rook fighting.");
+        var salveRun = new ExpeditionResult(
+            ImmutableList.Create(FoldHeroId), 4, 4,
+            ImmutableList<FloorOutcome>.Empty,
+            ImmutableList.Create(FoldHeroId), ImmutableList<HeroId>.Empty,
+            ImmutableList.Create(provisionedBeat),
+            ImmutableList<OreLoot>.Empty, ImmutableSortedDictionary<int, int>.Empty)
+        {
+            PartyAtDeparture = ImmutableList.Create(new HeroAtDeparture(
+                FoldHeroId, "Rook", ClassRegistry.VanguardId, Level: 3, MaxHp: 30, Weapon: null, Shield: null, Armor: null)),
+        };
+
+        var events = ImmutableList.Create<GameEvent>(
+            new PartyReturned(ImmutableList.Create(FoldHeroId)) { Id = new EventId(10001), Day = 1 },
+            new AttributionBeatEvent(
+                incidentalBeat1.Beat, incidentalBeat1.Item, incidentalBeat1.Hero, incidentalBeat1.Floor, incidentalBeat1.Detail)
+                { Id = new EventId(10002), Day = 1 },
+            new AttributionBeatEvent(
+                incidentalBeat2.Beat, incidentalBeat2.Item, incidentalBeat2.Hero, incidentalBeat2.Floor, incidentalBeat2.Detail)
+                { Id = new EventId(10003), Day = 1 },
+            new AttributionBeatEvent(decisiveBeat.Beat, decisiveBeat.Item, decisiveBeat.Hero, decisiveBeat.Floor, decisiveBeat.Detail)
+                { Id = new EventId(10004), Day = 1 },
+            new AttributionBeatEvent(
+                provisionedBeat.Beat, provisionedBeat.Item, provisionedBeat.Hero, provisionedBeat.Floor, provisionedBeat.Detail)
+                { Id = new EventId(10005), Day = 1 });
+
+        return GameFactory.NewGame(9401, heroes) with
+        {
+            Items = items, EventLog = events,
+            LastNightExpeditions = ImmutableList.Create(greataxeRun, daggerRun, salveRun),
+        };
+    }
+
+    [TestCase]
+    public void IncidentalKillingBlows_FoldToOneLinePerItem_AboveWhichCounterfactualAndDecisiveRowsAlwaysRender()
+    {
+        var ui = MountMainUi(new SimAdapter(FoldNight()));
+        try
+        {
+            ui.Ledger.ShowFor(1);
+
+            var card = Find<Control>(ui.Ledger, "LedgerCard_0");
+            var lines = BeatLinesOf(card);
+
+            // Only the counterfactual (Provisioned) and the DECISIVE KillingBlow earn their own
+            // row — the two incidental Greataxe kills never reach BeatLine_2/BeatLine_3.
+            AssertThat(lines.Length)
+                .OverrideFailureMessage("expected exactly 2 rendered rows (Provisioned + the decisive kill)")
+                .IsEqual(2);
+            AssertThat(lines[0].Text).Contains("Field Salve kept Rook fighting.");
+            AssertThat(lines[1].Text)
+                .OverrideFailureMessage($"the decisive kill did not get its own row: \"{lines[1].Text}\"")
+                .Contains("Fine Dagger landed the killing blow on the Deep Ghoul.");
+
+            // The fold: both incidental Greataxe kills collapse to ONE line naming the item and the
+            // count — never a claim about a margin the sim never proved.
+            var foldLine = card.FindChild($"IncidentalKillsFoldLine_{FoldGreataxeId.Value}", recursive: true, owned: false) as Label;
+            AssertThat(foldLine)
+                .OverrideFailureMessage("the two incidental Greataxe kills never folded to a summary line")
+                .IsNotNull();
+            AssertThat(foldLine!.Text).Contains("Greataxe");
+            AssertThat(foldLine.Text).Contains("2");
+            AssertThat(foldLine.Text)
+                .OverrideFailureMessage($"the fold line claimed a margin the sim never proved: \"{foldLine.Text}\"")
+                .NotContains("without it");
+
+            // The fold always renders BELOW every counterfactual/decisive row, never interleaved.
+            var decisiveRowIndex = Find<Label>(card, "BeatLine_1").GetParent<Node>().GetIndex();
+            var foldRowIndex = foldLine.GetParent<Node>().GetIndex();
+            AssertThat(foldRowIndex)
+                .OverrideFailureMessage("the fold line rendered ABOVE a proven row")
+                .IsGreater(decisiveRowIndex);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void AskHowItHappened_CreationCount_EqualsTheRenderedRowCount_NeverTheFoldedOne()
+    {
+        var ui = MountMainUi(new SimAdapter(FoldNight()));
+        try
+        {
+            ui.Ledger.ShowFor(1);
+
+            var card = Find<Control>(ui.Ledger, "LedgerCard_0");
+            var buttons = card.FindChildren("AskHowItHappened_*", nameof(Button), recursive: true, owned: false);
+
+            // Two rendered rows (Provisioned + the decisive kill) -- the defect this pins against
+            // is the button firing once per BEAT (5-12 times a night) instead of once per RENDERED
+            // ROW; a regression back to that shape makes this count 4, not 2.
+            AssertThat(buttons.Count)
+                .OverrideFailureMessage($"expected one button per rendered row (2), found {buttons.Count}")
+                .IsEqual(2);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void CardWithOnlyIncidentalKills_StillRendersTheFoldLine_NeverAnEmptyTellingSection()
+    {
+        var hero = new Hero(
+            OnlyIncidentalKillsHeroId, "Squire", ClassRegistry.VanguardId, Level: 2, MaxHp: 24, Gold: 0,
+            Gear: GearSet.Empty, Memories: ImmutableList<ItemMemory>.Empty, Alive: true,
+            DeepestFloorReached: 2, DiedOnDay: null);
+        var heroes = ImmutableSortedDictionary<int, Hero>.Empty.Add(OnlyIncidentalKillsHeroId.Value, hero);
+
+        var shiv = new Item(
+            OnlyIncidentalKillsItemId, "recipe-test-shiv", "Rusty Shiv", ItemSlot.Weapon, QualityGrade.Common,
+            new ItemStats(1, 0, 1), new MakersMark("You", 1), ImmutableList<ItemHistoryEntry>.Empty);
+        var items = ImmutableSortedDictionary<int, Item>.Empty.Add(OnlyIncidentalKillsItemId.Value, shiv);
+
+        // Same "Level 20 base attack dwarfs a weak floor" shape as FoldNight's own incidental
+        // kills — see that fixture's own note.
+        var departure = new HeroAtDeparture(
+            OnlyIncidentalKillsHeroId, "Squire", ClassRegistry.VanguardId, Level: 20, MaxHp: 60,
+            Weapon: OnlyIncidentalKillsItemId, Shield: null, Armor: null);
+        var floor1Kill = new CombatEvent(
+            1, OnlyIncidentalKillsHeroId, "Cave Rat", ImmutableList.Create(2), DamageDealt: 500, DamageTaken: 0,
+            MonsterKilled: true, KillingItem: OnlyIncidentalKillsItemId);
+        var floor2Kill = new CombatEvent(
+            2, OnlyIncidentalKillsHeroId, "Tunnel Spider", ImmutableList.Create(2), DamageDealt: 500, DamageTaken: 0,
+            MonsterKilled: true, KillingItem: OnlyIncidentalKillsItemId);
+        var beat1 = new AttributionBeat(
+            BeatType.KillingBlow, OnlyIncidentalKillsItemId, OnlyIncidentalKillsHeroId, 1,
+            "Rusty Shiv landed the killing blow on the Cave Rat.");
+        var beat2 = new AttributionBeat(
+            BeatType.KillingBlow, OnlyIncidentalKillsItemId, OnlyIncidentalKillsHeroId, 2,
+            "Rusty Shiv landed the killing blow on the Tunnel Spider.");
+        var run = new ExpeditionResult(
+            ImmutableList.Create(OnlyIncidentalKillsHeroId), 2, 2,
+            ImmutableList.Create(
+                new FloorOutcome(1, true, ImmutableList.Create(floor1Kill)),
+                new FloorOutcome(2, true, ImmutableList.Create(floor2Kill))),
+            ImmutableList.Create(OnlyIncidentalKillsHeroId), ImmutableList<HeroId>.Empty,
+            ImmutableList.Create(beat1, beat2),
+            ImmutableList<OreLoot>.Empty, ImmutableSortedDictionary<int, int>.Empty)
+        {
+            PartyAtDeparture = ImmutableList.Create(departure),
+        };
+
+        var events = ImmutableList.Create<GameEvent>(
+            new PartyReturned(ImmutableList.Create(OnlyIncidentalKillsHeroId)) { Id = new EventId(10101), Day = 1 },
+            new AttributionBeatEvent(beat1.Beat, beat1.Item, beat1.Hero, beat1.Floor, beat1.Detail) { Id = new EventId(10102), Day = 1 },
+            new AttributionBeatEvent(beat2.Beat, beat2.Item, beat2.Hero, beat2.Floor, beat2.Detail) { Id = new EventId(10103), Day = 1 });
+
+        var state = GameFactory.NewGame(9501, heroes) with
+        {
+            Items = items, EventLog = events, LastNightExpeditions = ImmutableList.Create(run),
+        };
+
+        var ui = MountMainUi(new SimAdapter(state));
+        try
+        {
+            ui.Ledger.ShowFor(1);
+
+            var card = Find<Control>(ui.Ledger, "LedgerCard_0");
+
+            // Zero full rows -- both kills are incidental (folded) and there is nothing else on
+            // this card.
+            AssertThat(BeatLinesOf(card).Length)
+                .OverrideFailureMessage("an all-incidental card should render zero full BeatLine rows")
+                .IsEqual(0);
+
+            // The honest-empty-state contract: a card with ONLY incidental kills still says
+            // something true, never a blank "THE TELLING" section.
+            var foldLine = card.FindChild(
+                $"IncidentalKillsFoldLine_{OnlyIncidentalKillsItemId.Value}", recursive: true, owned: false) as Label;
+            AssertThat(foldLine)
+                .OverrideFailureMessage("an all-incidental card rendered nothing at all for its beats")
+                .IsNotNull();
+            AssertThat(foldLine!.Text).Contains("Rusty Shiv");
+            AssertThat(foldLine.Text).Contains("2");
+
+            // No counterfactual to ask about -- no button anywhere on this card.
+            AssertThat(card.FindChildren("AskHowItHappened_*", nameof(Button), recursive: true, owned: false).Count)
+                .IsEqual(0);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    private static readonly HeroId OnlyIncidentalKillsHeroId = new(9501);
+    private static readonly ItemId OnlyIncidentalKillsItemId = new(9510);
 }
 #endif
