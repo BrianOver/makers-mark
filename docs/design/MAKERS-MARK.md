@@ -2459,6 +2459,7 @@ changes when it is done. A regression pin now holds that.
 | U34 | She says what she's seen | `godot/scripts/ui/MentorVoice.cs` | U4, U33 |
 | U35 | She leaves | `godot/scripts/town2d/InteriorLayout2D.cs`, `godot/scripts/ui/MentorVoice.cs` | U32, U33 |
 | U36 | She has a body and a face | `art/specs/`, `godot/scripts/ui/MentorBanner.cs` | U33 |
+| P2-SCREEN-34 | A new townsfolk sprite id renders as a blob even from a proven grid (blocks U36's art) | `tools/art/gen_town_sprites.py` | — | [G] |
 | U37 | She is somewhere, and she remembers | `godot/scripts/town2d/`, `godot/scripts/ui/TutorialFlow.cs` | U34, U35 |
 | U38 | A harness takes the course | `godot/scripts/tools/FullPlaytest.cs` | U15, U29 |
 | U39 | Copy cannot outlive its control | `godot/tests/`, `godot/scripts/PlaytestLog.cs` | U33 |
@@ -4623,7 +4624,6 @@ name (§11.6 rule 4).
 | ⚑ P2-SCREEN-29 | A sized `TextureRect` cannot silently claim its texture's size | `sim/GameSim.Tests/Hygiene/TextureRectExpandModeCensusTests.cs`, `godot/scripts/MainUi.cs`, `godot/scripts/panels/MineWatch.cs`, `godot/scripts/panels/ProvenanceCard.cs`, `godot/scripts/panels/SimPanel.cs`, `godot/scripts/ui/UiKit.cs` | — | [S] |
 | P2-SCREEN-31 | The objective rows fit the tracker's real three-line budget | `godot/scripts/ui/ObjectiveTracker.cs` corpus, `sim/GameSim/Advisor/ObjectiveAdvisor.cs`, `godot/tests/` | — | [G] |
 | P2-SCREEN-32 | The Shop sheds 171px of decoration (Stock still does not clear the fold) | `godot/scripts/panels/ShopPanel.cs`, `godot/scripts/panels/CounterPanel.cs` | — | [G] |
-| P2-SCREEN-33 | The once-ever caption stops reserving its height after it is read | `godot/scripts/panels/DepthsPanel.cs`, `godot/scripts/ui/UiKit.cs` | — | [G] |
 | P2-ONBOARD-09 | The Goodwill chip speaks the band or dies (the beat's own half landed) | `godot/scripts/panels/CounterPanel.cs` | — | [G] |
 | P2-ONBOARD-10 | The seed becomes enterable at New Game | `godot/scripts/NewGameSelect.cs` | — | [G] |
 | P2-PROOF-03 | The stage, pass one — one duel, recorded rolls | new `godot/scripts/panels/TellingPanel.cs` (+`.uid`) | — | [G] |
@@ -6519,6 +6519,38 @@ need". And `DirectorSystem` (434 lines, one RNG draw a morning) fires five autho
 lockdown latch that by their own contract change no combat, routing or economy rule
 (`Events.cs:267,274-275`) — a candidate cut, `[S][C][GOLD]` because removing a draw moves the golden.
 Both need an owner ruling before anything is built.
+
+#### P2-SCREEN-34. A new townsfolk sprite id renders as a blob even from a proven grid
+
+**Found 2026-09-16 while trying to draw Bryn for `U36`, and it is what blocks that unit.** Three
+authoring attempts were rejected on sight: she rendered as a wide brown mass with a grey block for a
+head, beside `broad` and `slight` which read as people.
+
+The decisive measurement, and the reason this is booked as an engine-side defect rather than an art
+problem: her grid was reduced to **literally the same expression as `slight`'s** —
+`assemble(UPPER_CIVILIAN_SLIGHT, CLOTH_LEGS_F1)` — with only the palette differing, and she *still*
+rendered as a different, bloated figure. A palette swap alone cannot move a silhouette. Measured:
+opaque span at row y10 was `(6, 13)` for `slight` and `(4, 16)` for the same grid under Bryn's id,
+and 305–307 of 640 pixels differed.
+
+What was ruled out, each by A/B rather than by reasoning: the "bun" outline accent (removing it
+changed nothing measurable); the custom head (replacing it with `slight`'s changed nothing); the hue
+(swapping in `slight`'s and then `broad`'s changed nothing); grid geometry (42 rows × 40 wide and
+26-wide head rows in both); palette coverage (16 keys each, no unmapped character); and `render()`
+itself, which uses the sprite name only in error messages.
+
+The remaining suspect is the halving step. `rarity_downsample_2x` resolves each 2× tie against the
+**body's global colour-frequency table**, sourced from that body's own base frame
+(`freq_source=base_frames.get(body_id)`), so pixel selection is not local — but that alone does not
+explain a bloat under an identical grid, and the mechanism was not pinned down. **Whoever takes this
+should start by rendering one new id through the emit path with every input held identical to an
+existing body, and diffing the two PNGs** — that reproduction is two lines and it is where the
+investigation stopped.
+
+Until it is fixed, `U36` cannot commit art: the asset census correctly fails on an id with no
+committed PNG, and `KnownPendingIds` is pinned empty by
+`KnownPendingIds_StaysEmpty_AnAllowlistWithNoExpiryIsTheActualDefect` — an allowlist with no expiry
+being the documented defect that once left real players looking at magenta boxes for a week.
 
 #### P2-SCREEN-31. The objective rows fit the tracker's real three-line budget
 
