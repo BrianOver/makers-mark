@@ -2459,6 +2459,7 @@ changes when it is done. A regression pin now holds that.
 | U34 | She says what she's seen | `godot/scripts/ui/MentorVoice.cs` | U4, U33 |
 | U35 | She leaves | `godot/scripts/town2d/InteriorLayout2D.cs`, `godot/scripts/ui/MentorVoice.cs` | U32, U33 |
 | U36 | She has a body and a face | `art/specs/`, `godot/scripts/ui/MentorBanner.cs` | U33 |
+| P2-SCREEN-34 | The dead ASCII-grid path stops accepting town-cast ids (root cause of U36's blocked art) | `tools/art/gen_town_sprites.py` | — | [G] |
 | U37 | She is somewhere, and she remembers | `godot/scripts/town2d/`, `godot/scripts/ui/TutorialFlow.cs` | U34, U35 |
 | U38 | A harness takes the course | `godot/scripts/tools/FullPlaytest.cs` | U15, U29 |
 | U39 | Copy cannot outlive its control | `godot/tests/`, `godot/scripts/PlaytestLog.cs` | U33 |
@@ -4623,7 +4624,6 @@ name (§11.6 rule 4).
 | ⚑ P2-SCREEN-29 | A sized `TextureRect` cannot silently claim its texture's size | `sim/GameSim.Tests/Hygiene/TextureRectExpandModeCensusTests.cs`, `godot/scripts/MainUi.cs`, `godot/scripts/panels/MineWatch.cs`, `godot/scripts/panels/ProvenanceCard.cs`, `godot/scripts/panels/SimPanel.cs`, `godot/scripts/ui/UiKit.cs` | — | [S] |
 | P2-SCREEN-31 | The objective rows fit the tracker's real three-line budget | `godot/scripts/ui/ObjectiveTracker.cs` corpus, `sim/GameSim/Advisor/ObjectiveAdvisor.cs`, `godot/tests/` | — | [G] |
 | P2-SCREEN-32 | The Shop sheds 171px of decoration (Stock still does not clear the fold) | `godot/scripts/panels/ShopPanel.cs`, `godot/scripts/panels/CounterPanel.cs` | — | [G] |
-| P2-SCREEN-33 | The once-ever caption stops reserving its height after it is read | `godot/scripts/panels/DepthsPanel.cs`, `godot/scripts/ui/UiKit.cs` | — | [G] |
 | P2-ONBOARD-09 | The Goodwill chip speaks the band or dies (the beat's own half landed) | `godot/scripts/panels/CounterPanel.cs` | — | [G] |
 | P2-ONBOARD-10 | The seed becomes enterable at New Game | `godot/scripts/NewGameSelect.cs` | — | [G] |
 | P2-PROOF-03 | The stage, pass one — one duel, recorded rolls | new `godot/scripts/panels/TellingPanel.cs` (+`.uid`) | — | [G] |
@@ -6519,6 +6519,38 @@ need". And `DirectorSystem` (434 lines, one RNG draw a morning) fires five autho
 lockdown latch that by their own contract change no combat, routing or economy rule
 (`Events.cs:267,274-275`) — a candidate cut, `[S][C][GOLD]` because removing a draw moves the golden.
 Both need an owner ruling before anything is built.
+
+#### P2-SCREEN-34. The town cast's ASCII-grid path is dead code, and U36 was authoring into it
+
+**Root cause found 2026-09-16, by probe.** Registering a new sprite id whose grid AND palette were
+held byte-identical to `slight`'s produced a PNG differing in **307 of 640 pixels**, with the opaque
+span at row y10 reading `(6, 13)` for `slight` and `(4, 16)` for the probe. A new id alone moved the
+silhouette, which is impossible from a deterministic renderer — so the two were not going through
+the same renderer.
+
+They are not. `main()` builds `_ai_composite_civilian_ids` from `CIVILIAN_HUES` and **excludes every
+one of them from `all_sprites`**, so `broad`, `slight` and their variant pools never render through
+the hand-ASCII grid path at all; their committed PNGs come from a separate AI-composite art job
+(that job's own `MANIFEST.txt`, which also added the `belder` / `bmatron` / `steen` / `selder`
+silhouettes at pool slots 6–15). The script says so in its own comment: the ASCII bodies are *"kept
+for the same reason the hero SPRITES dict is kept, not deleted — but nothing ships that output for
+those ids any longer."*
+
+Bryn was the only town-cast id NOT in that exclusion set, so she was the only one actually rendered
+by the grid path. **The "blob" is what that path emits for everybody**; it is invisible because
+every shipped townsperson is excluded from it. Three authoring attempts failed for this reason and
+no amount of pixel work would have fixed them — the downsample, the hue, the head and the bun were
+all eliminated by A/B before the probe found this.
+
+What this means for `U36`: her sprite must come from the **same AI-composite job** that produced the
+rest of the cast, not from a hand-authored grid. Her `art/specs/town/MentorSpecs.cs` entry and her
+portrait spec stay as they are; what changes is which pipeline draws the body.
+
+The open question for the owner, and the reason this is a row rather than a fix: the ASCII-grid path
+still carries live code for bodies nothing ships, so a future session can author into it again
+exactly as this one did. Either it earns a guard that refuses to emit a town-cast id the composite
+job owns, or the dead branch goes. **A guard is the cheaper half and is what this row builds; the
+deletion is an owner call.**
 
 #### P2-SCREEN-31. The objective rows fit the tracker's real three-line budget
 
