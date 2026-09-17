@@ -4,7 +4,7 @@ One file per claim. Create it BEFORE starting work (the claim file IS the lock),
 same-session as status changes. Cross-lane gates + seam broadcasts live in [BOARD.md](BOARD.md) —
 read it at session start and after any rebase failure.
 
-Claim-id / branch grammar (`docs/design/lane-operating-model.md` §5):
+Claim-id / branch grammar:
 - Plan units keep plan ids: `U<N>-<slug>.md` / `V<N>-<slug>.md` / `O1-lfs-art.md` → branch `feat/u<N>-<slug>` etc.
 - Non-plan lane work: `vis-<slug>.md` / `sim-<slug>.md` / `eng-<slug>.md`
 - Addon packets: `addon-<slug>.md` → branch `feat/addon-<slug>`
