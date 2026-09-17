@@ -27,6 +27,22 @@ namespace GodotClient.Tests;
 ///
 /// <para>These two tests therefore do the awkward thing on purpose: press the REAL button through its
 /// signal, and separately pin the freeing mechanism itself.</para>
+///
+/// <para><b>A third, independent instance (P2-MEMORY-14, found 2026-09-15).</b>
+/// <c>GodotClient.Panels.LegendsWall</c> extends <c>Control</c>, not <c>SimPanel</c>, so it carried
+/// its OWN private <c>Clear</c> — written before the fix above existed, with the same immediate
+/// <c>Free()</c> the two tests below pin against. Four of its own buttons rebuild <c>_body</c> from
+/// inside their own <c>Pressed</c> handler (<c>BindTheBook</c> and the "LegendsWallBack" button on
+/// <c>ShowActorPage</c>/<c>ShowItemPage</c>/<c>RenderBindPage</c>), so every one of them hit this
+/// exact crash class on every press — caught live in a local full-suite run, never by CI, because no
+/// test asserted the pressed button's own survival. Fixed by routing <c>LegendsWall.Clear</c> through
+/// the same <see cref="GodotClient.Panels.PanelGraveyard"/> registry rather than reinventing a
+/// second copy; regression coverage lives with its own sibling tests in <c>LegendsWallTests</c>
+/// (<c>BindTheBookButton_OpensTheClosingChapter_ReachableAndReturnable</c>,
+/// <c>BookShellMigration_LosesNoVerb_EveryPreExistingControlStillResolves</c>,
+/// <c>LegendItemRow_OpensTheItemsOwnPage_NotTheOldPopup</c>), not duplicated here — same reason
+/// <c>ShopPanel.PlaceOnShelf</c> above gets a mention and not a third copy of this file's own two
+/// tests: both share the exact mechanism already pinned below.</para>
 /// </summary>
 [TestSuite]
 [RequireGodotRuntime]

@@ -13,13 +13,15 @@ namespace GodotClient.Tests;
 
 /// <summary>
 /// P2-SCREEN-04 (§11.15): <c>MainUi.OverlaySurfaces()</c> is now a projection over <see
-/// cref="SurfaceArbiter.Discover"/> instead of a hand-written eight-row array that was missing
-/// exactly one real full-rect modal — <c>ChronicleScroll</c>, so the campaign's ending ceremony ran
-/// with the clock live, world input open, and PiP undimmed. This suite is the runtime proof the unit
-/// body's own test scenarios ask for: opening the Chronicle now holds the clock, blocks world input,
-/// suppresses PiP, and hides the objective card; and a nested <see cref="ProvenanceCard"/> opened
-/// over a real <see cref="SurfaceRegion.FullScreenModal"/> host never reads as that host releasing
-/// its own claim on the screen.
+/// cref="SurfaceArbiter.Discover"/> instead of a hand-written eight-row array that used to be
+/// missing exactly one real full-rect modal (the original <c>ChronicleScroll</c>, later deleted by
+/// P2-MEMORY-14 — its own <c>SurfaceArbiter.Claim</c> was the proof this whole suite exists to give,
+/// so <c>Legends</c> is now the fixture the first two tests below drive that same invariant
+/// through). This suite is the runtime proof the unit body's own test scenarios ask for: opening a
+/// full-rect modal holds the clock, blocks world input, suppresses PiP, and hides the objective
+/// card; and a nested <see cref="ProvenanceCard"/> opened over a real
+/// <see cref="SurfaceRegion.FullScreenModal"/> host never reads as that host releasing its own claim
+/// on the screen.
 /// </summary>
 [TestSuite]
 [RequireGodotRuntime]
@@ -68,7 +70,7 @@ public class ModalOwnershipArbiterTests
     }
 
     [TestCase]
-    public void OpeningChronicle_HoldsTheClock_BlocksWorldInput_SuppressesPip_AndHidesTheObjectiveCard()
+    public void OpeningLegends_HoldsTheClock_BlocksWorldInput_SuppressesPip_AndHidesTheObjectiveCard()
     {
         var ui = MountMainUi();
         try
@@ -77,26 +79,24 @@ public class ModalOwnershipArbiterTests
             AssertThat(ui.Town.WorldInputNode.Enabled).IsTrue();
             AssertThat(ui.Pip.Suppressed).IsFalse();
 
-            ui.Chronicle.ShowFor(new CampaignEnded(
-                DeepestFloorReached: 5, MemorialCount: 1, HonoredMemorialCount: 1,
-                AttributionBeatCount: 3, GossipHighlightCount: 2, LegendaryHeroCount: 1));
+            ui.Legends.ShowWall(GameFactory.NewGame(9410));
 
-            AssertThat(ui.Chronicle.Visible)
-                .OverrideFailureMessage("setup check: ShowFor must actually open the scroll.")
+            AssertThat(ui.Legends.Visible)
+                .OverrideFailureMessage("setup check: ShowWall must actually open the book.")
                 .IsTrue();
 
             AssertThat(ui.Clock.Engaged)
                 .OverrideFailureMessage(
-                    "Opening the Chronicle did not hold the clock — OverlaySurfaces() still omits it.")
+                    "Opening the book did not hold the clock — OverlaySurfaces() still omits it.")
                 .IsTrue();
             AssertThat(ui.Town.WorldInputNode.Enabled)
-                .OverrideFailureMessage("Opening the Chronicle left world input live.")
+                .OverrideFailureMessage("Opening the book left world input live.")
                 .IsFalse();
             AssertThat(ui.Pip.Suppressed)
-                .OverrideFailureMessage("Opening the Chronicle left the PiP dock undimmed.")
+                .OverrideFailureMessage("Opening the book left the PiP dock undimmed.")
                 .IsTrue();
             AssertThat(ui.Objective.Visible)
-                .OverrideFailureMessage("Opening the Chronicle left the objective card drawing over it.")
+                .OverrideFailureMessage("Opening the book left the objective card drawing over it.")
                 .IsFalse();
         }
         finally
@@ -106,24 +106,24 @@ public class ModalOwnershipArbiterTests
     }
 
     [TestCase]
-    public void ClosingChronicle_ReleasesTheClock_WorldInput_AndPip()
+    public void ClosingLegends_ReleasesTheClock_WorldInput_AndPip()
     {
         var ui = MountMainUi();
         try
         {
-            ui.Chronicle.ShowFor(new CampaignEnded(1, 0, 0, 0, 0, 0));
+            ui.Legends.ShowWall(GameFactory.NewGame(9411));
             AssertThat(ui.Clock.Engaged).IsTrue(); // setup check
 
-            ui.Chronicle.CloseScroll();
+            ui.Legends.Close();
 
             AssertThat(ui.Clock.Engaged)
-                .OverrideFailureMessage("Closing the Chronicle left the clock latched.")
+                .OverrideFailureMessage("Closing the book left the clock latched.")
                 .IsFalse();
             AssertThat(ui.Town.WorldInputNode.Enabled)
-                .OverrideFailureMessage("Closing the Chronicle left world input blocked.")
+                .OverrideFailureMessage("Closing the book left world input blocked.")
                 .IsTrue();
             AssertThat(ui.Pip.Suppressed)
-                .OverrideFailureMessage("Closing the Chronicle left the PiP dock suppressed.")
+                .OverrideFailureMessage("Closing the book left the PiP dock suppressed.")
                 .IsFalse();
         }
         finally

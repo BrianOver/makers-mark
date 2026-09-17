@@ -2891,7 +2891,9 @@ changes when it is done. A regression pin now holds that.
 
 #### U36. She has a body and a face
 
-- Goal: stop sharing a sprite with two named plaza townspeople.
+- Goal: stop sharing a sprite with a named plaza townsperson. (Measured 2026-09-15: the overlap is
+  **one** exact match — Corren, the rival smith, `CivilianIds[0]` = `"broad"`. Voss, the Guild
+  Assessor, uses `CivilianIds[1]` = `"slight"`, a different body, so the earlier "two" was wrong.)
 - Requirements: R27
 - Files: `art/specs/`, `godot/scripts/ui/MentorBanner.cs`, asset registry
 - Approach: a dedicated sprite set through the existing townsfolk pipeline at the size the game draws it, and
@@ -4618,7 +4620,9 @@ name (§11.6 rule 4).
 | ⚑ P2-SCREEN-27 | Small placements: the wandering caption, the orphan spinner, the floating class sprite, the loose shelf label | `godot/scripts/town2d/`, `godot/scripts/panels/` | — | [G] |
 | ⚑ P2-SCREEN-28 | The capture harness's own usage header stops naming states it does not have | `tools/shoot.ps1` | — | [G] |
 | ⚑ P2-SCREEN-29 | A sized `TextureRect` cannot silently claim its texture's size | `sim/GameSim.Tests/Hygiene/TextureRectExpandModeCensusTests.cs`, `godot/scripts/MainUi.cs`, `godot/scripts/panels/MineWatch.cs`, `godot/scripts/panels/ProvenanceCard.cs`, `godot/scripts/panels/SimPanel.cs`, `godot/scripts/ui/UiKit.cs` | — | [S] |
-| ⚑ P2-SCREEN-30 | The interact prompt stops floating over the HUD when its target is taller than the view | `godot/scripts/MainUi.cs`, `godot/scripts/town2d/Town2D.cs` | — | [G] |
+| P2-SCREEN-31 | The objective rows fit the tracker's real three-line budget | `godot/scripts/ui/ObjectiveTracker.cs` corpus, `sim/GameSim/Advisor/ObjectiveAdvisor.cs`, `godot/tests/` | — | [G] |
+| P2-SCREEN-32 | The Shop sheds 171px of decoration (Stock still does not clear the fold) | `godot/scripts/panels/ShopPanel.cs`, `godot/scripts/panels/CounterPanel.cs` | — | [G] |
+| P2-SCREEN-33 | The once-ever caption stops reserving its height after it is read | `godot/scripts/panels/DepthsPanel.cs`, `godot/scripts/ui/UiKit.cs` | — | [G] |
 | P2-ONBOARD-09 | The Goodwill chip speaks the band or dies (the beat's own half landed) | `godot/scripts/panels/CounterPanel.cs` | — | [G] |
 | P2-ONBOARD-10 | The seed becomes enterable at New Game | `godot/scripts/NewGameSelect.cs` | — | [G] |
 | P2-PROOF-03 | The stage, pass one — one duel, recorded rolls | new `godot/scripts/panels/TellingPanel.cs` (+`.uid`) | — | [G] |
@@ -4712,7 +4716,6 @@ name (§11.6 rule 4).
 | ⚑ P2-HONEST-24 | The advisor states the stake instead of giving the order (law 1) | `sim/GameSim/Advisor/ObjectiveAdvisor.cs`, `sim/GameSim.Tests/` | — | [S] |
 | ⚑ P2-HONEST-25 | Every ore row names the faction it feeds, not only the tariffed ones | `godot/scripts/panels/TavernPanel.cs`, `godot/scripts/panels/LedgerModal.cs` | — | [G] |
 | ⚑ P2-HONEST-26 | The night's narration is shown or stops being composed | `godot/scripts/panels/LedgerModal.cs`, `sim/GameSim/Drama/ExpeditionNarrator.cs` | — | [G] |
-| ⚑ P2-HONEST-27 | The ore row learns what the morning spent | `godot/scripts/panels/LedgerModal.cs` | — | [G] |
 
 The per-domain counts, the landed/unbuilt split, and which rows carry a Contracts micro-PR, a
 golden re-record or a balance re-baseline are **derived, not stated here**: run
@@ -6499,11 +6502,11 @@ clipping its own label.
   is a tavern station only, so the town has no outdoor memory at all. A wall in the field, one
   lantern lit per fallen hero, `E · Legends` opening the book that already exists.
 
-#### P2-HONEST-27 — link 4 is the weakest link, and why
+#### Link 4's open questions — beat volume, and crediting a save across the fight
 
 A design pass on 2026-09-14 read the five links against the running tree and judged **link 4 the
-weakest as an experience**: the proof engine is sound, and what reaches the screen is not always.
-Two facts, cited in the tree, motivate what remains open below:
+weakest as an experience**. The three fixes it booked have all shipped — P2-PROOF-15/16 in #849,
+P2-HONEST-27 in #854. Two measured facts remain, and they motivate the questions still open:
 
 - **Volume.** The 2026-09-11 sweep: 45,105 beats over 20 seeds × 100 days, **97.5% KillingBlow**,
   median **30 beats a night** and **5 per hero card**, 81.8% of cards carrying exactly five. That is
@@ -6512,18 +6515,10 @@ Two facts, cited in the tree, motivate what remains open below:
   Torvald lives"* is a LethalSave, and LethalSave is **0.87%** of beats, because AE2 only recognises
   a save when one recorded hit alone would have been fatal (`AttributionEngine.cs:101`).
 
-A third finding — crediting a save across the whole fight rather than one blow, which the
+A further finding — crediting a save across the whole fight rather than one blow, which the
 consumable branch already does at `AttributionEngine.cs:241-265` — is `[S][GOLD][BAL]` and is
 **owner-gated**: it moves hero XP through `ExpeditionRevealSystem.cs:253`. It is deliberately not
 booked as a runnable row.
-
-- **P2-HONEST-27.** The client's `BuyOreLegal` (`LedgerModal.cs:960-990`) omits the
-  `ActionSlotsRemaining` guard the sim's mirror ends on (`ActionLegality.cs:508`) and the kernel
-  enforces. Nothing renders `SimAdapter.LastRejections`. So at the one moment decision 4 bites —
-  Torvald's mithril on offer, the budget already spent at the forge — the Buy button is live, the
-  click is silently refused, and law 7's "its cost is named in copy" goes unmet. Same family as #742,
-  where the legality mirror was only ever checked on one of 19 materials. Distinct from `U47`, which
-  teaches the Morning half in `TutorialFlow`; this is the Night half, and it is a lying button.
 
 **Also found, and deliberately not booked here:** decision 5 ("buy the ore or buy the goodwill") has
 no fork for the whole first rung — `FactionRegistry.Deepvein` supplies all five Mine ores, so every
@@ -6533,43 +6528,64 @@ lockdown latch that by their own contract change no combat, routing or economy r
 (`Events.cs:267,274-275`) — a candidate cut, `[S][C][GOLD]` because removing a draw moves the golden.
 Both need an owner ruling before anything is built.
 
-#### P2-SCREEN-30. The interact prompt stops floating over the HUD when its target is taller than the view
+#### P2-SCREEN-31. The objective rows fit the tracker's real three-line budget
 
-Found by capturing `main @ 3ec38620` and reading the frame. The player stands at the forge door;
-`E · Forge` renders at the very top of the window, **over the HUD band**, visually detached from the
-building it names and from the player.
+Found by U39's fit gate once it rendered the real component instead of trusting a constant. The
+gate had been enforcing a **240-character** allowance (6 lines x ~40 chars) against
+`ObjectiveTracker.TutorialMaxLines`, which an earlier unit dropped from 6 to **3** without anyone
+updating the gate. Measured through the live `ObjectiveTracker` and Godot's own
+`Label.GetLineCount()`: **11 of 11 registry rows overflow today** -- worse than the "six of ten"
+this was first booked as, and the gate could not see it.
 
-This is `P2-SCREEN-22`'s viewport clamp behaving exactly as designed, meeting a case it was not
-sized for. The forge sprite is **170 world-px tall in a ~197-px world viewport**, so standing at its
-door puts its own nametag above the visible area; the chip anchors to that nametag, the clamp pulls
-it back on screen, and "on screen" for a chip in the HUD's coordinate space is `y=12` — above the
-world viewport, which starts at `y=222`. Every invariant holds and the result still reads wrong.
+U39 corrected the gate and left the copy, deliberately and reported rather than silently declared
+fixed. Trimming is its own pass because the rows are pinned elsewhere: **9 of the 11** carry gating
+clauses that `GatingFoldedIntoInstructionTests` and `TutorialFlowTests` pin verbatim, so a trim is a
+cross-suite copy edit, and the remaining **2** (`BuyMaterial`, `Craft`) are composed in
+`sim/GameSim/Advisor/ObjectiveAdvisor.cs` -- sim-side, so the shorter phrasing has to keep the
+advisor pure and its existing assertions true.
 
-Do **not** fix this by removing the clamp: without it the chip renders off-window entirely and
-`HudBoundsTests` goes red, which is the defect `P2-SCREEN-22` shipped to fix. The fix is to give the
-chip somewhere honest to go when there is no room above its target — below it, or pinned to the
-target's visible edge — and to keep it inside the **world** viewport rather than the window.
-
-Flagged during `P2-SCREEN-22`'s own work and deliberately not folded in there, since it is a
-different case from the one that unit fixed.
+The stake is small and real: the tracker is where a new player is told what to do next, and a row
+that overflows is a sentence they cannot finish reading.
 
 #### Two fold budgets the 481px ruling could not close, with the arithmetic
 
 The owner ruled on 2026-09-14 that the HUD header stays visible and the drawer panels re-lay out for
-its 481px (425px of panel body). Two surfaces could not be closed by folding alone, and both are
-arithmetic rather than preference — each needs an owner call before anything is built:
+its 481px (425px of panel body). Two surfaces could not be closed by folding alone. **Both were ruled
+on 2026-09-15** and are booked as `P2-SCREEN-32` and `P2-SCREEN-33`; the arithmetic is kept here
+because it is what each ruling was made against:
 
-- **Shop.** Your Shelf 140 + unshelved header/drop-zone 96 + card-top→Stock-row 189 = **425 exactly**.
-  Getting the Stock row above the fold means deleting or burying either the 140px scene banner or the
-  103px counter body. The drag gesture itself is solved — source and target are adjacent and
+- **Shop.** Your Shelf + the Unshelved section's own header/drop-zone + the first card's own
+  distance to its Stock row already consume the entire 425px budget by themselves, measured, with
+  zero slack. The 140px scene banner and the counter body both sit *on top* of that, so the original
+  "delete the banner OR the counter" framing was never sufficient; deleting one is necessary, not
+  enough. **Measured 2026-09-15** against the real rendered `Drawer.CurrentContent`: Stock's top sat
+  at **694px** before this ruling, **550px** with the banner cut alone (still 125px past the fold),
+  and **523px** with the counter's closed-state body folded too (behind `UiKit.Disclosure`,
+  collapsed by default) — still **98px past the fold**. An earlier same-night estimate of "420,
+  clearing by 5px" was presented before it was actually measured and was wrong; 523 is the real,
+  verified number. The drag gesture itself is solved — source and target are adjacent and
   `RealDragOntoShelfTests` is green — this is only about Stock.
+  **RULED 2026-09-15: ship what was built, stop chasing zero-scroll.** Cut BOTH the scene banner and
+  the counter's closed-state body (Open Counter now costs one click — press "More" — since a closed
+  counter has no customer waiting and nothing at stake). Decision 2 ("price for the sale or the
+  relationship") keeps its verb. Stock does not clear the fold and is not going to: closing the
+  remaining 98px would mean shortening Shelf/Unshelved themselves, which this ruling does not order.
+  `DrawerFoldBudgetTests.Shop_StockRow_NeverDriftsFurtherBelowTheMeasuredPosition` pins 523 as a
+  ratchet (catches further drift), not a claim that Stock is reachable without scrolling. `P2-SCREEN-32`.
 - **Depths.** With a party underground, `MineWatch` claims 260 + the once-ever caption 79 = **339px**
   before any venue tile draws. No fold closes that. The shipped guard measures the no-party case and
   documents why rather than asserting away the populated one.
+  **RULED 2026-09-15: retire the once-ever caption after it is read and reclaim its 79px. The 260px
+  watch strip stays.** Collapsing the strip was offered and declined — do not re-propose it. This
+  does not close the 339 and is not meant to: the accepted outcome is a crowded map with the watch
+  intact, because the watch is what a party underground is for. `P2-SCREEN-33`.
 
 #### What this round says NOT to build
 
-Recorded so a later session cannot re-propose them as fresh ideas: a verb inside the delve; outcome
+Recorded so a later session cannot re-propose them as fresh ideas: **getting the Shop's Stock row
+above the fold by deleting surfaces** (measured three times in one night, unreachable — Shelf +
+Unshelved + card-to-Stock consume the whole 425px budget alone, so only shortening those or
+reordering the panel can do it, and neither was ordered); a verb inside the delve; outcome
 wagers; a participation counter; the rival's mirror; a scrubbable fight replay (our fight has no
 structure to scrub); medals or MVPs; a patron that changes hero behaviour; more verbs in the dead
 middle; a meta-grind for days 8–18; deeper hero simulation as the attachment fix; fan letters; a

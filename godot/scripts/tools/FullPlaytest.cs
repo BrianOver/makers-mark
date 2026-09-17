@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using GameSim.Advisor;
 using GameSim.Professions;
 using GodotClient.Minigames;
+using GodotClient.Panels;
 using GodotClient.Town2d;
 using GodotClient.Ui;
 using Godot;
@@ -471,12 +472,16 @@ public partial class FullPlaytest : Node
 
         // ── did the newly-surfaced events actually reach a player-visible surface? ───────────────
         // Unit tests prove each formatter returns a string. Only a real campaign proves the events
-        // FIRE and land in the strip. A previous audit found ten event types being computed and then
-        // dropped by the ticker's allow-list, so an empty ticker after eight lived days is a
-        // regression to exactly that state — and it is invisible in a screenshot of a scrolling
-        // marquee that happens to be mid-gap.
-        var lines = ui.Ticker.Lines;
-        _report.AppendLine($"- ticker: {lines.Count} line(s) retained at run end");
+        // FIRE and land in the book. A previous audit found ten event types being computed and then
+        // dropped by the old ticker's allow-list, so an empty day log after eight lived days is a
+        // regression to exactly that state. P2-MEMORY-12 (P2-OQ3): the ticker itself is gone; this
+        // now reads the book's day pages (LegendsWall.DayLines) instead of the deleted
+        // AdventureTicker.Lines — full campaign retention, not a 3-day window, so "empty" here is a
+        // stronger signal than it ever was on the marquee.
+        var lines = end.EventLog.Select(e => e.Day).Distinct()
+            .SelectMany(day => LegendsWall.DayLines(end, day).Select(text => (Day: day, Text: text)))
+            .ToList();
+        _report.AppendLine($"- day log: {lines.Count} line(s) composed across the campaign");
         foreach (var line in lines)
         {
             _report.AppendLine($"  - day {line.Day}: {line.Text}");
@@ -484,7 +489,7 @@ public partial class FullPlaytest : Node
 
         if (lines.Count == 0)
         {
-            Note($"run {_run} ({profession}): ticker EMPTY after {DaysPerRun} days — nothing reached the strip");
+            Note($"run {_run} ({profession}): day log EMPTY after {DaysPerRun} days — nothing reached the book");
         }
 
         // The passive hero systems, read the way the panels read them. Both were fully computed and

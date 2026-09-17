@@ -548,13 +548,14 @@ public partial class ShopPanel : SimPanel
     /// (<see cref="GameSim.Economy.MarketShareSystem"/>, Evening — a fully idle day raises it toward
     /// the rival, any real-work day claws it back; <see cref="GameSim.Economy.RivalRestockSystem"/>,
     /// Morning, spends it discounting the rival's next-minted stock) had zero <c>godot/scripts</c>
-    /// readers before this unit. Its own event, <c>MarketShareShifted</c>, was a DELIBERATE ticker
-    /// exclusion in full (<c>AdventureTicker.cs:256</c>, "gauge material, not news" —
+    /// readers before this unit. Its own event, <c>MarketShareShifted</c>, was a DELIBERATE
+    /// exclusion in full (P2-MEMORY-12: <c>LegendsWall.cs:1155</c>, formerly
+    /// <c>AdventureTicker.cs</c>, "gauge material, not news" —
     /// <c>docs/reference/surfaces-census.md</c> §8) — this gauge is the reader that exclusion was
     /// always waiting on. P2-HONEST-23 later narrowed that exclusion to the active-recovery
-    /// direction only: the idle-day half now speaks once, on the ticker, at the moment it is
-    /// charged (law 7 — "its cost is named in copy, never engineered"). The two surfaces are
-    /// complementary, not a duplicate: this gauge shows the CURRENT standing share; the ticker
+    /// direction only: the idle-day half now speaks once, in the book's day log, at the moment it
+    /// is charged (law 7 — "its cost is named in copy, never engineered"). The two surfaces are
+    /// complementary, not a duplicate: this gauge shows the CURRENT standing share; the day-log
     /// line names the CAUSE of the one day that just moved it.
     ///
     /// <para>Mirrors <see cref="TavernPanel.ConfidenceGradient"/>'s own shape exactly: an ascending,
@@ -760,13 +761,11 @@ public partial class ShopPanel : SimPanel
         };
         scroll.AddChild(body);
 
-        // A painted interior strip so the shop reads as a PLACE, not just a list of rows. Null when
-        // the art isn't present (fresh/headless checkout) — then nothing is mounted, as before.
-        if (UiKit.SceneBanner("panel_banner_shop") is { } banner)
-        {
-            body.AddChild(banner);
-        }
-
+        // Owner ruling 2026-09-15 ("Two fold budgets the 481px ruling could not close"): the 140px
+        // scene banner is CUT so the Stock row clears the fold on open. The counter body stays —
+        // decision 2 ("price for the sale or the relationship") partly lives there. This used to
+        // mount UiKit.SceneBanner("panel_banner_shop") right here; ShopPanel no longer calls it at
+        // all (BountyPanel/HeroPanel/TavernPanel still do, so the helper itself stays).
         _feedback = AddLabel(body, string.Empty);
         _feedback.Name = "ShopFeedback";
         // 481px re-lay: an empty confirmation line still reserved a full text row at the very top of
