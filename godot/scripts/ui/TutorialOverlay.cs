@@ -515,7 +515,7 @@ public sealed partial class TutorialOverlay : Control
                 // distinct Kind rather than a bare PanelControl alias).
                 // U9 (§11.14.14): the drawer-then-modal OR-chain that used to live here was itself two
                 // hardcoded lists (DrawerHost's own registrations, MainUi.ModalContent's five-arm
-                // switch) that missed four real MainUi-mounted surfaces (Mirror/Chronicle/
+                // switch) that missed real MainUi-mounted surfaces (Mirror/
                 // Pip/Docket). TutorialSurfaceRegistry is now the ONE roster both lists were replaced
                 // with — see its own class doc.
                 var panelRoot = TutorialSurfaceRegistry.ContentRootFor(anchor.Key!, drawer, hudRoot as GodotClient.MainUi);

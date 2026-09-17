@@ -288,16 +288,15 @@ public partial class MainUi : Control
     /// cref="OverlaySurfaces"/>), so it can sit open beside a running craft without owning the
     /// screen the way <see cref="Forecast"/>'s modal does.</summary>
     public CompanionDock Docket { get; private set; } = null!;
-    /// <summary>The campaign's ending screen — the reader for <see cref="CampaignEnded"/>, which
-    /// carried its own chronicle tallies for exactly this purpose and had no reader until now.
-    /// Opens itself on the ending tick; never halts the kernel (the town stays playable after).</summary>
-    public ChronicleScroll Chronicle { get; private set; } = null!;
     /// <summary>Wave 3 (U15): the commission board (<see cref="GameState.Commissions"/>) — opened
     /// from the Prepare-phase HUD button next to Forecast.</summary>
     public CommissionBoard Commissions { get; private set; } = null!;
     /// <summary>Wave 4 (U21): the single monument to the spine — memorials, depths records, and
     /// legendary (Signed/high-attribution) gear. Opened from the HUD button or the Tavern's
-    /// "Legends" hotspot.</summary>
+    /// "Legends" hotspot. P2-MEMORY-14: also the reader for <see cref="CampaignEnded"/> now — its
+    /// own <see cref="Panels.LegendsWall.ShowBindPage"/> is the campaign's closing chapter, the duty
+    /// <c>ChronicleScroll</c> (deleted by that unit) used to hold. Opens itself on the ending tick;
+    /// never halts the kernel (the town stays playable after).</summary>
     public LegendsWall Legends { get; private set; } = null!;
     /// <summary>P2-LONG-18: the guild wall — Voss's own counter for pledging a piece against the
     /// Guild Assessment's dues. Opened by clicking Voss himself (<see cref="Town2D.AssessorClicked"/>),
@@ -315,7 +314,6 @@ public partial class MainUi : Control
     /// its lessons up.</summary>
     public LessonsPanel Lessons { get; private set; } = null!;
     public TabFade TabFade { get; private set; } = null!;
-    public AdventureTicker Ticker { get; private set; } = null!;
 
     /// <summary>U18 (R11/KTD13): the top-right objective chip — <c>ObjectiveAdvisor</c>'s top
     /// pick + reason, expandable to the ranked list.</summary>
@@ -444,12 +442,6 @@ public partial class MainUi : Control
     /// <summary>U4 (shell-and-audio plan): mirror of the Forecast latch for the in-game
     /// system menu — pause while it owns the screen, resume on close when play was running.</summary>
     private bool _resumePlayOnSystemMenuClose;
-    /// <summary>P2-SCREEN-04: mirror of the Forecast latch for the campaign's ending
-    /// ceremony. Chronicle had NO <c>VisibilityChanged</c> wiring at all before this unit — the
-    /// exact defect this unit exists to fix, one layer under the array omission: even a projection
-    /// that lists Chronicle changes nothing at runtime unless something re-derives <see
-    /// cref="UpdateEngaged"/> the moment it opens.</summary>
-    private bool _resumePlayOnChronicleClose;
 
     /// <summary>
     /// U4: the in-game system menu (Esc's new bottom rung when nothing else owns the screen, and
@@ -994,7 +986,6 @@ public partial class MainUi : Control
         Progress.Bind(Adapter);
         Lessons.Bind(Adapter);
         Ledger.Bind(Adapter);
-        Chronicle.Bind(Adapter);
         Camp.Bind(Adapter);
         // U1 (KTD-A): the vigil's third verb is the only way RaidConductor.Beat.VigilStop ever ends.
         // Wrapped (rather than += Conductor.ResolveVigil directly) so the resulting Camp -> Deep tick
@@ -1139,17 +1130,14 @@ public partial class MainUi : Control
 
     /// <summary>
     /// Dev/receipt tool only (never called from real play) — reachable via <c>shot_harness.gd</c>'s
-    /// <c>call()</c> bridge, the <see cref="Dev_QueueDay1BuyAndCraft"/> idiom. <c>Chronicle</c> fires
-    /// exactly once per campaign, automatically, off a real <see cref="CampaignEnded"/> event
-    /// (<c>StateChanged</c>'s own reader) — there is no player-pressable door to it (<see
-    /// cref="Ui.TutorialSurfaceRegistry"/>'s own class doc), so a GDScript receipt state cannot reach
-    /// it any other way. The tallies are plain ints with no gameplay meaning here; only the fact that
-    /// the scroll opened matters to what this state exists to photograph and test.
+    /// <c>call()</c> bridge, the <see cref="Dev_QueueDay1BuyAndCraft"/> idiom, and kept under its
+    /// original name so that bridge's <c>has_method("Dev_ShowChronicle")</c> guard still finds it.
+    /// The book's own closing chapter (<see cref="LegendsWall.ShowBindPage"/>, P2-MEMORY-14) opens
+    /// automatically off a real <see cref="CampaignEnded"/> event (<c>StateChanged</c>'s own reader),
+    /// but a fresh day-1 campaign has none queued yet — this stages the same call directly against
+    /// the live <see cref="GameState"/> so a GDScript receipt state can still photograph the page.
     /// </summary>
-    public void Dev_ShowChronicle() =>
-        Chronicle.ShowFor(new CampaignEnded(
-            DeepestFloorReached: 5, MemorialCount: 1, HonoredMemorialCount: 1,
-            AttributionBeatCount: 3, GossipHighlightCount: 2, LegendaryHeroCount: 1));
+    public void Dev_ShowChronicle() => Legends.ShowBindPage(Adapter.CurrentState);
 
     /// <summary>
     /// Dev/receipt tool only (never called from real play), reachable via <c>shot_harness.gd</c>'s
@@ -1401,11 +1389,9 @@ public partial class MainUi : Control
         // U21: tick the drawer's accumulated-delta slide (no-op unless a slide is in flight).
         Drawer.Tick(delta);
 
-        // U17: tick the bottom-edge adventure ticker marquee (no-op with no lines yet).
-        Ticker.Tick(delta);
-
-        // Tick the ending chronicle's staged line reveal (no-op unless the scroll is open).
-        Chronicle.Tick(delta);
+        // P2-MEMORY-12/P2-MEMORY-14: both the ending chronicle's Chronicle.Tick and the marquee's
+        // Ticker.Tick used to live here; ChronicleScroll and AdventureTicker are both deleted now
+        // (the book's bind page and day pages absorbed their jobs), so neither call exists anymore.
 
         // UI-4: tick the day-timeline's pulsing engaged-wait dot (no-op unless it's visible).
         Timeline.Tick(delta);
@@ -1583,12 +1569,14 @@ public partial class MainUi : Control
         }
 
         // The campaign's ending. Emitted once, ArcDirectorSystem.EndingDelayDays after the climax.
-        // Rendered from the event's own tallies (see ChronicleScroll) rather than re-derived state.
+        // P2-MEMORY-14: opens the book straight to its own closing chapter (ChronicleComposer's
+        // lines, composed from the live state) rather than a raw tally reader — see
+        // LegendsWall.ShowBindPage's own doc.
         foreach (var evt in Adapter.LastEvents)
         {
-            if (evt is CampaignEnded ended)
+            if (evt is CampaignEnded)
             {
-                Chronicle.ShowFor(ended);
+                Legends.ShowBindPage(state);
                 break;
             }
         }
@@ -1663,11 +1651,6 @@ public partial class MainUi : Control
         // landed in Town2D.MarketLife2D, hosted by the market room and fed every tick from
         // Town2D.Refresh() (called below via RefreshAll), not from this MainUi tick hook.
         SyncCampModal(); // V7a: raise the winch-house slate the moment a party parks at Camp
-
-        // U17: feed this tick's freshly stamped events to the bottom-edge adventure ticker.
-        // EventLog only (Adapter.LastEvents) — never PendingExpeditions — is what keeps it
-        // KTD5-safe by construction (see AdventureTicker's class doc).
-        Ticker.OnPhaseCompleted(completedPhase, completedDay, state, Adapter.LastEvents);
 
         if (completedPhase == DayPhase.Evening)
         {
@@ -1918,7 +1901,7 @@ public partial class MainUi : Control
     /// U-T9-6: the modal-ish surfaces a tutorial <c>PanelControl</c>/<c>PanelSection</c> anchor may
     /// point into — mounted directly on this node rather than registered with the drawer. Originally
     /// a five-arm switch (Ledger/Commissions/Legends/Camp/Forecast); U9 (§11.14.14) found it MISSED
-    /// four more real surfaces mounted the same way (Mirror/Chronicle/Pip/Docket), so it now
+    /// more real surfaces mounted the same way (Mirror/Pip/Docket), so it now
     /// delegates to <see cref="TutorialSurfaceRegistry"/> — the one roster both this switch and
     /// <see cref="PanelFor"/>'s own duplicate list were replaced with (see that class's own doc).
     /// Returns null for an unknown id so <c>TutorialOverlay</c> keeps throwing rather than silently
@@ -1949,7 +1932,7 @@ public partial class MainUi : Control
 
     /// <summary>The subset of <see cref="ModalContent"/>'s now-wider answer set that counts as "the
     /// player's current location" for the tutorial's own "you're at X" acknowledgement — narrower on
-    /// purpose (Mirror/Chronicle/Pip/Docket are not locations in that narrative sense), so
+    /// purpose (Mirror/Pip/Docket are not locations in that narrative sense), so
     /// this stays its own short, hand-picked list rather than every id <see cref="ModalContent"/> can
     /// now resolve.</summary>
     private static readonly string[] ModalAnchorSurfaces = ["Ledger", "Commissions", "Legends", "Camp", "Forecast"];
@@ -2597,8 +2580,8 @@ public partial class MainUi : Control
     /// A four-second strip that tries to say three things says none of them, and this project has
     /// already been burned once by a notification that repeated itself into wallpaper. The quieter
     /// members of this same family (recruits, commissions, the director's incidents) go to the
-    /// <see cref="AdventureTicker"/> instead, where they can scroll past without demanding
-    /// attention.</para>
+    /// book's day pages instead (P2-MEMORY-12; see <see cref="GodotClient.Panels.LegendsWall"/>),
+    /// where they sit permanently without demanding attention.</para>
     /// </summary>
     /// <summary>
     /// The three campaign milestones that earn a voice: the act turn, the climax, and the ending.
@@ -3971,8 +3954,8 @@ public partial class MainUi : Control
         // hide it). NOT a persistent status readout, and never the raw kernel string.
         //
         // P2-SCREEN-11 (reclaim the height): wrapped in a plain (non-Container) Control with a
-        // fixed CustomMinimumSize — the same StatChipsWrap/TimelineWrap/TickerWrap pattern this
-        // method already uses three times, and for the identical reason (see StatChipsWrap's own
+        // fixed CustomMinimumSize — the same StatChipsWrap/TimelineWrap pattern this method
+        // already uses twice, and for the identical reason (see StatChipsWrap's own
         // remark above: a Container's reported minimum is its CONTENT'S, a plain Control's is only
         // ever its own CustomMinimumSize). Unwrapped, ToastBanner reported zero height while hidden
         // and its Label's real height — one line, or two on a long joined-rejection/gate-open
@@ -4013,18 +3996,21 @@ public partial class MainUi : Control
         _toast.AddThemeColorOverride("font_color", GameTheme.RejectionColor);
         _toastBanner.AddChild(_toast);
 
-        // U21/U2: the ExpandFill row between the header and the ticker — claims exactly the
-        // vertical space neither of those two fixed-height rows wants, so the header stays
-        // pinned top and the ticker stays pinned bottom regardless of window height.
+        // U21/U2: the ExpandFill row below the header — claims whatever vertical space the
+        // fixed-height rows above it don't want, so the header stays pinned top and the world
+        // fills the rest regardless of window height. P2-MEMORY-12 (P2-OQ3): this used to split
+        // that remainder with a bottom-edge AdventureTicker row; the ticker is deleted, its jobs
+        // moved to the book's day pages, and nothing replaces its reserved strip — WorldSlot now
+        // simply gets the full remaining height.
         //
         // U2 (shell-and-audio plan, R1/KTD-C): this USED to be a transparent, input-passthrough
         // spacer over a full-rect Town2D mounted behind the whole Layout column — the header
         // painted over the world's top band and MouseFilter.Ignore let clicks fall through to it.
         // Town2D is now this Control's own child, anchored FullRect WITHIN it (below), so
         // WorldSlot no longer needs to pass anything through to a layer behind it — it IS the
-        // world's layout box. Occlusion becomes structural: the header and the ticker each claim
-        // their own row in `layout`, WorldSlot gets whatever height is left over, and Town2D can
-        // never report a rect outside the box its own parent handed it.
+        // world's layout box. Occlusion becomes structural: the header claims its own row in
+        // `layout`, WorldSlot gets whatever height is left over, and Town2D can never report a
+        // rect outside the box its own parent handed it.
         var worldSlot = new Control
         {
             Name = "WorldSlot",
@@ -4069,31 +4055,11 @@ public partial class MainUi : Control
         Progress = new ProgressionPanel(); // U-D4: code-built (no scene deps), like RaidForecastBoard
         Lessons = new LessonsPanel(); // U2 (tutorial-revamp plan): code-built, same idiom as Progress
 
-        // U17 (KTD13): the single bottom-edge HUD line — mounted last in the layout so it sits
-        // below the world gap, the one region KTD13 reserves for it (PiP docks above it; top bar
-        // and the top-right objective chip are untouched by this unit).
-        // Menu-sizing fix (U2, playtest F1): AdventureTicker is a PanelContainer whose Label has
-        // AutowrapMode.Off (deliberate — a scrolling marquee, never wrapped), so its OWN combined
-        // minimum width is the FULL unwrapped width of the joined marquee line — once real events
-        // land (first tick) that can be 2000+px. Added straight into `layout` (a VBoxContainer),
-        // that minimum propagates upward and inflates the WHOLE layout's width past the viewport,
-        // which is what actually pushed Skip/Auto/Pause/1x/Ledger off-screen (not the stat chips —
-        // those are already capped by StatChipsWrap/TimelineWrap above). Same fix as those wraps:
-        // a plain (non-Container) Control cuts the upward minimum-size propagation at exactly this
-        // width (0 — the ticker's real minimum height, 28, still travels up so the world gap keeps
-        // reserving the right vertical space); ClipContents keeps the marquee's own scroll/clip
-        // rendering inside it exactly as before.
-        var tickerWrap = new Control
-        {
-            Name = "TickerWrap",
-            ClipContents = true,
-            CustomMinimumSize = new Vector2(0, 28),
-        };
-        layout.AddChild(tickerWrap);
-        Ticker = new AdventureTicker();
-        Ticker.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-        tickerWrap.AddChild(Ticker);
-        Ticker.Build();
+        // P2-MEMORY-12 (P2-OQ3): the bottom-edge HUD line KTD13 reserved for U17's AdventureTicker
+        // is gone along with the ticker itself — every line it used to compose now lands in the
+        // book's day pages instead (LegendsWall.FormatLine/RenderDayLog), at full retention rather
+        // than a scrolling 3-day window. Nothing replaces the strip; WorldSlot above simply keeps
+        // the height it used to give up to it.
 
         // --- U21: DrawerHost — replaces the TabContainer. A right-anchored ~600px panel that
         // slides over the permanent world; one panel at a time (OpenPanel below REPLACES, never
@@ -4194,19 +4160,6 @@ public partial class MainUi : Control
         // event-forwards-to-OpenPanel("Forge") shape as Camp.OpenForgeRequested (see that wiring's
         // own comment, this file, StartCampaign).
         Forecast.ForgeOneRequested += () => OpenPanel("Forge");
-
-        // --- the ending chronicle: code-built modal sibling on the RaidForecastBoard precedent
-        //     (no scene, no import churn). Draws above the Ledger it arrives alongside (mounted
-        //     after it), though several more overlays mount after Chronicle in turn — see
-        //     SurfaceArbiter's own doc for the real, measured paint order.
-        Chronicle = new ChronicleScroll();
-        AddChild(Chronicle);
-        SurfaceArbiter.Claim(Chronicle, new SurfaceClaim("Chronicle", SurfaceRegion.FullScreenModal, 4, OwnsScreen: true));
-        Chronicle.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-        // P2-SCREEN-04: the missing wire. Every sibling modal gets this same line (see Ledger/
-        // Forecast above) — Chronicle never did, so opening it never held the clock,
-        // never blocked world input, and never suppressed PiP. See OnChronicleVisibilityChanged.
-        Chronicle.VisibilityChanged += OnChronicleVisibilityChanged;
 
         // --- Wave 3 (U15) commission board: code-built modal sibling, mirroring RaidForecastBoard.
         //     Unlike Forecast it submits actions, so it needs the adapter handed in (Depths.Clock
@@ -4336,11 +4289,17 @@ public partial class MainUi : Control
         Tutorial.SecondProfessionPicked += OnSecondProfessionPicked;
         Tutorial.QuickTravelRequested += QuickTravel;
         Tutorial.Load(); // user:// (KTD2 — never the sim save): adopt a prior dismiss/complete
+        // U35 (R26): Town.Build already ran above with Tutorial still null (so it defaulted Bryn to
+        // present) — now that the persisted Completed/graduation state is actually loaded, correct
+        // the ALREADY-MOUNTED workshop room in place if a resumed save says she should be gone (or
+        // mid-return) from the very first frame, never waiting on the player's next door-walk.
+        Town.Tutorial = Tutorial;
+        Town.RefreshMentorPresence();
 
         // --- U16 (KTD11/KTD13): the scrying mirror (a third same-shaped modal overlay — Camp/
         //     Ledger/Mirror never show at once in practice, but nothing here assumes it) and its
         //     PiP dock, the ONLY new always-on HUD element this unit adds — a small bottom-right
-        //     corner Control, independent of the header/Drawer/Ticker/Objective regions U17/U18
+        //     corner Control, independent of the header/Drawer/Objective regions U17/U18
         //     touch. -----------------------------------------------------------------------
         Mirror = new ScryingMirror { Name = "ScryingMirror" };
         AddChild(Mirror);
@@ -4801,7 +4760,7 @@ public partial class MainUi : Control
     /// one visible claim (in practice the eight full-rect modals stay mutually exclusive — see
     /// <see cref="SurfaceArbiter"/>'s own class doc). <c>internal</c> so <c>AgentPlaytest.cs</c>'s
     /// <c>Location()</c> (same assembly, GodotClient.Tools) can report an open Ledger/Camp/Mirror/
-    /// Forecast/Commissions/Legends/Chronicle/system-menu as a distinct, trackable location
+    /// Forecast/Commissions/Legends/system-menu as a distinct, trackable location
     /// instead of it silently reading as "town" — see <see cref="OverlaySurfaces"/>'s own doc for why
     /// this reuses that projection rather than re-deriving the answer.</summary>
     internal string? ActiveOverlayName()
@@ -5241,10 +5200,20 @@ public partial class MainUi : Control
             // more generic 'here is what this screen is' note fired moments earlier"). Pressing
             // a station IS the act, and nothing is discarded: the displaced note goes to the
             // FRONT of the queue and is the very next thing "Got it" shows.
+            //
+            // U35 (R26): reaching this branch AT ALL with Tutorial.Completed true means today is
+            // necessarily her one return day — Town.MentorVisibleToday keeps her station out of the
+            // room on every OTHER post-graduation day, so this press can never fire outside it. Her
+            // return is a goodbye, not an ambient advisor slot, so it always speaks the closing
+            // RestingLine rather than MentorIdleVoice's live objective (which stays reserved for a
+            // Dismissed player's own still-standing, never-leaving station — the one population
+            // Completed never becomes true for).
             Mentor.Show(
                 Tutorial.Active
                     ? MentorVoice.CurrentLesson(Tutorial.Step)
-                    : MentorIdleVoice.Line(Adapter.CurrentState),
+                    : Tutorial.Completed
+                        ? MentorVoice.Speak(MentorVoice.RestingLine)
+                        : MentorIdleVoice.Line(Adapter.CurrentState),
                 preempt: true);
             return;
         }
@@ -5480,27 +5449,6 @@ public partial class MainUi : Control
         }
 
         UpdateEngaged();
-        UpdateClockLabel();
-        TryFireDeferredMineGateFocus(); // U1: fires the deferred departure pan if the screen is now clear
-    }
-
-    /// <summary>P2-SCREEN-04: mirror of the Forecast latch for the campaign's ending
-    /// ceremony — pause while it owns the screen, resume on close when play was running. Chronicle
-    /// never halts the kernel (its own class doc, "Hades-style"), so resuming here is safe even
-    /// though the campaign has already concluded — the town keeps working after Close.</summary>
-    private void OnChronicleVisibilityChanged()
-    {
-        if (Chronicle.Visible)
-        {
-            _resumePlayOnChronicleClose = Clock.Playing;
-            Clock.Pause();
-        }
-        else if (_resumePlayOnChronicleClose)
-        {
-            Clock.Play();
-        }
-
-        UpdateEngaged(); // the Chronicle now engages the latch too — see OverlaySurfaces()
         UpdateClockLabel();
         TryFireDeferredMineGateFocus(); // U1: fires the deferred departure pan if the screen is now clear
     }

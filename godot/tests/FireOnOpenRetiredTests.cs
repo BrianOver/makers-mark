@@ -173,7 +173,7 @@ public class FireOnOpenRetiredTests
         AssertThat(handlers.Count)
             .OverrideFailureMessage(
                 $"Only found {handlers.Count} VisibilityChanged handlers -- MainUi.BuildUi wires at " +
-                "least eight (Ledger/Forecast/Chronicle/Commissions/Legends/Camp/SystemMenu/" +
+                "least seven (Ledger/Forecast/Commissions/Legends/Camp/SystemMenu/" +
                 "Mirror). The query is broken, not the census.")
             .IsGreaterEqual(7);
     }
