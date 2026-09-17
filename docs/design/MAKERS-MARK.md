@@ -1560,6 +1560,66 @@ never binds, carry-over changes nothing, and the correct outcome is to fix the s
 rather than the kernel. `P2-LONG-29`, `P2-PEOPLE-26`, `P2-PEOPLE-27` and `P2-MEMORY-23` carry
 `[GOLD]`, `[BAL]` or `[C]` and are the owner's to grant.
 
+**P2-HONEST-28 measured 2026-09-17.** `dotnet run --project sim/GameSim.Cli -- slot-spend --seeds 20
+--days 100` (new subcommand, `sim/GameSim.Cli/SlotSpendSweep.cs`) reads the kernel as a black box —
+for every action a driver submits each tick, it counts a spent slot when `ActionBudget.ConsumesSlot`
+is true AND the action does not appear in that tick's `TickResult.Rejected` — the exact predicate
+every consuming handler already gates its own decrement on. Run across all eight `BatchRunner.Policy`
+harness policies AND a ninth, non-harness driver ("ambitious") at 20 seeds × 100 days each (2,000
+day-samples per driver, 18,000 total):
+
+| driver | n (days) | median | p10 | p90 | min | max | full-spend days |
+|---|---|---|---|---|---|---|---|
+| baseline | 2,000 | 3 | 0 | 5 | 0 | 5 | 760 (38.0%) |
+| counter | 2,000 | 0 | 0 | 0 | 0 | 0 | 0 (0.0%) |
+| apprentice | 2,000 | 5 | 5 | 5 | 1 | 5 | 1,877 (93.9%) |
+| handforge | 2,000 | 3 | 0 | 5 | 0 | 5 | 842 (42.1%) |
+| latemastery | 2,000 | 3 | 0 | 5 | 0 | 5 | 851 (42.5%) |
+| alchemy | 2,000 | 0 | 0 | 1 | 0 | 3 | 0 (0.0%) |
+| tanning | 2,000 | 0 | 0 | 2 | 0 | 4 | 0 (0.0%) |
+| engineering | 2,000 | 0 | 0 | 2 | 0 | 4 | 0 (0.0%) |
+| ambitious | 2,000 | 1 | 0 | 5 | 0 | 5 | 496 (24.8%) |
+| **all combined** | **18,000** | **1** | **0** | **5** | **0** | **5** | **4,826 (26.8%)** |
+
+Eight of the nine drivers — including `BaselinePlayer`, the policy the golden corpus and every
+`Category=Balance` test key their economy assumptions off — spend a **median of 3 slots or fewer**
+out of 5, with full-spend days at or under 43%. `CounterPlayer` and the three puzzle-profession
+policies barely touch the budget at all (median 0; the counter service's own verbs are all free per
+`ActionBudget.ConsumesSlot`'s doc comment, and the puzzle professions' scripted policies rarely reach
+a legal craft attempt in the first place). `ApprenticePlayer` — the guided-tutorial policy — is the
+one outlier, maxed on 93.9% of days, but that is evidence *against* carry-over mattering rather than
+for it: with `p10 = median = p90 = 5` and a minimum of 1, that policy almost never leaves a slot
+unspent, so there is essentially nothing to bank in the first place.
+
+**The "ambitious" row answers the harder half of the question.** All eight `BatchRunner` policies are
+self-limiting — each checks `state.ActionSlotsRemaining` before adding a consuming action, so none
+of them can ever demonstrate genuinely REFUSED work; they never attempt a 6th. The fast lane's own
+`SixDilemmasLivenessTests.TheActionSlotBudget_ActuallyBinds_SoBankingASlotCostsSomething` already
+proves — and stays green — that a driver which greedily tops up to the day's legal maximum (the same
+base actions as `BaselinePlayer` + `CounterPlayer` + a held heal craft, then every remaining legal
+slot-consuming action `ActionLegality.LegalActions` offers) CAN exhaust the budget while legal real
+work still waits, over 1 seed × 25 days. This sweep reruns that exact driver
+(`SlotSpendSweep.AmbitiousActionsFor`, ported line-for-line from that test's `WalkBudget`) at 20
+seeds × 100 days, and the picture changes: median drops to 1/5 and full-spend to 24.8%, *lower* than
+plain `BaselinePlayer`. The two results do not contradict — greedy early spending burns gold and
+materials faster than a paced policy, so by the middle of a 100-day campaign the ambitious driver
+more often has nothing affordable left to buy at all; gold, not the 5-slot ceiling, becomes the
+binding constraint. The short-horizon regression catches the budget genuinely binding in the campaign's
+early days, before that depletion sets in; the long-horizon sweep shows that window is a minority of
+the campaign even for the greediest driver this codebase can construct.
+
+**Verdict: the fourth decision is not currently a decision.** By the criterion this section
+pre-registered — median day spend versus the 5-slot ceiling — eight of nine drivers fall clearly
+below it, including the one built specifically to stress it, and the ninth (Apprentice) never
+generates the slack a bank would hold. For "spend the slot or bank it" to become a real decision, the
+budget would need to bind often enough that players regularly leave work undone for lack of a slot
+AND regularly have slack days to draw from — neither holds under any measured driver today, not even
+the one engineered to maximize the first half. The honest fix is `CLAUDE.md`'s six-decisions line,
+not `ActionBudget.cs`; that edit is the owner's to make since `CLAUDE.md` is deny-listed here.
+`SlotSpendSweep.cs` is kept (precedent: `LongWallSweep`/`FeltWallSweep`/`ArcStallSweep` are the same
+one-off-measurement class of tool and all still live in `sim/GameSim.Cli/`) so this number is
+re-runnable, not just quoted.
+
 **Booked rows this read argues against, recorded rather than quietly skipped.** `P2-MEMORY-07`'s
 commendation triggers on `LegendQuery.FamousBeatThreshold = 3` counting beats of any kind; with five
 beats a card, it fires on night one and its three reasons are three cave rats — which is why
