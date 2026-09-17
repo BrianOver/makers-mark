@@ -209,7 +209,9 @@ public class FrontierTests
 
         var text = Frontier.Render(Frontier.Compute(result));
 
-        Assert.Contains("1 runnable, 1 refused", text);
+        // Both rows carry no evidence marker, so the runnable half is reported as the inference
+        // it is -- the count is part of the header precisely so a reader cannot miss it.
+        Assert.Contains("1 runnable (1 UNVERIFIED), 0 shipped by evidence, 1 refused", text);
         Assert.Contains("RUNNABLE  P2-ZZZ-01", text);
         Assert.Contains("REFUSED   P2-LONG-02", text);
     }

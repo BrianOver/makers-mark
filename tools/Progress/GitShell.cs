@@ -387,6 +387,26 @@ public static class GitShell
         return File.ReadAllText(path, Encoding.UTF8);
     }
 
+    /// <summary>The same file as <see cref="ReadFile"/> reads, but as <paramref name="gitRef"/>
+    /// has it -- null when that ref does not carry the path at all, or when the git read failed.
+    ///
+    /// <para>This exists for exactly one caller: the frontier's own provenance header. <see
+    /// cref="ReadFile"/> reads the WORKING TREE, while every other input this tool gathers comes
+    /// from <c>origin/main</c>, and for a long time the frontier's header claimed the whole render
+    /// was "derived from origin/main" regardless. A stale checkout therefore reported a plan
+    /// nobody could see and, in the worst case, "0 runnable" -- which reads as "the night's work
+    /// is done" rather than "you are reading an old file". Comparing the two texts is the most
+    /// direct way to state which plan was actually parsed.</para>
+    ///
+    /// <para>Deliberately NOT routed through <see cref="DegradationLog"/>: failing to read the ref
+    /// copy costs the header a sentence, not the render its trustworthiness, and a degradation
+    /// makes the frontier refuse outright.</para></summary>
+    public static string? ReadFileAtRef(string repoRoot, string relativePath, string gitRef)
+    {
+        var (code, stdout, _) = Run(repoRoot, "git", "show", $"{gitRef}:{relativePath}");
+        return code == 0 ? stdout : null;
+    }
+
     private static (int Code, string Stdout, string Stderr) Run(string workingDir, string exe, params string[] args)
     {
         var psi = new ProcessStartInfo
