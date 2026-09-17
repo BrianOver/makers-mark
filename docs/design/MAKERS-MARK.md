@@ -1502,6 +1502,74 @@ legibility, and the owner's ask named heroes, NPCs, enemies and crafted items.
 
 ---
 
+### 11.11 The fun wave — measured 2026-09-17
+
+Twelve units booked in one sitting, from a read of the running game rather than of this document.
+Four measurements chose them. Every number below was grepped on `main @ 5c629f62`, not recalled.
+
+**1. The proof is wallpaper.** The beat-volume sweep already recorded in §11 found 97.5% of beats
+are `KillingBlow` — a recorded fact with no counterfactual behind it — at a median of 30 beats a
+night, 5 per hero card, the same item repeating on 96.5% of cards. `LedgerModal.cs` renders every
+row uncapped and every row carries "Ask how it happened." The sentence this whole game exists to
+produce fires thirty times an evening, which is the same as not firing. **P2-PROOF-16** is the
+render rule that fixes it without touching the sim: a `KillingBlow` earns a row only when the swing
+would not have killed without the item (`TellingQuery.KillingBlowPayload.MonsterHpWithoutItem > 0`,
+already computed and already read by `TellingPanel`), and every other kill folds into one line per
+item. No sim change means no XP change, so this lands ahead of the beat-volume ruling rather than
+behind it.
+
+**2. Your mark makes heroes grow roughly four times faster, and no screen says so.** `HeroXp` grants
+`SurviveXp 10 + PerFloorXp 5 + PerBeatXp 15` per credited beat. A hero carrying your work earns
+about 100 XP a night against about 25 with rival iron — Veteran in three nights instead of twelve —
+and Level feeds Attack and Defense through `CombatMath`. The mechanism that makes "your craft writes
+their legends" literally true is unrendered. **P2-PROOF-17** is a pure query over the night's own
+`ExpeditionResult`, composed from exactly `HeroXp.ForExpedition`'s inputs so it cannot disagree with
+the grant, rendered on the rank-up line. A rival-armed hero gets the honest version: all of it was
+their own arm.
+
+**3. The proof changes nothing in how a hero regards the smith.** `grep AttributionBeat sim/GameSim/Heroes/
+sim/GameSim/Counter/` returns nothing. `Hero.MoodPermille`'s only writers are the haggle resolver,
+the recruit system and the commission system. A `LethalSave` raises the hero's loyalty to the
+*item* and leaves their relationship with *you* untouched — so `THE-GAME.md` §3.4's "heroes remember
+who sold them the thing that saved them" is true of the item and false of the smith. That sentence
+is corrected in this PR to say what the code does. **P2-PEOPLE-26** is the unit that would make the
+original sentence true, and **P2-PEOPLE-27** is what the hero then does with the memory. Both carry
+ceremony flags and wait for the owner.
+
+**4. The vigil is always after floor 1.** `ExpeditionSystem.CampCheckpointDepth = 1`, and
+`CheckpointFor(target) = Math.Min(1, target - 1)`. On a floor-5 run the camp looks at a near-full
+party with floors 2 through 5 undrawn, which is why two A/B runs found zero deliveries before
+P2-LONG-25 and why `THE-GAME.md` §7 has to admit the reach-into-the-dark moment happens exactly as
+often on a shallow run as on the run where everything is at stake. **P2-LONG-29** moves the camp
+below the *final* floor — `Math.Max(1, target - 1)` — which gives the sixth decision two live arms
+by construction, makes `SupplyFee`'s scaling visible for the first time (**P2-LONG-30**), and makes
+a floor-2 camp on day 4 and a floor-4 camp on day 14 different evenings, which is the cheapest
+honest attack on the day-12 felt wall. It is the owner's own August direction (§11.7.5, "checkpoints
+scale with depth") that nobody ever booked.
+
+**The cost that must be measured before P2-LONG-29 is accepted**, stated here so it is not
+discovered later: more floors resolve in stage 1, so more runs finalise before they ever camp. Camps
+get rarer and heavier. The gate is the 20-seed sweep, two-sided — deliveries per sweep and the
+median camped-hero HP, which today sits at or above 50% by construction.
+
+**Which of these an unattended session may take.** `P2-PROOF-16`, `P2-PROOF-17`, `P2-PROOF-18`,
+`P2-SCREEN-35`, `P2-SCREEN-36` and `P2-PEOPLE-25` are surface work over state the sim already
+computes: no Contracts change, no golden re-record, no balance re-baseline. `P2-HONEST-28` is a
+measurement first and a decision second — if the median day spends fewer than five slots the budget
+never binds, carry-over changes nothing, and the correct outcome is to fix the six-decisions text
+rather than the kernel. `P2-LONG-29`, `P2-PEOPLE-26`, `P2-PEOPLE-27` and `P2-MEMORY-23` carry
+`[GOLD]`, `[BAL]` or `[C]` and are the owner's to grant.
+
+**Booked rows this read argues against, recorded rather than quietly skipped.** `P2-MEMORY-07`'s
+commendation triggers on `LegendQuery.FamousBeatThreshold = 3` counting beats of any kind; with five
+beats a card, it fires on night one and its three reasons are three cave rats — which is why
+**P2-MEMORY-23** fixes the predicate first. `P2-LONG-16` builds a failure ceremony for a town the
+plan says cannot fail, and no sweep has shown a player reaching `TownConfidenceCollapsed` in a
+playable horizon: measure before building. `P2-LONG-20` adds a balance system for a character the
+plan itself says must never be the antagonist, where P2-LONG-19's single spoken line already carries
+the dramatic function. `P2-LONG-21` and `P2-LONG-22` are campaign-two carryover booked before any
+human has finished campaign one.
+
 ## 12. The external reviews — what came from outside, and what we did with it
 
 On 2026-08-06 the owner collected design reviews from three other AI models and asked for
@@ -4623,6 +4691,8 @@ name (§11.6 rule 4).
 | ⚑ P2-SCREEN-28 | The capture harness's own usage header stops naming states it does not have | `tools/shoot.ps1` | — | [G] |
 | ⚑ P2-SCREEN-29 | A sized `TextureRect` cannot silently claim its texture's size | `sim/GameSim.Tests/Hygiene/TextureRectExpandModeCensusTests.cs`, `godot/scripts/MainUi.cs`, `godot/scripts/panels/MineWatch.cs`, `godot/scripts/panels/ProvenanceCard.cs`, `godot/scripts/panels/SimPanel.cs`, `godot/scripts/ui/UiKit.cs` | — | [S] |
 | P2-SCREEN-32 | The Shop sheds 171px of decoration (Stock still does not clear the fold) | `godot/scripts/panels/ShopPanel.cs`, `godot/scripts/panels/CounterPanel.cs` | — | [G] |
+| P2-SCREEN-35 | Follow one piece — the send-off and the night card open with the item you marked | `godot/scripts/panels/LedgerModal.cs`, `godot/scripts/ui/MusterVoice.cs` | — | [G] |
+| P2-SCREEN-36 | The marcher's empty slot names the open commission that would have filled it | `godot/scripts/ui/MusterVoice.cs`, `godot/scripts/panels/RaidForecastBoard.cs` | — | [G] |
 | P2-ONBOARD-09 | The Goodwill chip speaks the band or dies (the beat's own half landed) | `godot/scripts/panels/CounterPanel.cs` | — | [G] |
 | P2-ONBOARD-10 | The seed becomes enterable at New Game | `godot/scripts/NewGameSelect.cs` | — | [G] |
 | P2-PROOF-03 | The stage, pass one — one duel, recorded rolls | new `godot/scripts/panels/TellingPanel.cs` (+`.uid`) | — | [G] |
@@ -4632,6 +4702,9 @@ name (§11.6 rule 4).
 | ⚑ P2-PROOF-11 | Legible defeat — the death names its margin (research M4) | `godot/scripts/panels/LedgerModal.cs`, `sim/GameSim/Expedition/TellingQuery.cs` (read-only) | — | [G] |
 | ⚑ P2-PROOF-13 | The maker names the signed work — the glossary's own sentence becomes true | `sim/GameSim/Contracts/Actions.cs`, `sim/GameSim/Crafting/CraftingHandlers.cs`, `godot/scripts/panels/ForgePanel.cs` | P4 | [S][C] |
 | ⚑ P2-PROOF-14 | The counterfactual reaches the ledger — the beat carries its own arithmetic | `sim/GameSim/Expedition/AttributionEngine.cs`, `godot/scripts/panels/LedgerModal.cs` | — | [S][GOLD] |
+| P2-PROOF-16 | The night's card leads with what changed the outcome; incidental kills fold to one line per item | `godot/scripts/panels/LedgerModal.cs`, `godot/tests/LedgerModalTests.cs` | — | [G] |
+| P2-PROOF-17 | The rank-up says which part of it your mark earned — an XP split that cannot disagree with the grant | `sim/GameSim/Drama/`, `sim/GameSim.Tests/`, `godot/scripts/panels/LedgerModal.cs` | — | [S] |
+| P2-PROOF-18 | The closest call — the survivor who nearly didn't, with the floor, the monster and the slot | `sim/GameSim/Drama/`, `godot/scripts/panels/LedgerModal.cs` | — | [S] |
 | P2-MEMORY-02 | The death card reads the pack and the last blow | `godot/scripts/panels/LedgerModal.cs` | — | [G] |
 | P2-MEMORY-05 | The Signed Work speaks; the idle line varies | `godot/scripts/panels/ForgePanel.cs`, advisor idle copy | — | [G] |
 | P2-MEMORY-06 | Provenance derives sales instead of omitting them | `godot/scripts/panels/ProvenanceCard.cs` | — | [G] |
@@ -4645,6 +4718,7 @@ name (§11.6 rule 4).
 | ⚑ P2-MEMORY-20 | The forecast gets a face (research M3) | `godot/scripts/ui/ArcScenes.cs`, `godot/scripts/panels/RaidForecastBoard.cs` | — | [G] |
 | ⚑ P2-MEMORY-21 | The reforge row previews the lineage it will write, from the one template that writes it | `sim/GameSim/Crafting/HeirloomHandlers.cs`, `godot/scripts/panels/LegendsWall.cs` | — | [S] |
 | ⚑ P2-MEMORY-22 | The east field remembers — the town gets an outdoor memory, one lantern per fallen hero | `godot/scripts/town2d/TownLayout2D.cs`, `godot/scripts/town2d/Town2D.cs` | — | [G] |
+| P2-MEMORY-23 | "Famous" stops counting cave rats — the legend predicate counts decisive deeds, not every beat | `sim/GameSim/Drama/LegendQuery.cs`, `sim/GameSim/Drama/ArcDirectorSystem.cs` | — | [S][GOLD] |
 | P2-PEOPLE-02 | The register gate's remaining two rules — trigger-id taxonomy validation and no-punchline-on-death scenes (the jargon rule already shipped under P2-PEOPLE-01) | `godot/tests/`, scene corpus | — | [G] |
 | P2-PEOPLE-03 | The remaining arcs — Torvald 4–8, Brunhilde, Kael, Sable, Elowen, Moss | scene corpus | P2-PEOPLE-02 + the probe's verdict | [G] |
 | P2-PEOPLE-04 | Durable-fact read-back on the VIGIL (the muster board's own half landed) | `godot/scripts/panels/MineWatch.cs`, `godot/scripts/panels/CampPanel.cs` | — | [G] |
@@ -4668,6 +4742,9 @@ name (§11.6 rule 4).
 | ⚑ P2-PEOPLE-23 | Your mark on the walker — a hero carrying your work shows it in the street | `godot/scripts/town2d/HeroActor2D.cs` | — | [G] |
 | ⚑ P2-PEOPLE-24 | The tracker knows the vigil is the moment, not a shut vendor | `godot/scripts/ui/TutorialFlow.cs` | — | [G] |
 | ⚑ P2-PEOPLE-20 | The Patron (research M1) | `sim/GameSim/Contracts/Player.cs`, `sim/GameSim/Chronicle/`, `godot/scripts/` | P4 | [S][C] |
+| P2-PEOPLE-25 | The customer thanks you for last night's save before they ask for anything | `godot/scripts/ui/CustomerVoice.cs` | — | [G] |
+| P2-PEOPLE-26 | The saved hero remembers the smith — a counterfactual beat moves the bearer's mood, a kill never does | `sim/GameSim/Expedition/ExpeditionRevealSystem.cs`, `sim/GameSim/Heroes/` | — | [S][GOLD][BAL] |
+| P2-PEOPLE-27 | "One like the one that held" — a commission names the recipe a party-mate's save proved | `sim/GameSim/Heroes/CommissionSystem.cs`, `sim/GameSim/Contracts/Events.cs` | P2-PEOPLE-26 | [S][C][GOLD] |
 | ⚑ P2-LONG-01 | Re-date the wall on the current build | `sim/GameSim.Cli/`, one instrumented sweep | — | [S] |
 | P2-LONG-02 | Typed consumable kinds; hazard type on `VenueDefinition` | `sim/GameSim/Contracts/`, `sim/GameSim/Venues/VenueDefinition.cs` | P2-LONG-01, P4 | [S][C][GOLD] |
 | P2-LONG-03 | The teeth — the venom week, the redistribution rule, the ToolAssist emitter | `sim/GameSim/Drama/DirectorSystem.cs`, `sim/GameSim/Expedition/` | P2-LONG-02 | [S][BAL] |
@@ -4693,6 +4770,8 @@ name (§11.6 rule 4).
 | ⚑ P2-LONG-26 | Measure the FELT wall, not the novelty wall | `sim/GameSim.Cli/`, one instrumented sweep | P2-LONG-01 | [S] |
 | ⚑ P2-LONG-27 | The Deep vigil gets a stakes slate — words, never numbers | `godot/scripts/panels/MineWatch.cs` | — | [G] |
 | ⚑ P2-LONG-28 | The muster names the record the party is pressing past | `godot/scripts/panels/RaidForecastBoard.cs`, `sim/GameSim/Drama/DepthCopy.cs` (read-only) | — | [G] |
+| P2-LONG-29 | The vigil moves to the last door — `CheckpointFor` camps below the FINAL floor, not floor 1 (§11.7.5) | `sim/GameSim/Expedition/ExpeditionSystem.cs`, `sim/GameSim.Tests/Balance/CampProvisioningBalanceTests.cs` | — | [S][GOLD][BAL] |
+| P2-LONG-30 | The runner's fee names the floor it is reaching — stakes, not decoration | `sim/GameSim/Expedition/CampHandlers.cs`, `godot/scripts/panels/` | P2-LONG-29 | [G] |
 | P2-HONEST-02 | Four dead-mechanism sentences die; `Gate.Reason` splits closed/opened | `godot/scripts/ui/SurfaceUnlocks.cs`, copy | — | [G] |
 | P2-HONEST-03 | The sentence "your commission died with them" gets a home (the sim half landed in #667) | `godot/scripts/panels/LedgerModal.cs`, `godot/scripts/panels/LegendsWall.cs` | P2-PEOPLE-07 | [G] |
 | P2-HONEST-04 | The queued suffix dies; eight panels stop teaching a console command | `godot/scripts/panels/SimPanel.cs`, `godot/scripts/panels/` | — | [G] |
@@ -4713,6 +4792,7 @@ name (§11.6 rule 4).
 | ⚑ P2-HONEST-24 | The advisor states the stake instead of giving the order (law 1) | `sim/GameSim/Advisor/ObjectiveAdvisor.cs`, `sim/GameSim.Tests/` | — | [S] |
 | ⚑ P2-HONEST-25 | Every ore row names the faction it feeds, not only the tariffed ones | `godot/scripts/panels/TavernPanel.cs`, `godot/scripts/panels/LedgerModal.cs` | — | [G] |
 | ⚑ P2-HONEST-26 | The night's narration is shown or stops being composed | `godot/scripts/panels/LedgerModal.cs`, `sim/GameSim/Drama/ExpeditionNarrator.cs` | — | [G] |
+| P2-HONEST-28 | Banking a slot is a decision or it is not — measure `ActionBudget` spend, then carry or correct the text | `sim/GameSim/Kernel/ActionBudget.cs`, `sim/GameSim.Tests/` | — | [S] |
 
 The per-domain counts, the landed/unbuilt split, and which rows carry a Contracts micro-PR, a
 golden re-record or a balance re-baseline are **derived, not stated here**: run

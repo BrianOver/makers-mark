@@ -253,9 +253,16 @@ on something that will get them killed at floor 4, and the commission board star
 Superior before floor 5 is reachable at all. This is the point where the forge minigame stops being
 a formality.
 
-Relationship bands accumulate quietly underneath. Heroes remember who sold them the thing that saved
-them and who fleeced them at the counter, and it shows in willingness and in which commissions come
-your way.
+Relationship bands accumulate quietly underneath. Heroes remember who fleeced them at the counter,
+and it shows in willingness and in which commissions come your way.
+
+They do not yet remember who sold them the thing that saved them. Measured 2026-09-17: the only
+writers of `Hero.MoodPermille` are `HaggleResolver` (pinning and fleecing), `RecruitSystem` (kin)
+and `CommissionSystem` (fulfilled and expired), and `grep AttributionBeat sim/GameSim/Heroes/`
+returns nothing. A save raises the hero's loyalty to the *item* -- the Sentimental gate reads
+`Hero.Memories` -- and leaves their standing with the smith untouched. This paragraph claimed
+otherwise; it is corrected to what the code does, and the unit that would make the original
+sentence true is booked as P2-PEOPLE-26 in MAKERS-MARK.md §11.11.
 
 By roughly day thirty a working shop has more gold than shelf space to spend it on, and the Foundry
 is where a mature smith's money goes — tier by tier, then into guaranteed work no dice can take
