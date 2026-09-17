@@ -161,21 +161,46 @@ public sealed partial class TellingPanel : SimPanel
         // fixtures for a DIFFERENT unit that never populate them at all, because nothing forced a
         // TellingQuery.Build call against them before this method started calling it eagerly for
         // every KillingBlow beat at render time (previously it ran only on a real button click,
-        // against fixtures built to support one). TellingQuery.Build needs both to replay the
-        // counterfactual and throws InvalidOperationException (a LINQ First/Single with no match)
-        // when it cannot — caught narrowly here (never a broader catch that could also swallow a
-        // real defect) and treated the same as an aged-out night: no proof, no row.
-        try
-        {
-            var beat = result.Beats.First(b => Matches(b, beatEvent));
-            var venue = VenueRegistry.All.TryGetValue(result.VenueId, out var v) ? v : VenueRegistry.Mine;
-            var script = TellingQuery.Build(result, beat, state.Items, venue);
-            return script.Payload is KillingBlowPayload payload && payload.MonsterHpWithoutItem > 0;
-        }
-        catch (InvalidOperationException)
+        // against fixtures built to support one).
+        //
+        // TOTAL, not caught: this checks Build's own preconditions before calling it, rather than
+        // catching whatever it throws — a caught exception answers "did Build throw", which could
+        // just as easily be masking a REAL defect in the query; a precondition answers "can Build
+        // actually resolve this beat", which is the question this method exists to answer. Every
+        // check below is read straight off TellingQuery.Build/BuildKillingBlow's own code, not
+        // guessed: a matching HeroAtDeparture, a floor within the venue's own registered range, a
+        // matching FloorOutcome, and EXACTLY one recorded kill round for this hero on that floor
+        // carrying at least one recorded roll (BuildKillingBlow calls
+        // factualRounds.Single(r => r.MonsterKilled) then reads killRound.RecordedRolls[0] —
+        // factualRounds is built 1:1 from these same combats, preserving MonsterKilled and
+        // RecordedRolls verbatim). A result failing any of these gets the same "no proof, no row"
+        // answer as an aged-out night, never a crash.
+        if (!result.PartyAtDeparture.Any(h => h.Id == beatEvent.Hero))
         {
             return false;
         }
+
+        var venue = VenueRegistry.All.TryGetValue(result.VenueId, out var v) ? v : VenueRegistry.Mine;
+        if (beatEvent.Floor < 1 || beatEvent.Floor > venue.FloorCount)
+        {
+            return false;
+        }
+
+        var floorOutcome = result.Floors.FirstOrDefault(f => f.Floor == beatEvent.Floor);
+        if (floorOutcome is null)
+        {
+            return false;
+        }
+
+        var killRounds = floorOutcome.Combats.Where(c => c.Hero == beatEvent.Hero && c.MonsterKilled).ToImmutableList();
+        if (killRounds.Count != 1 || killRounds[0].RecordedRolls.IsEmpty)
+        {
+            return false;
+        }
+
+        var beat = result.Beats.First(b => Matches(b, beatEvent));
+        var script = TellingQuery.Build(result, beat, state.Items, venue);
+        return script.Payload is KillingBlowPayload payload && payload.MonsterHpWithoutItem > 0;
     }
 
     /// <summary>
