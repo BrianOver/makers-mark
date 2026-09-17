@@ -278,9 +278,7 @@ public partial class RaidForecastBoard : Control
     {
         if (Tutorial?.ConsumeFirstTouch(
                 "forecast-board-taught",
-                MentorVoice.Speak(
-                    "This is a preview, not a promise — tomorrow's likely muster, projected off tonight's "
-                    + "roster. Whatever you still buy or craft before morning can change what it shows here."))
+                MentorVoice.Speak(MentorCorpus.ForecastPreviewCaption))
             is { } caption)
         {
             ShowHeaderCaption(caption);
@@ -309,9 +307,7 @@ public partial class RaidForecastBoard : Control
         Mentor?.ShowFirstTouch(
             Tutorial?.ConsumeFirstTouch(
                 "the-muster-speaks",
-                MentorVoice.Speak(
-                    "Fill the empty slot, or upgrade the full one? The muster board tells you who is "
-                    + "marching under-equipped. It does not tell you who will survive.")),
+                MentorVoice.Speak(MentorCorpus.ForecastFillOrUpgradeText)),
             preempt: true);
 
     private void EnsureBuilt()

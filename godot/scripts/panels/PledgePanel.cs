@@ -198,11 +198,7 @@ public partial class PledgePanel : Control
         Mentor?.ShowFirstTouch(
             Tutorial?.ConsumeFirstTouch(
                 PledgeLessonId,
-                MentorVoice.Speak(
-                    "The guild takes a piece instead of coin and hangs it where the town can see what "
-                    + "a smith is worth. That piece is gone for good the moment you hand it over — it "
-                    + "cannot be sold, cannot be sent to a hero, cannot earn a beat. Pledge only when "
-                    + "the wall is worth more to you than the chance the piece still had left.")),
+                MentorVoice.Speak(MentorCorpus.PledgeCostsForeverText)),
             preempt: true);
 
     private void EnsureBuilt()

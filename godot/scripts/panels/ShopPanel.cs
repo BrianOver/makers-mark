@@ -949,11 +949,7 @@ public partial class ShopPanel : SimPanel
     private void ShowShelfPricingLesson() =>
         Mentor?.ShowFirstTouch(Tutorial?.ConsumeFirstTouch(
             "pricing-as-a-decision",
-            MentorVoice.Speak(
-                "A shelf price only ever decides one thing: whether a hero can afford what you "
-                + "made. Price it out of reach and the sale is gone, nothing more — no hero "
-                + "remembers a shelf tag kindly or otherwise. Every price this town remembers is "
-                + "set across the counter, not here.")));
+            MentorVoice.Speak(MentorCorpus.ShelfPriceGatesAffordabilityText)));
 
     /// <summary>
     /// U5: a pick-up-able card. Godot's native drag-and-drop virtuals

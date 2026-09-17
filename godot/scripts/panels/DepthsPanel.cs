@@ -79,7 +79,9 @@ public partial class DepthsPanel : SimPanel
 
     /// <summary>P2-ONBOARD-02: the "read-only-surfaces" once-ever caption, a sibling of <see
     /// cref="_venueGrid"/> — Refresh() only ever Clears the grid itself, so this survives every
-    /// rebuild once <see cref="ShowHeaderCaption"/> sets it.</summary>
+    /// rebuild once <see cref="ShowHeaderCaption"/> sets it. Owner ruling 2026-09-15: retired (see
+    /// <see cref="_Notification"/>) the next time this panel is genuinely re-entered, reclaiming
+    /// its own reserved height for the venue grid below it.</summary>
     private Label? _caption;
 
     /// <summary>The strip currently mounted here (test/tuning hook) — null while <see
@@ -89,6 +91,39 @@ public partial class DepthsPanel : SimPanel
     public MineWatch? Watch => _root?.GetChildren().OfType<MineWatch>().FirstOrDefault();
 
     public override void _Ready() => EnsureBuilt();
+
+    /// <summary>
+    /// Owner ruling, 2026-09-15 ("two fold budgets the 481px ruling could not close"): the
+    /// once-ever caption below used to reserve its measured height (~79px) forever once shown —
+    /// <see cref="ShowHeaderCaption"/> sets <see cref="Label.Visible"/> true exactly once per
+    /// campaign and nothing ever set it back, so every LATER visit to this panel paid the same
+    /// 79px the first-ever reader earned by reading it once. Retiring it here, on the panel's own
+    /// re-entry, keys on nothing but that same fact: this fires when <see cref="_caption"/> is
+    /// hidden anyway (a fresh campaign, or this panel was never the one that showed it) it is a
+    /// no-op, and when it is genuinely visible from a PRIOR open, it collapses back to zero height
+    /// — never a second parallel "has this been read" flag alongside <see
+    /// cref="TutorialFlow.ConsumeFirstTouch"/>'s own once-ever ledger.
+    ///
+    /// <para><b>Why re-entry, not <see cref="Refresh"/>.</b> <c>MainUi.RefreshAll</c> calls <see
+    /// cref="Refresh"/> every tick this panel stays the OPEN one — including while a party is
+    /// live underground, which is the entire point of <see cref="MineWatch"/> ticking here — so
+    /// retiring on every <see cref="Refresh"/> would erase the caption within the same visit, the
+    /// instant the next tick landed, long before a player had actually read it. <see
+    /// cref="DrawerHost.Open"/>/<see cref="DrawerHost.Close"/> instead toggle THIS control's own
+    /// <see cref="CanvasItem.Visible"/> exactly on a real navigation (opening a different panel, or
+    /// leaving to the bare world, then coming back) — <see cref="NotificationVisibilityChanged"/>
+    /// fires synchronously off that transition, strictly BEFORE <c>MainUi.OpenPanel</c>'s own
+    /// <see cref="Refresh"/>/<see cref="TutorialFlow.ConsumeFirstTouch"/> calls run for the open
+    /// that triggered it, so a genuine first-ever open (caption not yet shown) is untouched and
+    /// still gets shown a moment later.</para>
+    /// </summary>
+    public override void _Notification(int what)
+    {
+        if (what == NotificationVisibilityChanged && IsVisibleInTree() && _caption is { Visible: true })
+        {
+            _caption.Visible = false;
+        }
+    }
 
     /// <summary>P2-ONBOARD-02: <c>MainUi</c> calls this the ONE time <see
     /// cref="TutorialFlow.ConsumeFirstTouch"/> ever returns the "read-only-surfaces" text for this
