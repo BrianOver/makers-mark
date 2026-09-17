@@ -137,6 +137,21 @@ public partial class MentorBanner : PanelContainer
     /// to avoid — enough that the pulsing outline's own glow never touches the card.</summary>
     private const float AvoidGap = 24f;
 
+    /// <summary>
+    /// U36 (§11, R27): her portrait's edge length (px) — deliberately <c>TavernPanel</c>'s
+    /// compact-card precedent (<c>PatronPortraitSize</c>/<c>LedgerModal.CardPortraitSize</c>, both
+    /// 56px), not the full <see cref="UiKit.PortraitSize"/> (96px) every hero roster card uses.
+    /// Two reasons, not one: the plan's own approach line asks for "a small portrait," and
+    /// <see cref="DockHeight"/>/<see cref="CardBodyWidth"/> were already tuned to their present
+    /// values against beat 0 — the five-paragraph cold-open line, the tallest text this card has
+    /// ever carried — measured against a rendered frame with NO portrait above it (that constant's
+    /// own doc). Adding height back on top of an already-maximal case is exactly the overflow this
+    /// class's own history (P2-ONBOARD-02/06) twice had to fix after the fact; the smaller size
+    /// costs little legibility at a glance and does not reopen it. A human visual pass once her real
+    /// portrait lands is still owed, same as every other blind-tuned render in this project.
+    /// </summary>
+    private const float MentorPortraitSize = 56f;
+
     /// <summary>The fixed-size box the card centers inside — see <see cref="PositionDock"/>.</summary>
     private CenterContainer _dock = null!;
 
@@ -210,6 +225,21 @@ public partial class MentorBanner : PanelContainer
         // idiom CommissionBoard/RaidForecastBoard already use for their own modal cards.
         var body = new VBoxContainer { Name = "MentorBannerBody", CustomMinimumSize = new Vector2(CardBodyWidth, 0) };
         card.AddChild(body);
+
+        // U36 (§11, R27, "her lines arrive with a face"): a small portrait above her words, the
+        // exact same null-tolerant mechanism every hero portrait card already uses
+        // (UiKit.PortraitFrame -> ArtRect) — never a second resolution ladder invented just for
+        // her. Requested at MentorPortraitSize (56px, see that constant's own doc for why not the
+        // full UiKit.PortraitSize) — the literal size this control lays out at (CustomMinimumSize,
+        // no TextureRect scale beyond the box itself) and the exact size
+        // GameArt.Specs.Town.MentorSpecs declares for "mentor-bryn": art ships at draw size, never
+        // a runtime Scale knob (the #471/#487 defect shape). On this checkout, where her portrait
+        // has not been generated yet (GPU-gated, owed), ArtRect's existing WarnOnceOnArtMiss fires
+        // once and a loud captioned placeholder renders in its place — never a silent gap.
+        var portrait = UiKit.PortraitFrame(MentorVoice.PortraitId, MentorPortraitSize);
+        portrait.Name = "MentorBannerPortrait";
+        portrait.SizeFlagsHorizontal = SizeFlags.ShrinkCenter;
+        body.AddChild(portrait);
 
         _label = AddLabel(body, string.Empty);
         _label.Name = "MentorBannerText";

@@ -68,15 +68,25 @@ public class MentorVoiceTests
         AssertThat(string.IsNullOrWhiteSpace(MentorVoice.Station.FlavorLine)).IsFalse();
     }
 
+    /// <summary>
+    /// U36 (§11, R27): inverts the R14.5-era test this replaces (git history: the old
+    /// <c>Station_SpriteId_ReusesAnExistingTownsfolkBody_NeverANewOne</c> pinned the OPPOSITE fact
+    /// on purpose). Enumerates the real registry — <see cref="TownsfolkNpc2D.CivilianIds"/> — rather
+    /// than hand-checking "broad"/"slight" by name, so a future civilian id appended to that array
+    /// is covered automatically instead of silently untested (this repo has shipped exactly that
+    /// gap before: a guard walking a hand-listed id array stops covering the family the moment
+    /// someone appends).
+    /// </summary>
     [TestCase]
-    public void Station_SpriteId_ReusesAnExistingTownsfolkBody_NeverANewOne()
+    public void Station_SpriteId_IsHerOwnDedicatedBody_MatchesNoTownsfolkCivilianId()
     {
-        // The exact id TownsfolkNpc2D.ResolveSprite already resolves for the wandering civilian
-        // villagers (already-shipped art) — R14.5's "on an existing townsfolk body," literally.
-        AssertThat(MentorVoice.Station.SpriteId).IsEqual("town2d-townsfolk-broad");
+        AssertThat(MentorVoice.Station.SpriteId).IsEqual(MentorVoice.SpriteId);
         AssertThat(TownsfolkNpc2D.CivilianIds.Any(id => MentorVoice.Station.SpriteId == $"town2d-townsfolk-{id}"))
-            .OverrideFailureMessage("Bryn's sprite id does not match any of the existing townsfolk civilian body ids.")
-            .IsTrue();
+            .OverrideFailureMessage(
+                $"Bryn's sprite id ('{MentorVoice.Station.SpriteId}') matches one of the shared "
+                + "townsfolk civilian body ids — she is sharing a body with wandering villagers/named "
+                + "plaza characters again (R27's whole point).")
+            .IsFalse();
     }
 
     /// <summary>No step's own <see cref="TutorialStepDef.IsDone"/>/<see

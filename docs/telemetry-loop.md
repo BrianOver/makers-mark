@@ -58,8 +58,6 @@ of anything else firing.
 
 ## Ownership
 
-Post core-split this loop belongs to the **AI/NPC lane** Claude (lane model — visuals / AI-NPC /
-engine + addon swarm — is UP TO DEBATE, recorded in the plan). Until the split exists, the
-orchestrator session runs it. Decision-trace events (plan U4 — per-decision score breakdowns,
-the player-influence ledger) land after the expedition-tension architecture PR and activate the
-dormant decision-monoculture rules.
+No lane or session owns this loop exclusively — any session may run it on Brian's trigger and
+ship a data-tuning PR per the loop above. A mechanism-shaped finding (resolver, kernel,
+contracts, new systems) escalates to Brian rather than shipping as tuning.

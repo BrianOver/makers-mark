@@ -42,7 +42,7 @@ Comic mode per voice: omen = failed portents; gruff = invoices/lectures; dramati
 
 1. **Mundane-gossip variants — TODAY, S.** Smuggle tavern-mishap color into existing keys as appended variants (lost-cat references in `recruitArrived`, dart-tournament asides in `floorRecordSet`). No new subject needed. This is wave-C row C4.
 2. **ShopPack (`itemBought/{voice}`, slots hero/item/price)** — per-class shopping quirk lines. Seam needed: stamped purchase event + `Describe` arm in `GossipGenerator.cs` (core file). Wave-D row D7 territory.
-3. **Comic camp events** — pack entries for the camp checkpoint. Dependency: staged-resolution plan `docs/plans/2026-07-17-002` U4 camp verbs (BOARD gate **G5**). Wave-D row D5.
+3. **Comic camp events** — pack entries for the camp checkpoint (the Camp phase and its send-supply/recall verbs already ship).
 4. **Fan letters (`letterReceived/{voice}`, slots hero/item/kills/saves)** — `ItemMemory(Item, Kills, Saves)` exists on the contract (`sim/GameSim/Contracts/Heroes.cs:34,47`). Seam needed: letter emitter + surface. Wave-D row D6, highest attribution-thesis payoff.
 5. **`ToolAssist` finish** — pre-reserved beat with no emitter (`sim/GameSim/Contracts/Enums.cs:52`, untold arm `GossipGenerator.cs:190`, pinned by `GossipTests.Generator_ToolAssistBeat_StaysUntold`). Cheapest new-subject move (S–M). Wave-D row D7 first step.
 

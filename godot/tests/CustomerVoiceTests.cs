@@ -212,6 +212,103 @@ public class CustomerVoiceTests
         }
     }
 
+    // ── ThanksLine: P2-PEOPLE-25 — the customer thanks you before they ask ─────────────────────
+
+    [TestCase]
+    public void ThanksLine_LethalSaveBeatLastNight_ItemStillWorn_NamesTheItemAndFloorHonestly()
+    {
+        var armor = MakeMarkedItem(101, ItemSlot.Armor, attack: 0, defense: 8, weight: 5, "Wardenplate");
+        var hero = MakeHero(1, ClassRegistry.VanguardId, gold: 50, new GearSet(null, null, armor.Id));
+        var state = StateWithBeatLastNight(hero, armor, BeatType.LethalSave, floor: 3);
+
+        var line = CustomerVoice.ThanksLine(hero, state);
+
+        AssertThat(line).IsNotNull();
+        AssertThat(line).Contains("Wardenplate");
+        AssertThat(line).Contains("floor 3");
+    }
+
+    [TestCase]
+    public void ThanksLine_BreakpointClearBeatLastNight_ItemStillWorn_NamesTheItemAndFloorHonestly()
+    {
+        var weapon = MakeMarkedItem(102, ItemSlot.Weapon, attack: 6, defense: 0, weight: 2, "Emberbite");
+        var hero = MakeHero(1, ClassRegistry.VanguardId, gold: 50, new GearSet(weapon.Id, null, null));
+        var state = StateWithBeatLastNight(hero, weapon, BeatType.BreakpointClear, floor: 4);
+
+        var line = CustomerVoice.ThanksLine(hero, state);
+
+        AssertThat(line).IsNotNull();
+        AssertThat(line).Contains("Emberbite");
+        AssertThat(line).Contains("floor 4");
+    }
+
+    [TestCase]
+    public void ThanksLine_BareKillingBlow_NeverSpeaks_EvenWhenStillWorn()
+    {
+        // 97.5% of beats are KillingBlow (§11.11) — a recorded fact, never a counterfactual by
+        // itself. Thanking someone for a bare kill is the exact inflation defect this unit's own
+        // brief forbids, so this must stay null even though every OTHER condition (worn, last
+        // night, this hero) is satisfied.
+        var weapon = MakeMarkedItem(103, ItemSlot.Weapon, attack: 6, defense: 0, weight: 2, "Emberbite");
+        var hero = MakeHero(1, ClassRegistry.VanguardId, gold: 50, new GearSet(weapon.Id, null, null));
+        var state = StateWithBeatLastNight(hero, weapon, BeatType.KillingBlow, floor: 3);
+
+        AssertThat(CustomerVoice.ThanksLine(hero, state)).IsNull();
+    }
+
+    [TestCase]
+    public void ThanksLine_ProvisionedBeat_NeverSpeaks_TheNonDecisiveConsumableCase()
+    {
+        // AttributionEngine's own doc comment calls Provisioned the "did not matter" case (the hero
+        // survives, or dies, the same with or without it — "no participation credit"). It is
+        // deliberately NOT a member of CustomerVoice.CounterfactualBeatTypes even though the unit
+        // brief that opened this work named it — verified against BeatType's real emission logic,
+        // not assumed from the brief.
+        var trinket = MakeMarkedItem(104, ItemSlot.Weapon, attack: 3, defense: 0, weight: 1, "Lucky Charm");
+        var hero = MakeHero(1, ClassRegistry.VanguardId, gold: 50, new GearSet(trinket.Id, null, null));
+        var state = StateWithBeatLastNight(hero, trinket, BeatType.Provisioned, floor: 2);
+
+        AssertThat(CustomerVoice.ThanksLine(hero, state)).IsNull();
+    }
+
+    [TestCase]
+    public void ThanksLine_CustomerWearsNothingOfYours_ReturnsNull()
+    {
+        // The beat is real and decisive, but the hero re-equipped since — the sentence is about
+        // what they carry into TODAY, never a historical footnote.
+        var armor = MakeMarkedItem(105, ItemSlot.Armor, attack: 0, defense: 8, weight: 5, "Wardenplate");
+        var hero = MakeHero(1, ClassRegistry.VanguardId, gold: 50, GearSet.Empty); // no longer worn
+        var state = StateWithBeatLastNight(hero, armor, BeatType.LethalSave, floor: 3);
+
+        AssertThat(CustomerVoice.ThanksLine(hero, state)).IsNull();
+    }
+
+    [TestCase]
+    public void ThanksLine_BeatFromTwoNightsAgo_ReturnsNull_OnlyLastNightQualifies()
+    {
+        var armor = MakeMarkedItem(106, ItemSlot.Armor, attack: 0, defense: 8, weight: 5, "Wardenplate");
+        var hero = MakeHero(1, ClassRegistry.VanguardId, gold: 50, new GearSet(null, null, armor.Id));
+        var beat = new AttributionBeatEvent(BeatType.LethalSave, armor.Id, hero.Id, Floor: 3, Detail: "test")
+            with { Id = new EventId(1), Day = 1 }; // two nights before Day 3
+        var state = GameFactory.NewGame(9420) with
+        {
+            Day = 3,
+            Items = ImmutableSortedDictionary<int, Item>.Empty.Add(armor.Id.Value, armor),
+            EventLog = ImmutableList.Create<GameEvent>(beat),
+        };
+
+        AssertThat(CustomerVoice.ThanksLine(hero, state)).IsNull();
+    }
+
+    [TestCase]
+    public void ThanksLine_NoQualifyingBeatAtAll_ReturnsNull_TheHonestCommonCase()
+    {
+        var hero = MakeHero(1, ClassRegistry.VanguardId, gold: 50, GearSet.Empty);
+        var state = GameFactory.NewGame(9421) with { Day = 2 };
+
+        AssertThat(CustomerVoice.ThanksLine(hero, state)).IsNull();
+    }
+
     // ── SuggestReply: derived from the OBSERVED interest delta, never a re-derived fit rule ─────
 
     [TestCase]
@@ -242,5 +339,30 @@ public class CustomerVoiceTests
         new ItemId(id), "test-recipe", name, slot, QualityGrade.Common,
         new ItemStats(attack, defense, weight), Mark: null,
         ImmutableList<ItemHistoryEntry>.Empty);
+
+    /// <summary>Same as <see cref="MakeItem"/> but player-crafted (a real <see cref="MakersMark"/>)
+    /// — <see cref="CustomerVoice.ThanksLine"/> fixtures need this because the sim only ever emits
+    /// an <see cref="AttributionBeatEvent"/> for a marked item.</summary>
+    private static Item MakeMarkedItem(int id, ItemSlot slot, int attack, int defense, int weight, string name) => new(
+        new ItemId(id), "test-recipe", name, slot, QualityGrade.Fine,
+        new ItemStats(attack, defense, weight), new MakersMark("You", CraftedOnDay: 1),
+        ImmutableList<ItemHistoryEntry>.Empty);
+
+    /// <summary>A day-2 Morning state (so "last night" = Day 1, matching <see
+    /// cref="CustomerVoice.ThanksLine"/>'s own <c>LedgerModal.ShowFor</c>-mirrored arithmetic) whose
+    /// event log carries exactly one <see cref="AttributionBeatEvent"/> for <paramref name="hero"/>
+    /// and <paramref name="item"/>, dated Day 1.</summary>
+    private static GameState StateWithBeatLastNight(Hero hero, Item item, BeatType beatType, int floor)
+    {
+        var beat = new AttributionBeatEvent(beatType, item.Id, hero.Id, floor, Detail: "test fixture beat")
+            with { Id = new EventId(1), Day = 1 };
+
+        return GameFactory.NewGame(9410) with
+        {
+            Day = 2,
+            Items = ImmutableSortedDictionary<int, Item>.Empty.Add(item.Id.Value, item),
+            EventLog = ImmutableList.Create<GameEvent>(beat),
+        };
+    }
 }
 #endif

@@ -371,6 +371,8 @@ public partial class LedgerModal : SimPanel
         _countLine!.Text = $"Showing {cards.Count} of {cards.Count}";
         var warrantSaves = WarrantSavesForDay(day); // §11.13 amendment (U5), keyed by HeroId.Value
         var halts = HaltsForDay(day); // #167 fix, keyed by HeroId.Value
+        var xpSplits = XpSplitsForDay(day); // P2-PROOF-17, keyed by HeroId.Value
+        var rankUps = RankUpsForDay(state, day); // P2-PROOF-17, keyed by HeroId.Value
 
         // U-T5: a fresh wrapping grid every render — see _cardGrid's own doc for why cards/tip/
         // first-loss-block live here while THE RETELLING stays a direct _cards child added below.
@@ -396,7 +398,7 @@ public partial class LedgerModal : SimPanel
         var firstLossBlockRendered = false;
         for (var i = 0; i < cards.Count; i++)
         {
-            _cardGrid!.AddChild(BuildReturnCard(state, cards[i], i, warrantSaves, halts, day));
+            _cardGrid!.AddChild(BuildReturnCard(state, cards[i], i, warrantSaves, halts, xpSplits, rankUps, day));
             if (i == 0)
             {
                 // U1: the attribution beat is the spine of the game (R11) — the tutorial tip now
@@ -470,6 +472,92 @@ public partial class LedgerModal : SimPanel
         }
 
         return builder.ToImmutable();
+    }
+
+    /// <summary>
+    /// P2-PROOF-17 (§11.11): tonight's XP grant per hero, already broken into its parts by
+    /// <see cref="XpSplitQuery"/>. Read off the SAME <see cref="SimAdapter.LastRevealedExpeditions"/>
+    /// source and the identical <see cref="SimAdapter.LastRevealedDay"/> staleness guard as
+    /// <see cref="HaltsForDay"/>, so a card whose night has rolled out of the adapter renders no XP
+    /// line at all rather than a stale one.
+    /// </summary>
+    private ImmutableDictionary<int, XpSplitQuery.Split> XpSplitsForDay(int day)
+    {
+        if (Adapter is null || Adapter.LastRevealedDay != day || Adapter.LastRevealedExpeditions.IsEmpty)
+        {
+            return ImmutableDictionary<int, XpSplitQuery.Split>.Empty;
+        }
+
+        var builder = ImmutableDictionary.CreateBuilder<int, XpSplitQuery.Split>();
+        foreach (var result in Adapter.LastRevealedExpeditions)
+        {
+            foreach (var hero in result.Party)
+            {
+                // Null for a hero who did not survive -- XpSplitQuery's own contract, since the sim
+                // grants XP to survivors only. No entry means no line, never a zeroed-out one.
+                if (XpSplitQuery.For(result, hero) is { } split)
+                {
+                    builder[hero.Value] = split;
+                }
+            }
+        }
+
+        return builder.ToImmutable();
+    }
+
+    /// <summary>
+    /// P2-PROOF-17: which heroes the sim actually ranked up on <paramref name="day"/>, read straight
+    /// off <see cref="GameState.EventLog"/>'s own <see cref="HeroRankUp"/> events -- the same events
+    /// <c>LegendsWall</c> renders as "{hero} has risen to {rank}". The rank is never recomputed here:
+    /// a rank-up line that could disagree with the wall would be this unit's own defect.
+    /// </summary>
+    private static ImmutableDictionary<int, string> RankUpsForDay(GameState state, int day)
+    {
+        var builder = ImmutableDictionary.CreateBuilder<int, string>();
+        foreach (var rankUp in state.EventLog.OfType<HeroRankUp>().Where(e => e.Day == day))
+        {
+            builder[rankUp.Hero.Value] = rankUp.Rank;
+        }
+
+        return builder.ToImmutable();
+    }
+
+    /// <summary>
+    /// P2-PROOF-17's own sentence. Every number comes from <paramref name="split"/>, whose parts are
+    /// pinned to sum to what <see cref="GameSim.Heroes.HeroXp.ForExpedition"/> granted, so this line
+    /// cannot contradict the XP the sim applied.
+    ///
+    /// <para>The zero-beat case is the honest one and is written first: a hero who carried nothing of
+    /// yours earned every point on their own, and saying so is what makes the other sentence worth
+    /// anything. Seventh law -- show only what the sim decided.</para>
+    /// </summary>
+    private static string XpSplitLine(XpSplitQuery.Split split)
+    {
+        var floors = split.FloorsCleared == 1 ? "1 floor" : $"{split.FloorsCleared} floors";
+        if (split.BeatXp <= 0)
+        {
+            return $"{split.Total} XP tonight — {split.SurviveXp} for coming home, "
+                + $"{split.FloorXp} for {floors}. None of it your work.";
+        }
+
+        return $"{split.Total} XP tonight — {split.SurviveXp} for coming home, "
+            + $"{split.FloorXp} for {floors}, {split.BeatXp} for what your mark did down there.";
+    }
+
+    /// <summary>
+    /// P2-PROOF-17: <c>LegendsWall</c>'s own rank-up sentence with the one clause this unit exists to
+    /// add. Only ever rendered beside <see cref="XpSplitLine"/>, so the share it names is the share
+    /// the line above it just printed.
+    /// </summary>
+    private static string RankUpLine(string heroName, string rank, XpSplitQuery.Split split)
+    {
+        if (split.BeatXp <= 0)
+        {
+            return $"{heroName} has risen to {rank}. Their own arm, all of it.";
+        }
+
+        return $"{heroName} has risen to {rank}. {split.BeatXp} of tonight's {split.Total} "
+            + "came from what your mark did.";
     }
 
     /// <summary>
@@ -726,7 +814,9 @@ public partial class LedgerModal : SimPanel
     private Control BuildReturnCard(
         GameState state, ReturnCard card, int index,
         ImmutableDictionary<int, ImmutableList<ApprenticeWarrant.WarrantSave>> warrantSaves,
-        ImmutableDictionary<int, ExpeditionHalt> halts, int night)
+        ImmutableDictionary<int, ExpeditionHalt> halts,
+        ImmutableDictionary<int, XpSplitQuery.Split> xpSplits,
+        ImmutableDictionary<int, string> rankUps, int night)
     {
         var wrap = Card($"LedgerCard_{index}");
         // U-T5: a fixed column width, not a stretch-to-parent VBoxContainer child — this card now
@@ -795,6 +885,29 @@ public partial class LedgerModal : SimPanel
             var earnedChip = StatChip("Earned", $"{card.GoldEarned}g");
             earnedChip.Name = "GoldChip_Earned";
             goldRow.AddChild(earnedChip);
+
+            // P2-PROOF-17: tonight's XP grant, broken into the parts HeroXp.ForExpedition already
+            // sums (XpSplitQuery) — never disagrees with what the sim actually applied, because it
+            // is composed from that same query's numbers and nothing else. Silent (no line at all)
+            // once this night rolls out of SimAdapter.LastRevealedExpeditions, the same staleness
+            // contract HaltsForDay/WarrantSavesForDay already keep.
+            if (xpSplits.TryGetValue(card.Hero.Value, out var split))
+            {
+                var xpLabel = AddLabel(telling.Body, XpSplitLine(split));
+                xpLabel.Name = "LedgerXpSplit";
+                xpLabel.AddThemeColorOverride("font_color", GameTheme.TextDim);
+
+                // The rank-up line: LegendsWall's own "{hero} has risen to {rank}" sentence, plus
+                // the one clause this unit exists to add — which part of TONIGHT's grant was your
+                // mark's doing. Only renders alongside a split, so it can never name a share the
+                // split itself did not just print.
+                if (rankUps.TryGetValue(card.Hero.Value, out var newRank))
+                {
+                    var rankLabel = AddLabel(telling.Body, RankUpLine(card.HeroName, newRank, split));
+                    rankLabel.Name = "LedgerRankUp";
+                    rankLabel.AddThemeColorOverride("font_color", GameTheme.AccentColor);
+                }
+            }
         }
 
         if (!card.Survived)

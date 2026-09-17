@@ -272,6 +272,16 @@ public partial class CounterPanel : SimPanel
         var moodRow = AddRow(infoCol);
         moodRow.AddChild(StatChip("Mood", MoodHint(hero.MoodPermille), MoodTone(hero.MoodPermille)));
 
+        // P2-PEOPLE-25 ("the customer thanks you before they ask"): a hero wearing a marked item
+        // that PROVABLY changed last night's outcome (CustomerVoice.ThanksLine — LethalSave/
+        // BreakpointClear only, read off the sim's own AttributionBeatEvent log) opens with that,
+        // before the stated want below. Null is the common, honest case: no bubble, not a filler
+        // "thanks for the goods."
+        if (CustomerVoice.ThanksLine(hero, state) is { } thanks)
+        {
+            cardBody.AddChild(BuildSpeechBubble($"{hero.Name}: \"{thanks}\""));
+        }
+
         // U2 (owner playtest, "unsure WHAt to do after"): the customer opens with a stated want,
         // derived read-only from the sim's own gear-gap query / EvaluateItem preview
         // (CustomerVoice.WantLine) — never a second rule set, so Present can never contradict what
