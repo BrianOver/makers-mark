@@ -1223,14 +1223,20 @@ public sealed partial class TutorialFlow : PanelContainer
                 (suggestions.Count > 0
                     ? suggestions[0].Reason
                     : $"Buy material at the vendor, then craft at the {_workshopStationNoun}."),
+            // P2-SCREEN-31: trimmed to fit the tracker's real 3-line budget — "Find it" and the
+            // drag-to-shelve alternate path are dropped (neither is pinned by any suite; MustName
+            // only requires "Unshelved Crafts"/"Stock", both still named).
             TutorialStep.Shelve =>
                 $"{StepPrefix(def)}: " +
                 (suggestions.FirstOrDefault(s => s.Action is StockAction)?.Reason
                     ?? "Shelve your finished item so heroes can buy it.") +
-                " Find it under **Unshelved Crafts** and press **Stock** — or drag it to a **+ shelve here** slot.",
+                " Under **Unshelved Crafts**, press **Stock**.",
+            // P2-SCREEN-31: trimmed — "set the reward on the coins" and the full stake clause
+            // collapse to a shorter warning that still names the irreversible spend (MustName only
+            // requires "POST BOUNTY"/"Post").
             TutorialStep.PostBounty =>
-                $"{StepPrefix(def)}: Under **POST BOUNTY** pick a floor, set the reward on the coins, " +
-                "then press **Post**. The gold goes now; the hero who gets there keeps it.",
+                $"{StepPrefix(def)}: Under **POST BOUNTY**, set a floor and reward, press **Post** " +
+                "— gold goes now, no take-backs.",
             // The departure is not a thing the player watches happen TO them: ending the Morning is
             // what causes it (MainUi.SoundTheTick pans the camera to the gate on the Morning tick).
             // Naming only the gate answered WHERE and left the owner's actual question — "HOW to
@@ -1239,17 +1245,21 @@ public sealed partial class TutorialFlow : PanelContainer
             // walk anywhere, so it is not WHERE copy this unit's deletion targets — kept, and reads
             // the building's display name locally since StepText no longer computes it as shared
             // plumbing for the (now-deleted) GoTo() call every other case used to share.
+            // P2-SCREEN-31: trimmed to fit the 3-line budget — the redundant "they leave.../and
+            // follows them out" framing collapses around the two required facts (MustName: "Mine
+            // Gate", "top of the screen"); the literal bell-verb/building substrings TutorialFlowTests
+            // pins ("Send them off", "Mine Gate") still come through the same interpolations.
             TutorialStep.WatchDeparture =>
-                $"{StepPrefix(def)}: They leave when the Morning ends — press **{MorningBell(state)}**, " +
-                $"the wide button at the top of the screen. The view swings to the " +
-                $"**{BuildingDisplayName(def.Anchor.Key!)}** and follows them out.",
+                $"{StepPrefix(def)}: Press **{MorningBell(state)}** (top of the screen) — the view " +
+                $"follows them to the **{BuildingDisplayName(def.Anchor.Key!)}**.",
             // Day-1 capstone: no town building — the taught affordance is the persistent Watch
             // control beside the bell (reachable through Expedition/Camp/ExpeditionDeep). "On the
             // bell row" named a piece of layout vocabulary that appears nowhere on screen. The day
             // holds here until this is answered (RaidConductor's hold), so the copy can promise it.
+            // P2-SCREEN-31: trimmed — drops "beside the wide button/to open.../and look in on them"
+            // (MustName only requires "Watch"/"top of the screen"); keeps the no-timer clause (law 2).
             TutorialStep.LookIn =>
-                $"{StepPrefix(def)}: Press **👁 Watch**, beside the wide button at the top of the " +
-                "screen, to open the Scrying Mirror and look in on them — the day waits until you do.",
+                $"{StepPrefix(def)}: Press **👁 Watch** (top of the screen) — the day waits until you do.",
             // U-T2-16 (#162 defects 3-4): ONE sentence — press Open Counter, they speak first.
             // Present/Suggest/Accept/Hold Firm/Counter (the OLD copy's own five controls) moved to
             // this row's own TeachNote and the Lessons book; naming all of them here is what pushed
@@ -1265,12 +1275,19 @@ public sealed partial class TutorialFlow : PanelContainer
             // folds it in generically instead (see the GatingNote fold below this switch), the same
             // address every OTHER nuance-only case (OpenCounter's empty shelf, Commission's empty
             // board) now uses, so this row no longer needs its own special case for it.
+            // P2-SCREEN-31: trimmed — "When they camp, a card fills the screen — pick a supply and "
+            // shortens to "A card fills the screen when they camp — "; the pinned clause
+            // GatingFoldedIntoInstructionTests quotes verbatim ("press **Send**, or press
+            // **Recall**.") survives byte-identical.
             TutorialStep.Vigil =>
-                $"{StepPrefix(def)}: When they camp, a card fills the screen — pick a supply and " +
+                $"{StepPrefix(def)}: Camp opens a card — " +
                 "press **Send**, or press **Recall**.",
+            // P2-SCREEN-31: trimmed — "Evening.", "opens itself", and "then ... at the top of the
+            // screen" drop; MustName only requires "EVENING LEDGER"/"ORE OFFERED"/"Buy", all still
+            // named, and the bell verb still comes from the same live interpolation.
             TutorialStep.EveningClose =>
-                $"{StepPrefix(def)}: Evening. The **EVENING LEDGER** opens itself — press **Buy** " +
-                $"under **ORE OFFERED**, then close it and press **{EveningBell(state)}** at the top of the screen.",
+                $"{StepPrefix(def)}: **EVENING LEDGER** — press **Buy** " +
+                $"under **ORE OFFERED**, press **{EveningBell(state)}**.",
             // The tray's seven buttons have EMPTY Text (MainUi.TrayButton) — the words live only in
             // tooltips. U7 (§11.12 plan) rewrote every tray tooltip from a one-word restatement of
             // its icon ("Renown", "Commissions") into a real sentence — these two lines now quote
@@ -1280,14 +1297,22 @@ public sealed partial class TutorialFlow : PanelContainer
             // cref="GodotClient.Tests.TutorialCopyIsFollowableTests"/>
             // .TheTraySteps_QuoteTheTooltipsTheTrayButtonsActuallyCarry_NotTheirPanelTitles pins
             // the join against the LIVE button, not just this string).
+            // P2-SCREEN-31: trimmed hard — MainUi.RenownTrayTooltip is 60 characters on its own,
+            // already most of the 3-line budget once quoted, so this drops "(The Tavern works too.)"
+            // and "Read one hero" (neither pinned; MustName only requires "top right"/"Renown", both
+            // still present). HONEST EXCEPTION (see this unit's own report): even at this minimum
+            // wrapper, quoting the live tooltip verbatim still does not fit 3 lines — the tooltip text
+            // itself is the floor, not this row's own wording.
             TutorialStep.MeetHeroes =>
-                $"{StepPrefix(def)}: The tray is the icon buttons at the top right — no words, so " +
-                $"hover for the tooltip and press the one reading \"{GodotClient.MainUi.RenownTrayTooltip}\". " +
-                "(The Tavern works too.) Read one hero.",
+                $"{StepPrefix(def)}: top right tray icon: \"{GodotClient.MainUi.RenownTrayTooltip}\".",
+            // P2-SCREEN-31: trimmed hard — same shape as MeetHeroes above, and the same HONEST
+            // EXCEPTION: MainUi.CommissionsTrayTooltip (67 chars) plus the mandatory "No one is
+            // asking today" gating fold (GatingFoldedIntoInstructionTests) together outrun the
+            // 3-line budget before this row's own wording adds anything at all. MustName only
+            // requires "tray"/"Commissions"/"Accept"/"Decline", all still present.
             TutorialStep.Commission =>
-                $"{StepPrefix(def)}: In that tray at the top right, press the icon tipped " +
-                $"\"{GodotClient.MainUi.CommissionsTrayTooltip}\", then **Accept** or **Decline** one — the loop " +
-                "is yours after this.",
+                $"{StepPrefix(def)}: tray icon: \"{GodotClient.MainUi.CommissionsTrayTooltip}\" " +
+                "— **Accept** or **Decline** one.",
             _ => string.Empty,
         };
 
@@ -1499,10 +1524,14 @@ public sealed partial class TutorialFlow : PanelContainer
     /// </summary>
     private static string VigilGatingNote(GameState state)
     {
+        // P2-SCREEN-31: trimmed to fit the tracker's real 3-line budget once folded onto Vigil's
+        // own instruction — "the world waits," and "it fires on a run aiming deeper" were redundant
+        // restatements of the clause each already carries. "No stop today" stays pinned verbatim
+        // (three assertions in TutorialFlowTests); neither branch had its own separate pin.
         var stagedDeeper = MusterPlan.Compute(state.Heroes, state.Bounties, state.Items).Any(p => p.TargetFloor > 1);
         return stagedDeeper
-            ? "They'll stop below the checkpoint if they get there clean — the world waits, no clock on it."
-            : "No stop today — everyone's headed one floor down; it fires on a run aiming deeper.";
+            ? "They'll stop below the checkpoint if they get there clean — no clock on it."
+            : "No stop today — one floor down only.";
     }
 
     /// <summary>P2-PEOPLE-24: non-null exactly when a vigil is genuinely live right now —
@@ -1760,8 +1789,11 @@ public sealed partial class TutorialFlow : PanelContainer
             // customer at all, and CounterAnsweredAtLeastOnce's tightened predicate (no more free
             // pass on Open+Close alone) would otherwise strand them here silently. Said before they
             // press Open Counter, never after.
+            // P2-SCREEN-31: trimmed — "or there's nothing to show them" was a redundant restatement
+            // of the clause it followed (not pinned anywhere); "Nothing on the shelf yet" stays
+            // verbatim (GatingFoldedIntoInstructionTests quotes it).
             TutorialStep.OpenCounter when state.Player.Shelf.Count == 0 =>
-                "Nothing on the shelf yet — stock a craft first, or there's nothing to show them.",
+                "Nothing on the shelf yet — stock a craft first.",
             TutorialStep.PostBounty when state.Phase is not (DayPhase.Morning or DayPhase.Evening) =>
                 "Morning or Evening — the board reopens then.",
             // U-T9-11: the course's LAST step had no gating case at all — no phase note, no
