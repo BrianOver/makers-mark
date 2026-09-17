@@ -155,10 +155,27 @@ public sealed partial class TellingPanel : SimPanel
             return false;
         }
 
-        var beat = result.Beats.First(b => Matches(b, beatEvent));
-        var venue = VenueRegistry.All.TryGetValue(result.VenueId, out var v) ? v : VenueRegistry.Mine;
-        var script = TellingQuery.Build(result, beat, state.Items, venue);
-        return script.Payload is KillingBlowPayload payload && payload.MonsterHpWithoutItem > 0;
+        // Measured regression (engine suite, WaveDLessonsTests): some retained results predate
+        // PartyAtDeparture/Floors (each property's own doc — an empty snapshot there means "this
+        // result predates the snapshot", not "the party/floor was empty") or are hand-built
+        // fixtures for a DIFFERENT unit that never populate them at all, because nothing forced a
+        // TellingQuery.Build call against them before this method started calling it eagerly for
+        // every KillingBlow beat at render time (previously it ran only on a real button click,
+        // against fixtures built to support one). TellingQuery.Build needs both to replay the
+        // counterfactual and throws InvalidOperationException (a LINQ First/Single with no match)
+        // when it cannot — caught narrowly here (never a broader catch that could also swallow a
+        // real defect) and treated the same as an aged-out night: no proof, no row.
+        try
+        {
+            var beat = result.Beats.First(b => Matches(b, beatEvent));
+            var venue = VenueRegistry.All.TryGetValue(result.VenueId, out var v) ? v : VenueRegistry.Mine;
+            var script = TellingQuery.Build(result, beat, state.Items, venue);
+            return script.Payload is KillingBlowPayload payload && payload.MonsterHpWithoutItem > 0;
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
     }
 
     /// <summary>
