@@ -30,7 +30,14 @@ dotnet test sim/GameSim.Tests/GameSim.Tests.csproj --filter Category!=Balance
 dotnet test sim/GameSim.Tests/GameSim.Tests.csproj --filter Category=Balance
 
 # Engine tests (needs Godot; GODOT_BIN via .runsettings or env)
-dotnet test godot/tests --settings .runsettings
+# The WRAPPER, never `dotnet test godot/tests` by hand -- the bare form is a false-green trap
+# (docs/debugging.md has all of them). engine-test.ps1 sums every `Failed:` in the raw log and
+# treats the exit code as advisory, which is the only reason rule 10 is enforceable locally.
+.\tools\engine-test.ps1
+
+# A builder iterating on ONE class may filter -- but a filtered run is never evidence, because it
+# cannot see another suite vanish. The gate is CI's full run against its ENGINE_MIN_PASSED floor.
+dotnet test godot/tests --settings .runsettings --filter "FullyQualifiedName~YourTestClass"
 
 # Console play (from U13)
 dotnet run --project sim/GameSim.Cli
@@ -63,7 +70,7 @@ Debugging anything? `docs/debugging.md` — deterministic repro recipe, log map,
 
 9. **Branch = open PR. Worktree = live session.** A branch with no open PR is deleted on sight, local and remote (`gh pr list --state merged` is the truth — squash-merge makes `git branch --merged` a liar). Remove every worktree you created before the session ends; max 5 exist at once, since engine tests serialize anyway and more workers only queue collisions. Worker prompts name their base ref, and the worker's FIRST command greps for a symbol the prompt claims is already there — a miss is stop-and-report, never reimplement.
 
-10. **Raw output outranks any harness.** Completion reports quote the runner's own `Failed: N, Passed: N` line, never a wrapper's verdict. A wrapper computing PASS from an exit code is itself the defect — `tools/engine-test.ps1` has done it twice.
+10. **Raw output outranks any harness.** Completion reports quote the runner's own `Failed: N, Passed: N` line, never a wrapper's verdict. A wrapper computing PASS from an exit code is itself the defect — `tools/engine-test.ps1` did exactly that twice, most visibly on 2026-08-07 when it printed `PASS - 945 tests` over a summary reading `Failed: 5, Passed: 940`. It was hardened afterwards and now sums every `Failed:` in the raw log and treats the exit code as advisory, which is why the Commands section sends you through it rather than around it — but the rule is unchanged: quote the runner's own line, not the wrapper's verdict.
 
 11. **Merge is not a question, and merged is not deployed.** "Want it merged?", "Merge order?", "Say the word" — those sentences do not exist here. Review happens on `main`; `git revert` is the undo, not an unmerged branch. A turn may not end while a PR this session opened sits green-and-unmerged, or a commit sits unpushed. And landing on `main` is still not the game: the playable checkout is the shared root, `play.bat` is its only sync point, and a completion report quotes `origin/main`'s SHA and says what will launch. A report that stops at "PR opened" is reporting work that does not yet exist.
 
@@ -71,7 +78,7 @@ Debugging anything? `docs/debugging.md` — deterministic repro recipe, log map,
 
 ## Multi-agent rules
 
-- **Lane model:** core lanes (VISUALS / AI-NPC / ENGINE-DEPLOY) + addon swarm + orchestrator — charters, per-lane deny-list amendments, gates, and the CONTRACT-REQUEST escalation format live in `docs/design/lane-operating-model.md`. Cross-lane gates + seam broadcasts: `.claude/tasks/BOARD.md` (read at session start and after any rebase failure).
+- **Lane model:** one orchestrating session dispatches isolated workers, one unit each, from `tools/loop/` and the `mm-*` charters in `.claude/agents/`. That is the mechanism actually in force; the July VISUALS / AI-NPC / ENGINE-DEPLOY lane model and its CONTRACT-REQUEST format are gone, along with the doc that described them. Cross-lane gates + seam broadcasts: `.claude/tasks/BOARD.md` (read at session start and after any rebase failure).
 - **Directory ownership:** one agent owns one unit's directory exclusively. Claim it in `.claude/tasks/` (see README there) before starting.
 - **Deny-list — never edit unassigned:** `Game.sln`, `godot/project.godot`, `.github/`, `sim/GameSim/Contracts/`, `CLAUDE.md`, `global.json`, `Directory.Build.props`, `.godot-version`.
 - **Contract amendments:** changes to `sim/GameSim/Contracts/` land as dedicated micro-PRs authored by the orchestrating session only, merged before dependent module PRs; in-flight agents rebase.
