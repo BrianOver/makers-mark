@@ -946,10 +946,36 @@ public partial class LedgerModal : SimPanel
         // resolver happened to emit first (which was always floor 1's kill). Every beat the sim
         // decided still renders, in full, with its Detail untouched — only the ORDER changes, and
         // the lead gets the fate line's own type size (law 4 holds; see BeatVocab.LeadFirst).
+        //
+        // The beat-volume sweep (2026-09-11, MAKERS-MARK.md's own "beat-volume sweep" section):
+        // KillingBlow is 97.5% of every beat the sim emits, with the same item repeating on 96.5%
+        // of hero-cards — because KillingBlow is precisely the ONE beat type TellingQuery cannot
+        // give a real counterfactual second pass (it recomputes one epilogue number and stops).
+        // Rendering every kill as its own row — "Ask how it happened" button included — made the
+        // game's one flagship sentence fire five to twelve times a night, which reads the same as
+        // never firing at all. Every OTHER beat type replayed a real counterfactual and always gets
+        // its own row; a KillingBlow only earns one when the SAME recorded roll would NOT have
+        // killed without the item (<see cref="TellingPanel.IsDecisiveKillingBlow"/>) — every other
+        // kill is a real, recorded fact with nothing to prove, and folds below instead (law 4 still
+        // holds: nothing is dropped, only how it is GROUPED on screen changes).
         var orderedBeats = BeatVocab.LeadFirst(card.Beats);
-        for (var beatIndex = 0; beatIndex < orderedBeats.Count; beatIndex++)
+        var renderedBeats = ImmutableList.CreateBuilder<AttributionBeatEvent>();
+        var incidentalKills = ImmutableList.CreateBuilder<AttributionBeatEvent>();
+        foreach (var orderedBeat in orderedBeats)
         {
-            var beat = orderedBeats[beatIndex];
+            if (orderedBeat.Beat == BeatType.KillingBlow && !TellingPanel.IsDecisiveKillingBlow(state, orderedBeat))
+            {
+                incidentalKills.Add(orderedBeat);
+            }
+            else
+            {
+                renderedBeats.Add(orderedBeat);
+            }
+        }
+
+        for (var beatIndex = 0; beatIndex < renderedBeats.Count; beatIndex++)
+        {
+            var beat = renderedBeats[beatIndex];
 
             // Attribution beats are the spine of the game (R11) — highlighted, and now carrying
             // the actual item's icon so the beat reads as THAT item's moment, not just prose.
@@ -1010,6 +1036,11 @@ public partial class LedgerModal : SimPanel
                     _tellingPanel!.ShowFor(state, tellingResult, capturedBeat));
             }
         }
+
+        // The beat-volume sweep's other half: every KillingBlow the sim decided was NOT decisive
+        // (see the loop's own note above) collapses here, one line per item — never its own row,
+        // never its own button. There is no counterfactual behind these to ask about.
+        AddIncidentalKillsFold(telling.Body, state, incidentalKills.ToImmutable());
 
         // §11.13 amendment (U5): the apprenticeship warrant's own card — leads with the true roll
         // (KTD-3/law 4's honest-register shape, the same discipline the death cards already use),
@@ -1132,6 +1163,52 @@ public partial class LedgerModal : SimPanel
         state.Items.TryGetValue(itemId.Value, out var item)
             ? AssetCatalog.ItemIcon(item.RecipeId) ?? IconRegistry.Slot(item.Slot)
             : IconRegistry.Glyph("rune");
+
+    /// <summary>
+    /// The beat-volume sweep's fold: every KillingBlow beat the sim decided was NOT decisive
+    /// (<see cref="TellingPanel.IsDecisiveKillingBlow"/> — the same recorded roll would have killed
+    /// the monster with or without the item) collapses here, one line per item, never a row apiece
+    /// and never an "Ask how it happened" button (there is no counterfactual behind these to ask
+    /// about — the seventh law's "no participation credit", said once rather than staged as proof).
+    ///
+    /// <para>Grouped by item and ordered by kill count (ties broken by name, never by arrival order,
+    /// so a reopened card reads identically every time) — the busiest blade leads. The copy names
+    /// only what the sim actually recorded (item, count) and never claims a margin or a close call
+    /// it cannot prove.</para>
+    /// </summary>
+    private static void AddIncidentalKillsFold(
+        VBoxContainer body, GameState state, ImmutableList<AttributionBeatEvent> incidentalKills)
+    {
+        if (incidentalKills.IsEmpty)
+        {
+            return;
+        }
+
+        var groups = incidentalKills
+            .GroupBy(beat => beat.Item)
+            .Select(g => (Item: g.Key, Count: g.Count()))
+            .OrderByDescending(g => g.Count)
+            .ThenBy(g => ItemNameOf(state, g.Item), StringComparer.Ordinal);
+
+        foreach (var (item, count) in groups)
+        {
+            var row = AddRow(body);
+            row.Name = $"IncidentalKillsFold_{item.Value}";
+            AddIcon(row, ResolveItemIcon(state, item));
+            var label = AddLabel(row, $"{ItemNameOf(state, item)} added {count} more kill{(count == 1 ? "" : "s")} tonight.");
+            // Named per item, not a shared literal — a card with two+ folded items would otherwise
+            // hand Godot two same-named siblings, and Godot silently renames the second (the exact
+            // GoldChip_Purse/GoldChip_Earned trap this file's own header comment already documents).
+            label.Name = $"IncidentalKillsFoldLine_{item.Value}";
+            label.AddThemeColorOverride("font_color", GameTheme.TextDim);
+        }
+    }
+
+    /// <summary>Item display name, or the id's own fallback string for the defensive case where a
+    /// beat's item has somehow left <see cref="GameState.Items"/> — mirrors <see
+    /// cref="ResolveItemIcon"/>'s identical no-throw contract.</summary>
+    private static string ItemNameOf(GameState state, ItemId item) =>
+        state.Items.TryGetValue(item.Value, out var found) ? found.Name : item.ToString();
 
     /// <summary>Tint the portrait's frame/underlay only, via <see cref="CanvasItem.SelfModulate"/>
     /// — copied verbatim from <c>HeroesPanel</c>/<c>TavernPanel</c>'s own private copy of this
