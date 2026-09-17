@@ -2,12 +2,11 @@
 
 Audience: a Claude session (or human) adding **content** — a profession, hero class, venue,
 faction, or story arc — WITHOUT touching core mechanisms. Cores (registries, resolvers, kernel,
-contracts) are built in the orchestrating session per
-`docs/plans/2026-07-15-001-roadmap-beyond-v1.md`; add-ons are data plugged into them.
+contracts) are core mechanism work, built by whichever session owns that area per CLAUDE.md's
+multi-agent rules; add-ons are data plugged into them.
 
 Read `CLAUDE.md` first — its hard rules (tests green, engine pin, sim purity, determinism)
 and multi-agent rules (directory ownership, deny-list, branch/PR discipline) all apply.
-Building from the master systems catalog? `docs/design/catalog-prompt-transposition.md` is the standing conversion contract for its GDScript/GOAP/Ollama prompts — fill its table, don't re-derive.
 
 ## The contract, in one paragraph
 

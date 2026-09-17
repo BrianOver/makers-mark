@@ -106,6 +106,18 @@ Each of these is prevented by something that fails closed, not by a sentence her
   orchestrator runs it, one at a time. Two concurrent gdUnit runs each report success while losing
   hundreds of tests, which is the worst shape a green signal can have.
 
+## Worktree lifecycle
+
+Keep a builder's worktree until its PR **merges**, not until the builder says it's done. CI runs
+`balance-sim` (~30 min) and `engine-tests` (~10 min) after the builder returns; when a check comes
+back red, the builder that wrote the code holds the whole investigation, and removing its worktree
+before then makes it unresumable — briefing a fresh agent from scratch costs far more than holding
+the directory open a while longer.
+
+An empty or clean-looking worktree is not evidence the builder is dead — it can just mean it
+hasn't saved yet. Confirm via the harness's own completion signal (or `gh pr view` if a PR already
+exists), never a stale directory listing or `.output` file timestamp.
+
 ## What it is NOT
 
 **No sandbox trunk.** The system this borrows from cuts an `agent-main` branch and promotes it by

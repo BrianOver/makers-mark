@@ -2,10 +2,9 @@
 
 **No cross-lane gates are open. No claims are outstanding.**
 
-This file is the single broadcast channel for the lane model
-(`docs/design/lane-operating-model.md` §6). Every session reads it at session start and after
-any rebase failure. Per-claim detail lives in the claim files beside it — see
-[README.md](README.md) for the claim grammar and the format.
+This file is the single broadcast channel for cross-session coordination. Every session reads it
+at session start and after any rebase failure. Per-claim detail lives in the claim files beside
+it — see [README.md](README.md) for the claim grammar and the format.
 
 What belongs here, and only this:
 
