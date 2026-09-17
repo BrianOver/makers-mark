@@ -22,9 +22,107 @@ namespace GodotClient.Ui;
 /// disagreed with what the sim will actually accept would be worse than the silence it replaces
 /// (there is precedent for exactly that trap in this codebase). Pure functions only: no Godot
 /// reference, no mutation, no RNG, no wall clock.</para>
+///
+/// <para><see cref="ThanksLine"/> (P2-PEOPLE-25) extends the same discipline to link 5 (the memory
+/// loop reaching back INTO a shopping decision): it reads only <see cref="AttributionBeatEvent"/>s
+/// the sim already emitted and the hero's own current <see cref="GearSet"/>, so a customer can never
+/// thank the smith for a save the sim never proved or a piece they no longer carry.</para>
 /// </summary>
 public static class CustomerVoice
 {
+    /// <summary>
+    /// P2-PEOPLE-25 ("the customer thanks you before they ask"): what a customer opens with when
+    /// they walk up wearing a marked item of yours that PROVABLY changed last night's outcome —
+    /// spoken BEFORE <see cref="WantLine"/>, never instead of it. Null is the honest, common case:
+    /// no qualifying beat renders no line, never a generic "thanks for the goods."
+    ///
+    /// <para><b>The qualifying set, verified against <see cref="BeatType"/> rather than assumed</b>
+    /// (<see cref="CounterfactualBeatTypes"/>): <see cref="BeatType.LethalSave"/> and
+    /// <see cref="BeatType.BreakpointClear"/> only.
+    /// <see cref="BeatType.Provisioned"/> is EXCLUDED even though the unit brief that opened this
+    /// work named it — <c>AttributionEngine.AddConsumableBeats</c>'s own doc comment calls it the
+    /// "did not matter" case ("the hero would have survived the fight even without this quaff... no
+    /// participation credit"), the opposite of a decisive counterfactual; thanking someone for it
+    /// would be the exact KillingBlow-inflation defect P2-PROOF-16 exists to fix, one beat type
+    /// over. <see cref="BeatType.PotionLifesave"/> IS a true counterfactual (the strict replay
+    /// crosses zero) but its item's <c>ItemSlot</c> is <c>Consumable</c> — drunk and gone, never
+    /// re-equipped — so it can never satisfy <see cref="IsWorn"/> below; left out rather than kept
+    /// as dead code that could never fire. <see cref="BeatType.KillingBlow"/> is a RECORDED FACT,
+    /// never a counterfactual by itself (<c>TellingQuery</c>'s own doc comment) — narrowing it to
+    /// the decisive minority via <c>TellingQuery.KillingBlowPayload.MonsterHpWithoutItem &gt; 0</c>
+    /// is explicitly optional per the brief and deliberately not done here, to keep this file's read
+    /// surface to the <see cref="GameState.EventLog"/> it already scans everywhere else rather than
+    /// pulling in <c>ExpeditionResult</c>/<c>VenueDefinition</c> replay plumbing for a Godot-side
+    /// unit. A bare kill must never speak this line, so <see cref="BeatType.KillingBlow"/> stays
+    /// excluded, full stop. <see cref="BeatType.ToolAssist"/> has no emitter yet (its own Contracts
+    /// comment) — unreachable.</para>
+    ///
+    /// <para><b>"Last night"</b> mirrors <c>LedgerModal.ShowFor</c>'s own day arithmetic
+    /// (<c>state.Phase == DayPhase.Evening ? state.Day : state.Day - 1</c>): the counter only ever
+    /// opens in Morning, so this is always the night just resolved, never an older one resurfacing.
+    /// <b>"Wearing"</b> means the beat's own item id is still sitting in one of this hero's four gear
+    /// slots right now (<see cref="IsWorn"/>) — a re-equip or a sale since would silently retire the
+    /// line, which is correct: the sentence is about what they carry into today, not a historical
+    /// footnote.</para>
+    /// </summary>
+    public static string? ThanksLine(Hero hero, GameState state)
+    {
+        var lastNightDay = state.Phase == DayPhase.Evening ? state.Day : state.Day - 1;
+
+        AttributionBeatEvent? found = null;
+        foreach (var gameEvent in state.EventLog)
+        {
+            if (gameEvent is not AttributionBeatEvent beat
+                || beat.Day != lastNightDay
+                || beat.Hero != hero.Id
+                || !CounterfactualBeatTypes.Contains(beat.Beat)
+                || !IsWorn(hero.Gear, beat.Item))
+            {
+                continue;
+            }
+
+            // LethalSave (a life) outranks BreakpointClear (a floor) on the rare night a hero
+            // somehow earned both flavors of decisive beat — a deterministic tiebreak (EventLog
+            // append order keeps the earlier one on any further tie).
+            if (found is null || BeatPriority(beat.Beat) > BeatPriority(found.Beat))
+            {
+                found = beat;
+            }
+        }
+
+        if (found is null || !state.Items.TryGetValue(found.Item.Value, out var item))
+        {
+            return null;
+        }
+
+        return found.Beat switch
+        {
+            BeatType.LethalSave =>
+                $"This {item.Name} took a blow on floor {found.Floor} that should have killed me.",
+            BeatType.BreakpointClear =>
+                $"We don't clear floor {found.Floor} without this {item.Name}.",
+            // Unreachable: CounterfactualBeatTypes (below) admits only the two arms above.
+            _ => null,
+        };
+    }
+
+    /// <summary>See <see cref="ThanksLine"/>'s own doc comment for why exactly these two members and
+    /// no others qualify.</summary>
+    private static readonly ImmutableHashSet<BeatType> CounterfactualBeatTypes =
+        ImmutableHashSet.Create(BeatType.LethalSave, BeatType.BreakpointClear);
+
+    private static int BeatPriority(BeatType beat) => beat switch
+    {
+        BeatType.LethalSave => 1,
+        BeatType.BreakpointClear => 0,
+        _ => -1,
+    };
+
+    /// <summary>Whether <paramref name="item"/> is sitting in any of this hero's four gear slots
+    /// right now — the "wearing" half of <see cref="ThanksLine"/>'s gate.</summary>
+    private static bool IsWorn(GearSet gear, ItemId item) =>
+        gear.Weapon == item || gear.Shield == item || gear.Armor == item || gear.Trinket == item;
+
     /// <summary>
     /// What the active customer opens with, read BEFORE the player presents anything. U1 (§11.11):
     /// the actual slot pick is <see cref="CounterForecast.Wants"/>, extracted so this line can never
