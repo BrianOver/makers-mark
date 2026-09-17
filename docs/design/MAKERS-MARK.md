@@ -4622,7 +4622,6 @@ name (§11.6 rule 4).
 | ⚑ P2-SCREEN-27 | Small placements: the wandering caption, the orphan spinner, the floating class sprite, the loose shelf label | `godot/scripts/town2d/`, `godot/scripts/panels/` | — | [G] |
 | ⚑ P2-SCREEN-28 | The capture harness's own usage header stops naming states it does not have | `tools/shoot.ps1` | — | [G] |
 | ⚑ P2-SCREEN-29 | A sized `TextureRect` cannot silently claim its texture's size | `sim/GameSim.Tests/Hygiene/TextureRectExpandModeCensusTests.cs`, `godot/scripts/MainUi.cs`, `godot/scripts/panels/MineWatch.cs`, `godot/scripts/panels/ProvenanceCard.cs`, `godot/scripts/panels/SimPanel.cs`, `godot/scripts/ui/UiKit.cs` | — | [S] |
-| P2-SCREEN-31 | The objective rows fit the tracker's real three-line budget | `godot/scripts/ui/ObjectiveTracker.cs` corpus, `sim/GameSim/Advisor/ObjectiveAdvisor.cs`, `godot/tests/` | — | [G] |
 | P2-SCREEN-32 | The Shop sheds 171px of decoration (Stock still does not clear the fold) | `godot/scripts/panels/ShopPanel.cs`, `godot/scripts/panels/CounterPanel.cs` | — | [G] |
 | P2-ONBOARD-09 | The Goodwill chip speaks the band or dies (the beat's own half landed) | `godot/scripts/panels/CounterPanel.cs` | — | [G] |
 | P2-ONBOARD-10 | The seed becomes enterable at New Game | `godot/scripts/NewGameSelect.cs` | — | [G] |
@@ -6552,7 +6551,19 @@ exactly as this one did. Either it earns a guard that refuses to emit a town-cas
 job owns, or the dead branch goes. **A guard is the cheaper half and is what this row builds; the
 deletion is an owner call.**
 
-#### P2-SCREEN-31. The objective rows fit the tracker's real three-line budget
+#### P2-SCREEN-31 — SHIPPED in #873, with one documented exception
+
+Ten of the eleven registry rows now fit, measured through the live `ObjectiveTracker` at its
+real dock width via `Label.GetLineCount()` — `MeetHeroes` went 7 lines/229 chars to 3/102,
+`Vigil` 6/191 to 3/105. **`Commission` is the exception and cannot be closed by copy alone:**
+`MainUi.CommissionsTrayTooltip` is 67 characters, and two suites pin that Commission's
+instruction quotes it verbatim and unconditionally, plus the mandatory Accept/Decline words —
+tooltip and pinned quote and gating fold outrun the budget before the row's own wording adds a
+syllable. Trimmed to its practical floor (226 chars to 149, 7 lines to 5) and named as a
+documented exception in `TutorialCopyIsFollowableTests`'s new permanent per-row gate, rather
+than loosening the gate. Shortening the tooltip itself is `MainUi`'s call and is not booked.
+
+The original finding, kept because the measurement is the useful part:
 
 Found by U39's fit gate once it rendered the real component instead of trusting a constant. The
 gate had been enforcing a **240-character** allowance (6 lines x ~40 chars) against
