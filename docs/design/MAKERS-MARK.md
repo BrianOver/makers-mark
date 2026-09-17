@@ -1511,7 +1511,7 @@ Four measurements chose them. Every number below was grepped on `main @ 5c629f62
 are `KillingBlow` — a recorded fact with no counterfactual behind it — at a median of 30 beats a
 night, 5 per hero card, the same item repeating on 96.5% of cards. `LedgerModal.cs` renders every
 row uncapped and every row carries "Ask how it happened." The sentence this whole game exists to
-produce fires thirty times an evening, which is the same as not firing. **P2-PROOF-16** is the
+produce fires thirty times an evening, which is the same as not firing. **P2-PROOF-19** is the
 render rule that fixes it without touching the sim: a `KillingBlow` earns a row only when the swing
 would not have killed without the item (`TellingQuery.KillingBlowPayload.MonsterHpWithoutItem > 0`,
 already computed and already read by `TellingPanel`), and every other kill folds into one line per
@@ -1552,7 +1552,7 @@ discovered later: more floors resolve in stage 1, so more runs finalise before t
 get rarer and heavier. The gate is the 20-seed sweep, two-sided — deliveries per sweep and the
 median camped-hero HP, which today sits at or above 50% by construction.
 
-**Which of these an unattended session may take.** `P2-PROOF-16`, `P2-PROOF-17`, `P2-PROOF-18`,
+**Which of these an unattended session may take.** `P2-PROOF-19`, `P2-PROOF-17`, `P2-PROOF-18`,
 `P2-SCREEN-35`, `P2-SCREEN-36` and `P2-PEOPLE-25` are surface work over state the sim already
 computes: no Contracts change, no golden re-record, no balance re-baseline. `P2-HONEST-28` is a
 measurement first and a decision second — if the median day spends fewer than five slots the budget
@@ -1619,6 +1619,16 @@ not `ActionBudget.cs`; that edit is the owner's to make since `CLAUDE.md` is den
 `SlotSpendSweep.cs` is kept (precedent: `LongWallSweep`/`FeltWallSweep`/`ArcStallSweep` are the same
 one-off-measurement class of tool and all still live in `sim/GameSim.Cli/`) so this number is
 re-runnable, not just quoted.
+
+**An id collision, recorded rather than quietly renamed.** This wave first booked the beat diet as
+`P2-PROOF-16`, which was already taken: that id shipped in #849 ("the night opens on the beat that
+proves the most, and the beat names the hand that made it"), and `ItemForge.cs` still cites it by
+name for that meaning. Two different units briefly shared one id, which is exactly the shape rule 8
+exists to prevent — a record that says two things. The beat diet is `P2-PROOF-19` from here; the
+four source references that mean the 2026-09 unit are corrected, and the three that mean #849's are
+left alone. It shipped in #878 before the collision was caught, so its row is gone from the index
+and this paragraph is the only place the rename is written down. The booking step is what missed
+it: the check ran against `git log --all --grep`, and #849's subject never carried the tag.
 
 **Booked rows this read argues against, recorded rather than quietly skipped.** `P2-MEMORY-07`'s
 commendation triggers on `LegendQuery.FamousBeatThreshold = 3` counting beats of any kind; with five
@@ -4762,7 +4772,6 @@ name (§11.6 rule 4).
 | ⚑ P2-PROOF-11 | Legible defeat — the death names its margin (research M4) | `godot/scripts/panels/LedgerModal.cs`, `sim/GameSim/Expedition/TellingQuery.cs` (read-only) | — | [G] |
 | ⚑ P2-PROOF-13 | The maker names the signed work — the glossary's own sentence becomes true | `sim/GameSim/Contracts/Actions.cs`, `sim/GameSim/Crafting/CraftingHandlers.cs`, `godot/scripts/panels/ForgePanel.cs` | P4 | [S][C] |
 | ⚑ P2-PROOF-14 | The counterfactual reaches the ledger — the beat carries its own arithmetic | `sim/GameSim/Expedition/AttributionEngine.cs`, `godot/scripts/panels/LedgerModal.cs` | — | [S][GOLD] |
-| P2-PROOF-16 | The night's card leads with what changed the outcome; incidental kills fold to one line per item | `godot/scripts/panels/LedgerModal.cs`, `godot/tests/LedgerModalTests.cs` | — | [G] |
 | P2-PROOF-17 | The rank-up says which part of it your mark earned — an XP split that cannot disagree with the grant | `sim/GameSim/Drama/`, `sim/GameSim.Tests/`, `godot/scripts/panels/LedgerModal.cs` | — | [S] |
 | P2-PROOF-18 | The closest call — the survivor who nearly didn't, with the floor, the monster and the slot | `sim/GameSim/Drama/`, `godot/scripts/panels/LedgerModal.cs` | — | [S] |
 | P2-MEMORY-02 | The death card reads the pack and the last blow | `godot/scripts/panels/LedgerModal.cs` | — | [G] |
