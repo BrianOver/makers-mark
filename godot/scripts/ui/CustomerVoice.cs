@@ -43,7 +43,7 @@ public static class CustomerVoice
     /// work named it — <c>AttributionEngine.AddConsumableBeats</c>'s own doc comment calls it the
     /// "did not matter" case ("the hero would have survived the fight even without this quaff... no
     /// participation credit"), the opposite of a decisive counterfactual; thanking someone for it
-    /// would be the exact KillingBlow-inflation defect P2-PROOF-16 exists to fix, one beat type
+    /// would be the exact KillingBlow-inflation defect P2-PROOF-19 exists to fix, one beat type
     /// over. <see cref="BeatType.PotionLifesave"/> IS a true counterfactual (the strict replay
     /// crosses zero) but its item's <c>ItemSlot</c> is <c>Consumable</c> — drunk and gone, never
     /// re-equipped — so it can never satisfy <see cref="IsWorn"/> below; left out rather than kept
