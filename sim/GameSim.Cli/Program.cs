@@ -154,6 +154,28 @@ if (args.Length > 0 && args[0] == "felt-wall")
     return GameSim.Cli.FeltWallSweep.Run(fwSeeds, 2026UL, fwDays, fwOut, Console.Out, Console.Error);
 }
 
+// Slot-spend mode (P2-HONEST-28, one-off measurement, not a gate): `-- slot-spend [--seeds N]
+// [--days N] [--out DIR]` measures, across every GameSim.Cli.BatchRunner harness policy, how many
+// of the day's ActionBudget.SlotsPerDay=5 action slots actually get spent — the number that
+// decides whether "spend the slot or bank it" (CLAUDE.md's fourth decision) is a real decision
+// (the budget binds) or a false claim in the text (it never does, so carry-over would change
+// nothing).
+if (args.Length > 0 && args[0] == "slot-spend")
+{
+    var ssdSeeds = 20;
+    var ssdDays = 100;
+    var ssdOut = Path.Combine("runs", "slot-spend");
+    for (var i = 1; i < args.Length; i++)
+    {
+        if (args[i] == "--seeds" && i + 1 < args.Length && int.TryParse(args[i + 1], out var s)) { ssdSeeds = s; i++; }
+        else if (args[i] == "--days" && i + 1 < args.Length && int.TryParse(args[i + 1], out var d)) { ssdDays = d; i++; }
+        else if (args[i] == "--out" && i + 1 < args.Length) { ssdOut = args[i + 1]; i++; }
+        else { Console.Error.WriteLine($"slot-spend: unknown/invalid arg near '{args[i]}' — usage: slot-spend [--seeds N] [--days N] [--out DIR]"); return 1; }
+    }
+
+    return GameSim.Cli.SlotSpendSweep.Run(ssdSeeds, 2026UL, ssdDays, ssdOut, Console.Out, Console.Error);
+}
+
 // Econ-trajectory mode (anomaly-coverage measurement, 2026-09-04, one-off measurement, not a
 // gate): `-- econ-trajectory [--seeds N] [--seed S] [--days N] [--sample N]` samples
 // BaselinePlayer's gold/materials/shelf/sales/commissions day-by-day, to check whether a
