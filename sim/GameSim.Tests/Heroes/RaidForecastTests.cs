@@ -68,6 +68,91 @@ public class RaidForecastTests
         Assert.Contains($"{bare.Name}: no weapon, no shield, no armor", allGaps);
     }
 
+    /// <summary>
+    /// P2-SCREEN-36: a hero marching with an empty slot the smith already PROMISED to fill is a
+    /// different, worse fact than an ordinary gap, and before this the muster board and the
+    /// commission board never joined — the only match for "commission" in either render file was an
+    /// unrelated doc comment. These cases pin the join in both directions, because the expensive
+    /// failure is the false positive: a line claiming the player owes something they do not.
+    /// </summary>
+    [Fact]
+    public void GapCommissions_NameOnlyACommissionMatchingThisHeroAndThisEmptySlot()
+    {
+        var state = HeroRoster.InstallStartingRoster(GameFactory.NewGame(seed: 7));
+        var heroes = state.Heroes.Values.ToList();
+
+        // One hero bare in every tracked slot, one fully geared — pinned explicitly rather than
+        // assumed off the starting roster, same discipline as the gap test above.
+        var bare = heroes[0] with { Gear = GearSet.Empty };
+        var geared = heroes[1] with { Gear = new GearSet(new ItemId(1), new ItemId(2), new ItemId(3)) };
+        state = state with
+        {
+            Heroes = state.Heroes.SetItem(bare.Id.Value, bare).SetItem(geared.Id.Value, geared),
+            Commissions =
+            [
+                // Matches: this hero, a slot they are actually missing.
+                new Commission(bare.Id, ItemSlot.Shield, QualityGrade.Common, DeadlineDay: 9, PremiumGold: 25),
+                // Same hero, but a slot the geared hero holds — must not appear against anyone.
+                new Commission(geared.Id, ItemSlot.Weapon, QualityGrade.Common, DeadlineDay: 4, PremiumGold: 10),
+            ],
+        };
+
+        var owed = RaidForecast.ForTomorrow(state).SelectMany(p => p.GapCommissions).ToList();
+
+        var mine = Assert.Single(owed);
+        Assert.Equal(bare.Name, mine.HeroName);
+        Assert.Equal(ItemSlot.Shield, mine.Slot);
+        // The day comes off the commission the sim recorded, never recomputed from today + a window.
+        Assert.Equal(9, mine.DeadlineDay);
+    }
+
+    /// <summary>A commission for a slot this hero already fills is not an unmet promise, and a
+    /// commission belonging to a different hero is not this hero's. Both would be false positives,
+    /// which is the failure mode worth paying for a test.</summary>
+    [Fact]
+    public void GapCommissions_IgnoreAFilledSlot_AndAnotherHerosCommission()
+    {
+        var state = HeroRoster.InstallStartingRoster(GameFactory.NewGame(seed: 12));
+        var heroes = state.Heroes.Values.ToList();
+
+        // Missing the shield only; weapon and armor are held.
+        var partial = heroes[0] with { Gear = new GearSet(new ItemId(1), null, new ItemId(3)) };
+        var other = heroes[1] with { Gear = GearSet.Empty };
+        state = state with
+        {
+            Heroes = state.Heroes.SetItem(partial.Id.Value, partial).SetItem(other.Id.Value, other),
+            Commissions =
+            [
+                // A slot this hero already fills.
+                new Commission(partial.Id, ItemSlot.Weapon, QualityGrade.Common, DeadlineDay: 6, PremiumGold: 15),
+            ],
+        };
+
+        var owed = RaidForecast.ForTomorrow(state).SelectMany(p => p.GapCommissions).ToList();
+
+        Assert.DoesNotContain(owed, o => o.Slot == ItemSlot.Weapon);
+        // 'other' is bare in every slot but has no commission of their own, so nothing is owed them.
+        Assert.DoesNotContain(owed, o => o.HeroName == other.Name);
+    }
+
+    /// <summary>Fulfilled and expired commissions are REMOVED from <c>GameState.Commissions</c> by
+    /// <c>CommissionSystem</c> rather than flagged, so an empty list is the whole of "nothing is
+    /// owed" — and the forecast must render nothing rather than a stale promise.</summary>
+    [Fact]
+    public void GapCommissions_AreEmpty_WhenNoCommissionIsLive()
+    {
+        var state = HeroRoster.InstallStartingRoster(GameFactory.NewGame(seed: 21));
+        var heroes = state.Heroes.Values.ToList();
+        var bare = heroes[0] with { Gear = GearSet.Empty };
+        state = state with
+        {
+            Heroes = state.Heroes.SetItem(bare.Id.Value, bare),
+            Commissions = [],
+        };
+
+        Assert.Empty(RaidForecast.ForTomorrow(state).SelectMany(p => p.GapCommissions));
+    }
+
     [Fact]
     public void ZeroHeroes_ProducesEmptyForecast()
     {

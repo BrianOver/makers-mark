@@ -29,6 +29,19 @@ public sealed record WornSlot(
     int? CraftedOnDay);
 
 /// <summary>
+/// P2-SCREEN-36 ("the marcher's empty slot names the commission that would have filled it",
+/// decision 1 — sell the good one, or hold it for the hero who needs it): a hero marching with an
+/// empty gear slot that ALSO has a live commission open for that exact slot — the smith already
+/// knows what this hero wants, and they are walking into the Mine without it.
+///
+/// <para>FACTS only: which hero, which slot, and the day the ask falls due — never the premium,
+/// never the minimum quality, never a recommendation to fill it before they leave (law 12,
+/// "influence never orders"); a caller who wants those reads the <see cref="Commission"/> record
+/// itself off <see cref="GameState.Commissions"/>.</para>
+/// </summary>
+public sealed record GapCommission(string HeroName, ItemSlot Slot, int DeadlineDay);
+
+/// <summary>
 /// A single party's raid-day forecast: who marches, how deep they mean to go, the threats on the
 /// way, where their kit is thin, and what their filled slots actually hold. Pure projection —
 /// presentation data only.
@@ -57,7 +70,8 @@ public sealed record ForecastParty(
     ImmutableList<string> GearGaps,
     ImmutableList<WornSlot> WornGear,
     int BestRecordedFloor,
-    string RecordHolderName);
+    string RecordHolderName,
+    ImmutableList<GapCommission> GapCommissions);
 
 /// <summary>
 /// Game-Feel Plan G4 ("Tomorrow's Telegraph", docs/design/2026-07-21-game-feel-plan.md §G4): the
@@ -110,12 +124,29 @@ public static class RaidForecast
 
             var gaps = ImmutableList.CreateBuilder<string>();
             var worn = ImmutableList.CreateBuilder<WornSlot>();
+            var gapCommissions = ImmutableList.CreateBuilder<GapCommission>();
             foreach (var hero in partyHeroes)
             {
                 var missing = MissingItemSlots(hero.Gear);
                 if (missing.Count > 0)
                 {
                     gaps.Add($"{hero.Name}: {string.Join(", ", missing.Select(SlotLabel))}");
+
+                    // P2-SCREEN-36: does a still-open commission (posted or accepted, but not yet
+                    // fulfilled or expired — both of THOSE remove the entry from state.Commissions
+                    // outright, so anything still here is still live) name one of THIS hero's actual
+                    // gaps? CommissionSystem posts at most one live commission per hero at a time
+                    // (PostCommissions' own heroesWithCommission gate), but this walks every missing
+                    // slot rather than assuming that invariant, so a future relaxation of it could
+                    // never silently under-report here.
+                    foreach (var slot in missing)
+                    {
+                        if (state.Commissions.FirstOrDefault(c => c.Hero == hero.Id && c.Slot == slot)
+                            is { } commission)
+                        {
+                            gapCommissions.Add(new GapCommission(hero.Name, slot, commission.DeadlineDay));
+                        }
+                    }
                 }
 
                 // Same three tracked slots MissingItemSlots gaps on (trinket is optional content,
@@ -134,7 +165,7 @@ public static class RaidForecast
 
             forecast.Add(new ForecastParty(
                 names, plan.TargetFloor, plan.VenueId, threats.ToImmutable(), gaps.ToImmutable(), worn.ToImmutable(),
-                bestRecordedFloor, recordHolderName));
+                bestRecordedFloor, recordHolderName, gapCommissions.ToImmutable()));
         }
 
         return forecast.ToImmutable();

@@ -189,9 +189,45 @@ public partial class RaidForecastBoard : Control
                 AddLabel(_body!, $"  - {gap}");
             }
 
+            // P2-SCREEN-36: the muster board and the commission board never joined, so a hero could
+            // march toward floor 3 with the exact slot the smith PROMISED to fill still empty and
+            // nothing on screen said so. RaidForecast does the join (ForecastParty.GapCommissions):
+            // a still-open commission whose hero and slot match one of that hero's actual gaps.
+            // Facts only -- hero, slot, due day. No premium, no quality bar, no "fill it before
+            // they leave": law 12, influence never orders. An empty list renders nothing at all,
+            // which is the common case.
+            foreach (var owed in party.GapCommissions)
+            {
+                AddLabel(_body!, $"  - {OwedCommissionLine(owed)}");
+            }
+
             ShowMusterGearGapLesson();
         }
     }
+
+    /// <summary>
+    /// P2-SCREEN-36: one <see cref="GapCommission"/> as the sentence a person would say — which hero,
+    /// which slot they are marching without, and the day the ask falls due. Every value comes off the
+    /// record the sim built; nothing here recomputes a deadline or re-reads the commission list.
+    ///
+    /// <para>Deliberately has no verb for the player. It does not say "forge it", does not rank the
+    /// gap against the others, and does not warn. Decision 1 -- sell the good one or hold it for the
+    /// hero who needs it -- is the player's to make, and law 12 (influence never orders) is what
+    /// stops this line making it for them. The pressure is in the fact, not in the phrasing.</para>
+    /// </summary>
+    private static string OwedCommissionLine(GapCommission owed) =>
+        $"{owed.HeroName} marches without the {SlotWord(owed.Slot)} you owe them — due day {owed.DeadlineDay}.";
+
+    /// <summary>The plain word for a slot, for prose rather than for a label column.</summary>
+    private static string SlotWord(ItemSlot slot) => slot switch
+    {
+        ItemSlot.Weapon => "weapon",
+        ItemSlot.Armor => "armor",
+        ItemSlot.Shield => "shield",
+        ItemSlot.Trinket => "trinket",
+        ItemSlot.Consumable => "consumable",
+        _ => slot.ToString().ToLowerInvariant(),
+    };
 
     /// <summary>
     /// Renders one <see cref="WornSlot"/> as "Hero — Item Name (Quality)" plus, only for a piece the
