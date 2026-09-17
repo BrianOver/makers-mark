@@ -79,6 +79,24 @@ public static class PlaytestLog
     /// </summary>
     public static Func<string>? BeatProvider { get; set; }
 
+    /// <summary>
+    /// U39 (§11.14.14, R36): the same decoupling seam as <see cref="BeatProvider"/>, for the
+    /// tutorial's own current step — set by <c>MainUi</c> once <c>Tutorial</c> exists. "Which step
+    /// do testers stall on" was previously answerable only by asking the tester; a row that carries
+    /// this on every tick makes it a query instead. Returns the raw <see
+    /// cref="GodotClient.Ui.TutorialStep"/> name while the course is active, or <c>"-"</c> once it
+    /// is dismissed/complete (or before <c>Tutorial</c> exists at all) — never null, so a reader
+    /// never has to special-case a missing key the way <see cref="BeatProvider"/>'s own "?" already
+    /// does not need to.
+    /// </summary>
+    public static Func<string>? TutorialStepProvider { get; set; }
+
+    /// <summary>Same seam as <see cref="TutorialStepProvider"/>, for the step's own act (<see
+    /// cref="GodotClient.Ui.TutorialActVocab.DisplayName"/> — "The Hand-Off", not the enum name) —
+    /// together the two answer "which step, in which chapter" without a second correlation pass
+    /// against the registry.</summary>
+    public static Func<string>? TutorialActProvider { get; set; }
+
     /// <summary>True once <see cref="Begin"/> has opened a file. Everything else short-circuits on
     /// this, so an ordinary test run never touches the filesystem.
     ///
@@ -224,6 +242,33 @@ public static class PlaytestLog
         }
     }
 
+    /// <summary>Same fail-soft shape as <see cref="CurrentBeat"/> — a provider that throws (or was
+    /// never set) must never take the log down with it.</summary>
+    private static string CurrentTutorialStep()
+    {
+        try
+        {
+            return TutorialStepProvider?.Invoke() ?? "?";
+        }
+        catch
+        {
+            return "?";
+        }
+    }
+
+    /// <summary>Same fail-soft shape as <see cref="CurrentBeat"/>.</summary>
+    private static string CurrentTutorialAct()
+    {
+        try
+        {
+            return TutorialActProvider?.Invoke() ?? "?";
+        }
+        catch
+        {
+            return "?";
+        }
+    }
+
     /// <summary>
     /// One row per completed phase tick — the whole point of the file.
     ///
@@ -305,6 +350,12 @@ public static class PlaytestLog
           .Append(",\"inFlight\":").Append(state.InFlight.Count)
           .Append(",\"bounties\":").Append(state.Bounties.Count)
           .Append(",\"act\":\"").Append(state.Arc.Act).Append('"')
+          // U39 (§11.14.14, R36): the tutorial's OWN step/act — distinct keys from "act" above
+          // (state.Arc.Act is the campaign's narrative act; these two are the onboarding course's
+          // own position), "?" only when no provider was ever set (a bare SimAdapter test), "-"
+          // once Tutorial exists but the course is no longer Active — see each provider's own doc.
+          .Append(",\"tutorialStep\":\"").Append(Escape(CurrentTutorialStep())).Append('"')
+          .Append(",\"tutorialAct\":\"").Append(Escape(CurrentTutorialAct())).Append('"')
           .Append(",\"slots\":").Append(state.ActionSlotsRemaining)
           .Append(",\"events\":").Append(events.Count)
           .Append(",\"rejects\":[");

@@ -189,6 +189,55 @@ public class PlaytestLogTests
     }
 
     /// <summary>
+    /// U39 (§11.14.14, R36): "which step do testers stall on" is answerable only if EVERY tick row
+    /// carries it, not just the ones where a caller happened to remember — the same "always present,
+    /// never a key whose absence means something" contract <c>eventTypes</c> already established
+    /// (this class's own 2026-08-11 doc note). Drives a real phase tick through the real <see
+    /// cref="MainUi"/> (so <see cref="PlaytestLog.TutorialStepProvider"/>/<see
+    /// cref="PlaytestLog.TutorialActProvider"/> are wired exactly as production wires them, not
+    /// stubbed) and reads the row back rather than trusting the wiring blind.
+    /// </summary>
+    [TestCase]
+    public void TickRow_CarriesTutorialStepAndAct_OnAFreshCampaign()
+    {
+        var path = ProjectSettings.GlobalizePath("user://playtest-log-tutorial-step.jsonl");
+        PlaytestLog.RedirectForTests(path);
+        try
+        {
+            var ui = MountMainUi();
+            try
+            {
+                ui.Adapter.Queue(new BuyMaterialAction(ScriptedSession.CraftMaterial, ScriptedSession.CopperNeeded));
+                ui.Adapter.AdvancePhase();
+
+                var ticks = Rows(path, "tick");
+                AssertThat(ticks.Count).OverrideFailureMessage(Dump(ticks)).IsGreater(0);
+
+                // Buying the material before the tick advances TutorialFlow.Step from BuyMaterial to
+                // Craft (BuyMaterial's own IsDone) — asserting THAT real transition, not a static
+                // stub value, proves the provider reads live Tutorial state on every tick rather
+                // than freezing whatever it read once. Still TutorialAct.Mark: BuyMaterial and Craft
+                // share the one displayed beat (TutorialStepDef's own doc).
+                var last = ticks[^1];
+                AssertThat(last)
+                    .OverrideFailureMessage($"tick row has no tutorialStep field at all: {last}")
+                    .Contains("\"tutorialStep\":\"Craft\"");
+                AssertThat(last)
+                    .OverrideFailureMessage($"tick row has no tutorialAct field at all: {last}")
+                    .Contains("\"tutorialAct\":\"The Mark\"");
+            }
+            finally
+            {
+                Unmount(ui);
+            }
+        }
+        finally
+        {
+            PlaytestLog.RedirectForTests(null);
+        }
+    }
+
+    /// <summary>
     /// U-T6-1: the whole point of <see cref="ActionSubject"/> — a <see cref="CraftAction"/> row's
     /// <c>why</c> must name the recipe AND the material, not just echo the bare type name every
     /// prior session logged. Goes straight through <see cref="SimAdapter.Queue"/> (no UI mount

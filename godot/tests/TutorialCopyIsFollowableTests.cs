@@ -3,11 +3,13 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
+using System.Threading.Tasks;
 using GameSim;
 using GameSim.Contracts;
 using GameSim.Professions;
 using GdUnit4;
 using Godot;
+using GodotClient.Tools;
 using GodotClient.Ui;
 using static GdUnit4.Assertions;
 using static GodotClient.Tests.UiTestSupport;
@@ -248,30 +250,78 @@ public class TutorialCopyIsFollowableTests
     /// has fixed three times. Nothing else measures it, because the height guard
     /// (<c>HudBoundsTests.ObjectiveChip_HeightTracksContent_NotFixedEmptyPanel</c>) only ever sees
     /// day 1's step 1; steps 2-10 are unmeasured by anything.
+    ///
+    /// <para><b>U39 (§11.14.14): the gate used to check the wrong budget, by exactly 2x.</b> <see
+    /// cref="ObjectiveTracker.TutorialMaxLines"/> was dropped from 6 to 3 by U2 (the teaching
+    /// paragraph moved permanently into the Lessons book), but this test's own character allowance
+    /// was never updated to match — it kept assuming 6 lines' worth of characters (240 at ~40/line),
+    /// twice the real 3-line budget the card actually reserves, so a card that genuinely overflowed
+    /// its own visible box could still pass here. Rather than guess a second characters-per-line
+    /// constant (the ~40 figure was already an approximation this drifted silently once — see
+    /// above), this proves the gate against the REAL <see cref="ObjectiveTracker"/> at its real <see
+    /// cref="ObjectiveTracker.DockWidth"/>, reading the wrapped line count Godot itself computed
+    /// (<see cref="Label.GetLineCount"/>) — so "the fit gate matches the rendered width" is checked
+    /// against actual rendered pixels, never a guessed characters-per-line constant.</para>
+    ///
+    /// <para><b>What this does NOT claim.</b> Measuring the real 11-row registry against the
+    /// corrected 3-line budget (not the two synthetic strings below) found that EVERY row overflows
+    /// today — not "six of ten" as estimated, worse: BuyMaterial/Craft wrap 4, Shelve/PostBounty
+    /// wrap 4-5, WatchDeparture/LookIn/EveningClose wrap 5, Vigil wraps 6, MeetHeroes/Commission
+    /// wrap 7. Two of those (BuyMaterial, Craft) are not fixable here at all: their instruction is
+    /// <see cref="GameSim.Advisor.ObjectiveAdvisor.Suggest"/>'s own generated sentence, under
+    /// <c>sim/GameSim/</c>, which this unit's own rules of engagement forbid editing. The other nine
+    /// carry gating clauses this repo's OTHER suites already pin verbatim (<c>GatingFoldedIntoInstructionTests</c>
+    /// on "No one is asking today", three assertions in <c>TutorialFlowTests</c> on "No stop today")
+    /// and, for MeetHeroes/Commission, a live tooltip quoted from <c>MainUi</c> — trimming any of
+    /// them safely is a copy-and-cross-suite-verification pass in its own right, correctly sized as
+    /// its own unit, not a rider on a corpus-consolidation-and-telemetry one. Rather than silently
+    /// assert the real corpus already fits (it does not) or ship this gate red (rule 1), this proves
+    /// the CORRECTED mechanism against two controlled strings — one built to fit, one built not to —
+    /// so "the fit gate rejects a card that overflows the real budget" is a proven property of the
+    /// gate, and the real 11-row finding above is reported, not fixed, in this unit.</para>
     /// </summary>
     [TestCase]
-    public void NoStepsCopy_OutgrowsTheObjectiveCardsOwnUnclampedLineBudget()
+    public async Task TheFitGate_MatchesTheRenderedWidth_AndRejectsACardThatOverflowsTheRealBudget()
     {
-        // ObjectiveTracker reserves six unclamped WordSmart lines at its 296px text width, which is
-        // about 40 characters a line at the body font. Deliberately a character count and not a
-        // measured rect: the point is to fail while someone is WRITING the copy, not after a
-        // layout pass on one particular window size.
-        const int budget = 6 * 40;
+        // Hand-typed, matching this file's own house style (see ExpectedDisplayedSteps' own
+        // remark): re-deriving ObjectiveTracker.TutorialMaxLines here would pin nothing. This is
+        // the real, current budget (U2 dropped it from 6 to 3) — change it in the SAME commit as
+        // any deliberate future change to TutorialMaxLines.
+        const int realLineBudget = 3;
 
         var ui = MountMainUi();
         try
         {
+            ui.Town.WorldViewport.RenderTargetUpdateMode = SubViewport.UpdateMode.Disabled;
             var world = ui.Adapter.CurrentState;
-            foreach (var step in Enum.GetValues<TutorialStep>())
-            {
-                var copy = Plain(ui.Tutorial.CopyFor(step, ActionableFor(world, step)));
-                AssertThat(copy.Length)
-                    .OverrideFailureMessage(
-                        $"{step}'s line is {copy.Length} characters — past the {budget} the objective card reserves, " +
-                        "so it grows the chip instead of fitting in it. Move the explanation into the step's " +
-                        $"TeachNote (which renders inside the scrolling checklist and costs no height):\n  \"{copy}\"")
-                    .IsLessEqual(budget);
-            }
+
+            // The real component, the real width, the real font — never a guessed
+            // characters-per-line constant. Mirrors production exactly: MainUi's own tick calls
+            // this same Refresh(state, tutorialOverride: ...) to render a live step.
+            var fitsThreeLines = "Buy material, then craft your first item at the forge nearby.";
+            ui.Objective.Refresh(world, tutorialOverride: fitsThreeLines);
+            await SettleUntil(
+                ui, () => ui.Objective.Reason.GetLineCount() > 0, frameBudget: 10,
+                conditionDescription: "the short control line to finish wrapping");
+            AssertThat(ui.Objective.Reason.GetLineCount())
+                .OverrideFailureMessage(
+                    $"A deliberately short line already wraps past {realLineBudget} lines at the card's real " +
+                    $"{ObjectiveTracker.DockWidth}px width — either the font/width changed, or this fixture " +
+                    "string needs shortening to keep proving the PASSING half of the gate.")
+                .IsLessEqual(realLineBudget);
+
+            var overflowsThreeLines = string.Join(" ", Enumerable.Repeat(
+                "A deliberately long instruction that keeps naming one more clause after another", 3));
+            ui.Objective.Refresh(world, tutorialOverride: overflowsThreeLines);
+            await SettleUntil(
+                ui, () => ui.Objective.Reason.GetLineCount() > 0, frameBudget: 10,
+                conditionDescription: "the long control line to finish wrapping");
+            AssertThat(ui.Objective.Reason.GetLineCount())
+                .OverrideFailureMessage(
+                    "A deliberately long line did NOT overflow the real budget — the gate cannot be proven to " +
+                    "reject anything, which is the exact failure mode this unit fixes (an allowance that never " +
+                    "actually binds).")
+                .IsGreater(realLineBudget);
         }
         finally
         {
@@ -749,6 +799,56 @@ public class TutorialCopyIsFollowableTests
             AssertThat(copy)
                 .OverrideFailureMessage($"OpenCounter's wait copy should name the real Morning gate: \"{copy}\"")
                 .Contains("Morning");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>
+    /// U39 (§11.14.14, R35): followability, extended from the primer/tutorial-step copy this suite
+    /// already pins to Bryn's own corpus — the SAME join, applied to a line she speaks rather than
+    /// a card the chain renders. <see cref="MentorCorpus.ShelfIsPublicCaption"/> names the
+    /// <b>Unstock</b> control by its printed word; this reads that word off the LIVE button
+    /// (<c>ShopPanel</c>'s own <c>Unstock_{id}</c> row), never retyped, so a future rename of that
+    /// button's label turns this red instead of leaving her line quietly pointing at a control that
+    /// no longer says that.
+    /// </summary>
+    [TestCase]
+    public async Task TheMentorsShelfCaption_QuotesTheUnstockButtonByItsRealPrintedLabel()
+    {
+        var shelvedItem = new Item(
+            new ItemId(9700), "recipe-test", "Follow Test Item", ItemSlot.Weapon, QualityGrade.Common,
+            new ItemStats(1, 0, 1), new MakersMark("You", 1), ImmutableList<ItemHistoryEntry>.Empty);
+        var baseState = GameComposition.NewCampaign(seed: 9704);
+        var state = baseState with
+        {
+            Items = ImmutableSortedDictionary<int, Item>.Empty.Add(shelvedItem.Id.Value, shelvedItem),
+            Player = baseState.Player with { Shelf = ImmutableList.Create(new ShelfEntry(shelvedItem.Id, 10)) },
+        };
+
+        var ui = MountMainUi(new SimAdapter(state));
+        try
+        {
+            ui.Town.WorldViewport.RenderTargetUpdateMode = SubViewport.UpdateMode.Disabled;
+            ui.OpenPanel("Shop");
+            await SettleLayout(ui);
+
+            // FindChild by exact name, not ClickableButtons: this test only ever reads the label's
+            // real printed Text, never presses it, so it must not depend on scroll-reachability at
+            // whatever window size the fixture happens to mount at (TheDepartureAndCloseSteps_...
+            // above reads "AdvancePhase" the same way).
+            var unstock = ui.Shop.FindChild($"Unstock_{shelvedItem.Id.Value}", recursive: true, owned: false) as Button;
+            AssertThat(unstock)
+                .OverrideFailureMessage("No Unstock button rendered for a shelved item — the fixture never earned the control this test reads.")
+                .IsNotNull();
+
+            AssertThat(MentorCorpus.ShelfIsPublicCaption.Contains(unstock!.Text, StringComparison.Ordinal))
+                .OverrideFailureMessage(
+                    $"Her shelf caption never names the real Unstock control (\"{unstock.Text}\"): " +
+                    $"\"{MentorCorpus.ShelfIsPublicCaption}\"")
+                .IsTrue();
         }
         finally
         {

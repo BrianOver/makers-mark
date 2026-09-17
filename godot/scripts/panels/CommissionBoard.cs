@@ -240,12 +240,7 @@ public partial class CommissionBoard : Control
     private void ShowHoldOrSellLesson() =>
         Mentor?.ShowFirstTouch(Tutorial?.ConsumeFirstTouch(
             "hold-or-sell",
-            MentorVoice.Speak(
-                "Sell the good one, or hold it for the hero who needs it — the shelf pays now, while "
-                + "a commission pays more, later, to a named person, if they live that long. One fact "
-                + "ties them together: anyone may buy off the shelf, and a shelved item can never be "
-                + "sent to a camped party. Press **Unstock** to take it back — that is how you hold a "
-                + "piece for someone instead of selling it.")));
+            MentorVoice.Speak(MentorCorpus.ShelfIsPublicCaption)));
 
     private void EnsureBuilt()
     {
