@@ -12,17 +12,18 @@ namespace GodotClient.Tests;
 /// P2-SCREEN-03 (§11.15): the live-mount half of the discovery proof. <see
 /// cref="GameSim.Tests.Presentation.SurfaceClaimDiscoveryCensusTests"/> (fast lane) is a text scan —
 /// it proves the SOURCE declares a claim for every surface shaped like a claimable modal. This suite
-/// proves the DISCOVERED set actually matches at runtime: every one of the nine full-rect modal
+/// proves the DISCOVERED set actually matches at runtime: every one of the full-rect modal
 /// surfaces <c>MainUi.BuildUi</c> constructs is found by <see cref="SurfaceArbiter.Discover"/> once
-/// mounted, <c>Chronicle</c> included — the exact row <c>MainUi.OverlaySurfaces()</c>'s own
-/// hand-written array is missing. P2-LONG-18 added the ninth (<c>Pledge</c>).
+/// mounted — the exact row <c>MainUi.OverlaySurfaces()</c>'s own hand-written array used to miss.
+/// P2-LONG-18 added a ninth claim (<c>Pledge</c>); P2-MEMORY-14 later retired the original
+/// <c>Chronicle</c> claim (its duty moved onto <c>Legends</c>), leaving eight today.
 /// </summary>
 [TestSuite]
 [RequireGodotRuntime]
 public class SurfaceArbiterDiscoveryTests
 {
     [TestCase]
-    public void Discover_FindsAllNineFullScreenModalClaims_ChronicleIncluded()
+    public void Discover_FindsAllEightFullScreenModalClaims()
     {
         var ui = MountMainUi();
         try
@@ -30,7 +31,7 @@ public class SurfaceArbiterDiscoveryTests
             // P2-SCREEN-04: filtered to FullScreenModal first — MountMainUi now also constructs
             // CompanionDock's own HudDock claim and up to four ChildModal ProvenanceCard claims
             // (one per hosting panel, all built eagerly at boot — P2-MEMORY-11 dropped LegendsWall
-            // from that list), so an unfiltered Discover() is no longer exactly nine. The NINE
+            // from that list), so an unfiltered Discover() is no longer exactly eight. The EIGHT
             // full-rect modals this test pins are unaffected by either.
             var claims = SurfaceArbiter.Discover(ui.GetTree())
                 .Where(c => c.Claim.Region == SurfaceRegion.FullScreenModal)
@@ -39,7 +40,7 @@ public class SurfaceArbiterDiscoveryTests
 
             string[] expected =
             [
-                "Camp", "Chronicle", "Commissions", "Forecast", "Ledger", "Legends",
+                "Camp", "Commissions", "Forecast", "Ledger", "Legends",
                 "Mirror", "Pledge", "SystemMenu",
             ];
             AssertThat(ids.Count).IsEqual(expected.Length);
@@ -49,10 +50,6 @@ public class SurfaceArbiterDiscoveryTests
                     .OverrideFailureMessage($"Expected \"{id}\" among discovered claims: [{string.Join(", ", ids)}]")
                     .IsTrue();
             }
-
-            // The one row MainUi.OverlaySurfaces()'s hand-written array is missing — proven found
-            // here by DISCOVERY, never by adding a tenth hand-written string to a second list.
-            AssertThat(ids.Contains("Chronicle")).IsTrue();
         }
         finally
         {

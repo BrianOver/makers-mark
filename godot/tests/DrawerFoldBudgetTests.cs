@@ -52,6 +52,22 @@ public class DrawerFoldBudgetTests
     /// <see cref="ScreenObservation.EdgeTolerancePx"/>. Never enough to hide a real clip.</summary>
     private const float TolerancePx = 1f;
 
+    /// <summary>
+    /// Owner ruling 2026-09-15 ("ship what you built, stop chasing zero-scroll"): how far into the
+    /// Shop's scroll content the Stock row sits, measured against <see cref="RuledDrawerHeightPx"/>
+    /// minus <see cref="UiKit.DrawerHeaderHeight"/>'s worth of visible body — i.e. Y=425 is the
+    /// fold, and this is 523. Two real cuts got Stock here from 694 (the scene banner, 140px, then
+    /// the counter's closed-state body folded behind a disclosure): a measured, verified
+    /// improvement that still leaves Stock 98px past the fold. Shelf + Unshelved + the first card's
+    /// own top-to-Stock distance already consume the full 425px budget by themselves (measured,
+    /// correcting this suite's own comment below, which used to claim deleting the banner OR the
+    /// counter would be enough — it is not; both are cut and it still is not enough), so nothing
+    /// short of shortening those three sections closes the remaining gap, and that is out of this
+    /// ruling's scope. This constant is the ratchet's FLOOR, not a target — see
+    /// <see cref="Shop_StockRow_NeverDriftsFurtherBelowTheMeasuredPosition"/>.
+    /// </summary>
+    private const float MeasuredShopStockTopPx = 523f;
+
     /// <summary>One re-laid panel: how to stand the world up for it, and which control the ruling
     /// says a player must be able to reach without scrolling the moment the panel opens.</summary>
     private sealed record FoldCase(
@@ -83,14 +99,14 @@ public class DrawerFoldBudgetTests
         // The Shop's primary verb is drag-to-shelve (U5, "restock as placement"), and the half of
         // it that has to be on screen the instant the panel opens is the DROP TARGET — an empty
         // shelf slot. The Stock button is deliberately NOT this row's subject, and the reason is
-        // arithmetic rather than preference: the drawer body is 425px, and the irreducible stack
-        // above that button is Your Shelf (140px, and it has to stay above so source and target
-        // stay adjacent) + the Unshelved section's own header and back-room drop zone (96px) + the
-        // card's own distance to its Stock row (189px) = 425px exactly. There is no room left for
-        // the scene banner or the counter body, so putting Stock above the fold means deleting or
-        // burying one of those — a design call the ruling does not make and this guard must not
-        // quietly make either. What the re-lay DOES buy is measured by RealDragOntoShelfTests:
-        // source and target co-visible, which is the verb actually being performable.
+        // arithmetic rather than preference: measured, Your Shelf + the Unshelved section's own
+        // header/back-room drop zone + the first card's own distance to its Stock row already
+        // consume the whole 425px budget by themselves (owner ruling 2026-09-15 settled this —
+        // see MeasuredShopStockTopPx below: cutting BOTH the 140px scene banner AND the counter's
+        // closed-state body only brought Stock from 694px to 523px into the scroll, still 98px past
+        // the fold). Stock never clears this fold and is not expected to. What the re-lay DOES buy
+        // is measured by RealDragOntoShelfTests: source and target co-visible, which is the verb
+        // actually being performable.
         new FoldCase(
             "Shop",
             "the shelf slot drag-to-shelve drops onto",
@@ -189,6 +205,63 @@ public class DrawerFoldBudgetTests
             {
                 Unmount(ui);
             }
+        }
+    }
+
+    /// <summary>
+    /// A RATCHET, not a fold-budget claim — read the difference before touching this test.
+    ///
+    /// <para>The Shop's Stock row does not clear the 425px fold, and this test does not pretend
+    /// otherwise: it pins the ACHIEVED position (<see cref="MeasuredShopStockTopPx"/> = 523, down
+    /// from 694 before the scene banner and the counter's closed-state body were cut) so a future
+    /// change cannot silently push Stock even further into the scroll without a red build. Every
+    /// purchase off the Shop's Stock button still costs a scroll — that is a known, owner-accepted
+    /// state (2026-09-15: "ship what you built, stop chasing zero-scroll"), not a bug this test is
+    /// hiding.</para>
+    ///
+    /// <para>If this ever fails because the measured number GREW past the floor, that is real: something
+    /// above Stock (Shelf, Unshelved, or the counter) got taller and made the scroll worse. Bumping
+    /// the constant to match a worse number defeats the whole point of a ratchet — investigate what
+    /// grew instead.</para>
+    /// </summary>
+    [TestCase]
+    public async Task Shop_StockRow_NeverDriftsFurtherBelowTheMeasuredPosition()
+    {
+        var ui = MountMainUi(new SimAdapter(ShopWithUnshelvedCrafts()));
+        try
+        {
+            ui.Town.WorldViewport.RenderTargetUpdateMode = SubViewport.UpdateMode.Disabled;
+            ui.OpenPanel("Shop");
+            await SettleLayout(ui);
+
+            var content = ui.Drawer.CurrentContent!;
+            var contentRect = content.GetGlobalRect();
+            var stock = content.FindChild("Stock_9600", recursive: true, owned: false) as Control;
+
+            AssertThat(stock)
+                .OverrideFailureMessage(
+                    "Stock_9600 not found at all — that is a fixture/rendering regression, not the " +
+                    "fold this test measures.")
+                .IsNotNull();
+
+            var topRelContent = stock!.GetGlobalRect().Position.Y - contentRect.Position.Y;
+
+            AssertThat(topRelContent <= MeasuredShopStockTopPx + TolerancePx)
+                .OverrideFailureMessage(
+                    $"Stock's row now measures {topRelContent:0}px into the Shop's scroll content — " +
+                    $"worse than the {MeasuredShopStockTopPx:0}px measured when this ratchet was " +
+                    "written. This panel is KNOWN not to clear the 425px fold (owner ruling " +
+                    "2026-09-15: Shelf + Unshelved + card-top-to-Stock alone already consume the " +
+                    "whole budget), so this is NOT an assertion that Stock is reachable without " +
+                    "scrolling — it never has been. It exists only to catch Stock drifting even " +
+                    "FURTHER from the fold as some other row above it grows. Find what got taller " +
+                    "(Shelf, Unshelved, or the counter) and fix that; do not raise this number to " +
+                    "match a regression.")
+                .IsTrue();
+        }
+        finally
+        {
+            Unmount(ui);
         }
     }
 

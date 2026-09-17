@@ -20,10 +20,10 @@ namespace GodotClient.Ui;
 /// <c>Refresh()</c> dispatch needs. It now casts <see cref="DrawerHost.PanelContent"/>'s own answer
 /// instead of re-declaring the list a second time.</item>
 /// <item><c>MainUi.ModalContent</c>'s five-arm switch (Ledger/Commissions/Legends/Camp/Forecast)
-/// MISSED four real surfaces mounted the identical way, directly on <c>MainUi</c>: the Scrying
-/// Mirror, the Chronicle, the PiP dock, and the Companion Docket. A <see
+/// MISSED three real surfaces mounted the identical way, directly on <c>MainUi</c>: the Scrying
+/// Mirror, the PiP dock, and the Companion Docket. A <see
 /// cref="TutorialAnchorKind.PanelControl"/>/<see cref="TutorialAnchorKind.PanelSection"/> anchor
-/// naming any of those five threw — not because the surface was unreachable, but because nobody had
+/// naming any of those three threw — not because the surface was unreachable, but because nobody had
 /// told the lookup it existed.</item>
 /// </list>
 ///
@@ -45,16 +45,15 @@ namespace GodotClient.Ui;
 /// gap rather than a manufactured anchor pointing at a button that does not exist:
 /// <list type="bullet">
 /// <item><b>Heroes</b> — see above; a roaming NPC click, not a stable control or building.</item>
-/// <item><b>Chronicle</b> — fires exactly once, automatically, <c>MainUi.StateChanged</c>'s own
-/// reaction to a <c>CampaignEnded</c> event. The player never opens it; there is no door to point
-/// at.</item>
 /// <item><b>Pip</b> — an ambient corner widget whose own visibility is phase-driven (<see
 /// cref="PipDock"/>'s class doc), not player-toggled; clicking its body opens the Mirror, but the
 /// dock itself is never "closed" in the sense a way-in implies.</item>
 /// </list>
-/// A registry-conformance test enumerates exactly these three ids by name — a fourth row landing with
+/// A registry-conformance test enumerates exactly these two ids by name — a third row landing with
 /// a null <see cref="SurfaceDef.WayIn"/> and no matching update to that allowlist is a red build,
-/// never a silent gap growing unnoticed.</para>
+/// never a silent gap growing unnoticed. (P2-MEMORY-14 retired a third named row here, <b>Chronicle</b>
+/// — it fired once, automatically, off a <c>CampaignEnded</c> event with no player-pressable door;
+/// that duty now lives on <c>Legends</c>, which already has a real one.)</para>
 ///
 /// <para><b>The counter is not its own row.</b> <c>CounterPanel</c> is a plain child <see
 /// cref="Control"/> inside <c>ShopPanel</c>'s own registered content root — a <see
@@ -108,7 +107,6 @@ public static class TutorialSurfaceRegistry
         // Mirror: the non-conforming case this unit exists to fix. Its tray affordance is named for
         // WATCHING, never "OpenMirror" — the Open{id} convention's one real, live counterexample.
         new("Mirror", (_, ui) => ui?.Mirror, TutorialAnchor.ForHud("WatchButton")),
-        new("Chronicle", (_, ui) => ui?.Chronicle, null),
         new("Pip", (_, ui) => ui?.Pip, null),
         // Docket's own way in is nested one level deep — a button INSIDE the Forge panel's own
         // content root ("Tomorrow at the Counter"), not a top-level HUD control. Resolves through
