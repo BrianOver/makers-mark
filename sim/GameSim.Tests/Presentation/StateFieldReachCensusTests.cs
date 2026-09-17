@@ -320,6 +320,8 @@ public class StateFieldReachCensusTests
         ["ExpeditionResult.Floors"] = new(FieldKind.Rendered, "godot/scripts/DelveBeats.cs (floor-by-floor beat replay)"),
         ["ExpeditionResult.Halt"] = new(FieldKind.Rendered, "godot/scripts/DelveBeats.cs:149,158 (shapes the Surface beat) + LedgerModal.cs:409"),
         ["ExpeditionResult.Party"] = new(FieldKind.Rendered, "godot/scripts/panels/MineWatch.cs (\"THE SEND-OFF\" roster)"),
+        ["ExpeditionResult.Survivors"] = new(FieldKind.Rendered,
+            "godot/scripts/panels/TellingPanel.cs:293-294 (a wiped party is Survivors.IsEmpty, and the teller is whichever survivor the beat belongs to) + TavernPanel.cs:894 (last night's returning drinkers)."),
         ["ExpeditionResult.TargetFloor"] = new(FieldKind.Rendered, "godot/scripts/panels/CampPanel.cs / MineWatch.cs (target floor line)"),
         ["ExpeditionResult.VenueId"] = new(FieldKind.Rendered, "godot/scripts/panels/MineWatch.cs (backdrop art) / DepthsPanel.cs"),
 
@@ -534,7 +536,12 @@ public class StateFieldReachCensusTests
     // to 127 and put the conflict only in the comment above it. A comment-only conflict is the easy
     // thing to wave through, and doing so would have left a census asserting a total one short of the
     // fields it had just classified.
-    private const int ExpectedRenderedCount = 128;
+    // 128 -> 129 (P2-PROOF-17): ExpeditionResult.Survivors newly crosses the N=3 sim-reader bar --
+    // XpSplitQuery joined the two sim readers already there, because the XP split has to refuse a
+    // hero the sim never granted XP to rather than print a zeroed-out one. Already RENDERED long
+    // before this unit (TellingPanel decides a wipe and picks its teller off exactly this field);
+    // the census catching up to a surface that was already there, not a new one.
+    private const int ExpectedRenderedCount = 129;
     private const int ExpectedRoutedCount = 9;
     private const int ExpectedInternalCount = 6;
     // 12 -> 8: the same join, mirrored — the four fields that left GAP for RENDERED above.
