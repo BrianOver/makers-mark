@@ -220,7 +220,11 @@ public class MusterVoiceTests
         GearGaps: scenario.GearGaps,
         WornGear: ImmutableList<WornSlot>.Empty,
         BestRecordedFloor: 0,
-        RecordHolderName: scenario.HeroNames[0]);
+        RecordHolderName: scenario.HeroNames[0],
+        // P2-SCREEN-36: MusterVoice speaks the gap, never the commission owed against it -- that
+        // line belongs to RaidForecastBoard. Empty here keeps these cases about what this class
+        // actually says.
+        GapCommissions: ImmutableList<GapCommission>.Empty);
 
     /// <summary>Independent test-side parse of a <c>RaidForecast</c>-shaped gap string
     /// ("Kael: no shield", "Moss: no weapon, no armor") into (hero name, bare slot words) — mirrors
