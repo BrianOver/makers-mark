@@ -373,6 +373,7 @@ public partial class LedgerModal : SimPanel
         var halts = HaltsForDay(day); // #167 fix, keyed by HeroId.Value
         var xpSplits = XpSplitsForDay(day); // P2-PROOF-17, keyed by HeroId.Value
         var rankUps = RankUpsForDay(state, day); // P2-PROOF-17, keyed by HeroId.Value
+        var closestCalls = ClosestCallsForDay(state, day); // P2-PROOF-18, keyed by HeroId.Value
 
         // U-T5: a fresh wrapping grid every render — see _cardGrid's own doc for why cards/tip/
         // first-loss-block live here while THE RETELLING stays a direct _cards child added below.
@@ -398,7 +399,7 @@ public partial class LedgerModal : SimPanel
         var firstLossBlockRendered = false;
         for (var i = 0; i < cards.Count; i++)
         {
-            _cardGrid!.AddChild(BuildReturnCard(state, cards[i], i, warrantSaves, halts, xpSplits, rankUps, day));
+            _cardGrid!.AddChild(BuildReturnCard(state, cards[i], i, warrantSaves, halts, xpSplits, rankUps, closestCalls, day));
             if (i == 0)
             {
                 // U1: the attribution beat is the spine of the game (R11) — the tutorial tip now
@@ -503,6 +504,51 @@ public partial class LedgerModal : SimPanel
         }
 
         return builder.ToImmutable();
+    }
+
+    /// <summary>
+    /// P2-PROOF-18 (§11.11): tonight's closest call per hero, keyed by HeroId.Value -- read off the
+    /// SAME <see cref="SimAdapter.LastRevealedExpeditions"/> source and the identical
+    /// <see cref="SimAdapter.LastRevealedDay"/> staleness guard as <see cref="XpSplitsForDay"/>, so a
+    /// card whose night has rolled out of the adapter renders no closest-call line at all rather
+    /// than a stale one. <see cref="ClosestCallQuery.For"/> itself returns null for anyone who never
+    /// crossed the flee line -- most nights, and that silence is the correct default.
+    /// </summary>
+    private ImmutableDictionary<int, ClosestCallQuery.LowHpMoment> ClosestCallsForDay(GameState state, int day)
+    {
+        if (Adapter is null || Adapter.LastRevealedDay != day || Adapter.LastRevealedExpeditions.IsEmpty)
+        {
+            return ImmutableDictionary<int, ClosestCallQuery.LowHpMoment>.Empty;
+        }
+
+        var builder = ImmutableDictionary.CreateBuilder<int, ClosestCallQuery.LowHpMoment>();
+        foreach (var result in Adapter.LastRevealedExpeditions)
+        {
+            foreach (var hero in result.Party)
+            {
+                if (ClosestCallQuery.For(result, hero, state.Items) is { } moment)
+                {
+                    builder[hero.Value] = moment;
+                }
+            }
+        }
+
+        return builder.ToImmutable();
+    }
+
+    /// <summary>
+    /// P2-PROOF-18's own sentence. Every number comes from <paramref name="moment"/>, itself a
+    /// replay of the SAME recorded rolls <see cref="GameSim.Expedition.AttributionEngine"/> walks --
+    /// never a recommendation, never a counterfactual (law 12): what a Fine shield WOULD have done
+    /// is never said, only what the record already proves happened.
+    /// </summary>
+    private static string ClosestCallLine(string heroName, ClosestCallQuery.LowHpMoment moment)
+    {
+        var gear = moment.ArmorMarked
+            ? "in your own work"
+            : "in store-bought iron";
+        return $"{heroName} came up from floor {moment.Floor} at {moment.MinHp}/{moment.MaxHp} HP "
+            + $"against {MonsterName.Definite(moment.MonsterKind)} -- {gear}.";
     }
 
     /// <summary>
@@ -816,7 +862,8 @@ public partial class LedgerModal : SimPanel
         ImmutableDictionary<int, ImmutableList<ApprenticeWarrant.WarrantSave>> warrantSaves,
         ImmutableDictionary<int, ExpeditionHalt> halts,
         ImmutableDictionary<int, XpSplitQuery.Split> xpSplits,
-        ImmutableDictionary<int, string> rankUps, int night)
+        ImmutableDictionary<int, string> rankUps,
+        ImmutableDictionary<int, ClosestCallQuery.LowHpMoment> closestCalls, int night)
     {
         var wrap = Card($"LedgerCard_{index}");
         // U-T5: a fixed column width, not a stretch-to-parent VBoxContainer child — this card now
@@ -907,6 +954,18 @@ public partial class LedgerModal : SimPanel
                     rankLabel.Name = "LedgerRankUp";
                     rankLabel.AddThemeColorOverride("font_color", GameTheme.AccentColor);
                 }
+            }
+
+            // P2-PROOF-18: the closest call -- a survivor who dipped below the flee line tonight,
+            // named with the floor, the monster, and whether the gear they wore was your own work.
+            // ClosestCallQuery.For already returns null for anyone who never crossed that line, so
+            // most cards render nothing here -- the honest default, not a row that fires every
+            // night (the exact defect the beat-volume diet, P2-PROOF-19, removed from this panel).
+            if (closestCalls.TryGetValue(card.Hero.Value, out var closestCall))
+            {
+                var closestCallLabel = AddLabel(telling.Body, ClosestCallLine(card.HeroName, closestCall));
+                closestCallLabel.Name = "LedgerClosestCall";
+                closestCallLabel.AddThemeColorOverride("font_color", GameTheme.WarnColor);
             }
         }
 

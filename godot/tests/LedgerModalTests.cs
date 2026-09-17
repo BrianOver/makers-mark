@@ -10,6 +10,7 @@ using GameSim.Contracts;
 using GameSim.Drama;
 using GameSim.Expedition;
 using GameSim.Factions;
+using GameSim.Heroes;
 using GameSim.Kernel;
 using GameSim.Materials;
 using GdUnit4;
@@ -1081,6 +1082,182 @@ public class LedgerModalTests
         }
     }
 
+    // ── P2-PROOF-17: the XP-split and rank-up render assertions this shipped without (#880) ──────
+
+    private static readonly HeroId XpHeroId = new(9);
+
+    /// <summary>A one-hero, floors-cleared-2 night with an optional player-crafted killing-blow
+    /// beat and a chosen starting <see cref="Hero.Xp"/> — driven through the REAL
+    /// <c>ExpeditionRevealSystem</c> via <see cref="SimAdapter.AdvancePhase"/> (same idiom as
+    /// <see cref="WarrantSaveNight"/>), so the XP grant, the possible <see cref="HeroRankUp"/>, and
+    /// <see cref="SimAdapter.LastRevealedExpeditions"/> are all the REAL sim's own output, never a
+    /// hand-built stand-in for them.</summary>
+    private static GameState XpNight(int day, bool withBeat, int startingXp)
+    {
+        var hero = new Hero(
+            XpHeroId, "Kessa", ClassRegistry.VanguardId, Level: 1, MaxHp: 30, Gold: 0,
+            Gear: GearSet.Empty, Memories: ImmutableList<ItemMemory>.Empty, Alive: true,
+            DeepestFloorReached: 0, DiedOnDay: null) with { Xp = startingXp };
+
+        var beats = withBeat
+            ? ImmutableList.Create(new AttributionBeat(BeatType.KillingBlow, BeatItemId, XpHeroId, Floor: 2, Detail: "kill"))
+            : ImmutableList<AttributionBeat>.Empty;
+
+        var result = new ExpeditionResult(
+            Party: ImmutableList.Create(XpHeroId), TargetFloor: 2, DeepestFloorCleared: 2,
+            Floors: ImmutableList<FloorOutcome>.Empty,
+            Survivors: ImmutableList.Create(XpHeroId), Deaths: ImmutableList<HeroId>.Empty,
+            Beats: beats, Loot: ImmutableList<OreLoot>.Empty,
+            GoldEarnedByHero: ImmutableSortedDictionary<int, int>.Empty, VenueId: "mine");
+
+        return GameFactory.NewGame(5151) with
+        {
+            Day = day,
+            Phase = DayPhase.Evening,
+            Heroes = ImmutableSortedDictionary<int, Hero>.Empty.Add(XpHeroId.Value, hero),
+            PendingExpeditions = ImmutableList.Create(result),
+        };
+    }
+
+    [TestCase]
+    public void XpSplitLine_RendersForSurvivor_WithNumbersMatchingXpSplitQuery()
+    {
+        var ui = MountMainUi(new SimAdapter(XpNight(day: 1, withBeat: true, startingXp: 0)));
+        try
+        {
+            ui.Adapter.AdvancePhase(); // Evening -> Morning: the reveal grants XP for real
+            ui.Ledger.ShowFor(1);
+
+            var cardIndex = LedgerQuery.ReturnCards(ui.Adapter.CurrentState, 1).FindIndex(c => c.Hero == XpHeroId);
+            var line = Find<Label>(Find<Control>(ui.Ledger, $"LedgerCard_{cardIndex}"), "LedgerXpSplit").Text;
+
+            // 2 floors cleared, 1 credited KillingBlow beat -- the SAME two facts
+            // XpSplitQuery.For(result, hero) sums into Total.
+            var total = HeroXp.SurviveXp + 2 * HeroXp.PerFloorXp + HeroXp.PerBeatXp;
+            AssertThat(line).Contains($"{total} XP tonight");
+            AssertThat(line).Contains($"{HeroXp.SurviveXp} for coming home");
+            AssertThat(line).Contains("2 floors");
+            AssertThat(line).Contains($"{HeroXp.PerBeatXp} for what your mark did down there");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void XpSplitLine_HeroWithNoCreditedBeat_GetsTheHonestZeroBeatWording()
+    {
+        var ui = MountMainUi(new SimAdapter(XpNight(day: 1, withBeat: false, startingXp: 0)));
+        try
+        {
+            ui.Adapter.AdvancePhase();
+            ui.Ledger.ShowFor(1);
+
+            var cardIndex = LedgerQuery.ReturnCards(ui.Adapter.CurrentState, 1).FindIndex(c => c.Hero == XpHeroId);
+            var line = Find<Label>(Find<Control>(ui.Ledger, $"LedgerCard_{cardIndex}"), "LedgerXpSplit").Text;
+
+            // A hero who carried nothing player-crafted earned every point on their own -- the
+            // honest zero-beat wording, never a share they did not earn.
+            AssertThat(line).Contains("None of it your work.");
+            AssertThat(line).NotContains("what your mark did down there");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void RankUpLine_RendersOnlyWhenAHeroRankUpWasActuallyRecorded()
+    {
+        // Starting Xp 45 (Novice) + this night's 35 XP (10 survive + 10/floor*2 + 15 beat) = 80,
+        // crossing the 50-XP Delver threshold -- the REAL ExpeditionRevealSystem emits HeroRankUp.
+        var ui = MountMainUi(new SimAdapter(XpNight(day: 1, withBeat: true, startingXp: 45)));
+        try
+        {
+            ui.Adapter.AdvancePhase();
+            ui.Ledger.ShowFor(1);
+
+            var cardIndex = LedgerQuery.ReturnCards(ui.Adapter.CurrentState, 1).FindIndex(c => c.Hero == XpHeroId);
+            var card = Find<Control>(ui.Ledger, $"LedgerCard_{cardIndex}");
+            var rankLine = Find<Label>(card, "LedgerRankUp").Text;
+
+            AssertThat(rankLine).Contains("has risen to Delver");
+            AssertThat(rankLine).Contains($"{HeroXp.PerBeatXp} of tonight's");
+            AssertThat(rankLine).Contains("came from what your mark did.");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void RankUpLine_NeverRenders_WhenNoHeroRankUpFired()
+    {
+        // Same night, starting Xp 0: 0 + 35 = 35, never crossing the 50-XP Delver line -- the split
+        // still renders (proving the guard isn't accidentally hiding it), the rank-up line must not.
+        var ui = MountMainUi(new SimAdapter(XpNight(day: 1, withBeat: true, startingXp: 0)));
+        try
+        {
+            ui.Adapter.AdvancePhase();
+            ui.Ledger.ShowFor(1);
+
+            var cardIndex = LedgerQuery.ReturnCards(ui.Adapter.CurrentState, 1).FindIndex(c => c.Hero == XpHeroId);
+            var card = Find<Control>(ui.Ledger, $"LedgerCard_{cardIndex}");
+
+            AssertThat(card.FindChild("LedgerXpSplit", recursive: true, owned: false)).IsNotNull();
+            AssertThat(card.FindChild("LedgerRankUp", recursive: true, owned: false)).IsNull();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void XpSplitAndRankUpLines_OnceTheNightRollsOutOfTheAdapter_RenderNothing()
+    {
+        // Same recorded facts as the rank-up night above (hand-built EventLog + a HeroRankUp event,
+        // the DrivenDay() idiom), but NEVER driven through SimAdapter.AdvancePhase -- so
+        // SimAdapter.LastRevealedExpeditions stays at its empty default exactly as it does for
+        // SurvivorCard_OnAStaleDay_FallsBackToPlainReturned. XpSplitsForDay's own staleness guard
+        // must render nothing at all, not a stale number, and RankUpLine can never fire on its own
+        // even though the HeroRankUp event is sitting right there in EventLog.
+        var hero = new Hero(
+            XpHeroId, "Kessa", ClassRegistry.VanguardId, Level: 2, MaxHp: 30, Gold: 0,
+            Gear: GearSet.Empty, Memories: ImmutableList<ItemMemory>.Empty, Alive: true,
+            DeepestFloorReached: 2, DiedOnDay: null) with { Xp = 80 };
+
+        var events = ImmutableList.Create<GameEvent>(
+            new PartyReturned(ImmutableList.Create(XpHeroId)) { Id = new EventId(1), Day = 1 },
+            new LootIncomeReceived(XpHeroId, 0) { Id = new EventId(2), Day = 1 },
+            new HeroRankUp(XpHeroId, "Delver") { Id = new EventId(3), Day = 1 });
+
+        var state = GameFactory.NewGame(5151, ImmutableSortedDictionary<int, Hero>.Empty.Add(XpHeroId.Value, hero))
+            with
+            {
+                EventLog = events,
+            };
+
+        var ui = MountMainUi(new SimAdapter(state));
+        try
+        {
+            ui.Ledger.ShowFor(1);
+
+            var cardIndex = LedgerQuery.ReturnCards(ui.Adapter.CurrentState, 1).FindIndex(c => c.Hero == XpHeroId);
+            var card = Find<Control>(ui.Ledger, $"LedgerCard_{cardIndex}");
+
+            AssertThat(card.FindChild("LedgerXpSplit", recursive: true, owned: false)).IsNull();
+            AssertThat(card.FindChild("LedgerRankUp", recursive: true, owned: false)).IsNull();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
     // ── #167: the survivor card's purse chip and the day's earned gold are different quantities,
     // and the "Returned safely" status must say what the sim's ExpeditionHalt actually recorded ──
 
@@ -1841,7 +2018,7 @@ public class LedgerModalTests
                 "Emberbite turned a lethal Deep Ghoul blow. Without it, Torvald falls.")
             { Id = new EventId(5), Day = 1 });
 
-        // The beat-volume sweep's fold gate (P2-PROOF-16): a KillingBlow beat only renders its own
+        // The beat-volume sweep's fold gate (P2-PROOF-19): a KillingBlow beat only renders its own
         // row when TellingPanel.IsDecisiveKillingBlow can prove it — which needs a retained
         // ExpeditionResult to recompute against (TellingQuery.Build). Both Notched Axe kills above
         // are genuinely decisive at these numbers: Bram/Torvald are Level 2 (base vanguard attack
@@ -2090,7 +2267,7 @@ public class LedgerModalTests
         }
     }
 
-    // ── P2-PROOF-16 (beat-volume sweep, 2026-09-11): the fold ─────────────────────────────────
+    // ── P2-PROOF-19 (beat-volume sweep, 2026-09-11): the fold ─────────────────────────────────
     //
     // 97.5% of every beat the sim emits is KillingBlow, with the same item repeating on 96.5% of
     // hero-cards (MAKERS-MARK.md's own "beat-volume sweep" section) — because KillingBlow is the
