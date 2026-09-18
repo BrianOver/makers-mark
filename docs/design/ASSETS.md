@@ -10,11 +10,11 @@ fix it or delete it (CLAUDE.md rule 8). The counts in §1 predate the wave's del
 the repo, so re-run the commands before quoting any of them.
 
 ```bash
-ls godot/assets/art/*.png | wc -l          # 355 after the 2026-08-14 variation pools (was 227)
+ls godot/assets/art/*.png | wc -l          # 469 on 2026-09-18 (432 diffuse + 37 normals); 355 after the 2026-08-14 pools
 ls godot/assets/icons/*.svg | wc -l        # 28 icons (9 glyphs + 19 ore)
 ls godot/assets/audio/*.ogg | wc -l        # 4 music beds
 ls godot/assets/audio/narrator/*.ogg | wc -l  # 49 narrator lines
-ls art/build/*.json | wc -l                # 92 provenance records: 84 SDXL + 8 backfilled by U9
+ls art/build/*.json | wc -l                # 349 on 2026-09-18: 147 locked SDXL + 201 procedural + 1 unreproducible-legacy
 ```
 
 The authoritative wiring check is an engine test, not this document:
@@ -23,7 +23,7 @@ loudly if a referenced id stops resolving. It does **not** run in the fast lane.
 
 ---
 
-## 1. Images — 389 files
+## 1. Images — 469 files (2026-09-18 total; the table rows below are the 2026-08-14 breakdown)
 
 *(The families that lost files are the deleted rows in §5 — sprites, faction crests, `town-*`,
 `shop-interior`, `town2d-*` candidates — none of which appear here, because none of them were ever
@@ -130,13 +130,13 @@ Three exist. Two are alive.
 **A. SDXL / ComfyUI** — `art/specs/<module>/*Specs.cs` declares an `AssetSpec`; ComfyUI (SDXL base
 1.0, settings frozen in `ArtTrackProfiles.cs`) renders candidates; `cutout.py --trim` segments;
 `normalmap.py` derives the `_n` map; provenance lands in `art/build/<id>.build.json` (seed, model,
-sampler, sha256). 84 assets carry that provenance. **Not byte-reproducible across GPUs** — the
+sampler, sha256). 147 assets carry that provenance (2026-09-18). **Not byte-reproducible across GPUs** — the
 guarantee is the committed PNG plus its hash, not re-derivable pixels.
 
 **B. Procedural pixel art** — pure deterministic Python in `art/pipeline/gen-*.py` and
 `tools/art/gen_town_sprites.py`. No GPU, no model. Colours are sampled from committed sibling PNGs
 rather than picked by eye, and **every script has a `--check` flag that re-renders in memory and
-diffs against the committed file.** 219 assets (the 2026-08-14 variation pools added 128). This is
+diffs against the committed file.** 201 build records carry `Status: procedural` (2026-09-18). This is
 the strongest provenance tier in the repo.
 
 **C. 3D — gone.** The TRELLIS/Blender tooling from before the 2.5D pivot was deleted on 2026-08-13

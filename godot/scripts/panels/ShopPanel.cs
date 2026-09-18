@@ -355,6 +355,14 @@ public partial class ShopPanel : SimPanel
             // card (History entries + maker's mark + forge sub-scores) on click.
             AddButton(controlsRow, $"Provenance_{itemId.Value}", "History", Verdict.Ok, () => OnShowProvenance(itemId));
 
+            // P2-SCREEN-35 ("follow one piece", decision-neutral link 3 verb): mark this piece as
+            // the one the send-off and the night card lead with. Client-side toggle, not a queued
+            // sim action — no PlayerAction exists for it because it changes no outcome (law 3).
+            var following = FollowedItem.Current == itemId;
+            AddButton(
+                controlsRow, $"Follow_{itemId.Value}", following ? "Following ★" : "Follow", Verdict.Ok,
+                () => ToggleFollow(itemId));
+
             // U8 (§11.12 plan, "shop counters identical and redundant — condense"): Present/Suggest
             // used to render in CounterPanel.BuildShelfActions — a SECOND full iteration of this
             // same Player.Shelf, stacked directly above this list in the same scroll, same item/
@@ -703,6 +711,25 @@ public partial class ShopPanel : SimPanel
 
         EnsureBuilt();
         _provenance!.ShowFor(Adapter.CurrentState, itemId);
+    }
+
+    /// <summary>P2-SCREEN-35 ("follow one piece"): mark <paramref name="itemId"/> as the one piece
+    /// the send-off and the night card lead with, or unmark it if it is already the one followed —
+    /// one at a time, so pressing Follow on a second piece MOVES the mark rather than adding a
+    /// second. Client-side only (<see cref="FollowedItem"/>'s own doc): no <c>PlayerAction</c>,
+    /// no <c>Adapter</c> call, so a Refresh is the only thing needed to repaint the button.</summary>
+    private void ToggleFollow(ItemId itemId)
+    {
+        if (FollowedItem.Current == itemId)
+        {
+            FollowedItem.Clear();
+        }
+        else
+        {
+            FollowedItem.Set(itemId);
+        }
+
+        Refresh();
     }
 
     /// <summary>Player crafts that could go on the shelf: marked, not shelved, not on a hero's back.</summary>

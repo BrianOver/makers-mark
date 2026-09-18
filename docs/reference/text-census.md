@@ -579,7 +579,7 @@ Client-side reforge mirror reasons (LegendsWall.cs:364-393, tooltip whyNot): "Re
 ### 5.6 The memorial rite's other voices
 
 - Advisor: "Honor {Hero}'s memorial — their {gear} still waits at the stone." (sim/GameSim/Advisor/ObjectiveAdvisor.cs:66)
-- Ticker: "The town bids farewell to {Hero} — the rite is done." (AdventureTicker.cs:182-183)
+- Ticker: "The town bids farewell to {Hero} — the rite is done." (AdventureTicker.cs:182-183 — file deleted P2-MEMORY-12, #863)
 - Kernel refusal: "No memorial recorded for {HeroId} — nothing to honor." (sim/GameSim/Drama/FarewellHandlers.cs:34)
 - CLI: "  queued: honor H{N}'s memorial (Evening rite)" (sim/GameSim.Cli/Program.cs:581)
 
@@ -887,7 +887,7 @@ Every verb echoes "  queued: {description}": "queued: craft {id} with {mat}{ at 
 
 **L4 — "That offer is gone." for an offer that is still there.** FriendlyRejection maps any reason starting "Only " to "That offer is gone." (MainUi.cs:2315-2318); the kernel reason it maps is "Only {N} {mat} offered; asked for {N}." (OreMarketHandlers.cs:76) — a quantity mismatch on a live offer. The player who asks for 5 of a 3-unit offer is told the offer vanished.
 
-**L5 — A threat the sim can never carry out.** "{Hero} is talking about leaving town." (MainUi.cs:2059; AdventureTicker.cs:194-195) fires on a confidence crossing (sim/GameSim/Economy/GuildAssessmentSystem.cs:156-160), but no hero-departure mechanism exists anywhere in the sim (no event, no roster removal — and the design doc pins it: "No wound outlives the night, no hero ever quits", docs/design/THE-GAME.md §7). Literally worded as talk, but it stages a stake the game cannot pay off, twice (toast + ticker).
+**L5 — A threat the sim can never carry out.** "{Hero} is talking about leaving town." (MainUi.cs:2059; AdventureTicker.cs:194-195 — file deleted P2-MEMORY-12, #863) fires on a confidence crossing (sim/GameSim/Economy/GuildAssessmentSystem.cs:156-160), but no hero-departure mechanism exists anywhere in the sim (no event, no roster removal — and the design doc pins it: "No wound outlives the night, no hero ever quits", docs/design/THE-GAME.md §7). Literally worded as talk, but it stages a stake the game cannot pay off, twice (toast + ticker).
 
 ### 10.2 Jargon leaks — developer words that reached the player
 
@@ -935,7 +935,7 @@ Every verb echoes "  queued: {description}": "queued: craft {id} with {mat}{ at 
 
 ### 10.4 Silences — it happened, and the game said nothing
 
-**S1 — A counter sale never becomes town memory (link 5 gap for link 2's flagship channel).** `CounterSaleClosed` has no ticker case (godot/scripts/ui/AdventureTicker.cs — only `ItemSold` renders; grep confirms no CounterSaleClosed arm) and no gossip subject (sim/GameSim/Drama/GossipGenerator.cs never reads it; the only sim reader outside the counter itself is the gold ledger, GoldLedger.cs:72). The one sale the player closes face to face — the game's flagship interaction — is the one sale the town never mentions. (tone-register.md already names the missing "ShopPack (itemBought…)" as wave-D work.)
+**S1 — A counter sale never becomes town memory (link 5 gap for link 2's flagship channel).** `CounterSaleClosed` has no ticker case (godot/scripts/ui/AdventureTicker.cs — file deleted P2-MEMORY-12, #863 — only `ItemSold` renders; grep confirms no CounterSaleClosed arm) and no gossip subject (sim/GameSim/Drama/GossipGenerator.cs never reads it; the only sim reader outside the counter itself is the gold ledger, GoldLedger.cs:72). The one sale the player closes face to face — the game's flagship interaction — is the one sale the town never mentions. (tone-register.md already names the missing "ShopPack (itemBought…)" as wave-D work.)
 
 **S2 — Escrow refunds move gold with no words at all.** A lapsed bounty and a dead-acceptor refund both credit the player's purse and emit NO event (sim/GameSim/Bounties/BountySystems.cs:62-79 — `continue` with no `events.Emit`), so no toast, no ticker line, and no gold-ledger row (GoldLedger renders from events) exist. The tutorial promises "the gold comes back" (TutorialFlow.cs:612); it does, silently — gold appears with no sentence attached.
 
@@ -981,7 +981,7 @@ Where repetition is already engineered against, for the rework's reference: the 
 
 - Does the Lessons book ever render a raw id heading in practice? `idle-help:{Step}` and `refusal-x{N}:{...}` ids are consumed through the same engine (MainUi.cs:1088-1092,1291-1292) but have no `FirstTouchTitles` entry — does `LessonsPanelFirstTouchTitleTests`' source scan cover interpolated ids, or can a player's book show a card headed "idle-help:OpenCounter"?
 - Does the severed sentence in the rendered-pixels finding come from the BuyMaterial TeachNote's "…press E to use it…" (TutorialFlow.cs:536) wrapping, or from an advisor line? No string "press E to enter the workshop" exists verbatim in the repo — worth reproducing the exact render before rewording either source.
-- Are the four `WayIn`-less surfaces (Heroes/Bestiary/Chronicle/Pip — TutorialSurfaceRegistry.cs:306,326-328) reachable enough that their copy is ever read? The Bestiary's only door has been unwired "since the pre-2.5D pivot" per its own note — is the whole Bestiary panel (its 8 strings) currently dead copy?
+- Are the `WayIn`-less surfaces (Heroes/Chronicle/Pip — TutorialSurfaceRegistry.cs:306,326-328) reachable enough that their copy is ever read? (The Bestiary, once the fourth, was deleted in #770 rather than given a door; its 8 strings went with it.)
 - Does the counter's "Prepare" phase word (PhaseVocab.cs:44) ever render long enough to be read, given counter sessions hold the Morning?
 - `HeroesChip` (MainUi.cs:1892) — does it carry a tooltip naming what "{alive}/{total}" counts, or is it the one unlabeled HUD chip?
 

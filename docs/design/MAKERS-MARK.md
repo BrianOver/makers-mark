@@ -71,15 +71,15 @@ never blurs the two.
 | Emberfall Foundry | **BUILT AND LIVE** — in `LiveRotation` with committed art and a priced ore ladder (firebrick..heartcoal) | `VenueRegistry.cs:50-64`, `MaterialRegistry.cs:94-105`; shipped by #453 (rung live) + #462 (Foundry art) |
 | Economy heartbeats: rent, Guild assessment + Confidence, rival share, destitution floor, bounty D_q + board minimums | **BUILT** | `RentSystem.cs`, `GuildAssessmentSystem.cs`, `BountyRules.cs` |
 | The four endgame gold sinks: UpgradeForge, BuyForgeSupply, MasterworkAttempt, CommissionLegendaryWork | **BUILT** (wave U3/U4, 2026-08-07, R2 ruled build). All four now have buttons; all 25 actions have a surface. *Corrected: this row previously said "3 of 4 have bell-tray strings waiting" — it was **2 of 4**. The third `PendingVerbVocab` entry is `SetProfessions`, not a sink, and the other two sinks resolve immediately so they never needed a tray entry — which is precisely why nothing flagged them.* | `godot/scripts/panels/ForgePanel.cs` (Foundry section); `godot/tests/ActionReachabilityCensusTests.cs` |
-| Three-act arc: act flips, ending screen (world stays open) | **BUILT** — the ending renders *when it fires*; reachability is unasserted (defect below) and unconfirmed on a real screen | `ArcDirectorSystem.cs`; `panels/LegendsWall.cs` |
+| Three-act arc: act flips, ending screen (world stays open) | **BUILT** — reachability asserted two-sided since #455 (2026-08-11, P3's forward ladder); the scripted full-length client-HUD run is still owed (§11.4 P3) | `ArcDirectorSystem.cs`; `panels/LegendsWall.cs`; `sim/GameSim.Tests/Balance/` |
 | The climax's *content* (Final Commission / Warden of the Heart) | **DESIGNED** — `ClimaxReached` fires as a bare seam, by its own admission | `Contracts/Events.cs:293-297`; §9.7 |
 | Title/system menus, tutorial, audio pass one, machine playtest harness | **BUILT** | |
-| Night leads with the mark (reveal ordering — beats first, sale-and-deed grouped) | **DESIGNED** (loop-plan U5/H3) — cheapest unshipped piece of the answer half | |
+| Night leads with the mark (reveal ordering — beats first, sale-and-deed grouped) | **BUILT** (#396, 2026-08-07, wave U1 / §11.4 P1) | `godot/scripts/panels/LedgerModal.cs` |
 | Send-off slate (H4) | **BUILT** (wave U2, 2026-08-07). *Correction: this row was stale — `MineWatch.RumoredLines` and `JourneyStream.DepartureLine` already rendered "X carries your Y" at departure, so the headline passed at HEAD with zero code. What was actually owed, and is now done: the manifest was capped at 2 lines (a party of three each carrying your work silently dropped one), it was buried in a scrolling strip rather than staged as a moment, and it had no honest empty state.* | `godot/scripts/panels/MineWatch.cs` |
-| Deep-stakes slate (H5), vigil hero-chips (V-3) | **DESIGNED** (hero-facing-day) — H5 still behind P5/R1, V-3 still behind R1 | |
-| Tavern's two acts (commission handshake AM / ore handshake PM) | **DESIGNED — in flight** as PR #393 at this writing | |
+| Deep-stakes slate (H5), vigil hero-chips (V-3) | H5 **BUILT** as `P2-LONG-27` (#795, 2026-09-14); V-3's gate R1 was retired as moot 2026-09-03 (§11.3), so the hero-chips carry no gate | `godot/scripts/panels/MineWatch.cs` |
+| Tavern's two acts (commission handshake AM / ore handshake PM) | **BUILT** (#393, 2026-08-07) | `godot/scripts/panels/TavernPanel.cs` |
 | Building-minigames wave (alchemy Draw, tanning Dip, engineering act split) | **DESIGNED** — sequenced after the loop work by its own doc | |
-| Demand-hazard engine, demand-gated profession unlocks, Master Voss, Ledger-of-Legends screen | **DESIGNED** (five-pillars Waves 2/4/5) — not started | §9.4 |
+| Demand-hazard engine, demand-gated profession unlocks, Ledger-of-Legends screen | **DESIGNED** (five-pillars Waves 2/4/5, now `P2-LONG-02..07`) — not started. *Voss himself is no longer in this row: he stands in the plaza as the Guild Assessor (`Town2D.cs`, `PledgePanel.cs`).* | §9.4 |
 | Erenshor M4 (death-cause typing), M5 (rivalry) | **DESIGNED — parked** | |
 | Registry manifest enforcement (the ledgers' teeth) | **DESIGNED** — and the ledgers have drifted twice for its absence | |
 | Prestige era / soft-fail reset (U-D5) | **WISHED-FOR** — soft-fail latches one event; nothing follows | `GuildAssessmentSystem.cs:25-27` |
@@ -121,31 +121,14 @@ Stale claims still sitting in older docs, each one now false in code:
 
 ### Known defects and drift on this commit — recorded, deliberately not fixed in this PR
 
-- **`ActionBudget.ConsumesSlot` is fiction.** The predicate names four slot-consuming action
-  types and its test pins "exactly the four" (`Contracts/ActionBudget.cs:26-27`,
-  `ActionBudgetTests.cs:18-31`) — but **nine** handlers actually decrement the counter
-  (grep `ActionSlotsRemaining - 1`), and no runtime code calls the predicate at all
-  (`MarketShareSystem` reads the counter directly). Any surface built on it will
-  under-report what spends a slot. One cleanup PR; the test must be rewritten, not appeased.
-- **A worn trinket can be sold twice.** The stock check rejects shelving gear a hero wears —
-  but only checks Weapon/Shield/Armor and omits Trinket (`Economy/ShopHandlers.cs:59-66`),
-  while trinket recipes exist and `GearSet` has the slot. A player-crafted trinket a hero is
-  wearing can be re-shelved and sold to a second hero while the first still wears it.
-  Compare `HeirloomHandlers.WoreItem`, which includes Trinket. Likely real defect.
-- **The balance gate cannot see a missing finale.** Every floor-5/Act-III/Ending assertion
-  is a one-sided trivialization ceiling: `FirstFloor5Day` initializes to `int.MaxValue` and
-  is only asserted `>= 8` (`BalanceSimTests.cs:45,86-87`), and `ArcBalanceTests.cs:43-52`
-  wraps its Act-III and Ending checks in `if (> 0)` — a campaign that never climaxes and
-  never ends passes CI green. The one full-length client recording (90 days, 2026-07-27)
-  never left Act II; nothing since has re-confirmed Act III on an actual screen. The
-  campaign's finale — the arc's whole payoff — is protected by no test. (§11 P3.)
-- **Stale comments that lie to readers**: `ProfessionHandlers.cs:16-18` claims the handler
-  "is NOT yet wired" (it is — `GameComposition.cs:84`); `CraftingHandlers.cs:8-9` and
-  `ShopHandlers.cs:10-11` say "ALL THREE phases" (the day has five); `Actions.cs:149` calls
-  HonorMemorial "Evening/Night-legal" (no Night phase exists — it is Evening-only).
 - **Vestigial**: `Bounty.Paid` is never set true (payout removes the bounty instead);
-  `BeatType.ToolAssist` has no emitter (deliberate contract-ahead-of-content); talent
-  points cost nothing ("talent-point economy deferred" — `CraftingHandlers.cs:332`).
+  `BeatType.ToolAssist` has no emitter (deliberate contract-ahead-of-content — its emitter is
+  `P2-LONG-03`).
+
+The four defects this list opened with are in `git log`, not here: `ConsumesSlot` (#499,
+2026-08-14), the worn-trinket double sale (#667, T10 U48), the one-sided finale gate (#455,
+2026-08-11, P3), and the stale-comment sweep (#499, #667). "Talent points cost nothing" stopped
+being true with #549 — a talent unlock now needs a Forge Tier and spends a slot.
 
 Appendix A §7 carries the full dead-and-vestigial list with line cites.
 
@@ -299,7 +282,7 @@ like four skills; can you name three heroes by personality; does a legend read a
 does the ending land; on which day does it get boring. Machine playtests have taken this as
 far as they can. **This is not a question so much as the one item only the owner can clear.**
 
-### 9.9 The provisioning irony — is the trap the point?
+### 9.9 The provisioning irony — RETIRED AS MOOT 2026-09-03 (R1, §11.3; re-measured by `P2-LONG-23` #678 and `P2-LONG-24` #703)
 
 Both of these are true, both are measured, and both are pinned in the balance suite:
 
@@ -346,7 +329,9 @@ test's own in-source comment and an independent reviewer who read the same numbe
 sweep re-runs until supply trades depth against survival — a real dilemma with two goods;
 *then* "the well-supplied dare too much" can go into gossip honestly.
 
-### 9.10 The unreachable endgame — do the four sinks get screens, or get cut from v1?
+### 9.10 The unreachable endgame — RESOLVED, shipped 2026-08-07 (R2 ruled build; #396, wave U3/U4)
+
+The question as it stood, kept for the record — every sentence below describes the tree before #396:
 
 `UpgradeForgeAction`, `BuyForgeSupplyAction`, `MasterworkAttemptAction`, and
 `CommissionLegendaryWorkAction` are implemented, tested, balance-integrated, and reachable
@@ -610,10 +595,10 @@ tally-ending.
 | P2 | **The send-off names your work** (H4 / Q-1): the departure slate captions which marchers carry your items | session, godot-only | nothing (reads better after P1) | Hero: the named marchers. Ledger line: the antecedent Night points back to | Landed 2026-08-07 (wave U2) — and see the §8 correction: the naive version was already shipped; what was owed was the 2-line cap, the staging, and an honest empty state |
 | P3 | **Protect the finale**: two-sided balance assertions (floor 5 *reached* by day ≤N on the main seed; ending *fires* within 100 days) + one scripted full-length client run confirming Act III on the real HUD | session, tests-only | nothing | Invariant: the campaign has an end. (Chain-test clause 3 — protect the substrate) | Landed 2026-08-10 (forward-ladder L0-L7, closes draft #413). Venues are a forward ladder now; routing keys on `Hero.LadderRank`, not the power latch that stranded parties. Two-sided and green on the main seed (rung-0 clear day 18, Act III day 18, Climax day 26, Ending day 31) and on the 10-seed sweep (Ending ≤ day 36). **Reopened 2026-09-05, half-closed 2026-09-06 (P2-END-01).** The ladder's rung-0 gate was absorbing — a party that plateaued under it could never climb out, because the blacksmith's table stopped at Tier 3 while the Mine's own deeper ore had no recipe at all. Option 1 of §11.8.1 shipped (one Tier-4 mithril row) and `BaselinePlayer` now reaches an ending on **200 of 200** seeds, up from 198, with the healthy seeds' ending-day median unmoved at 28. `ApprenticePlayer`'s 156-of-200 figure did NOT move and never could: it is a property of that harness SCRIPT, which crafts one Tier-1 recipe forever — see §11.8.1's close-out before quoting it. Still open: the game says nothing when a party IS walled (§11.8.1 option 4), and the scripted full-length client-HUD run |
 | P4 | **The human feel-test** (§9.8): `play.ps1`, one real evening, the five written questions — with the fifth (the boredom day) checked against the wall, now two measured numbers: `P2-LONG-01`'s menu-novelty wall (median day 25.0, 20-seed sweep, was assumed day-11, unmeasured) and `P2-LONG-26`'s felt-routine wall (median day 12.0, same sweep machinery — the sharper predictor of boredom specifically) | an evening (owner) | P1+P2 merged — *with a deadline, not a dependency* (see ties) | Not a build item — the gate that rules 9.3, 9.5, 9.7, confirms R4/R6, and confirms both re-dated walls from the human side | OPEN — **put it on the calendar now** (§12, review C: the bottleneck is the owner, not the agents) |
-| P5 | **The vigil branch**: (a) surface the irony, or (b) retune wave, or (c) damp compensation — V-3's hero-chips ride whichever branch wins | (a) session / (b) wave + **re-baseline** / (c) session-wave + **re-baseline** | **R1** | Hero: the camped party. Ledger line: the delivery's `Provisioned`/`PotionLifesave` beat — or the death delta, depending on the branch | BLOCKED (R1) |
+| P5 | **The vigil branch**: (a) surface the irony, or (b) retune wave, or (c) damp compensation — V-3's hero-chips ride whichever branch wins | (a) session / (b) wave + **re-baseline** / (c) session-wave + **re-baseline** | **R1** | Hero: the camped party. Ledger line: the delivery's `Provisioned`/`PotionLifesave` beat — or the death delta, depending on the branch | MOOT — R1 retired 2026-09-03 (§11.3): the irony's precondition is unconstructible since #328; the live defect is `P2-LONG-24` (#703) and the re-aim is `P2-LONG-25` |
 | P6 | **Endgame surfaces**: buttons + bell-tray wiring for UpgradeForge, BuyForgeSupply, MasterworkAttempt, CommissionLegendaryWork | ~2 sessions, godot-only | R2 — **RULED: build** | Hero: whoever carries the guaranteed Masterwork. Ledger line: the attempt's cost and the resulting item's beats | Landed 2026-08-07 (wave U3/U4). Dominance measured before shipping the buttons: 17.0% of crafted value flows through purchased attempts at Tier II with a 5000g reserve — hand-work keeps the field. `BaselinePlayer` untouched, no re-baseline |
 | P7 | **The day-11 program**: demand-hazard engine + demand-gated profession debuts (five-pillars Wave 2) | **wave + Contracts micro-PRs + re-baseline** — the expensive one; needs its own plan doc written against this section | P4 (re-confirm the question shortage before the biggest spend) | Hero: the one who needs what only a Tanner or Engineer makes this week. Ledger line: the typed demand fulfilled; `BeatType.ToolAssist` finally gets its emitter | BLOCKED (P4) |
-| P8 | **Finish the hero-facing day**: H5 stakes slate → H6 morning aims → H7 survivor's handshake | 3 sessions, godot-side | P1/P2 (slate patterns) | Each carries the hero-facing-day doc's own per-item ledger lines | OPEN after P1/P2 |
+| P8 | **Finish the hero-facing day**: H5 stakes slate → H6 morning aims → H7 survivor's handshake | 3 sessions, godot-side | P1/P2 (slate patterns) | Each carries the hero-facing-day doc's own per-item ledger lines | H5 landed 2026-09-14 as `P2-LONG-27` (#795); H6/H7 OPEN |
 | P9 | **The Final Commission climax** (§9.7) | wave; likely **Contracts + re-baseline** | P4 (sequencing only — **R6 rules it owed**; P4 can waive it only with an unexpectedly strong verdict on the tally-ending) | Hero: the chosen bearer at the Heart. Ledger line: the commission fulfilled at the climax | OWED (R6), after P4 |
 
 **Ordering ties, named with tiebreaks:**
@@ -634,17 +619,10 @@ tally-ending.
   the next three PRs, and no further document-writing lap may displace it.
 - **P6 vs P7** — if R2 says build, P6 goes first: one-tenth the cost, no re-baseline, and
   P7 needs its own plan ceremony regardless.
-- **P5 vs P8's H5** — P5 (the vigil branch) lands before the H5 stakes slate: H5 stages the
-  camp signal that R1's branch may retune, and #392 already demonstrated what building
-  presentation on an unruled signal costs (§9.9). (Adopted from §12, review C — its one
-  insertion into the blessed order.)
 
 **Riders** (small correctness work that never displaces a path item — it rides with the
-first session touching its area): the worn-trinket double-sell fix (§8 defects — a §2
-link-2 honesty break, sim-side, draw-free so no re-baseline expected); the
-`ConsumesSlot` predicate rewrite with its test corrected rather than appeased; the stale
-comment sweep (`ProfessionHandlers`, `CraftingHandlers`, `ShopHandlers`, `Actions.cs:149`);
-the counter honesty-gap copy fix (§9.5's amendment — the surface stops implying a walk risk
+first session touching its area; the worn-trinket fix, the `ConsumesSlot` rewrite and the
+stale-comment sweep have ridden — #667, #499): the counter honesty-gap copy fix (§9.5's amendment — the surface stops implying a walk risk
 the resolver does not roll, until/unless the 9.5 tuning wave adds a real one).
 
 **Design notes adopted from §12** (bind the items they name, cost nothing today):
@@ -2594,7 +2572,7 @@ changes when it is done. A regression pin now holds that.
 | U30 | The proof gets a row | `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/panels/LedgerModal.cs` | U21, U29 |
 | U32 | The memory gets a row, and graduation is event-shaped | `godot/scripts/ui/TutorialFlow.cs`, `godot/scripts/panels/LegendsWall.cs` | U21, U30 |
 | U33 | Her graduation goodbye (zero code today), and re-ranking the cold-open + greedy-rule lines from Lesson to Act (4 of 6 lines already shipped; proof and death nights are already right) | `godot/scripts/ui/MentorVoice.cs`, `godot/scripts/ui/TutorialFlow.cs` | U29, U30, U32 |
-| U34 | She says what she's seen | `godot/scripts/ui/MentorVoice.cs` | U4, U33 |
+| U34 | She says what she's seen | `godot/scripts/ui/MentorVoice.cs` | U33 |
 | U35 | She leaves | `godot/scripts/town2d/InteriorLayout2D.cs`, `godot/scripts/ui/MentorVoice.cs` | U32, U33 |
 | U36 | She has a body and a face | `art/specs/`, `godot/scripts/ui/MentorBanner.cs` | U33 |
 | P2-SCREEN-34 | The dead ASCII-grid path stops accepting town-cast ids (root cause of U36's blocked art) | `tools/art/gen_town_sprites.py` | — | [G] |
@@ -2612,7 +2590,11 @@ changes when it is done. A regression pin now holds that.
 | U49 | A player can set a price, and a test proves it | `godot/tests/HumanPlayer.cs`, `godot/tests/ShopPanelTests.cs` | — |
 | U50 | The cast stops scattering | `godot/scripts/town2d/Town2D.cs`, `godot/scripts/town2d/HeroActor2D.cs`, `godot/scripts/town2d/TownsfolkNpc2D.cs` | — |
 | U51 | Lantern lights | `godot/scripts/town2d/Town2D.cs`, `godot/scripts/town2d/TownLayout2D.cs` | — |
-| U52 | Per-class attack and impact frames | `tools/art/gen_town_sprites.py`, `godot/scripts/panels/DelveStage.cs` | U50 (art rig only) |
+| U52 | Per-class attack and impact frames | `tools/art/gen_town_sprites.py`, `godot/scripts/panels/DelveStage.cs` | U50 |
+
+U52 needs U50 for its art rig only, nothing else of it. U34 used to name wave 1's U4 ("Bryn answers on
+her own surface", `MentorStationLiveTests`) as well; that unit is in `git log` (#618 retired the wave's
+rows), so the cell names only what is still ahead of it.
 
 ---
 
@@ -4783,24 +4765,24 @@ name (§11.6 rule 4).
 | P2-MEMORY-11 | The item pages (the fallen's page is P2-MEMORY-10's shell, already shipped) | `godot/scripts/panels/LegendsWall.cs`, `godot/scripts/panels/ProvenanceCard.cs` | — | [G] |
 | P2-MEMORY-13 | `ChronicleComposer` and the fifteen predicates | new `sim/GameSim/Chronicle/ChronicleComposer.cs`, `sim/GameSim.Tests/` | — | [S] |
 | P2-MEMORY-15 | `BountyRefunded` — the silent refund gets an event | `sim/GameSim/Contracts/Events.cs`, `sim/GameSim/Bounties/BountySystems.cs` `evidence:sim/GameSim/Contracts/Events.cs:BountyRefunded` | — | [S][C][GOLD] |
-| P2-MEMORY-16 | `Fleeced` on the close event; fleece and pinned gossip | `sim/GameSim/Contracts/Events.cs`, `sim/GameSim/Counter/HaggleResolver.cs`, `sim/GameSim/Drama/GossipGenerator.cs` `evidence:sim/GameSim/Contracts/Events.cs:Fleeced` | P2-MEMORY-15 (serialize) | [S][C][GOLD] |
+| P2-MEMORY-16 | `Fleeced` on the close event; fleece and pinned gossip | `sim/GameSim/Contracts/Events.cs`, `sim/GameSim/Counter/HaggleResolver.cs`, `sim/GameSim/Drama/GossipGenerator.cs` `evidence:sim/GameSim/Contracts/Events.cs:Fleeced` | P2-MEMORY-15 | [S][C][GOLD] |
 | ⚑ P2-MEMORY-20 | The forecast gets a face (research M3) | `godot/scripts/ui/ArcScenes.cs`, `godot/scripts/panels/RaidForecastBoard.cs` | — | [G] |
 | ⚑ P2-MEMORY-21 | The reforge row previews the lineage it will write, from the one template that writes it | `sim/GameSim/Crafting/HeirloomHandlers.cs`, `godot/scripts/panels/LegendsWall.cs` | — | [S] |
 | ⚑ P2-MEMORY-22 | The east field remembers — the town gets an outdoor memory, one lantern per fallen hero | `godot/scripts/town2d/TownLayout2D.cs`, `godot/scripts/town2d/Town2D.cs` | — | [G] |
 | P2-MEMORY-23 | "Famous" stops counting cave rats — the legend predicate counts decisive deeds, not every beat | `sim/GameSim/Drama/LegendQuery.cs`, `sim/GameSim/Drama/ArcDirectorSystem.cs` | — | [S][GOLD] |
 | P2-PEOPLE-02 | The register gate's remaining two rules — trigger-id taxonomy validation and no-punchline-on-death scenes (the jargon rule already shipped under P2-PEOPLE-01) | `godot/tests/`, scene corpus | — | [G] |
-| P2-PEOPLE-03 | The remaining arcs — Torvald 4–8, Brunhilde, Kael, Sable, Elowen, Moss | scene corpus | P2-PEOPLE-02 + the probe's verdict | [G] |
+| P2-PEOPLE-03 | The remaining arcs — Torvald 4–8, Brunhilde, Kael, Sable, Elowen, Moss | scene corpus | P2-PEOPLE-02, P4 | [G] |
 | P2-PEOPLE-04 | Durable-fact read-back on the VIGIL (the muster board's own half landed) | `godot/scripts/panels/MineWatch.cs`, `godot/scripts/panels/CampPanel.cs` | — | [G] |
 | P2-PEOPLE-05 | Wake contracts — `Memorial.MarkerItem`, remembrance action | `sim/GameSim/Contracts/` `evidence:sim/GameSim/Contracts/World.cs:MarkerItem` | — | [S][C] |
 | P2-PEOPLE-06 | The fallen's page and the three verbs, on the death night | `sim/GameSim/Drama/`, `sim/GameSim/Heroes/` | P2-PEOPLE-05 | [S] |
 | P2-PEOPLE-07 | Death-night staging | `godot/scripts/panels/LegendsWall.cs`, `godot/scripts/panels/LedgerModal.cs` | P2-PEOPLE-06 | [G] |
-| P2-PEOPLE-08 | Kin contracts — `KinKind`, `KinLink`, `Hero.Kin`, null default | `sim/GameSim/Contracts/Heroes.cs` | §11.5 reopening | [S][C] |
-| P2-PEOPLE-09 | Kin derivation and mood — the blanket +60 dies | `sim/GameSim/Drama/RecruitSystem.cs`, `sim/GameSim/Heroes/HeroRoster.cs` (read-only) | P2-PEOPLE-08, P2-MEMORY-16 (the cold row's `Fleeced` event) | [S][GOLD][BAL] |
+| P2-PEOPLE-08 | Kin contracts — `KinKind`, `KinLink`, `Hero.Kin`, null default | `sim/GameSim/Contracts/Heroes.cs` `evidence:sim/GameSim/Contracts/Heroes.cs:KinKind` | P4 | [S][C] |
+| P2-PEOPLE-09 | Kin derivation and mood — the blanket +60 dies | `sim/GameSim/Drama/RecruitSystem.cs`, `sim/GameSim/Heroes/HeroRoster.cs` (read-only) | P2-PEOPLE-08, P2-MEMORY-16 | [S][GOLD][BAL] |
 | P2-PEOPLE-10 | Kin surfaces — Wren at the counter, warm and cold | `godot/scripts/panels/CounterPanel.cs`, scene corpus | P2-PEOPLE-09 | [G] |
-| P2-PEOPLE-11 | The no-march day (P2-OQ1) | `sim/GameSim/Heroes/PartyFormation.cs` | P2-PEOPLE-06, P2-OQ1 | [S][GOLD][BAL] |
+| P2-PEOPLE-11 | The no-march day (P2-OQ1, ruled 2026-08-31: full town rest) | `sim/GameSim/Heroes/PartyFormation.cs` | P2-PEOPLE-06 | [S][GOLD][BAL] |
 | P2-PEOPLE-12 | Wake staging and the deletions — the advisor nag retires, render ownership fixed | `godot/scripts/`, `sim/GameSim/Advisor/ObjectiveAdvisor.cs` | P2-PEOPLE-07, P2-PEOPLE-11 | [G] |
 | P2-PEOPLE-13 | Recruit micro-arcs — starters and kin first, the rest later | scene corpus | P2-PEOPLE-03 | [G] |
-| ⚑ P2-PEOPLE-14 | Wake versus Quiet Morning — the precedence, written and pinned (P2-KTD12) | `sim/GameSim/Heroes/PartyFormation.cs`, `sim/GameSim.Tests/` | lands with whichever of P2-PEOPLE-11 / P2-LONG-16 is first | [S] |
+| ⚑ P2-PEOPLE-14 | Wake versus Quiet Morning — the precedence, written and pinned (P2-KTD12) | `sim/GameSim/Heroes/PartyFormation.cs`, `sim/GameSim.Tests/` | P2-LONG-16 | [S] |
 | ⚑ P2-PEOPLE-15 | The camp speaks first — the vigil slate opens with the party's own ask | `godot/scripts/panels/CampPanel.cs`, `godot/scripts/ui/CustomerVoice.cs` (read-only) | — | [G] |
 | ⚑ P2-PEOPLE-16 | The camped rows carry the trait and band chips the roster already shows | `godot/scripts/panels/CampPanel.cs`, `godot/scripts/panels/HeroPanel.cs` (read-only) | — | [G] |
 | ⚑ P2-PEOPLE-17 | Stocking a piece names the morning queue that will reach it first | `godot/scripts/panels/ShopPanel.cs`, `sim/GameSim/Heroes/CommissionHandlers.cs` | — | [S] |
@@ -4862,6 +4844,17 @@ name (§11.6 rule 4).
 | ⚑ P2-HONEST-25 | Every ore row names the faction it feeds, not only the tariffed ones | `godot/scripts/panels/TavernPanel.cs`, `godot/scripts/panels/LedgerModal.cs` | — | [G] |
 | ⚑ P2-HONEST-26 | The night's narration is shown or stops being composed | `godot/scripts/panels/LedgerModal.cs`, `sim/GameSim/Drama/ExpeditionNarrator.cs` | — | [G] |
 | P2-HONEST-28 | Banking a slot is a decision or it is not — measure `ActionBudget` spend, then carry or correct the text | `sim/GameSim/Kernel/ActionBudget.cs`, `sim/GameSim.Tests/` | — | [S] |
+
+Depends-on cells hold unit ids and the owner gate `P4` only, so `tools/Progress --frontier` can
+resolve every one of them; what a cell used to say in prose lives here instead. `P2-PEOPLE-03`
+and `P2-PEOPLE-08` wait on P4 because §11.5 reopens deeper hero attachment on P4's evening, and
+`P2-PEOPLE-01..04` are the probe whose verdict that evening rules on (the "brush" row under
+Owner rulings carried forward). `P2-PEOPLE-09` needs `P2-MEMORY-16` for the cold row's `Fleeced`
+event. `P2-PEOPLE-11`'s fork P2-OQ1 is ruled (2026-08-31, full town rest — Open questions), so
+only `P2-PEOPLE-06` still gates it. `P2-PEOPLE-14` rides with whichever of `P2-PEOPLE-11` /
+`P2-LONG-16` lands first; the cell names `P2-LONG-16` because it is the arm with no upstream
+gate, and if `P2-PEOPLE-11` lands first the PR that lands it re-points this cell. `P2-MEMORY-16`
+needs `P2-MEMORY-15` only for the serialize step.
 
 The per-domain counts, the landed/unbuilt split, and which rows carry a Contracts micro-PR, a
 golden re-record or a balance re-baseline are **derived, not stated here**: run
@@ -5390,7 +5383,7 @@ beside `P2-MEMORY-03`, whose grammar it extends.
   that complaint tracks whether the DAY repeats, not whether some unseen verb or slot still exists
   in the build. Measure the second thing before the middle wave scopes against either number.
 - Requirements: `P2-LONG-01` (the `long-wall` machinery this extends, not rebuilds); the
-  indirect-agency research (`docs/design/2026-09-03-indirect-agency-research.md`, #701)
+  indirect-agency research (#701; its doc was deleted once §11 adopted it, per its own §7 — git history holds it)
 - Files: `sim/GameSim.Cli/` (one instrumented sweep, new `felt-wall` CLI command), no shipped code
 - Approach: five candidate signals named in the brief; two were built and rejected in code before
   the measurement was trusted, because both are cheap to see wrong and expensive to leave unstated:
@@ -5440,7 +5433,7 @@ beside `P2-MEMORY-03`, whose grammar it extends.
     conflict — they measure different things. Day 25 answers "does the game ever offer something
     genuinely new again" (yes, for a long time). Day 12 answers "by when has the day's routine
     stopped changing at the pace it did at first" (much sooner). The research
-    (`docs/design/2026-09-03-indirect-agency-research.md`) predicts the second is what a bored
+    (#701) predicts the second is what a bored
     player notices — this unit does not re-argue scope from that; the owner does.
 - Wall-clock conversion (informational, not a measurement): `HumanPlayer`/`ForgePlayer`
   (`godot/tests/HumanPlayer.cs`, `ForgePlayer.cs`) are DELIBERATELY clock-free — both class docs say
@@ -5459,7 +5452,7 @@ beside `P2-MEMORY-03`, whose grammar it extends.
   reasoned from the one pinned real-second constant this codebase has, not a measurement. At that
   rate this unit's headline (day 12) falls at roughly 40–95 minutes of real play — under an hour at
   the low end, under the genre's cited hour 3–4 either way. Flagged, not resolved: the existing
-  research citation (`docs/design/2026-09-03-indirect-agency-research.md`, "the day-8–18 wall...at
+  research citation (#701, "the day-8–18 wall...at
   the same wall-clock hour" as the genre's hour-3–4 complaint) implies roughly 13–20 minutes/day,
   2–4x this estimate. Neither figure is a measurement of a real session; reconciling them needs an
   actual timed human playthrough (§11.4 P4's evening), not another sweep.
@@ -6317,7 +6310,7 @@ and rule 8 says a doc git contradicts is an instruction the next session obeys.
 
 ### The indirect-agency research round (2026-09-03)
 
-`docs/design/2026-09-03-indirect-agency-research.md` (#701) read ~25 shipped games against this
+The indirect-agency research (#701; doc deleted after adoption, per its own shelf-life clause) read ~25 shipped games against this
 game's structural risk: the player prepares, then watches. Its finding reframes the risk and is the
 reason these five units exist rather than a sixth round of verbs.
 

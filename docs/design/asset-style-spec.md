@@ -88,13 +88,6 @@ scene OK. NOT for sprites (cutout is manual).
 <master prompt>, <subject + 3/4 iso view + material + light source>, centered, plain dark neutral background
 ```
 
-## Asset seeds log
+## Asset seeds
 
-| Asset | Track | Seed | Notes |
-|-------|-------|------|-------|
-| forge (baseline sheet) | active | 7777 | first end-to-end test; SDXL laid out a multi-object sheet |
-| forge (grimdark scene) | painterly | 1001 | atmospheric scene w/ bg trees |
-| forge (painterly) | painterly | 1002 | **reference** for painterly track |
-| forge (crisp sheet) | active | 1003 | clean multi-angle sheet (bright) |
-| forge (V3+darker) | active | 1003 | **reference** for active track; single centered, dark prompt |
-| forge (semi-real) | — | 1004 | rejected — reads as 3D render |
+The seeds table that used to sit here is generated: `art/pipeline/seeds.generated.md`, one row per committed asset, sourced from `art/build/<id>.build.json`. The two track references remain seed 1002 (painterly forge) and seed 1003 (active, "V3+darker" forge).

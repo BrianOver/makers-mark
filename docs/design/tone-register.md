@@ -1,7 +1,9 @@
 # Tone register — Maker's Mark
 
-*The voice the flavor packs are written in. Describes the register as shipped; the plan of record
-for what changes next is `MAKERS-MARK.md` §11.*
+*The voice the flavor packs are written in. Extracted from §1 of the 2026-07-18 variety-tone
+direction doc; that doc is deleted (git history holds it), the pack files cite it as the C4 tone
+pass (`TavernPack.cs`, `FactionPack.cs` doc comments), and this file is the register of record. It
+describes the register as shipped; the plan of record for what changes next is `MAKERS-MARK.md` §11.*
 
 ## 1. Lighter without losing identity
 
@@ -15,9 +17,11 @@ is written to. Pure data; no mechanism; no voice-list edit.
 
 ### Per-key register targets (`TavernPack`)
 
-The nine shipped base keys and their committed slots (`TavernPack.SlotNames` is the single source of
-truth; the engine's validation requires **every slot verbatim in every variant**, and the pack
-conformance tests sweep it):
+Nine base keys ship (`TavernPack.cs` key constants; `TavernPack.SlotNames` is the single source of
+truth for slots). The eight below carry register targets; `venueGraduated` (slot hero only,
+forward-ladder L5) landed after the C4 pass and has no register target authored — its pack comment
+says only that the line names the graduate, never the dungeon they left. The engine's validation
+requires **every slot verbatim in every variant**, and the pack conformance tests sweep it.
 
 | Base key | Slots | Register |
 |---|---|---|
@@ -26,7 +30,7 @@ conformance tests sweep it):
 | `provisioned`, `potionLifesave`, `breakpointClear` | hero, item, floor | comedy-forward |
 | `floorRecordSet` | hero, floor | comedy-forward |
 | `recruitArrived` | hero | comedy-forward |
-| `venueGraduated` | hero | pride; names the graduate, never the dungeon they left |
+| `venueGraduated` | hero | none authored (see above) |
 | Fallbacks | — | **unchanged**: the six v1 kinds keep the old hardcoded `GossipGenerator` line verbatim so existing saves stay honest about where their lines came from |
 
 Comic mode per voice: omen = failed portents; gruff = invoices and lectures; dramatic = grandiosity
@@ -47,6 +51,9 @@ comic-bureaucratic, flavor only.
 8. omen/`potionLifesave`: `A red vial on floor {floor}, and {hero} breathing yet — the {item} gets the credit the portents wanted. The portents have been asked to cite their sources.`
 9. gruff/`breakpointClear`: `Floor {floor} gate's open. {hero}'s {item} did the arguing. Iron argues best.`
 10. wry/`heroDied` (warm, NOT comic): `Floor {floor}. {cause}. {hero} would have called it 'a Tuesday.' Raise a quiet one.`
+
+*(Line 8 was corrected during verification: the original draft omitted `{item}`, which fails
+`FlavorEngine` slot validation.)*
 
 ### What has no voice yet
 

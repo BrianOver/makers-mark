@@ -1,6 +1,8 @@
 using System.Collections.Immutable;
 using System.Linq;
+using GameSim.Contracts;
 using GameSim.Heroes;
+using GameSim.Venues;
 
 namespace GodotClient.Ui;
 
@@ -139,4 +141,153 @@ public static class MusterVoice
     /// beyond that (there is none today) still renders a real number rather than throwing.</summary>
     private static string CountWord(int count) =>
         count > 0 && count < CountWords.Length ? CountWords[count] : count.ToString();
+
+    /// <summary>Same word table, lowercase, for a count that lands mid-sentence ("swung four
+    /// times") rather than at its start — <see cref="CountWords"/> is capitalised for the muster's
+    /// own opening clause and would read wrong dropped into the middle of one.</summary>
+    private static readonly ImmutableArray<string> MidSentenceCountWords =
+        ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"];
+
+    private static string MidSentenceCountWord(int count) =>
+        count >= 0 && count < MidSentenceCountWords.Length ? MidSentenceCountWords[count] : count.ToString();
+
+    private static readonly ImmutableArray<string> Ordinals =
+        ["zeroth", "first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth"];
+
+    private static string Ordinal(int n) => n >= 0 && n < Ordinals.Length ? Ordinals[n] : $"{n}th";
+
+    /// <summary>
+    /// P2-SCREEN-35 ("follow one piece", decision-neutral link 3 verb — reveals the player's own
+    /// stake, orders nothing): the send-off's own opening line, ahead of every party section
+    /// (<c>RaidForecastBoard.ShowForTomorrow</c> renders it first). Null when nothing is followed
+    /// (<see cref="FollowedItem.Current"/>) or the followed item has been struck from the world
+    /// entirely (never happens today — items are never deleted — but a null-tolerant read costs
+    /// nothing and matches every other query in this file).
+    ///
+    /// <para>Two honest outcomes, never a third: the item marches tomorrow with whichever hero's
+    /// gear it currently sits in, IF that hero is actually named in one of <paramref
+    /// name="parties"/> (<see cref="RaidForecast.ForTomorrow"/>'s own prediction — the same one the
+    /// Morning tick will form); or it does not, and the line says so instead of staying silent. A
+    /// hero who owns the gear but isn't mustering tomorrow reads as "stays behind", never a
+    /// fabricated march.</para>
+    /// </summary>
+    public static string? FollowedSendOffLine(GameState state, ImmutableList<ForecastParty> parties)
+    {
+        if (FollowedItem.Current is not { } itemId || !state.Items.TryGetValue(itemId.Value, out var item))
+        {
+            return null;
+        }
+
+        var holder = HolderName(state, itemId);
+        if (holder is { } heroName)
+        {
+            var marching = parties.FirstOrDefault(p => p.HeroNames.Contains(heroName));
+            if (marching is not null)
+            {
+                return $"{item.Name} marches tomorrow with {heroName}, for floor {marching.TargetFloor}.";
+            }
+        }
+
+        return $"{item.Name} stays behind tomorrow.";
+    }
+
+    /// <summary>
+    /// P2-SCREEN-35: the night card's own opening line, ahead of every hero's return card
+    /// (<c>LedgerModal.RenderCards</c> renders it first). Reads only what the resolver already
+    /// recorded — <see cref="ExpeditionResult.PartyAtDeparture"/> for who carried the item and in
+    /// which slot, <see cref="CombatEvent.DamageDealt"/>/<see cref="CombatEvent.KillingItem"/> for a
+    /// weapon's own night, <see cref="CombatEvent.DamageTaken"/> for a defensive piece's — never a
+    /// recommendation, never a counterfactual (law 12). An item that never left the shelf this night
+    /// gets its own honest line rather than silence: "a followed item that did nothing is
+    /// information the player asked for" (the unit's own brief).
+    /// </summary>
+    public static string? FollowedNightLine(GameState state, ImmutableList<ExpeditionResult> revealedExpeditions)
+    {
+        if (FollowedItem.Current is not { } itemId || !state.Items.TryGetValue(itemId.Value, out var item))
+        {
+            return null;
+        }
+
+        foreach (var result in revealedExpeditions)
+        {
+            var departure = result.PartyAtDeparture.FirstOrDefault(
+                h => h.Weapon == itemId || h.Shield == itemId || h.Armor == itemId);
+            if (departure is null)
+            {
+                continue;
+            }
+
+            return departure.Weapon == itemId
+                ? WeaponNightLine(item.Name, departure, itemId, result)
+                : DefensiveNightLine(item.Name, departure, result);
+        }
+
+        return $"{item.Name} stayed on the shelf tonight.";
+    }
+
+    /// <summary>The hero currently wearing/wielding <paramref name="itemId"/>, or null when nobody
+    /// does (on the shelf, in a commission queue, or held in a hero's pack rather than a gear
+    /// slot). Reads <c>Hero.Gear</c> directly — the same live snapshot <c>RaidForecast</c> itself
+    /// reads to build <see cref="ForecastParty.WornGear"/> — never a second derivation of who holds
+    /// what.</summary>
+    private static string? HolderName(GameState state, ItemId itemId)
+    {
+        foreach (var hero in state.Heroes.Values)
+        {
+            if (hero.Gear.Weapon == itemId || hero.Gear.Shield == itemId || hero.Gear.Armor == itemId
+                || hero.Gear.Trinket == itemId)
+            {
+                return hero.Name;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>The followed weapon's own night: every combat exchange the carrying hero fought,
+    /// and — if one of them is the recorded killing blow — which one and against what. "Turned
+    /// nothing" is the honest default for a weapon that swung and connected but landed no kill this
+    /// night; a weapon that never even entered a fight says so separately, rather than claiming a
+    /// zero-swing night "turned nothing" (it never had the chance to).</summary>
+    private static string WeaponNightLine(string itemName, HeroAtDeparture hero, ItemId itemId, ExpeditionResult result)
+    {
+        var swings = result.Floors.SelectMany(f => f.Combats).Where(c => c.Hero == hero.Id).ToImmutableList();
+        if (swings.IsEmpty)
+        {
+            return $"{itemName} went out in {hero.Name}'s hand tonight. It never swung.";
+        }
+
+        var killIndex = swings.FindIndex(c => c.KillingItem == itemId);
+        if (killIndex >= 0)
+        {
+            var kill = swings[killIndex];
+            return $"{itemName} went to floor {kill.Floor} in {hero.Name}'s hand, swung "
+                + $"{MidSentenceCountWord(swings.Count)} times — {MonsterName.Definite(kill.MonsterKind)} died "
+                + $"on the {Ordinal(killIndex + 1)}.";
+        }
+
+        var deepest = swings.Max(c => c.Floor);
+        return $"{itemName} went to floor {deepest} in {hero.Name}'s hand, swung "
+            + $"{MidSentenceCountWord(swings.Count)} times. It turned nothing.";
+    }
+
+    /// <summary>The followed defensive piece's (shield/armor) own night: the worst hit its bearer
+    /// took, or the honest "nothing touched it" when the bearer fought and took no damage at all.
+    /// Never a survival claim — <see cref="CombatEvent.DamageTaken"/> is a recorded number, not a
+    /// verdict on whether the piece "saved" anyone (that is <c>ClosestCallQuery</c>'s own, separate
+    /// job, read from a different beat).</summary>
+    private static string DefensiveNightLine(string itemName, HeroAtDeparture hero, ExpeditionResult result)
+    {
+        var hits = result.Floors.SelectMany(f => f.Combats)
+            .Where(c => c.Hero == hero.Id && c.DamageTaken > 0)
+            .ToImmutableList();
+        if (hits.IsEmpty)
+        {
+            return $"{itemName} carried {hero.Name} through the night. Nothing touched it.";
+        }
+
+        var worst = hits.OrderByDescending(c => c.DamageTaken).First();
+        return $"{itemName} carried {hero.Name} through floor {worst.Floor}, taking {worst.DamageTaken} "
+            + $"damage from {MonsterName.Definite(worst.MonsterKind)}.";
+    }
 }
