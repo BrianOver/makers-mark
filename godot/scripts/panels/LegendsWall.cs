@@ -1306,8 +1306,15 @@ public partial class LegendsWall : Control
         CommissionPosted e =>
             $"{HeroName(state, e.Hero)} wants {ItemVocab.Display(e.Slot)} work, {ItemVocab.Display(e.MinQuality)} or better, by day {e.DeadlineDay} " +
             $"— {e.PremiumGold}g over list{CommissionSystem.SlotHonestyNote(e.Slot)}.",
-        CommissionFulfilled e =>
-            $"{HeroName(state, e.Hero)} takes delivery of {ItemName(state, e.Item)} — {e.Premium}g premium.",
+        // P2-SCREEN-39: the deadline kept — §11.13 measured a commission landing ON its own
+        // deadline day a median 2 times per campaign (n=20, 0–7) out of 38 fulfilments, the real
+        // last-hour moment, and this line said nothing about it. Early delivery is ordinary and
+        // earns no extra clause (ProvenanceQuery.FulfilledOnDeadline joins by hero across the two
+        // separate events — CommissionSystem drops the live Commission on fulfilment, so the
+        // deadline only survives in the log).
+        CommissionFulfilled e => ProvenanceQuery.FulfilledOnDeadline(state, e.Hero, e.Item)
+            ? $"{HeroName(state, e.Hero)} takes delivery of {ItemName(state, e.Item)} — {e.Premium}g premium, on the day it was due."
+            : $"{HeroName(state, e.Hero)} takes delivery of {ItemName(state, e.Item)} — {e.Premium}g premium.",
         CommissionExpired e =>
             $"{HeroName(state, e.Hero)} gave up waiting on that {ItemVocab.Display(e.Slot)} commission{CommissionSystem.SlotHonestyNote(e.Slot)}.",
 

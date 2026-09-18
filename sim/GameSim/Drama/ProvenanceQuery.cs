@@ -18,8 +18,10 @@ public enum ItemChannel
 
 /// <summary>One event naming an item as it reached the hand that held it (link 2): which channel,
 /// on what day, to which hero (P2-MEMORY-03). One instance is one sale/commission/delivery — an
-/// item can carry several over its lifetime (P2-MEMORY-06's <see cref="ProvenanceQuery.AllChannels"/>).</summary>
-public sealed record ItemChannelInfo(ItemChannel Channel, int Day, HeroId Hero);
+/// item can carry several over its lifetime (P2-MEMORY-06's <see cref="ProvenanceQuery.AllChannels"/>).
+/// <paramref name="OnDeadline"/> (P2-SCREEN-39) is <c>Commission</c>-only — false, and meaningless,
+/// for every other channel.</summary>
+public sealed record ItemChannelInfo(ItemChannel Channel, int Day, HeroId Hero, bool OnDeadline = false);
 
 /// <summary>
 /// Pure read model over <see cref="GameState.EventLog"/> (mirrors <see cref="LedgerQuery"/>/<see
@@ -73,7 +75,9 @@ public static class ProvenanceQuery
                     found.Add(new ItemChannelInfo(ItemChannel.Shelf, gameEvent.Day, sold.Buyer));
                     break;
                 case CommissionFulfilled commission when commission.Item == item:
-                    found.Add(new ItemChannelInfo(ItemChannel.Commission, gameEvent.Day, commission.Hero));
+                    found.Add(new ItemChannelInfo(
+                        ItemChannel.Commission, gameEvent.Day, commission.Hero,
+                        OnDeadline: FulfilledOnDeadline(state, commission.Hero, commission.Item)));
                     break;
                 case SupplyDelivered supply when supply.Item == item:
                     found.Add(new ItemChannelInfo(ItemChannel.Runner, gameEvent.Day, supply.To));
@@ -105,10 +109,51 @@ public static class ProvenanceQuery
             ItemChannel.Shelf => $"It left your shelf {ago} — you never met over it.",
             ItemChannel.Counter => $"Haggled off your counter {ago}.",
             ItemChannel.CounterPinned => $"You named the fair price at the counter, and it was paid — {ago}.",
-            ItemChannel.Commission => $"Commissioned, and delivered {ago}.",
+            ItemChannel.Commission => info.OnDeadline
+                ? $"Commissioned, and delivered {ago} — on the day it was due."
+                : $"Commissioned, and delivered {ago}.",
             ItemChannel.Runner => "You put it in the runner's hands yourself, at the vigil.",
             _ => string.Empty,
         };
+    }
+
+    /// <summary>
+    /// P2-SCREEN-39: whether the <see cref="CommissionFulfilled"/> naming <paramref name="hero"/>
+    /// and <paramref name="item"/> landed on the exact day the matching <see cref="CommissionPosted"/>
+    /// event's <see cref="CommissionPosted.DeadlineDay"/> named — §11.13's measured "the real last-hour
+    /// moment" (median 2 per campaign of 38 fulfilments). <see cref="CommissionSystem"/> removes the
+    /// live <see cref="Commission"/> from <see cref="GameState.Commissions"/> the moment it is
+    /// fulfilled, so there is no live record left to read the deadline off — only the event log, and
+    /// the join has to be event-to-event.
+    ///
+    /// <para>Joined by hero, tracking the MOST RECENT <see cref="CommissionPosted"/> seen for that hero
+    /// as the log is walked forward — never a plain day-range scan — because <see
+    /// cref="CommissionSystem"/>'s own one-live-commission-per-hero invariant
+    /// (<c>PostCommissions</c> skips any hero already in its own <c>heroesWithCommission</c> set) makes
+    /// "the most recent post for this hero" unambiguous, but only up to the moment this exact delivery
+    /// happened: <c>CommissionSystem</c> registers AFTER <c>HeroShoppingSystem</c> in the Morning order,
+    /// so a hero whose gap this delivery just filled can be topped up with a BRAND NEW commission later
+    /// the SAME Morning. The scan stops the instant it reaches the fulfilment named by
+    /// (<paramref name="hero"/>, <paramref name="item"/>) — unique, since an item is only ever
+    /// delivered through commission once — so that same-day re-post can never be mistaken for the one
+    /// this delivery answered.</para>
+    /// </summary>
+    public static bool FulfilledOnDeadline(GameState state, HeroId hero, ItemId item)
+    {
+        CommissionPosted? posted = null;
+        foreach (var gameEvent in state.EventLog)
+        {
+            switch (gameEvent)
+            {
+                case CommissionPosted p when p.Hero == hero:
+                    posted = p;
+                    break;
+                case CommissionFulfilled f when f.Hero == hero && f.Item == item:
+                    return posted is not null && posted.DeadlineDay == f.Day;
+            }
+        }
+
+        return false; // unreachable for a real fulfilment — every one follows a post in the log
     }
 
     /// <summary>
