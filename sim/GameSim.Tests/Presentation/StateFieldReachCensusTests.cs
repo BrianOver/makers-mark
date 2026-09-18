@@ -550,7 +550,7 @@ public class StateFieldReachCensusTests
     // MaxHp AS THEY STOOD AT DEPARTURE, never live GameState.Heroes). Already RENDERED via
     // TellingPanel long before this unit; the census catching up to a surface that was already
     // there, not a new one.
-    private const int ExpectedRenderedCount = 130;
+    private const int ExpectedRenderedCount = 131; // +1 2026-09-18: GameState.LastNightExpeditions (P2-MEMORY-24 gave it a second sim reader)
     private const int ExpectedRoutedCount = 9;
     private const int ExpectedInternalCount = 6;
     // 12 -> 8: the same join, mirrored — the four fields that left GAP for RENDERED above.
