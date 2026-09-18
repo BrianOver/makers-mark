@@ -2220,12 +2220,29 @@ public class LedgerModalTests
                 .IsEqual(cards.Sum(card => card.Beats.Count));
 
             var ledgerText = RenderedText(ui.Ledger);
-            foreach (var beat in cards.SelectMany(card => card.Beats))
+            foreach (var card in cards)
             {
-                AssertThat(ledgerText)
-                    .OverrideFailureMessage($"'{beat.Detail}' stopped rendering after the reorder")
-                    .Contains(beat.Detail);
-                AssertThat(ledgerText).Contains($"(floor {beat.Floor})");
+                var lead = card.Beats.IsEmpty ? null : BeatVocab.LeadFirst(card.Beats)[0];
+                foreach (var beat in card.Beats)
+                {
+                    // P2-PROOF-21: the lead row now renders the Telling's own headline instead of
+                    // the beat's raw Detail -- still a fact the sim decided (TellingPanel.HeadlineFor
+                    // is a pure read over the SAME recorded night, never a second counterfactual),
+                    // just phrased as the Telling phrases it. Every non-lead beat is untouched by
+                    // this unit and still renders its own Detail verbatim, law 4 intact.
+                    if (beat.Equals(lead) && TellingPanel.HeadlineFor(ui.Adapter.CurrentState, beat) is { } headline)
+                    {
+                        AssertThat(ledgerText)
+                            .OverrideFailureMessage($"the lead beat's headline stopped rendering after the reorder: \"{headline.Headline}\"")
+                            .Contains(headline.Headline);
+                        continue;
+                    }
+
+                    AssertThat(ledgerText)
+                        .OverrideFailureMessage($"'{beat.Detail}' stopped rendering after the reorder")
+                        .Contains(beat.Detail);
+                    AssertThat(ledgerText).Contains($"(floor {beat.Floor})");
+                }
             }
         }
         finally
@@ -2275,12 +2292,31 @@ public class LedgerModalTests
         {
             ui.Ledger.ShowFor(1);
 
-            // Bram's card carries exactly one beat, on the bare-forged Notched Axe.
-            var line = BeatLinesOf(Find<Control>(ui.Ledger, "LedgerCard_1"))[0].Text;
-            AssertThat(line).Contains("Notched Axe landed the killing blow on the cave rat.");
-            AssertThat(line)
-                .OverrideFailureMessage($"a momentless craft grew a forge clause anyway: \"{line}\"")
-                .IsEqual("Notched Axe landed the killing blow on the cave rat. (floor 1)");
+            // Bram's card carries exactly one beat, on the bare-forged Notched Axe -- floor 1 has
+            // staged combat data, so this IS now the P2-PROOF-21 headline row, not the old raw-Detail
+            // line (that fixture used to assert against a literal; it now asserts against the SAME
+            // shared helper the row itself calls).
+            var card = Find<Control>(ui.Ledger, "LedgerCard_1");
+            // The LOGGED beat, not a hand-built twin: the pack's variant pick keys on the event id, so
+            // only the real event reproduces the row's exact wording.
+            var state = ui.Adapter.CurrentState;
+            var beatEvent = LedgerQuery.ReturnCards(state, 1).Single(c => c.Hero == new HeroId(1)).Beats[0];
+            var headline = TellingPanel.HeadlineFor(state, beatEvent);
+            AssertThat(headline)
+                .OverrideFailureMessage("Bram's floor-1 kill should be stageable -- this test no longer proves anything")
+                .IsNotNull();
+
+            var line = BeatLinesOf(card)[0].Text;
+            AssertThat(line).IsEqual(headline!.Value.Headline);
+
+            // The arithmetic moved beneath it; no forge clause rides it either -- a momentless craft
+            // has nothing to add to the detail line, same as it had nothing to add before.
+            var detailLabel = card.FindChild("BeatLineDetail_0", recursive: true, owned: false) as Label;
+            AssertThat(detailLabel).IsNotNull();
+            AssertThat(detailLabel!.Text).IsEqual(headline.Value.Detail);
+            AssertThat(detailLabel.Text)
+                .OverrideFailureMessage($"a momentless craft grew a forge clause anyway: \"{detailLabel.Text}\"")
+                .NotContains("your anvil");
         }
         finally
         {
@@ -2780,10 +2816,12 @@ public class LedgerModalTests
 
             // The lead per item is the DEEPEST floor: Emberbite's row is the floor-5 kill, never
             // the floor-3 one, even though floor 3 was emitted first.
+            // P2-PROOF-21 made the lead row the Telling's headline, which names the FLOOR, not the
+            // monster -- so "deepest kill leads" is read off the floor number.
             AssertThat(lines[0].Text)
                 .OverrideFailureMessage($"Emberbite's row did not lead on its deepest kill: \"{lines[0].Text}\"")
-                .Contains("Forgeworm");
-            AssertThat(lines[0].Text).NotContains("Deep Ghoul");
+                .Contains("floor 5");
+            AssertThat(lines[0].Text).NotContains("floor 3");
 
             // The fold count on that same row: K-M = 1 extra kill folded, named plainly.
             AssertThat(lines[0].Text)
@@ -2820,7 +2858,9 @@ public class LedgerModalTests
             AssertThat(lines.Length)
                 .OverrideFailureMessage($"a single-kill card should render exactly one row, found {lines.Length}")
                 .IsEqual(1);
-            AssertThat(lines[0].Text).Contains("Rusty Pike landed the killing blow on the Cave Rat.");
+            // The lead row is the Telling's headline since P2-PROOF-21: item and fate, arithmetic beneath.
+            AssertThat(lines[0].Text).Contains("Rusty Pike");
+            AssertThat(lines[0].Text).Contains("Doran lives.");
             AssertThat(lines[0].Text)
                 .OverrideFailureMessage($"a single decisive kill grew a fold suffix it never earned: \"{lines[0].Text}\"")
                 .NotContains("more kill");

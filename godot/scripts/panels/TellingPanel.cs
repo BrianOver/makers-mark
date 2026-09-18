@@ -438,7 +438,7 @@ public sealed partial class TellingPanel : SimPanel
 
         foreach (var quaff in round.Quaffs)
         {
-            rollsCol.AddChild(StatChip(ItemNameOf(quaff.Item), $"{quaff.HpBefore} -> {quaff.HpAfter}", UiKit.ChipTone.Positive));
+            rollsCol.AddChild(StatChip(ItemNameOf(_state!, quaff.Item), $"{quaff.HpBefore} -> {quaff.HpAfter}", UiKit.ChipTone.Positive));
         }
 
         if (round.ModifierHpDelta != 0)
@@ -482,7 +482,7 @@ public sealed partial class TellingPanel : SimPanel
     private string ForkCaption() => _script!.Payload switch
     {
         LethalSavePayload p => $"Same roll. No {SlotWord(p.Slot)}.",
-        PotionLifesavePayload p => $"Same fight. No {ItemNameOf(_beat!.Item)} at round {p.QuaffRound}.",
+        PotionLifesavePayload p => $"Same fight. No {ItemNameOf(_state!, _beat!.Item)} at round {p.QuaffRound}.",
         _ => "Same fight, without it.",
     };
 
@@ -534,7 +534,7 @@ public sealed partial class TellingPanel : SimPanel
         // that the SAME hero's night did not end at the beat's own floor.
         if (_result!.Deaths.Contains(_beat!.Hero))
         {
-            var deathFloor = DeepestCombatFloor(_beat.Hero);
+            var deathFloor = DeepestCombatFloor(_result, _beat.Hero, _beat.Floor);
             if (deathFloor > _beat.Floor)
             {
                 var closer = AddLabel(
@@ -543,6 +543,47 @@ public sealed partial class TellingPanel : SimPanel
                 closer.AddThemeColorOverride("font_color", GameTheme.DangerColor);
             }
         }
+    }
+
+    /// <summary>
+    /// P2-PROOF-21: the ONE creation site for the Telling's headline+detail sentence, reachable
+    /// WITHOUT opening the panel — <see cref="LedgerModal"/>'s own lead beat row calls this so the
+    /// card's own headline and the Telling's headline can never drift (same render call, no second
+    /// copy). Mirrors <see cref="ShowFor"/>'s own staging gate field-for-field (<see cref="IsAvailable"/>,
+    /// the retained-night lookup, <c>FactualRounds</c> non-empty) so a headline only ever renders
+    /// where the button would too — null otherwise, never a guess. The extra <c>Floors</c> check and
+    /// the try/catch below exist only because THIS call site is now reached at card-render time for
+    /// every card, not lazily on a button press — <see cref="TellingQuery.Build"/> indexes party/floor
+    /// data with <c>.First()</c>/<c>.Single()</c> and throws on a genuine mismatch; production nights
+    /// are always internally consistent, so this only ever protects a hand-built test fixture that
+    /// stages a beat with no matching floor record.
+    /// </summary>
+    public static (string Headline, string Detail)? HeadlineFor(GameState state, AttributionBeatEvent beatEvent) =>
+        FindResult(state, beatEvent) is { } result ? HeadlineFor(state, result, beatEvent) : null;
+
+    /// <summary>Overload for a caller that already holds the <see cref="ExpeditionResult"/> (this
+    /// panel's own <see cref="ShowFor"/>, via <see cref="VerdictLines"/> below).</summary>
+    public static (string Headline, string Detail)? HeadlineFor(
+        GameState state, ExpeditionResult result, AttributionBeatEvent beatEvent)
+    {
+        var beat = result.Beats.FirstOrDefault(b => Matches(b, beatEvent));
+        if (beat is null || !IsAvailable(beat.Beat) || !result.Floors.Any(f => f.Floor == beat.Floor))
+        {
+            return null;
+        }
+
+        TellingScript script;
+        try
+        {
+            var venue = VenueRegistry.All.TryGetValue(result.VenueId, out var v) ? v : VenueRegistry.Mine;
+            script = TellingQuery.Build(result, beat, state.Items, venue);
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
+
+        return script.FactualRounds.IsEmpty ? null : VerdictLinesFor(state, result, beat, script, beatEvent.Id);
     }
 
     /// <summary>
@@ -556,57 +597,67 @@ public sealed partial class TellingPanel : SimPanel
     /// The generic fallback line for an unhandled payload type is unchanged from before this unit
     /// (append-only enum, CLAUDE.md hard rule 12's own no-participation-credit law: a shape with no
     /// staging still reads as "unclear" rather than inventing a beat).
+    ///
+    /// <para>Thin instance wrapper over <see cref="VerdictLinesFor"/> (P2-PROOF-21): this panel's own
+    /// fields ARE the params that static core takes, so this stays the one call site this class uses
+    /// internally while <see cref="HeadlineFor"/> is the one a caller with no open panel uses.</para>
     /// </summary>
-    private (string Headline, string Detail) VerdictLines()
+    private (string Headline, string Detail) VerdictLines() =>
+        VerdictLinesFor(_state!, _result!, _beat!, _script!, _beatEventId);
+
+    private static (string Headline, string Detail) VerdictLinesFor(
+        GameState state, ExpeditionResult result, AttributionBeat beat, TellingScript script, EventId beatEventId)
     {
-        var itemName = ItemNameOf(_beat!.Item);
-        var heroName = _script!.Hero.Name;
-        var floor = _beat.Floor;
+        var itemName = ItemNameOf(state, beat.Item);
+        var heroName = script.Hero.Name;
+        var floor = beat.Floor;
 
         // P2-PROOF-22: "{hero} lives." is never said of a hero this same night's ExpeditionResult
         // records as dead -- the ONE fact check that decides KillingBlow/LethalSave's key (the only
         // two shapes whose living phrasing claims survival). Died() is a recorded fact
         // (ExpeditionResult.Deaths), never a second counterfactual.
-        var died = _result!.Deaths.Contains(_beat.Hero);
+        var died = result.Deaths.Contains(beat.Hero);
 
-        return _script.Payload switch
+        return script.Payload switch
         {
             KillingBlowPayload p => PickVerdictLine(
+                state, beatEventId,
                 died ? TellingPack.KillingBlowDied : TellingPack.KillingBlow,
                 died
                     ? FlavorEngine.Slots(
                         ("item", itemName), ("hero", heroName), ("floor", Digits(floor)),
                         ("heroRoll", Digits(p.HeroRoll)), ("dealtWithout", Digits(p.DamageDealtWithoutItem)),
                         ("dealtWith", Digits(p.DamageDealtWithItem)), ("monsterHpWithout", Digits(p.MonsterHpWithoutItem)),
-                        ("deathFloor", Digits(DeepestCombatFloor(_beat.Hero))))
+                        ("deathFloor", Digits(DeepestCombatFloor(result, beat.Hero, floor))))
                     : FlavorEngine.Slots(
                         ("item", itemName), ("hero", heroName), ("floor", Digits(floor)),
                         ("heroRoll", Digits(p.HeroRoll)), ("dealtWithout", Digits(p.DamageDealtWithoutItem)),
                         ("dealtWith", Digits(p.DamageDealtWithItem)), ("monsterHpWithout", Digits(p.MonsterHpWithoutItem)))),
             LethalSavePayload p => PickVerdictLine(
+                state, beatEventId,
                 died ? TellingPack.LethalSaveDied : TellingPack.LethalSave,
                 died
                     ? FlavorEngine.Slots(
                         ("item", itemName), ("hero", heroName), ("floor", Digits(floor)),
                         ("rawBlow", Digits(p.RawBlow)), ("itemDefense", Digits(p.ItemDefenseStat)),
                         ("heroHpAfter", Digits(p.HeroHpAfterWithItem)),
-                        ("deathFloor", Digits(DeepestCombatFloor(_beat.Hero))))
+                        ("deathFloor", Digits(DeepestCombatFloor(result, beat.Hero, floor))))
                     : FlavorEngine.Slots(
                         ("item", itemName), ("hero", heroName), ("floor", Digits(floor)),
                         ("rawBlow", Digits(p.RawBlow)), ("itemDefense", Digits(p.ItemDefenseStat)),
                         ("heroHpAfter", Digits(p.HeroHpAfterWithItem)))),
-            BreakpointClearPayload p => PickVerdictLine(TellingPack.BreakpointClear, FlavorEngine.Slots(
+            BreakpointClearPayload p => PickVerdictLine(state, beatEventId, TellingPack.BreakpointClear, FlavorEngine.Slots(
                 ("item", itemName), ("floor", Digits(floor)),
                 ("avgWith", Digits(p.PartyAveragePowerWithItem)), ("gate", Digits(p.Gate)),
                 ("avgWithout", Digits(p.PartyAveragePowerWithoutItem)))),
-            ProvisionedPayload p => PickVerdictLine(TellingPack.Provisioned, FlavorEngine.Slots(
+            ProvisionedPayload p => PickVerdictLine(state, beatEventId, TellingPack.Provisioned, FlavorEngine.Slots(
                 ("item", itemName), ("hero", heroName), ("floor", Digits(floor)),
                 ("quaffRound", Digits(p.QuaffRound)), ("hpBefore", Digits(p.HpBeforeQuaff)),
                 ("hpAfter", Digits(p.HpAfterQuaff)), ("naiveHp", Digits(p.NaiveHpWithoutHeal)))),
-            PotionLifesavePayload p => PickVerdictLine(TellingPack.PotionLifesave, FlavorEngine.Slots(
+            PotionLifesavePayload p => PickVerdictLine(state, beatEventId, TellingPack.PotionLifesave, FlavorEngine.Slots(
                 ("item", itemName), ("hero", heroName), ("floor", Digits(floor)),
                 ("divergenceRound", Digits(p.DivergenceRound)), ("hpAtDivergence", Digits(p.HpAtDivergence)))),
-            MarginOnlyPayload p => PickVerdictLine(TellingPack.MarginOnly, FlavorEngine.Slots(
+            MarginOnlyPayload p => PickVerdictLine(state, beatEventId, TellingPack.MarginOnly, FlavorEngine.Slots(
                 ("item", itemName), ("hero", heroName),
                 ("minHp", Digits(p.MinHpReached)), ("minHpRound", Digits(p.MinHpRound)))),
             _ => ("The record is unclear.", string.Empty),
@@ -617,18 +668,18 @@ public sealed partial class TellingPanel : SimPanel
     /// One <see cref="FlavorEngine.Render"/> call picks a paired headline+detail phrasing from
     /// <see cref="TellingPack.Pack"/> atomically (<see cref="TellingPack.Delim"/>'s own doc: a
     /// single template avoids two independent picks landing on mismatched indices), then splits it.
-    /// Campaign identity is <c>_state.Rng.Inc</c> — the same convention <see cref="LedgerModal"/>'s
+    /// Campaign identity is <c>state.Rng.Inc</c> — the same convention <see cref="LedgerModal"/>'s
     /// own fate lines and every other pack caller in this repo uses (KTD3) — and the variant pick
-    /// keys on the beat's own STAMPED <see cref="AttributionBeatEvent"/> id
-    /// (<see cref="_beatEventId"/>, set once in <see cref="ShowFor"/>): a real, logged fact, never a
-    /// counter that depends on how many times this panel has been opened. Same recorded fight, same
-    /// seed, same phrasing, forever — <see cref="FlavorEngine.Render"/> itself draws no RNG and
-    /// reads no wall clock, so this cannot drift between two opens of the same night.
+    /// keys on the beat's own STAMPED <see cref="AttributionBeatEvent"/> id (a real, logged fact,
+    /// never a counter that depends on how many times this panel has been opened). Same recorded
+    /// fight, same seed, same phrasing, forever — <see cref="FlavorEngine.Render"/> itself draws no
+    /// RNG and reads no wall clock, so this cannot drift between two opens of the same night, or
+    /// between the panel's own render and <see cref="HeadlineFor"/>'s render of the same beat.
     /// </summary>
-    private (string Headline, string Detail) PickVerdictLine(string key, IReadOnlyDictionary<string, string> slots)
+    private static (string Headline, string Detail) PickVerdictLine(
+        GameState state, EventId beatEventId, string key, IReadOnlyDictionary<string, string> slots)
     {
-        var rendered = FlavorEngine.Render(
-            TellingPack.Pack, key, slots, _state!.Rng.Inc, unchecked((ulong)_beatEventId.Value));
+        var rendered = FlavorEngine.Render(TellingPack.Pack, key, slots, state.Rng.Inc, unchecked((ulong)beatEventId.Value));
         var parts = rendered.Split(TellingPack.Delim, 2);
         return parts.Length == 2 ? (parts[0], parts[1]) : (rendered, string.Empty);
     }
@@ -639,20 +690,21 @@ public sealed partial class TellingPanel : SimPanel
     /// P2-PROOF-22/P2-MEMORY-17-adjacent shared derivation: the deepest floor a hero has a logged
     /// <see cref="CombatEvent"/> on this night — the recorded-fact stand-in for "where they died"
     /// (<see cref="ExpeditionResult"/> carries no explicit death-floor field; a dead hero's last
-    /// logged combat floor IS the floor that took them). Falls back to the beat's own floor when the
-    /// hero has no logged combat at all (should not happen for a hero in <c>Deaths</c>, but this
-    /// stays a pure read either way — never a second counterfactual).
+    /// logged combat floor IS the floor that took them). Falls back to <paramref name="fallbackFloor"/>
+    /// (the beat's own floor) when the hero has no logged combat at all (should not happen for a hero
+    /// in <c>Deaths</c>, but this stays a pure read either way — never a second counterfactual).
     /// </summary>
-    private int DeepestCombatFloor(HeroId hero) =>
-        _result!.Floors
+    private static int DeepestCombatFloor(ExpeditionResult result, HeroId hero, int fallbackFloor) =>
+        result.Floors
             .Where(f => f.Combats.Any(c => c.Hero == hero))
             .Select(f => f.Floor)
-            .DefaultIfEmpty(_beat!.Floor)
+            .DefaultIfEmpty(fallbackFloor)
             .Max();
 
     private HeroAtDeparture? DepartureOf(HeroId id) => _result!.PartyAtDeparture.FirstOrDefault(h => h.Id == id);
 
-    private string ItemNameOf(ItemId id) => _state!.Items.TryGetValue(id.Value, out var item) ? item.Name : id.ToString();
+    private static string ItemNameOf(GameState state, ItemId id) =>
+        state.Items.TryGetValue(id.Value, out var item) ? item.Name : id.ToString();
 
     private static string SlotWord(ItemSlot slot) => slot switch
     {
