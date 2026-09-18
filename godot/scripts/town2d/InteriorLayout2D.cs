@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using GameSim.Contracts;
 using GameSim.Professions;
 using Godot;
 using GodotClient.Ui;
@@ -323,5 +324,34 @@ public static class InteriorLayout2D
         return includeMentor
             ? spec
             : spec with { Stations = spec.Stations.Where(s => s.Id != MentorVoice.StationId).ToArray() };
+    }
+
+    /// <summary>
+    /// U37 (§11, R25/R27, "she is sometimes elsewhere"): the live overload — identical to <see
+    /// cref="WorkshopRoomFor(IReadOnlyList{string}, bool)"/> except her appended row carries <see
+    /// cref="MentorVoice.StationFor"/>'s PHASE-derived tile rather than the static <see
+    /// cref="MentorVoice.Station"/> default. Kept as a SEPARATE overload rather than adding a
+    /// <see cref="GameState"/> parameter to the existing one: every pre-U37 caller (every test in
+    /// <c>WorkshopVocabTests</c>/<c>StationIdentityTests</c>, plus the other overload's own
+    /// unconditional-present default) has no campaign to read a phase off and must keep producing
+    /// today's byte-identical bench-tile output. <see cref="Town2d.Town2D"/> is the one live
+    /// caller — see its own doc for when it rebuilds the room to pick up a new tile.
+    /// </summary>
+    public static RoomSpec WorkshopRoomFor(
+        IReadOnlyList<string> orderedProfessions, GameState state, bool includeMentor = true)
+    {
+        var spec = WorkshopRoomFor(orderedProfessions, includeMentor);
+        if (!includeMentor)
+        {
+            return spec;
+        }
+
+        var mentorTile = MentorVoice.TileFor(state);
+        return spec with
+        {
+            Stations = spec.Stations
+                .Select(s => s.Id == MentorVoice.StationId ? s with { Tile = mentorTile } : s)
+                .ToArray(),
+        };
     }
 }

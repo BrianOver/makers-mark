@@ -402,6 +402,15 @@ public partial class Town2D : Control
     /// mounts every room).</summary>
     private bool _workshopMentorVisible = true;
 
+    /// <summary>U37 (§11, R25/R27): the tile the currently-mounted workshop room's Bryn station
+    /// actually carries — the same "what the last (re)build reflects" cache <see
+    /// cref="_workshopMentorVisible"/> keeps, compared against <see cref="MentorTileToday"/> by
+    /// <see cref="RebuildWorkshopIfStale"/> so a phase change (or a loss) that lands between visits
+    /// is picked up the next time the player walks back in — she moves between entries, never
+    /// mid-visit, the identical timing <see cref="_workshopMentorVisible"/>'s own graduation check
+    /// already lives with.</summary>
+    private Vector2I _workshopMentorTile = new(12, 4);
+
     /// <summary>U35 (R26): the shared <see cref="TutorialFlow"/> instance — the identical
     /// "set by MainUi after construction, null-tolerant" contract <see
     /// cref="GodotClient.Panels.LegendsWall.Tutorial"/> already carries. Read only by <see
@@ -588,6 +597,10 @@ public partial class Town2D : Control
         // already-graduated save is corrected by MainUi's own RefreshMentorPresence() call right
         // after it wires Tutorial in.
         _workshopMentorVisible = MentorVisibleToday();
+        // U37 (§11, R25/R27): seeded from the CURRENT phase so a resumed save that loads mid-raid
+        // (or on a loss evening) mounts her at the correct tile on the very first build, not just
+        // after the next phase completion picks it up.
+        _workshopMentorTile = MentorTileToday();
 
         SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
 
@@ -1973,7 +1986,11 @@ public partial class Town2D : Control
         // U35 (R26): recomputed fresh (never the stale cache) — this is the one place that commits
         // whichever answer MentorVisibleToday() gives right now, whatever triggered the rebuild.
         _workshopMentorVisible = MentorVisibleToday();
-        MountInteriorRoom(InteriorLayout2D.WorkshopRoomFor(_workshopProfessionOrder, _workshopMentorVisible));
+        // U37 (§11, R25/R27): same "commit fresh, never the stale cache" rule for her tile.
+        _workshopMentorTile = MentorTileToday();
+        MountInteriorRoom(Adapter is null
+            ? InteriorLayout2D.WorkshopRoomFor(_workshopProfessionOrder, _workshopMentorVisible)
+            : InteriorLayout2D.WorkshopRoomFor(_workshopProfessionOrder, Adapter.CurrentState, _workshopMentorVisible));
         UpdateWorkshopBuildingDressing();
     }
 
@@ -1988,6 +2005,16 @@ public partial class Town2D : Control
         Tutorial is null || Adapter is null || Tutorial.MentorPresent(Adapter.CurrentState);
 
     /// <summary>
+    /// U37 (§11, R25/R27): where Bryn's station belongs RIGHT NOW, per <see
+    /// cref="MentorVoice.TileFor"/> — null-tolerant on <see cref="Adapter"/> (not yet bound at the
+    /// very start of <see cref="Build"/>) so it falls back to whatever <see
+    /// cref="_workshopMentorTile"/> already holds rather than reading a state that does not exist
+    /// yet, mirroring <see cref="MentorVisibleToday"/>'s own null-tolerant shape.
+    /// </summary>
+    private Vector2I MentorTileToday() =>
+        Adapter is null ? _workshopMentorTile : MentorVoice.TileFor(Adapter.CurrentState);
+
+    /// <summary>
     /// U35 (R26): re-evaluates <see cref="MentorVisibleToday"/> against the currently-mounted
     /// room's own <see cref="_workshopMentorVisible"/> and rebuilds if it has changed — for the one
     /// case that cannot wait for <see cref="RebuildWorkshopIfStale"/>'s own "checked at the next
@@ -1999,7 +2026,7 @@ public partial class Town2D : Control
     /// </summary>
     public void RefreshMentorPresence()
     {
-        if (MentorVisibleToday() != _workshopMentorVisible)
+        if (MentorVisibleToday() != _workshopMentorVisible || MentorTileToday() != _workshopMentorTile)
         {
             RebuildWorkshopRoom();
         }
@@ -2018,7 +2045,8 @@ public partial class Town2D : Control
     private void RebuildWorkshopIfStale()
     {
         var current = Adapter!.CurrentState.Player.SelectedProfessions;
-        if (current.SetEquals(_workshopBuiltFor) && MentorVisibleToday() == _workshopMentorVisible)
+        if (current.SetEquals(_workshopBuiltFor) && MentorVisibleToday() == _workshopMentorVisible
+            && MentorTileToday() == _workshopMentorTile)
         {
             return;
         }

@@ -872,6 +872,19 @@ public sealed partial class TutorialFlow : PanelContainer
     /// now a fourth).</summary>
     public bool HasSeenLedgerTip { get; private set; }
 
+    /// <summary>U37 (§11, R25): true once the player has pressed Bryn's station at least once ever
+    /// — persisted the same once-set-forever way as <see cref="HasSeenLedgerTip"/>. Set by <see
+    /// cref="NotifyMentorSpokenTo"/> (<c>MainUi.OnStationActivated</c>'s own <c>StationId ==
+    /// MentorVoice.StationId</c> branch — the one place a press of her actually reaches). Read by
+    /// <see cref="GraduationBeatText"/> to choose between her ordinary farewell and <see
+    /// cref="TutorialFlow.GraduationBeatNeverSpokenText"/> for a player who never once did.</summary>
+    public bool EverSpokenToMentor { get; private set; }
+
+    /// <summary>U37 (§11, R25): whether her graduation farewell has already been spoken — the same
+    /// fact <see cref="ConsumeGraduationBeat"/>'s own <see cref="_graduationBeatDay"/> already
+    /// tracks and persists, exposed read-only rather than duplicated into a second field.</summary>
+    public bool FarewellSeen => _graduationBeatDay > 0;
+
     /// <summary>True while the chain should be overriding the HUD's top slot.</summary>
     public bool Active => !Completed && !Dismissed;
 
@@ -2269,6 +2282,22 @@ public sealed partial class TutorialFlow : PanelContainer
         return "This is the day's story — read who came home, what they found, and what it cost.";
     }
 
+    /// <summary>U37 (§11, R25): marks <see cref="EverSpokenToMentor"/>, once ever — called from the
+    /// one real press of her station (<c>MainUi.OnStationActivated</c>'s <c>StationId ==
+    /// MentorVoice.StationId</c> branch), whatever she actually says on that press. Idempotent and
+    /// cheap on every later press: skips the write once the fact is already true, the same
+    /// once-set-forever shape as <see cref="ConsumeLedgerTip"/> above.</summary>
+    public void NotifyMentorSpokenTo()
+    {
+        if (EverSpokenToMentor)
+        {
+            return;
+        }
+
+        EverSpokenToMentor = true;
+        Save();
+    }
+
     // ── U16 (§11.14.14, "the first thing any player ever reads"): the first-morning cold open ──
     // P2-ONBOARD-06 (§11.15), deletion #1: beat 0 replaces U16's own cold open in place — same
     // once-ever id/pending mechanism, new content, quoted verbatim from the plan's beat sheet.
@@ -3264,7 +3293,7 @@ public sealed partial class TutorialFlow : PanelContainer
     /// did not decide. It would also break P2-ONBOARD-07's own discipline from the other end: the
     /// one place the word may appear is AFTER the sim has already proven it, never before.</para>
     /// </summary>
-    public string GraduationBeatText => GraduationBeatTextFor(_ruleRevisedDay > 0);
+    public string GraduationBeatText => GraduationBeatTextFor(_ruleRevisedDay > 0, EverSpokenToMentor);
 
     /// <summary>
     /// U33: the variant chooser itself — pure and static, so a test can read BOTH farewells against
@@ -3281,9 +3310,28 @@ public sealed partial class TutorialFlow : PanelContainer
     /// restated as what is now true rather than what to do, and nothing else about the plan's line
     /// moves. <c>BrynGraduationGoodbyeTests</c> checks both variants against the full advisor
     /// register with those verbs added back.</para>
+    ///
+    /// <para><b>U37 (§11, R25): kept as the old 1-arg overload, unchanged.</b> Every pre-U37 caller
+    /// (<c>BrynGraduationGoodbyeTests</c> included) reads exactly these two variants; a player who
+    /// never spoke to her is a THIRD axis this overload never had standing to answer (it has no
+    /// campaign to read <see cref="EverSpokenToMentor"/> off), so it forwards to the two-arg
+    /// overload with <c>everSpokenTo: true</c> rather than growing a new parameter that would break
+    /// every existing call site's signature.</para>
     /// </summary>
     public static string GraduationBeatTextFor(bool ruleWasRevised) =>
-        ruleWasRevised ? GraduationBeatRuleRevisedText : GraduationBeatRuleHeldText;
+        GraduationBeatTextFor(ruleWasRevised, everSpokenTo: true);
+
+    /// <summary>
+    /// U37 (§11, R25/R27): the live three-variant chooser. A player who never once pressed her
+    /// station gets neither of the other two claims (both assert something about a lesson she gave
+    /// them, which never happened) — <see cref="GraduationBeatNeverSpokenText"/> instead, said once,
+    /// naming the fact plainly and without guilt (register: <c>docs/design/tone-register.md</c>; no
+    /// reproach, no instruction — the same discipline <c>NeitherGoodbye_EverOrdersThePlayer</c>
+    /// already checks the other two variants against).
+    /// </summary>
+    public static string GraduationBeatTextFor(bool ruleWasRevised, bool everSpokenTo) =>
+        !everSpokenTo ? GraduationBeatNeverSpokenText
+        : ruleWasRevised ? GraduationBeatRuleRevisedText : GraduationBeatRuleHeldText;
 
     /// <summary>U39 (§11.14.14, R28): the two <see cref="GraduationBeatTextFor"/> variants, pulled
     /// out so <c>MentorCorpus</c> holds one reference to each rather than a second hand-copy.</summary>
@@ -3298,6 +3346,15 @@ public sealed partial class TutorialFlow : PanelContainer
         + "keeps everything I taught you, my own rules included, and you'll find out for "
         + "yourself which of them hold. Fair prices, and the wall — those are yours to mind "
         + "now, not mine.";
+
+    /// <summary>U37 (§11, R25): the third farewell — a player who never once spoke to her. States
+    /// the fact and hands over the same Lessons book/bench, with no correction to claim and no
+    /// blame for not visiting (P2-ONBOARD-07's discipline, and law 1: never a reproach dressed as
+    /// an observation).</summary>
+    internal const string GraduationBeatNeverSpokenText =
+        "That's the week, and the bench was only ever borrowed — it's yours. We never did talk "
+        + "much, you and I, but the Lessons book still keeps everything I'd have told you. Fair "
+        + "prices, and the wall — those are yours to mind now, not mine.";
 
     /// <summary>
     /// U25 (§11.14.14, KTD2): the counter's own dormant act — armed the first time EVER a haggle
@@ -3697,6 +3754,9 @@ public sealed partial class TutorialFlow : PanelContainer
             Completed = data.Completed;
             Dismissed = data.Dismissed;
             HasSeenLedgerTip = data.HasSeenLedgerTip;
+            // U37: an old save without this property deserializes to false — the same safe
+            // "never yet" default HasSeenLedgerTip's own fresh-campaign reading already carries.
+            EverSpokenToMentor = data.EverSpokenToMentor;
             Step = data.Step;
             _vigilCardSeen = data.VigilCardSeen;
             _hasSeenWarrantEndBeat = data.HasSeenWarrantEndBeat;
@@ -3762,6 +3822,7 @@ public sealed partial class TutorialFlow : PanelContainer
             new PersistedData
             {
                 Completed = Completed, Dismissed = Dismissed, HasSeenLedgerTip = HasSeenLedgerTip, Step = Step,
+                EverSpokenToMentor = EverSpokenToMentor,
                 VigilCardSeen = _vigilCardSeen,
                 HasSeenWarrantEndBeat = _hasSeenWarrantEndBeat, FirstLossDay = _firstLossDay,
                 HasSeenFleeceBeat = _hasSeenFleeceBeat,
@@ -4020,6 +4081,7 @@ public sealed partial class TutorialFlow : PanelContainer
         public bool Completed { get; set; }
         public bool Dismissed { get; set; }
         public bool HasSeenLedgerTip { get; set; }
+        public bool EverSpokenToMentor { get; set; }
 
         /// <summary>U5: added alongside Completed/Dismissed — see <see cref="Load"/>'s own remark
         /// on why an old save without this property still deserializes safely.</summary>
