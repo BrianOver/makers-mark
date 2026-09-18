@@ -165,6 +165,24 @@ public class BatchRunnerTests : IDisposable
     }
 
     [Fact]
+    public void Policy_ForgeCounter_IsSelectableAndTagsItsOwnFilename()
+    {
+        // P2-HONEST-30: ForgeCounterPlayer was previously unreachable from the batch farm (no
+        // existing policy both crafts/stocks AND closes real counter sales). Selecting it must
+        // (a) actually run ForgeCounterPlayer's craft-stock-and-haggle loop and (b) tag its own
+        // filename distinctly so it never collides with the other policies' corpora.
+        var args = BatchRunner.Parse(["--seeds", "1", "--days", "3", "--out", _dir, "--policy", "forgecounter"], TextWriter.Null);
+        Assert.NotNull(args);
+        Assert.Equal(BatchRunner.Policy.ForgeCounter, args!.PlayerPolicy);
+
+        Assert.Equal(0, BatchRunner.Run(args, TextWriter.Null, TextWriter.Null));
+
+        var file = Assert.Single(Directory.GetFiles(_dir, "batch-seed*-days3-forgecounter.json"));
+        var chronicle = ChronicleCodec.Deserialize(File.ReadAllText(file));
+        Assert.Equal(4, chronicle.Day); // ran through the END of day 3, same as the baseline path
+    }
+
+    [Fact]
     public void SweepCleansStaleBatchFiles_ButSingleSeedRepro_DoesNot()
     {
         // A sweep owns the dir's batch-*.json namespace (stale params would skew corpus baselines);

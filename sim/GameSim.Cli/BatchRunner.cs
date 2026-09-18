@@ -34,7 +34,7 @@ public static class BatchRunner
 {
     public const string Usage =
         "usage: batch --seeds <count> [--seed <startSeed>] [--days <days>] [--out <dir>] "
-        + "[--policy baseline|counter|apprentice|handforge|latemastery|alchemy|tanning|engineering] "
+        + "[--policy baseline|counter|apprentice|handforge|latemastery|alchemy|tanning|engineering|forgecounter] "
         + "[--hand indifferent|average|skilled]";
 
     /// <summary>
@@ -59,6 +59,12 @@ public static class BatchRunner
     /// overload) and actually walks its scorer's active-craft path, closing the blind spot no
     /// existing policy ever touched: none of them crafts outside <c>RecipeTable.All</c> (blacksmith),
     /// so these three professions had ZERO measured crafts of any kind before this axis.
+    /// P2-HONEST-30 adds <see cref="Policy.ForgeCounter"/> (<see cref="ForgeCounterPlayer"/>) — the
+    /// first policy that both stocks the shelf AND closes real counter sales, so decisions 1
+    /// ("sell the good one or hold it") and 2 ("price for the sale or the relationship") get their
+    /// first measured occurrence: neither <see cref="Policy.Baseline"/> (never opens the counter)
+    /// nor <see cref="Policy.Counter"/> (never crafts or stocks, so it closes zero sales) ever fires
+    /// the counter's pin/fleece mood swing.
     /// </summary>
     public enum Policy
     {
@@ -70,6 +76,7 @@ public static class BatchRunner
         AlchemyPuzzle,
         TanningPuzzle,
         EngineeringPuzzle,
+        ForgeCounter,
     }
 
     /// <summary>Parsed batch parameters. Defaults: 20 seeds starting at 1, 100 days, runs/, baseline
@@ -179,7 +186,7 @@ public static class BatchRunner
     /// string, shared by every sweep that offers the axis, so a new policy is spelled out in one
     /// place instead of in each command's own error message.</summary>
     internal const string PolicyNames =
-        "expected 'baseline', 'counter', 'apprentice', 'handforge', 'latemastery', 'alchemy', 'tanning', or 'engineering'";
+        "expected 'baseline', 'counter', 'apprentice', 'handforge', 'latemastery', 'alchemy', 'tanning', 'engineering', or 'forgecounter'";
 
     /// <summary>Map a <c>--policy</c> argument onto its <see cref="Policy"/>, or null when the
     /// argument names no policy. Shared by <see cref="Parse"/> and every other sweep that offers the
@@ -194,6 +201,7 @@ public static class BatchRunner
         "alchemy" => Policy.AlchemyPuzzle,
         "tanning" => Policy.TanningPuzzle,
         "engineering" => Policy.EngineeringPuzzle,
+        "forgecounter" => Policy.ForgeCounter,
         _ => null,
     };
 
@@ -223,6 +231,7 @@ public static class BatchRunner
         Policy.AlchemyPuzzle => "alchemy",
         Policy.TanningPuzzle => "tanning",
         Policy.EngineeringPuzzle => "engineering",
+        Policy.ForgeCounter => "forgecounter",
         _ => "baseline",
     };
 
@@ -237,6 +246,7 @@ public static class BatchRunner
         Policy.AlchemyPuzzle => state => AlchemyPuzzlePlayer.ActionsFor(state, hand),
         Policy.TanningPuzzle => state => TanningPuzzlePlayer.ActionsFor(state, hand),
         Policy.EngineeringPuzzle => state => EngineeringPuzzlePlayer.ActionsFor(state, hand),
+        Policy.ForgeCounter => ForgeCounterPlayer.ActionsFor,
         _ => BaselinePlayer.ActionsFor,
     };
 
