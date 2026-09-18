@@ -27,16 +27,13 @@ Role colors (hero sprites): Vanguard = steel-blue `#4a6b9a`, Striker = crimson `
 - **Candle-glow rim light** (ember) on the upper-left edge of focal objects.
 - Line weight: consistent 2px bone outlines on icons.
 
-## Master prompt prefix (for the Gemini/Imagen generator)
+## Master prompt
 
-> Flat stylized 2D game art, fantasy-witchy with a subtle sci-fi tinge. Dark desaturated palette: void purple-black background (#140f1f), iron (#2a2438), witchy purple accent (#6b4c9a), sci-fi teal (#3fb0ac) on faint circuit traces, warm ember candle-glow rim light (#e0913f). Ancient craft touched by faint technology — runes and thin circuitry share the same metal. Candlelit not neon. Clean 2px outlines, 2-3 tone shading, no gradients, no text. Centered subject, transparent or flat void background. Subject:
-
-Every generation appends its subject to this prefix and conditions on `reference/anchor.png` (the first approved image) for consistency.
+The master prompt and negative have one home: `art/GameArt/ArtTrackProfiles.cs` (two frozen tracks, `Active` and `Painterly`). `docs/design/asset-style-spec.md` restates the recipe for reference. The Gemini/Imagen prefix that used to sit here retired with that generator.
 
 ## Asset inventory
 
-- **SVG (hand-authored, `godot/assets/icons/`):** item-slot icons (weapon/shield/armor), material ore tiers ×5, UI glyphs (gold, bounty, gossip, depths, skull), phase icons (morning/expedition/evening).
-- **Generated (`godot/assets/art/`):** 6 hero portraits (by role), 5 monster illustrations (one per Mine floor), 1 town backdrop, 5 memorial-stone variants.
+The inventory is `docs/design/ASSETS.md`; every count there has a command beside it. The hand-authored SVGs live in `godot/assets/icons/` (28: `weapon`/`shield`/`armor` slot glyphs, `gold`/`bounty`/`gossip`/`depths`/`skull`/`rune`, and 19 `ore_*`). Everything under `godot/assets/art/` is SDXL or procedural per `ASSETS.md` §4.
 
 
 > 2026-07-18 amendment: the dominant mood is now the ANCHOR mood — one of five palette families (`art/GameArt/PaletteRegistry.cs`); tone register lightened per `docs/design/tone-register.md`.

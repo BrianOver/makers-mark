@@ -1110,7 +1110,7 @@ any draw, so a refused action never advances the stream (`CraftingHandlers.cs:13
 Deterministic non-RNG "randomness": `StableHash` (FNV-1a 64 + splitmix avalanche,
 `sim/GameSim/Flavor/StableHash.cs:20-95`) drives flavor variants, voices, trait derivation,
 forge-path shapes, tanning patches, engineering schematics, and artifact names;
-`SmithSkill.Grade` mixes Day and NextItemId (`sim/GameSim/Harness/SmithSkill.cs:57-81` region).
+`SmithSkill.Grade` mixed Day and NextItemId (`sim/GameSim/Harness/SmithSkill.cs:57-81` region) — `SmithSkill` and `SkilledSmithPlayer` were deleted in #753 (P2-HONEST-09); `Harness/CraftHand.cs` is the hand model now.
 None of these touch the kernel stream.
 
 ---
@@ -1258,7 +1258,7 @@ region): the ONLY policy that constructs `UpgradeForgeAction` + `BuyForgeSupplyA
 coal/flux to 12) + `MasterworkAttemptAction` (greedy — a masterwork attempt over a hand-craft of
 the same recipe whenever legal); falls back to `CraftAction`. Morning + Expedition only.
 
-**`SkilledSmithPlayer.ActionsFor`** (`sim/GameSim/Harness/SkilledSmithPlayer.cs:34-38` region):
+**`SkilledSmithPlayer.ActionsFor`** (deleted with `SmithSkill` in #753, P2-HONEST-09 — `Harness/CraftHand.cs` replaces it; the record below is historical):
 delegates entirely to `BaselinePlayer` and re-stamps each `CraftAction` with a `SmithSkill`
 grade — Novice centre 460 spread 280, Veteran centre 850 spread 100 (`SmithSkill.cs:331`,
 `:336` — verified as the `Novice`/`Veteran` definitions); the grade is a pure hash of
@@ -1374,5 +1374,5 @@ Phrased as questions; none of these was mechanically verified.
 - In the CLI's Tick-only model, tonight's ore offers are purchasable only via actions applied at
   the NEXT Evening tick (`ExpeditionRevealSystem.cs:37-41` doc), while a Godot client using
   `ApplyNow` buys them the same Evening — is that client-model difference understood?
-- `SmithSkill` deliberately excludes recipe tier, arguing NextItemId decorrelates from Day
+- `SmithSkill` (deleted, #753) deliberately excluded recipe tier, arguing NextItemId decorrelates from Day
   (`SmithSkill.cs:302-320` doc region) — has the decorrelation been measured, or only argued?

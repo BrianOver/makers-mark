@@ -179,9 +179,11 @@ session transcript is a finding that is already lost.
 | 170 | **One of the six dilemmas has no mechanism behind it.** Dilemma #5 is "buy the ore or buy the goodwill," and `THE-GAME.md` describes it as "you pay the hero directly and may pay well." `OreMarketHandlers` does not do that: the hero always receives the base ask, and when the player pays MORE the surplus is a **faction sink**, not a payment to the hero. The surcharge branch is commented as unreachable/dormant in the current discount-only core. So paying generously buys the player nothing from the hero, and the goodwill half of the dilemma does not exist. Found while building Wave D's teaching for it — and correctly **not** taught, because a lesson explaining a mechanic that does not exist makes the game lie to the player. Needs a real unit: either implement the goodwill payment, or amend `THE-GAME.md` and the six-dilemma list to match what the game is. **RESOLVED 2026-08-24 (owner ruling): amend the doc.** `THE-GAME.md` §3.5 #5 now reads "buy the ore, or buy the faction's favour" — the mechanism that ships. The fork is whose ore you buy, since every purchase raises that faction's standing and cheapens future loads. Taught by §11.14.14 U40; the count-locked gap in `DilemmaLessonsTests` drops to zero. | traced through `OreMarketHandlers` while building §11.14.4 Wave D |
 | 171 | `MineWatch.BarkFor` discarded `AttributionBeatEvent.Detail` — the sim's own already-composed sentence, e.g. "Emberbite landed the killing blow on the cave-rat" — and rebuilt a phrase naming the hero and the action but never the ITEM. On the one screen where the player watches the fight, the proof could not name what earned it. Recorded here because it is the same one-reader-field shape as `KillingItem` and `Hero.Pack`, and because a bark that outranks it (a new depth record) can still win the slot. | found while building §11.14.4 Wave D |
 
-## Three structural facts this session established
+## Two structural facts this session established
 
-None is a defect; all three change how the next session should plan.
+None is a defect; both change how the next session should plan. (A third, about the merge queue needing
+branch updates, was true of the ruleset then and is not now — CLAUDE.md's multi-agent rules describe the
+current `main-protection` behaviour.)
 
 **Subagents cannot see the client.** The engine suite serializes globally, so workers are
 banned from running it. Any *new* engine test a worker writes is therefore first executed
@@ -190,12 +192,6 @@ were real. This is the expected tail on any UI wave, not a sign of a bad worker 
 means a wave's schedule must budget for one orchestrator-side repair pass per UI unit,
 and worker prompts should say so plainly so the report distinguishes "verified" from
 "could not verify here."
-
-**The merge queue does not drain itself.** Auto-merge armed on every PR is not sufficient:
-the ruleset requires branch-up-to-date and GitHub does not auto-update, so a batch of
-green PRs sits BLOCKED indefinitely until someone pushes branch updates. On a night with
-ten PRs this is a material throughput tax, and it is what the CI sharding change (owner-
-authored, `.github/` is deny-listed) would relieve.
 
 **A worker lane inherits whatever the doc says, including the parts that are wrong.**
 The status column removed above sent a lane after three items that had already merged.

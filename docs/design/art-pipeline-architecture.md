@@ -1,12 +1,12 @@
 # Modular Art Pipeline — Architecture
 
-> Design of record for how art-asset generation fans out to parallel task/mod-Claudes without collision, mediated by a single master art-Claude. Produced 2026-07-17 by a 9-agent design workflow (4 architectures → 4 adversarial critiques → synthesis), grounded against the live repo. Status: **proposed** — open decisions in §8 pending sign-off.
+> Design of record for how art-asset generation fans out to parallel task/mod-Claudes without collision, mediated by a single master art-Claude. Produced 2026-07-17 by a 9-agent design workflow (4 architectures → 4 adversarial critiques → synthesis), grounded against the live repo. Built: `art/GameArt/` and `art/GameArt.Tests/` implement it, and the §8 decisions were taken (see §8).
 
-Companion docs: `asset-style-spec.md` (palette/prompts/settings/two-track), `graphics-2.5d-direction.md` (render path), `fanout-strategy.md` (code-lane fan-out this mirrors).
+Companion doc: `asset-style-spec.md` (palette/prompts/settings/two-track). The `graphics-2.5d-direction.md` and `fanout-strategy.md` docs this once cited are deleted; git history holds them.
 
 ## 1. Verdict
 
-The art lane is the code lane with one asymmetry made explicit: **generation is a single-tiller act, everything around it fans out.** An asset is a *data record* (an `AssetSpec`) owned by a task/mod-Claude, validated by a pure fast-lane conformance harness, and rendered through a **name-bound, null-tolerant** registry that already exists (`IconRegistry.Art`). The single master art-Claude — the only agent with the GPU + ComfyUI/MCP lease — is the sole writer of pixels, `.import` sidecars, `uid://`s, and per-asset build metadata. This confirms the user's hypothesis with one refinement: the split is not merely *describe vs generate*, it is **describe + register (fans out) vs generate + import + curate (single tiller), decoupled by a null-tolerant name binding so a describe-PR merges green before any pixel exists.** Because the merge-nasty artifacts (LFS blobs, `.import`, `uid://`, curated seeds) are only ever written by one serial actor, the parallel write surface is genuinely empty — the residual collisions the critics found are ordering, cross-lane coupling, and one-time setup, and every one is closed below.
+The art lane is the code lane with one asymmetry made explicit: **generation is a single-tiller act, everything around it fans out.** An asset is a *data record* (an `AssetSpec`) owned by a task/mod-Claude, validated by a pure fast-lane conformance harness, and rendered through a **name-bound, null-tolerant** registry that already exists (`IconRegistry.Art`). The single master art-Claude — the only agent with the GPU + ComfyUI/MCP lease — is the sole writer of pixels, `.import` sidecars, `uid://`s, and per-asset build metadata. This confirms the user's hypothesis with one refinement: the split is not merely *describe vs generate*, it is **describe + register (fans out) vs generate + import + curate (single tiller), decoupled by a null-tolerant name binding so a describe-PR merges green before any pixel exists.** Because the merge-nasty artifacts (binary PNGs, `.import`, `uid://`, curated seeds) are only ever written by one serial actor, the parallel write surface is genuinely empty — the residual collisions the critics found are ordering, cross-lane coupling, and one-time setup, and every one is closed below.
 
 ## 2. Roles
 
@@ -71,26 +71,20 @@ art/
     GameArt.Tests.csproj
   specs/<module>/<Module>Specs.cs  # FAN-OUT — one file per module, one owner
   build/<id>.build.json            # art-Claude-only build-half (one file per asset)
-  palettes/palette.png             # DENY-LIST — the clamp source
   pipeline/
-    models.lock.json               # DENY-LIST — checkpoint+LoRA name+sha256 pins
     seeds.generated.md             # GENERATED audit log (replaces the hand table in the style spec)
-godot/assets/art/<track>/<id>.png        # LFS — approved diffuse (art-Claude commits)
-godot/assets/art/<track>/<id>_n.png      # LFS — approved normal map
-godot/assets/art/<track>/<id>.png.import # committed, minted by pinned engine (art-Claude)
+godot/assets/art/<id>.png                # approved diffuse (flat directory, no per-track subfolder; ordinary git object, LFS retired 2026-08-06)
+godot/assets/art/<id>_n.png              # approved normal map
+godot/assets/art/<id>.png.import         # committed, minted by pinned engine (art-Claude)
 ```
 
 **Placement lives outside `art/`** — not in `sim/GameSim` (art is not a game rule; keeps KTD2 clean) and not in `godot/` (specs must test without the engine). `GameArt` references `GameSim` **one-way, for `StableHash` only**; `GameSim` never references back.
 
 **The registry index is generated, not hand-edited.** `AssetRegistry.All` is built by **reflecting over every `IAssetModule` in the assembly**, concatenating each module's `Specs`, sorting `StringComparer.Ordinal` by `Id`, and throwing on a duplicate `Id`. Adding a module = adding a file that implements `IAssetModule` — no shared union line to contend on, order-independent merges. This is a deliberate improvement over the code registries' orchestrator one-liner and eliminates the double-bookkeeping the critics flagged. (If the reflection approach is rejected, fall back to the orchestrator-applied `AssetRegistry.All: add <Module>` line — see §8.)
 
-**NEW deny-list entries** (add to `CLAUDE.md` — the art lane's `Contracts/` + `GameComposition.cs` equivalent):
-`art/GameArt/**`, `art/GameArt.Tests/**`, `art/palettes/palette.png`, `art/pipeline/models.lock.json`, `art/pipeline/seeds.generated.md`, `godot/assets/art/**`, `docs/design/asset-style-spec.md`, `docs/style-bible.md`, `.gitattributes`, and the placement owner (`godot/scenes/town/town_scene.tscn` + `godot/scripts/town/TownScene.cs`) until a data-driven `TownLayoutRegistry` exists (§7/§8). Everything under `art/specs/<module>/` is freely fan-out-owned.
+**Ownership.** `CLAUDE.md`'s deny-list was never extended for the art lane; `art/GameArt/**` and `art/GameArt.Tests/**` are orchestrator-owned by convention (the `# DENY-LIST` markers above), and everything under `art/specs/<module>/` is fan-out-owned. Placement is data in `godot/scripts/town2d/TownLayout2D.cs` (`TownLayout2D.Props`), so re-skinning or adding a town prop is a spec plus a layout row, not a scene edit.
 
-**One-time orchestrator infra PR — must land before the first generated asset:**
-1. Git-LFS filter targeting the **right tree**: `godot/assets/art/**/*.png filter=lfs diff=lfs merge=lfs -text` in `.gitattributes` (the critics caught the original `art/**` pattern both missing the PNGs and wrongly LFS-ifying the C# spec source). Run `git lfs install` on CI runners. **Candidate images are gitignored** (`art/pipeline/candidates/`), and **model weights are never committed** — `models.lock.json` pins them by name + sha256.
-2. Add `art/GameArt.Tests` to `Game.sln` and a `dotnet test art/GameArt.Tests` job to `ci.yml`, so "conformance-green = done" is actually enforced on the PR gate.
-3. Retire `tools/AssetGen` from `Game.sln` (declared retired in `fanout-strategy.md` but still present — an orphan).
+**Infra that landed, and one reversal:** `art/GameArt.Tests` is in `Game.sln` and CI runs it (`ci.yml`); `tools/AssetGen` is gone; Git LFS was adopted and then **retired on 2026-08-06** (`.gitattributes`: PNGs are ordinary git objects marked `-text`, candidates gitignored, model weights never committed).
 
 ## 5. Determinism & anti-collision
 
@@ -109,36 +103,30 @@ godot/assets/art/<track>/<id>.png.import # committed, minted by pinned engine (a
 2. **Describe** — append an `AssetSpec` to `art/specs/<module>/<Module>Specs.cs` (constant data; no seed, no model, no floats).
 3. **Wire by name** — reference `IconRegistry.Art("<id>")` (or `Building`/`Sprite`) from the unit's code. No `.tscn` edit, no `.import`, no placeholder binary required — the null-tolerant load means the scene is green with the art absent.
 4. **Gate (fast lane, no GPU, no Godot):** `dotnet test art/GameArt.Tests` — id kebab + globally unique; module non-blank; track-legal prompt bounds; `CfgMilli`/overrides in the track's allowed set; `Uid` unique (once assigned); `SpecVersion` current. Green = the describe-PR's definition of done. **This PR merges immediately** — integration is decoupled from generation.
-5. **Generate (master art-Claude, later, single-tiller PR):** pull the registry work-queue → `SeedFor(id)` first candidate → generate 8–16 via ComfyUI MCP → `magick +dither -remap palette.png` clamp → curate (60–90% reject) → Krita hand-finish → Laigter `_n` map if `NormalMap` → on the pinned engine, import and commit `godot/assets/art/<track>/<id>.{png,_n.png,png.import}` (LFS) → write `art/build/<id>.build.json` with seed/model/palette/sha/uid/provenance and `status: locked` → regenerate `seeds.generated.md`.
-6. **Lock gate (runs where LFS is materialized — a separate CI step, not the pure fast lane):** every `locked` spec has its PNG (+ `_n` when `NormalMap`), on-disk sha256 matches the build-half, palette-clean, provenance complete, `Uid` unique. Green = the asset is done.
+5. **Generate (master art-Claude, later, single-tiller PR):** pull the registry work-queue → `SeedFor(id)` first candidate → generate 8–16 via ComfyUI MCP → `magick +dither -remap palette.png` clamp → curate (60–90% reject) → Krita hand-finish → Laigter `_n` map if `NormalMap` → on the pinned engine, import and commit `godot/assets/art/<id>.{png,_n.png,png.import}` → write `art/build/<id>.build.json` with seed/model/palette/sha/uid/provenance and `status: locked` → regenerate `seeds.generated.md`.
+6. **Lock gate (a separate step from the pure fast lane):** every `locked` spec has its PNG (+ `_n` when `NormalMap`), on-disk sha256 matches the build-half, palette-clean, provenance complete, `Uid` unique. Green = the asset is done.
 
-**Pipeline-stage reconciliation** (the critics flagged ComfyUI-MCP vs the committed Krita `graphics-2.5d-direction.md` as unreconciled): these are **sequential stages of one pipeline**, not competitors — ComfyUI/MCP generates the base sprite, Krita AI hand-finishes, Laigter produces the normal map, Godot wires `Sprite2D` + `Light2D` + `CanvasModulate`. Update `graphics-2.5d-direction.md` to name ComfyUI/MCP as the generation stage.
+**Pipeline stages are sequential, not competitors:** ComfyUI/MCP generates the base sprite, Krita AI hand-finishes, Laigter produces the normal map, Godot wires `Sprite2D` + `Light2D` + `CanvasModulate`.
 
 ## 7. How it plugs into the existing model
 
 - **Registry + conformance harness:** `AssetRegistry` mirrors `FactionRegistry`/`ClassRegistry`/`VenueRegistry`; `AssetConformanceTests` mirrors `FactionConformanceTests` exactly — `[Theory]` + `[MemberData]` over `AssetRegistry.All`, plus a test-only unregistered `AssetSpec` as the extensibility proof (the pattern verified in that file). It is a **pure .NET fast-lane test** (no `GODOT_BIN`, no filesystem IO) so the done-signal never depends on LFS-checkout state; the IO/pixel checks live in the separate lock gate (§6.6).
 - **"Adding an asset" in `docs/addon-guide.md`:** a new section with the same six beats as "Adding a faction/class/venue" — claim, branch, author spec, wire by name, `dotnet test art/GameArt.Tests`, merge; generation is a downstream note pointing to the art-Claude.
-- **`fanout-strategy.md` waves:** add an **art wave** that runs *alongside* code waves — describe-PRs fan out freely; the generation/lock PRs are a serial single-tiller lane behind them. Update line 78 (retire `tools/AssetGen`) and line 137 (fix the `art/**` LFS pattern to `godot/assets/art/**/*.png`).
 - **Cross-lane decoupling (closes the ClassFigure ↔ ClassRegistry coupling):** the art lane does **not** reference `ClassRegistry` at conformance time. A `ClassFigure` spec carries `ClassId` as a plain hint string; an *optional, non-gating* advisory test may warn on an unknown class but **never reds main**. This prevents a class rename/removal in a code-lane PR from breaking the art lane, and vice-versa — an inter-lane build dependency the project does not otherwise have.
-- **Placement vs existence (closes the shared-scene collision):** *existence* fans out (spec + name-bound render). *Placement* — adding a new node/anchor to the town — is a shared edit to `TownScene.cs`, which builds the world programmatically (`town_scene.tscn` is a bare `Control` — verified). Until a data-driven `TownLayoutRegistry` exists, placement stays **orchestrator-serial** and both files are deny-listed. Existing anchors (Forge/Shop/Tavern/gate/ground) already bind by key, so re-skinning them needs zero placement edit.
+- **Placement vs existence:** *existence* fans out (spec + name-bound render). *Placement* is a data row in `godot/scripts/town2d/TownLayout2D.cs`; the 3D `TownScene.cs` / `town_scene.tscn` this once named went with the 2.5D pivot.
 
-## 8. Open decisions
+## 8. Decisions taken
 
-1. **Auto-registry by reflection vs an orchestrator registration line.** *Recommend reflection over `IAssetModule`* — it eliminates the double-bookkeeping the critics flagged and makes adding a module a pure new-file operation with no shared edit. Accept that "registration" becomes implicit-by-presence; if you prefer an explicit, greppable registration point, fall back to the one-line `AssetRegistry.All: add <Module>` (matches the code lane, at the cost of a serialization point).
+1. **Registry by reflection.** `AssetRegistry.DiscoverModules()` reflects over every `IAssetModule` in the assembly; adding a module is a new file, no shared registration line.
+2. **Placement is data** (`TownLayout2D`), so placement fans out with existence.
+3. **`ClassFigure` ↔ `ClassRegistry`:** whatever `AssetConformanceTests` asserts is the ruling; the art lane never hard-links the live class registry at conformance time.
+4. **Full `GameArt` project pair** over a JSON-schema lint step.
 
-2. **Placement now vs a `TownLayoutRegistry`.** *Recommend shipping existence-fan-out immediately* (it works today via the null-tolerant `IconRegistry.Art`) and scheduling a small `TownLayoutRegistry` P-unit as a fast-follow so placement also fans out (a data record: id → anchor/z/scale, consumed by `TownScene.cs`). Decision needed on timing, not direction — until it lands, placement is orchestrator-only.
+**Stated defaults:** candidate images gitignored; model weights out of git; `CfgMilli` integer, all hashed fields integer-or-ordinal-string; single editor session on pinned Godot 4.6.3 for all imports.
 
-3. **`ClassFigure` orphan check: soft advisory vs hard cross-registry link.** *Recommend soft, non-gating advisory* so the two lanes can never deadlock each other's main. Choose the hard link only if you accept that class churn in a code PR can red the art lane.
-
-4. **Full `GameArt` project pair vs a lighter JSON-schema + lint step.** *Recommend the .NET project pair* — the mechanical, greppable "conformance-green = done" DoD and faithful mirror of the five live registries are the load-bearing wins, and specs are cheap constant-data records. Choose the lighter lint path only if the extra build surface is judged disproportionate to a small fixed inventory (the tradeoff `fanout-strategy.md` lines 106–114 raise).
-
-**Stated defaults (not open):** candidate images gitignored; model weights out of git (pinned by sha in `models.lock.json`); `CfgMilli` integer, all hashed fields integer-or-ordinal-string; single editor session on pinned Godot 4.6.3 for all imports; the LFS/CI/AssetGen-retirement infra PR lands first.
-
----
-
-Relevant existing files this design binds to (all verified this session):
-- `c:\Code\Game\sim\GameSim\Flavor\StableHash.cs` — `Avalanche(ulong)` + `HashString(string)`, no float; the seed rule reuses it one-way.
-- `c:\Code\Game\godot\scripts\IconRegistry.cs` — `Art(name)` null-tolerant name binding (the deadlock-avoidance keystone).
-- `c:\Code\Game\godot\scripts\town\TownScene.cs` + `c:\Code\Game\godot\scenes\town\town_scene.tscn` — programmatic placement; the placement deny-list target.
-- `c:\Code\Game\sim\GameSim.Tests\Factions\FactionConformanceTests.cs` — the conformance-harness pattern `AssetConformanceTests` mirrors.
-- `c:\Code\Game\.gitattributes` — currently `* text=auto` only; the LFS infra PR amends it.
+Existing files this design binds to:
+- `sim/GameSim/Flavor/StableHash.cs` — `Avalanche(ulong)` + `HashString(string)`, no float; the seed rule reuses it one-way.
+- `godot/scripts/IconRegistry.cs` — `Art(name)` null-tolerant name binding (the deadlock-avoidance keystone).
+- `godot/scripts/town2d/TownLayout2D.cs` — data-driven placement.
+- `sim/GameSim.Tests/Factions/FactionConformanceTests.cs` — the conformance-harness pattern `AssetConformanceTests` mirrors.
+- `.gitattributes` — PNG/OGG paths marked `-text`; LFS retired.
