@@ -68,7 +68,7 @@ public sealed class RivalRestockSystem : IPhaseSystem
             {
                 NextItemId = state.NextItemId + 1,
                 Items = state.Items.Add(id.Value, minted),
-                RivalShelf = state.RivalShelf.Add(new ShelfEntry(id, price)),
+                RivalShelf = state.RivalShelf.Add(new ShelfEntry(id, price, state.Day)),
             };
         }
 

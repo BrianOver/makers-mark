@@ -94,7 +94,7 @@ public sealed class ShopHandlers : IActionHandler
         {
             Player = state.Player with
             {
-                Shelf = state.Player.Shelf.Add(new ShelfEntry(action.Item, action.Price)),
+                Shelf = state.Player.Shelf.Add(new ShelfEntry(action.Item, action.Price, state.Day)),
             },
         };
         return (newState, null);
@@ -117,7 +117,7 @@ public sealed class ShopHandlers : IActionHandler
         {
             Player = state.Player with
             {
-                Shelf = state.Player.Shelf.SetItem(index, new ShelfEntry(action.Item, action.Price)),
+                Shelf = state.Player.Shelf.SetItem(index, state.Player.Shelf[index] with { Price = action.Price }),
             },
         };
         return (newState, null);
