@@ -535,6 +535,50 @@ public class LedgerModalTests
             .IsEqual(0);
     }
 
+    /// <summary>
+    /// P2-HONEST-29. <see cref="OreMarketHandlers.Apply"/> only ever Min-clamps a standing UP
+    /// (never below 0), and the Morning drift only pulls a non-neutral standing back toward 0 —
+    /// no path in the sim writes a negative standing, so the row's "surcharge +N%" branch was dead
+    /// copy describing a state no run can reach (link 2: show only what the sim decided). Phrased
+    /// as a property over the standing this faction can actually carry
+    /// (<c>[0, StandingCap]</c>) plus the negative range no sim path reaches but the row must still
+    /// render honestly for, rather than one hand-picked instance — a fixed sample would stop
+    /// covering the family the moment <c>MaxAdjustmentPerMille</c> or <c>StandingCap</c> changes.
+    /// </summary>
+    [TestCase]
+    public void OreOfferLine_NeverRendersSurcharge_ForAnyStandingTheFactionCanCarry_OrCannot()
+    {
+        var faction = FactionRegistry.ByOreKey(MaterialRegistry.Copper);
+        AssertThat(faction)
+            .OverrideFailureMessage("Copper must have a registered supplying faction for this sweep to mean anything.")
+            .IsNotNull();
+
+        var cap = faction!.StandingCap;
+        AssertThat(cap).OverrideFailureMessage("A zero-width standing range would not exercise the favor branch.").IsGreater(0);
+
+        var standings = new[] { -cap, -cap / 2, -1, 0, 1, cap / 2, cap }.Distinct();
+
+        foreach (var standing in standings)
+        {
+            var ui = MountMainUi(new SimAdapter(OreOfferDay(standing, quantity: 2, unitPrice: 5)));
+            try
+            {
+                ui.Ledger.ShowFor(1);
+                var line = OreLineFor(RenderedText(ui.Ledger), MaterialRegistry.Copper);
+
+                AssertThat(line)
+                    .OverrideFailureMessage(
+                        $"standing {standing}: ore row must never describe a surcharge — the sim never lowers " +
+                        $"standing below neutral, so no run can reach that state: \"{line}\"")
+                    .NotContains("surcharge");
+            }
+            finally
+            {
+                Unmount(ui);
+            }
+        }
+    }
+
     [TestCase]
     public void OreOffer_PerUnitRoundingWouldDiffer_ShownTotalStillMatchesLineCharge()
     {
