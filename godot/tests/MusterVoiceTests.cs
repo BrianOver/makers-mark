@@ -8,6 +8,7 @@ using GameSim.Classes;
 using GameSim.Contracts;
 using GameSim.Heroes;
 using GameSim.Kernel;
+using GameSim.Venues;
 using GdUnit4;
 using GodotClient.Ui;
 using static GdUnit4.Assertions;
@@ -597,7 +598,10 @@ public class MusterVoiceTests
             AssertThat(line).IsNotNull();
             AssertThat(line!.Contains("floor 2", StringComparison.Ordinal)).IsTrue();
             AssertThat(line.Contains("9", StringComparison.Ordinal)).IsTrue();
-            AssertThat(line.Contains("cave-troll".Replace("-", " "), StringComparison.OrdinalIgnoreCase)).IsTrue();
+            // Pin the PROPERTY (the worst hit's monster is named, through the one place a
+            // MonsterKind becomes a noun phrase) rather than a hand-guessed spelling of it — the
+            // same MonsterName.Definite call DefensiveNightLine itself makes.
+            AssertThat(line.Contains(MonsterName.Definite(worstHit.MonsterKind), StringComparison.Ordinal)).IsTrue();
         }
         finally
         {
