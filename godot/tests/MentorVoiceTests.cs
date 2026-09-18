@@ -1,7 +1,12 @@
 #if GDUNIT_TESTS
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Linq;
+using GameSim.Classes;
+using GameSim.Contracts;
+using GameSim.Heroes;
+using GameSim.Kernel;
 using GdUnit4;
 using GodotClient.Panels;
 using GodotClient.Town2d;
@@ -238,6 +243,240 @@ public class MentorVoiceTests
                     .IsFalse();
             }
         }
+    }
+
+    // ── U34 (§11, R25): MentorVoice.NextObservation — "she says what she's seen" ───────────────────
+
+    private static readonly HeroId LivingHeroId = new(1);
+    private static readonly HeroId FallenHeroId = new(2);
+    private static readonly HeroId BuyerId = new(9);
+    private static readonly ItemId MarkedWeaponId = new(101);
+    private static readonly ItemId MarkedArmorId = new(102);
+    private static readonly ItemId RivalTrinketId = new(103);
+
+    private static Item MarkedItem(ItemId id, string name, ItemSlot slot) => new(
+        id, "recipe", name, slot, QualityGrade.Common, new ItemStats(4, 4, 2),
+        new MakersMark("You", 1), ImmutableList<ItemHistoryEntry>.Empty);
+
+    private static Item RivalItem(ItemId id, string name, ItemSlot slot) => new(
+        id, "recipe", name, slot, QualityGrade.Common, new ItemStats(4, 4, 2),
+        Mark: null, ImmutableList<ItemHistoryEntry>.Empty);
+
+    private static Hero LivingHero(HeroId id, string name, GearSet gear) => new(
+        id, name, ClassRegistry.VanguardId, Level: 2, MaxHp: 30, Gold: 0, Gear: gear,
+        Memories: ImmutableList<ItemMemory>.Empty, Alive: true, DeepestFloorReached: 1, DiedOnDay: null);
+
+    /// <summary>Property check reused by every scenario below: nothing in an observation's spoken
+    /// text may read as a command (R25 rides on law 1 the same way every other authored line
+    /// does), independent of whichever subject produced it.</summary>
+    private static void AssertNeverReadsAsACommand(string text)
+    {
+        AssertThat(text.TrimEnd().EndsWith("!"))
+            .OverrideFailureMessage($"\"{text}\" ends with an exclamation — reads as an order.").IsFalse();
+        AssertThat(text.Contains(" must "))
+            .OverrideFailureMessage($"\"{text}\" contains \"must\" — reads as a command.").IsFalse();
+        string[] imperativeOpeners = { "Go ", "Sell ", "Take ", "Carry ", "Wear " };
+        foreach (var opener in imperativeOpeners)
+        {
+            AssertThat(text.StartsWith(opener))
+                .OverrideFailureMessage($"\"{text}\" opens on a bare imperative (\"{opener.Trim()}\").").IsFalse();
+        }
+    }
+
+    [TestCase]
+    public void NextObservation_EmptyLog_ReturnsNull()
+    {
+        var state = GameFactory.NewGame(8001);
+
+        AssertThat(MentorVoice.NextObservation(state, ImmutableHashSet<string>.Empty)).IsNull();
+    }
+
+    [TestCase]
+    public void NextObservation_SameLogTwice_ReturnsTheIdenticalObservation()
+    {
+        var sold = new ItemSold(MarkedWeaponId, BuyerId, Price: 40, FromPlayerShop: true);
+        var state = GameFactory.NewGame(8002) with { EventLog = ImmutableList.Create<GameEvent>(sold) };
+
+        var first = MentorVoice.NextObservation(state, ImmutableHashSet<string>.Empty);
+        var second = MentorVoice.NextObservation(state, ImmutableHashSet<string>.Empty);
+
+        AssertThat(first).IsNotNull();
+        AssertThat(second).IsNotNull();
+        AssertThat(first!.Value.Key).IsEqual(second!.Value.Key);
+        AssertThat(first.Value.Text).IsEqual(second.Value.Text);
+    }
+
+    /// <summary>The sale/price pair share one logged <see cref="ItemSold"/> event but are two
+    /// DIFFERENT facts with two different keys (class doc's own "telling one does not use up the
+    /// other" rule). Once both are told, and nothing else is in the log, she has nothing left to
+    /// say — the direct proof of "a told observation is not repeated" at full exhaustion.</summary>
+    [TestCase]
+    public void NextObservation_ToldObservation_IsNotRepeated_AndExhaustionYieldsNull()
+    {
+        var sold = new ItemSold(MarkedWeaponId, BuyerId, Price: 40, FromPlayerShop: true);
+        var state = GameFactory.NewGame(8003) with { EventLog = ImmutableList.Create<GameEvent>(sold) };
+
+        var saleTold = MentorVoice.NextObservation(state, ImmutableHashSet<string>.Empty);
+        AssertThat(saleTold).IsNotNull();
+
+        var afterSale = MentorVoice.NextObservation(
+            state, ImmutableHashSet<string>.Empty.Add(saleTold!.Value.Key));
+        AssertThat(afterSale).IsNotNull();
+        AssertThat(afterSale!.Value.Key).IsNotEqual(saleTold.Value.Key);
+
+        var afterBoth = MentorVoice.NextObservation(
+            state,
+            ImmutableHashSet<string>.Empty.Add(saleTold.Value.Key).Add(afterSale.Value.Key));
+        AssertThat(afterBoth)
+            .OverrideFailureMessage("Every candidate this log can produce was told — she must fall silent, never repeat one.")
+            .IsNull();
+    }
+
+    [TestCase]
+    public void NextObservation_SaleNotFromThePlayerShop_NeverBecomesAnObservation()
+    {
+        var sold = new ItemSold(MarkedWeaponId, BuyerId, Price: 40, FromPlayerShop: false);
+        var state = GameFactory.NewGame(8004) with { EventLog = ImmutableList.Create<GameEvent>(sold) };
+
+        AssertThat(MentorVoice.NextObservation(state, ImmutableHashSet<string>.Empty)).IsNull();
+    }
+
+    [TestCase]
+    public void NextObservation_SaleAndPrice_EveryFactTracesToTheLoggedEvent_NeverInvented()
+    {
+        var item = MarkedItem(MarkedWeaponId, "Emberbite", ItemSlot.Weapon);
+        var sold = new ItemSold(MarkedWeaponId, BuyerId, Price: 57, FromPlayerShop: true);
+        var state = GameFactory.NewGame(8005) with
+        {
+            Items = ImmutableSortedDictionary<int, Item>.Empty.Add(MarkedWeaponId.Value, item),
+            EventLog = ImmutableList.Create<GameEvent>(sold),
+        };
+
+        var sale = MentorVoice.NextObservation(state, ImmutableHashSet<string>.Empty);
+        AssertThat(sale).IsNotNull();
+        AssertThat(sale!.Value.Text.Contains(item.Name, StringComparison.Ordinal)).IsTrue();
+        AssertNeverReadsAsACommand(sale.Value.Text);
+
+        var price = MentorVoice.NextObservation(
+            state, ImmutableHashSet<string>.Empty.Add(sale.Value.Key));
+        AssertThat(price).IsNotNull();
+        AssertThat(price!.Value.Text.Contains(item.Name, StringComparison.Ordinal)).IsTrue();
+        AssertThat(price.Value.Text.Contains(sold.Price.ToString(), StringComparison.Ordinal))
+            .OverrideFailureMessage($"\"{price.Value.Text}\" never names the recorded price ({sold.Price}).").IsTrue();
+        AssertNeverReadsAsACommand(price.Value.Text);
+    }
+
+    [TestCase]
+    public void NextObservation_HeroUnderground_NamesTheHeroAndThePlayerMarkedGear()
+    {
+        var item = MarkedItem(MarkedWeaponId, "Emberbite", ItemSlot.Weapon);
+        var hero = LivingHero(LivingHeroId, "Torvald", GearSet.Empty with { Weapon = MarkedWeaponId });
+        var expedition = new InFlightExpedition(
+            Party: ImmutableList.Create(LivingHeroId), TargetFloor: 3, CheckpointFloor: 3, VenueId: "mine",
+            Hp: ImmutableSortedDictionary<int, int>.Empty,
+            Packs: ImmutableSortedDictionary<int, ImmutableList<ItemId>>.Empty,
+            Gold: ImmutableSortedDictionary<int, int>.Empty, Dead: ImmutableSortedSet<int>.Empty,
+            Floors: ImmutableList<FloorOutcome>.Empty, Loot: ImmutableList<OreLoot>.Empty, DeepestFloorCleared: 0);
+        var state = GameFactory.NewGame(8006, ImmutableSortedDictionary<int, Hero>.Empty.Add(LivingHeroId.Value, hero))
+            with
+            {
+                Items = ImmutableSortedDictionary<int, Item>.Empty.Add(MarkedWeaponId.Value, item),
+                InFlight = ImmutableList.Create(expedition),
+            };
+
+        var observation = MentorVoice.NextObservation(state, ImmutableHashSet<string>.Empty);
+
+        AssertThat(observation).IsNotNull();
+        AssertThat(observation!.Value.Text.Contains(hero.Name, StringComparison.Ordinal)).IsTrue();
+        AssertThat(observation.Value.Text.Contains(item.Name, StringComparison.Ordinal)).IsTrue();
+        AssertNeverReadsAsACommand(observation.Value.Text);
+    }
+
+    [TestCase]
+    public void NextObservation_HeroUnderground_UnmarkedGear_NeverBecomesAnObservation()
+    {
+        var item = RivalItem(RivalTrinketId, "Rival Blade", ItemSlot.Weapon);
+        var hero = LivingHero(LivingHeroId, "Torvald", GearSet.Empty with { Weapon = RivalTrinketId });
+        var expedition = new InFlightExpedition(
+            Party: ImmutableList.Create(LivingHeroId), TargetFloor: 3, CheckpointFloor: 3, VenueId: "mine",
+            Hp: ImmutableSortedDictionary<int, int>.Empty,
+            Packs: ImmutableSortedDictionary<int, ImmutableList<ItemId>>.Empty,
+            Gold: ImmutableSortedDictionary<int, int>.Empty, Dead: ImmutableSortedSet<int>.Empty,
+            Floors: ImmutableList<FloorOutcome>.Empty, Loot: ImmutableList<OreLoot>.Empty, DeepestFloorCleared: 0);
+        var state = GameFactory.NewGame(8007, ImmutableSortedDictionary<int, Hero>.Empty.Add(LivingHeroId.Value, hero))
+            with
+            {
+                Items = ImmutableSortedDictionary<int, Item>.Empty.Add(RivalTrinketId.Value, item),
+                InFlight = ImmutableList.Create(expedition),
+            };
+
+        AssertThat(MentorVoice.NextObservation(state, ImmutableHashSet<string>.Empty))
+            .OverrideFailureMessage("A hero underground in RIVAL gear is not the player's work — never an observation.")
+            .IsNull();
+    }
+
+    [TestCase]
+    public void NextObservation_HeroDiedWearingPlayerMarkedGear_NamesTheHeroAndTheFloor()
+    {
+        var item = MarkedItem(MarkedArmorId, "Steadfast Plate", ItemSlot.Armor);
+        var hero = LivingHero(FallenHeroId, "Brunhilde", GearSet.Empty);
+        var died = new HeroDied(
+            FallenHeroId, Floor: 5, Cause: "test", WornGear: GearSet.Empty with { Armor = MarkedArmorId });
+        var state = GameFactory.NewGame(8008, ImmutableSortedDictionary<int, Hero>.Empty.Add(FallenHeroId.Value, hero))
+            with
+            {
+                Items = ImmutableSortedDictionary<int, Item>.Empty.Add(MarkedArmorId.Value, item),
+                EventLog = ImmutableList.Create<GameEvent>(died),
+            };
+
+        var observation = MentorVoice.NextObservation(state, ImmutableHashSet<string>.Empty);
+
+        AssertThat(observation).IsNotNull();
+        AssertThat(observation!.Value.Text.Contains(hero.Name, StringComparison.Ordinal)).IsTrue();
+        AssertThat(observation.Value.Text.Contains("floor 5", StringComparison.Ordinal)).IsTrue();
+        AssertThat(observation.Value.Text.Contains(item.Name, StringComparison.Ordinal)).IsTrue();
+        AssertNeverReadsAsACommand(observation.Value.Text);
+    }
+
+    [TestCase]
+    public void NextObservation_HeroDiedInRivalGear_NeverBecomesAnObservation()
+    {
+        var item = RivalItem(RivalTrinketId, "Rival Blade", ItemSlot.Weapon);
+        var hero = LivingHero(FallenHeroId, "Brunhilde", GearSet.Empty);
+        var died = new HeroDied(
+            FallenHeroId, Floor: 5, Cause: "test", WornGear: GearSet.Empty with { Weapon = RivalTrinketId });
+        var state = GameFactory.NewGame(8009, ImmutableSortedDictionary<int, Hero>.Empty.Add(FallenHeroId.Value, hero))
+            with
+            {
+                Items = ImmutableSortedDictionary<int, Item>.Empty.Add(RivalTrinketId.Value, item),
+                EventLog = ImmutableList.Create<GameEvent>(died),
+            };
+
+        AssertThat(MentorVoice.NextObservation(state, ImmutableHashSet<string>.Empty))
+            .OverrideFailureMessage("A hero who died in RIVAL gear never touched the player's work — never an observation.")
+            .IsNull();
+    }
+
+    [TestCase]
+    public void SheHasSeen_WrapsTheObservationInHerVoice_SameAsCurrentLesson()
+    {
+        var sold = new ItemSold(MarkedWeaponId, BuyerId, Price: 40, FromPlayerShop: true);
+        var state = GameFactory.NewGame(8010) with { EventLog = ImmutableList.Create<GameEvent>(sold) };
+
+        var spoken = MentorVoice.SheHasSeen(state, ImmutableHashSet<string>.Empty);
+        var raw = MentorVoice.NextObservation(state, ImmutableHashSet<string>.Empty);
+
+        AssertThat(spoken).IsNotNull();
+        AssertThat(raw).IsNotNull();
+        AssertThat(spoken).IsEqual(MentorVoice.Speak(raw!.Value.Text));
+    }
+
+    [TestCase]
+    public void SheHasSeen_NothingLeftToSay_ReturnsNull_CallerFallsBackToRestingLine()
+    {
+        var state = GameFactory.NewGame(8011);
+
+        AssertThat(MentorVoice.SheHasSeen(state, ImmutableHashSet<string>.Empty)).IsNull();
     }
 }
 #endif

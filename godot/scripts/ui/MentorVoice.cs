@@ -1,5 +1,7 @@
+using System.Collections.Generic;
 using System.Linq;
 using Godot;
+using GameSim.Contracts;
 using GodotClient.Town2d;
 
 namespace GodotClient.Ui;
@@ -60,6 +62,13 @@ namespace GodotClient.Ui;
 /// an instruction to the PLAYER to act now) or this class's own <see cref="Greeting"/>/<see
 /// cref="RestingLine"/>, both written the same way. <see cref="MentorVoiceTests"/> pins that neither
 /// authored line reads as a command.</para>
+///
+/// <para><b>U34 (§11, R25): she says what she's seen.</b> <see cref="HoverLine"/> has claimed
+/// since U-T2-5 that she "watches the work here" — untrue until <see cref="NextObservation"/>,
+/// which is where every subsequent lesson-exhausted press earns that line: a pure read of
+/// <see cref="GameState.EventLog"/> (and the live gear a logged event names), never an authored
+/// guess. See <see cref="Observation"/>'s own doc for the shape and <see
+/// cref="NextObservation"/>'s for the four subjects and the ordering.</para>
 /// </summary>
 public static class MentorVoice
 {
@@ -167,4 +176,204 @@ public static class MentorVoice
         currentStep is { } step
             ? Speak(TutorialFlow.Registry.First(def => def.Step == step).TeachNote)
             : Speak(RestingLine);
+
+    /// <summary>
+    /// U34 (§11, R25): one fact Bryn reports having watched, or told the player about, at her
+    /// station once the current lesson is exhausted — makes <see cref="HoverLine"/>'s "she watches
+    /// the work here, and says what she's seen" literally true. <see cref="Key"/> is the stable
+    /// identity of the underlying log fact (a caller remembers "already told" by collecting these,
+    /// never by re-deriving one); <see cref="Text"/> is the spoken sentence — past tense, a fact,
+    /// never Speak-wrapped yet (wrap it with <see cref="Speak"/> the same way <see
+    /// cref="CurrentLesson"/> already does before it reaches the screen).
+    /// </summary>
+    public readonly record struct Observation(string Key, string Text);
+
+    /// <summary>
+    /// The pure total function behind <see cref="Observation"/>: four subjects, tried in this
+    /// fixed order, returning the first whose freshest logged instance <paramref
+    /// name="alreadyTold"/> has not already heard — the sale she watched, the price the player
+    /// took (both off the most recent counter-floor <see cref="ItemSold"/> event), a hero
+    /// currently underground carrying a player-marked piece (<see cref="GameState.InFlight"/> +
+    /// live <see cref="Hero.Gear"/>), and a hero who died wearing one (<see
+    /// cref="HeroDied.WornGear"/>). Every returned <see cref="Observation.Text"/> traces to a
+    /// field read straight off a logged event, or off the item/hero record that event names — this
+    /// class invents no odds, no verdict, and no fact absent from <paramref name="state"/>'s own
+    /// <see cref="GameState.EventLog"/> (KTD4). Deterministic and RNG-free: the same <paramref
+    /// name="state"/> and <paramref name="alreadyTold"/> always yield the same result, so a told
+    /// fact drops out of rotation only because the CALLER added its <see cref="Observation.Key"/>
+    /// to the next call's set — this function remembers nothing itself. Null when every subject is
+    /// either absent from the log or already told: an empty log yields nothing, never a fabricated
+    /// filler line.
+    /// </summary>
+    public static Observation? NextObservation(GameState state, IReadOnlySet<string> alreadyTold)
+    {
+        foreach (var candidate in Candidates(state))
+        {
+            if (!alreadyTold.Contains(candidate.Key))
+            {
+                return candidate;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>Convenience wrapper matching <see cref="CurrentLesson"/>'s own shape: the fully
+    /// <see cref="Speak"/>-wrapped line, or null when <see cref="NextObservation"/> has nothing
+    /// left to say (the caller falls back to <see cref="RestingLine"/> itself).</summary>
+    public static string? SheHasSeen(GameState state, IReadOnlySet<string> alreadyTold) =>
+        NextObservation(state, alreadyTold) is { } observation ? Speak(observation.Text) : null;
+
+    /// <summary>The four subjects, in the fixed order <see cref="NextObservation"/> tries them.
+    /// Each yields at most one candidate — the freshest logged instance of that subject — so a
+    /// caller not yet told any of them always hears the newest fact, and one who has been told all
+    /// of the freshest instances hears nothing rather than a stale second-freshest rerun dressed up
+    /// as new (R25: "never an invented observation").</summary>
+    private static IEnumerable<Observation> Candidates(GameState state)
+    {
+        if (SaleWatched(state) is { } sale)
+        {
+            yield return sale;
+        }
+
+        if (PriceTaken(state) is { } price)
+        {
+            yield return price;
+        }
+
+        if (HeroUnderground(state) is { } underground)
+        {
+            yield return underground;
+        }
+
+        if (HeroDiedWearing(state) is { } fallen)
+        {
+            yield return fallen;
+        }
+    }
+
+    /// <summary>"The sale she watched" — the most recent counter-floor sale, named by what left
+    /// the shelf. Reads <see cref="ItemSold.Item"/> straight off the event; only the item's display
+    /// name comes from <see cref="GameState.Items"/>, the same "look the id up, never invent the
+    /// name" idiom <c>LedgerQuery.ReturnCards</c> already uses for a hero's own name.</summary>
+    private static Observation? SaleWatched(GameState state)
+    {
+        if (MostRecentPlayerSale(state) is not { } sale)
+        {
+            return null;
+        }
+
+        var itemName = ItemName(state, sale.Sold.Item);
+        return new Observation($"sale:{sale.Index}", $"I watched you sell {itemName} at the counter.");
+    }
+
+    /// <summary>"The price the player took" — the same sale, the OTHER logged fact about it
+    /// (<see cref="ItemSold.Price"/>). A distinct <see cref="Observation.Key"/> from <see
+    /// cref="SaleWatched"/> deliberately: telling the player she noticed the sale does not use up
+    /// her noticing the number too, and vice versa.</summary>
+    private static Observation? PriceTaken(GameState state)
+    {
+        if (MostRecentPlayerSale(state) is not { } sale)
+        {
+            return null;
+        }
+
+        var itemName = ItemName(state, sale.Sold.Item);
+        return new Observation(
+            $"price:{sale.Index}",
+            $"You took {sale.Sold.Price} gold for {itemName}. I saw the number.");
+    }
+
+    private static (int Index, ItemSold Sold)? MostRecentPlayerSale(GameState state)
+    {
+        for (var i = state.EventLog.Count - 1; i >= 0; i--)
+        {
+            if (state.EventLog[i] is ItemSold { FromPlayerShop: true } sold)
+            {
+                return (i, sold);
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>"A hero underground carrying the player's work" — the first in-flight party
+    /// member (party/expedition order, both already stable) whose LIVE <see cref="Hero.Gear"/>
+    /// carries a player-marked item. Live gear, not a departure snapshot: nothing changes a hero's
+    /// equipped slots mid-expedition, so today's <see cref="GameState.Heroes"/> read is the same
+    /// fact <see cref="GameState.InFlight"/> departed with.</summary>
+    private static Observation? HeroUnderground(GameState state)
+    {
+        foreach (var expedition in state.InFlight)
+        {
+            foreach (var heroId in expedition.Party)
+            {
+                if (!state.Heroes.TryGetValue(heroId.Value, out var hero))
+                {
+                    continue;
+                }
+
+                if (WornMarkedItem(state, hero.Gear) is not { } itemId)
+                {
+                    continue;
+                }
+
+                var itemName = ItemName(state, itemId);
+                return new Observation(
+                    $"underground:{heroId.Value}:{itemId.Value}",
+                    $"{hero.Name} is underground right now, carrying {itemName}.");
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>"A hero who died wearing it" — the most recent <see cref="HeroDied"/> event whose
+    /// recorded <see cref="HeroDied.WornGear"/> carries a player-marked item. The hero's own name
+    /// comes from <see cref="GameState.Heroes"/> when the record still exists, the same
+    /// never-happens-but-handled fallback <c>LedgerQuery.ReturnCards</c> already uses.</summary>
+    private static Observation? HeroDiedWearing(GameState state)
+    {
+        for (var i = state.EventLog.Count - 1; i >= 0; i--)
+        {
+            if (state.EventLog[i] is not HeroDied died)
+            {
+                continue;
+            }
+
+            if (WornMarkedItem(state, died.WornGear) is not { } itemId)
+            {
+                continue;
+            }
+
+            var heroName = state.Heroes.TryGetValue(died.Hero.Value, out var hero)
+                ? hero.Name
+                : died.Hero.ToString();
+            var itemName = ItemName(state, itemId);
+            return new Observation(
+                $"died:{i}",
+                $"{heroName} died on floor {died.Floor}, wearing {itemName}.");
+        }
+
+        return null;
+    }
+
+    /// <summary>The first gear slot carrying a player-marked (<see cref="MakersMark"/>-stamped)
+    /// item, or null when every slot is empty or holds rival-vendor stock. The recorded fact this
+    /// answers is always "did the PLAYER'S OWN craft touch this" (R25/link 1), never any item.</summary>
+    private static ItemId? WornMarkedItem(GameState state, GearSet gear)
+    {
+        foreach (var slot in new[] { gear.Weapon, gear.Shield, gear.Armor, gear.Trinket })
+        {
+            if (slot is { } itemId && state.Items.TryGetValue(itemId.Value, out var item) && item.Mark is not null)
+            {
+                return itemId;
+            }
+        }
+
+        return null;
+    }
+
+    private static string ItemName(GameState state, ItemId itemId) =>
+        state.Items.TryGetValue(itemId.Value, out var item) ? item.Name : itemId.ToString();
 }

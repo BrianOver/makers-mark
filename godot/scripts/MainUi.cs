@@ -5207,7 +5207,7 @@ public partial class MainUi : Control
                     ? MentorVoice.CurrentLesson(Tutorial.Step)
                     : Tutorial.Completed
                         ? MentorVoice.Speak(MentorVoice.RestingLine)
-                        : MentorIdleVoice.Line(Adapter.CurrentState),
+                        : DismissedIdleLine(),
                 preempt: true);
             return;
         }
@@ -5230,6 +5230,33 @@ public partial class MainUi : Control
         // U5 (KTD-D): the real-verb station's own on-screen line — required whenever Action is
         // non-null (InteriorLayout2D.StationSpec's own doc), so the fallback below is defensive only.
         ShowBellToast(station.Copy ?? $"You work the {station.Label}.");
+    }
+
+    /// <summary>
+    /// U34 (§11, R25): Bryn's Dismissed-branch line (<see cref="OnStationActivated"/>'s own
+    /// three-way split above), extended to speak a logged observation once <see
+    /// cref="MentorIdleVoice"/> has no live objective to report. Reuses <see
+    /// cref="TutorialFlow.FirstTouch"/> — the SAME persisted "once ever, never again" table every
+    /// lesson id in this campaign already lives in (<see cref="TutorialFlow.ConsumeFirstTouch"/>)
+    /// — for the "already told" set: an <see cref="MentorVoice.Observation.Key"/> is just another
+    /// id in that one table, so this writes no new <c>user://</c> file and no second persistence
+    /// mechanism. Marks an observation told ONLY when it is the thing actually spoken (guarded by
+    /// <see cref="MentorIdleVoice.TopLiveObjective"/> the same way <see cref="MentorIdleVoice.Line"/>
+    /// itself is) — never burns one silently behind a live objective that pre-empted it.
+    /// </summary>
+    private string DismissedIdleLine()
+    {
+        var state = Adapter.CurrentState;
+        var alreadyTold = Tutorial.FirstTouch.Fired.Keys.ToImmutableHashSet();
+        var line = MentorIdleVoice.Line(state, alreadyTold);
+
+        if (MentorIdleVoice.TopLiveObjective(state) is null
+            && MentorVoice.NextObservation(state, alreadyTold) is { } observation)
+        {
+            Tutorial.ConsumeFirstTouch(observation.Key, MentorVoice.Speak(observation.Text));
+        }
+
+        return line;
     }
 
     /// <summary>
