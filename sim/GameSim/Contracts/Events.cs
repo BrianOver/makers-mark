@@ -58,6 +58,8 @@ namespace GameSim.Contracts;
 [JsonDerivedType(typeof(CampaignEnded), "campaignEnded")]
 [JsonDerivedType(typeof(VenueGraduated), "venueGraduated")]
 [JsonDerivedType(typeof(DecisionExplained), "decisionExplained")]
+[JsonDerivedType(typeof(DuesSettledByPledge), "duesSettledByPledge")]
+[JsonDerivedType(typeof(DuesPledged), "duesPledged")]
 public abstract record GameEvent
 {
     public EventId Id { get; init; }

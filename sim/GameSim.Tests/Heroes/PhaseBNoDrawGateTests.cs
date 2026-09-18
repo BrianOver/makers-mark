@@ -177,6 +177,10 @@ public class PhaseBNoDrawGateTests
         // among them, same two numbers), and the 100-day Balance gate is 75/75 with no threshold
         // moved. What DOES move is the 200-seed arc-stall sweep, which is the point of the change and
         // is reported in the PR body.
-        Assert.Equal(new RngState(4432103899912625622UL, 13279888329118852579UL), state.Rng);
+        // Re-pinned 2026-09-18 for P2-LONG-29 (§11.7.13): the camp checkpoint moved from below floor 1
+        // to below the TARGET floor, so stage 1 resolves more floors before the camp and the camp's own
+        // draws (drink checks, the runner) land at different stream positions. Inc is unchanged — same
+        // stream, different position. Previous State 4432103899912625622.
+        Assert.Equal(new RngState(6875362552125328644UL, 13279888329118852579UL), state.Rng);
     }
 }

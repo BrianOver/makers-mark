@@ -67,6 +67,32 @@ public class ExpeditionSystemTests
         Assert.All(result.Events.OfType<PartyDeparted>(), e => Assert.InRange(e.TargetFloor, 1, 5));
     }
 
+    // P2-LONG-29 (§11.7.5, "checkpoints scale with depth"): the checkpoint is one floor below the
+    // TARGET, not a fixed depth-1 floor — a floor-5 run must camp at floor 4, not floor 1, or the
+    // vigil's reach-into-the-dark decision is only ever live on a floor-2 run. Phrased against the
+    // property (target - 1) across the whole legal target range, not one instance, so a future
+    // depth change can't silently regress back to a fixed shallow camp for deep targets only.
+    [Theory]
+    [InlineData(1, 0)] // target floor 1: unstaged (checkpoint < 1), unchanged by this retune
+    [InlineData(2, 1)]
+    [InlineData(3, 2)]
+    [InlineData(4, 3)]
+    [InlineData(5, 4)]
+    public void CheckpointFor_IsOneFloorBelowTheTarget_AcrossEveryLegalTarget(int targetFloor, int expectedCheckpoint)
+    {
+        Assert.Equal(expectedCheckpoint, ExpeditionSystem.CheckpointFor(targetFloor));
+    }
+
+    [Fact]
+    public void CheckpointFor_NeverEqualsOrExceedsTheTarget()
+    {
+        for (var target = 1; target <= 5; target++)
+        {
+            Assert.True(ExpeditionSystem.CheckpointFor(target) < target,
+                $"checkpoint for target {target} must sit strictly below it");
+        }
+    }
+
     [Fact]
     public void FullDay_WithShoppingAndExpedition_IsDeterministic()
     {
