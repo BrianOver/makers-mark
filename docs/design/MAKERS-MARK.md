@@ -1618,6 +1618,148 @@ plan itself says must never be the antagonist, where P2-LONG-19's single spoken 
 the dramatic function. `P2-LONG-21` and `P2-LONG-22` are campaign-two carryover booked before any
 human has finished campaign one.
 
+### 11.12 The proof wave — measured 2026-09-18
+
+Ten units booked from a read of the running game on `main @ 79a734a7`, one day after §11.11 and
+in its form: every number below was measured on that SHA, quoted with its n and spread, and the
+instruments were the standard corpus (`batch --seeds 20 --days 100` under `BaselinePlayer`, 4,409
+party-nights, 11,637 hero-cards, 45,105 beats), the same sweep under `--policy counter` and
+`--policy apprentice`, the `decisions` tool (15 seeds x 100 days, 7,500 decision points), and three
+throwaway drivers over `GameComposition.BuildKernel()` that were run and not committed (a
+`TellingQuery.Build` pass over every KillingBlow, a bounty-posting arm on top of `BaselinePlayer`,
+and a Deaths-vs-beats join). Five measurements chose the units. One of them overturns a paragraph
+of §11.11, and that is recorded here rather than edited there.
+
+**1. The beat diet did not diet.** §11.11 booked P2-PROOF-19 on the claim that a `KillingBlow`
+row should render only when `TellingQuery.KillingBlowPayload.MonsterHpWithoutItem > 0`, and #878
+shipped exactly that predicate (`TellingPanel.IsDecisiveKillingBlow`, read by `LedgerModal`).
+Measured by running `TellingQuery.Build` over every one of the corpus's 43,999 KillingBlow beats:
+**42,765 pass the predicate — 97.2%** (`MonsterHpWithoutItem` p10 6, median 30, p90 55; zero
+build failures). Proof rows per party-night after the diet: **median 15, p90 15, max 23** — the
+same five per card the beat-volume sweep measured before it. Of 11,637 hero-cards, 9,537 (82.0%)
+carry at least one row with its own "Ask how it happened." button and only 91 (0.8%) fold
+everything into the incidental line. The predicate cannot bite because of what "without the item"
+means: `TellingQuery` strips the weapon and recomputes the swing with the hero's bare attack
+(*"Without it, the swing deals 4, not 17"* is the median shape), and a bare-handed hero almost never
+finishes a monster in one round. Every weapon is decisive against no weapon. **P2-PROOF-20** is the
+fold the 2026-09-11 sweep actually recommended as option 1 and this predicate was substituted for:
+one KillingBlow row per item per card, the deepest kill leading, the count folded, the button on
+the lead only — render-only, no sim change. **P2-PROOF-23** is the question underneath it, and it
+is the owner's: the honest counterfactual for "your mark mattered" is the piece the hero would
+otherwise have carried — the rival's equivalent, or the item they replaced (both are recorded facts:
+`RivalCatalog` and `Hero.Memories`) — not bare hands. That changes `AttributionEngine`'s emission
+and therefore XP, so it is `[S][GOLD][BAL]` and gated on P4.
+
+**2. The sentence exists, and it is behind a click.** The line this game is named for is producible
+today, verbatim in shape, from a real run: seed 1, day 8, the Telling for Torvald's floor-2 kill
+renders *"Shortsword turned the killing blow on floor 2. Torvald lives."* followed by *"The blow
+read 0. Without Shortsword, it deals 4, not 17 -- the beast still stands at 6. There the record
+ends."* — `TellingPack.KillingBlow` through `FlavorEngine.Render`, the exact path
+`TellingPanel.VerdictLines` takes. But that panel opens only from the "Ask how it happened." button.
+The night card's own row for the same beat reads *"Shortsword landed the killing blow on the
+Tunnel Spider -- the blow read 0. Without it, the swing deals 4, not 17. (floor 2)"*
+(`LedgerModal.BeatLine`: `AttributionBeat.Detail` plus a floor suffix), with no hero's name in the
+sentence and the arithmetic in front of the verdict. The night leads with the mark (P1, landed);
+it does not lead with the sentence. **P2-PROOF-21** makes the lead row the Telling's own headline
+and moves the arithmetic under it — the same render call, no new copy, `[G]`.
+
+**It cannot ship before P2-PROOF-22**, because the headline lies about the dead. Both
+`TellingPack.KillingBlow` and `TellingPack.LethalSave` end *"{hero} lives."*, and nothing in
+`TellingPanel` reads `ExpeditionResult.Deaths`. Joined against the corpus: **317 of 45,105 beats
+(0.7%) belong to a hero who died that same night** — 174 of them decisive KillingBlows and 56
+LethalSaves — and **153 of the campaign's 299 deaths carry one**. Seed 1, day 11: *"Shortsword turned
+the killing blow on floor 2. Elowen lives."* on the night Elowen died on floor 3, one button below a
+fate line that says so. Small in share, but it lands on the death card, which is the one card the
+register says must never be wrong. `[S]` because the pack variant lives in `sim/GameSim/Flavor/`,
+pinned by `TellingPackTests`; no event changes.
+
+**3. Gossip is the kill, retold.** 5,861 gossip lines over 20 seeds. Walked back to their `Source`
+event: **5,080 (86.7%) retell a KillingBlow**, 441 (7.5%) a BreakpointClear, 192 (3.3%) a floor
+record, 112 (1.9%) a LethalSave, **19 (0.3%) a death**. Within a seed, the single most-told item
+takes a median 31% of all beat gossip (min 21%, max 53%); the fourteen most common line shapes in
+the corpus all name one Cinderforge Blade. `GossipGenerator` caps at three lines a day and ranks by
+involvement, and 97.5% of what is tellable is a kill, so the cap is spent on kills before a death
+can speak. This is the day-12 wall measured as text: of the day's rendered lines (gossip, beat
+detail, decision reasons, numbers masked), the share already seen verbatim on an earlier day is
+**median 20% on day 3 (n=20, 20–40%), 82% on day 12 (65–95%), 83% on day 25** — the same shape
+`FeltWallSweep` reports as a novelty half-life of day 7–25 (n=20, median 12). **P2-MEMORY-24**
+re-ranks the tellable set — deaths, saves, records and decisive kills above an incidental one, one
+kill line per item per day. It changes which `GossipEmitted` events exist, so `[S][GOLD]`.
+**P2-MEMORY-25** gives the counter a voice there: `grep CounterSaleClosed sim/GameSim/Drama/GossipGenerator.cs`
+returns nothing, so the pinned price and the fleece — the whole of decision 2 — are never told.
+
+**4. The lever aimed at where they go does not move where they go.** `ExpeditionSystem.TargetFloorFor`
+is `Max(DeepestFloorReached) + 1` unless an accepted bounty overrides it; `PartyFormation` is
+roster order. Under `BaselinePlayer` no bounty is ever posted (`PostBounty` legal at all 7,500
+decision points, advised 0, chosen 0), so link 3's only lever was measured with a driver that posts
+60g at the roster's deepest + 2 whenever none is open. Over 20 seeds x 100 days: **1,251 posted,
+1,221 accepted (97.6%), 1,228 departures carried an accepted bounty — and in 1,228 of 1,228 the
+bounty's floor equalled the floor the party would have chosen anyway.** Acceptance lags the post by
+a tick and heroes advance a floor a day, so a bounty "one past" is always caught up to; the muster's
+override card (`MusterSystem.StampTargetFloorDecision`) fired zero times, correctly. What the gold
+bought instead was the venue: bounties are Mine-scoped, and **1,068 of those 1,228 departures (87%)
+were graduated parties pulled back down the ladder** — 436 inside the playable horizon. The
+campaign paid for it: ending day median 30 → 46, in-horizon deaths 191 → 262, in-horizon
+party-nights 1,137 → 1,936. `THE-GAME.md` §4.4 already names the pull-back as "working as built";
+this is its measured cost. **P2-LONG-31** is the honest surface, `[G]`: the send-off says what the
+bounty bought when the floor was theirs already. **P2-LONG-32** is the mechanism, the owner's:
+the bounty follows the party's rung, and a bounty at or under the default floor is named as one
+they were already following. The judgment the player CAN read before the send-off is the halt,
+not the depth: inside the horizon 42.9% of party-nights end `FloorLost`, 29.4% `TargetReached`,
+24.5% `GateHeld`, 2.6% `TooHurt`, 0.7% `PartyWiped` (n=1,137), and `SurvivorStatusText` renders it.
+
+**5. The four channels, counted.** Deliveries per 100 days, median over 20 seeds (min–max):
+
+| channel | `BaselinePlayer` | `CounterPlayer` | `ApprenticePlayer` |
+|---|---|---|---|
+| shelf (`ItemSold.FromPlayerShop`) | **102** (62–158); the rival sells 63 (41–93) | 0 — it never crafts, so it never has stock | 88.5 (65–122) |
+| counter (`CounterSaleClosed`) | 0 | **0** (0 sales, 0 counters, 0 pins in 2,000 days) | 1 (1–1) — the guided course's own |
+| commission (`CommissionFulfilled` / `Expired`) | **38 / 47.5** (fulfilled 20–84) | 0 / 0 | 67.5 / 76.5 |
+| vigil runner (`SupplyDelivered`) | 0 | 0 | **90** (86–94) — 1,801 in all; 41 proved a `PotionLifesave` (2.3%), 363 a `Provisioned` "no credit" (20%) |
+
+Two things follow and neither is booked, because rows already hold them. The counter has no
+policy that can sell through it — `CounterPlayer` is a haggle exerciser with nothing on the shelf,
+so the counter's 100-day numbers are unmeasured in every corpus; the fix is a policy, and P2-LONG-07
+is the harness-honesty row. The runner delivers into a pack the hero never refuses
+(`CampHandlers.ApplySend` is `Pack.Insert(0, item)`; the drink is `CombatMath.DrinkThresholdPct`)
+and 2.3% of deliveries are proved saves — P2-LONG-29/30 own that number. What IS booked from this
+table is **P2-LONG-33**: "Send them deeper" is a `CampPanel` signal (`SendDeeperRequested`) the sim
+never records, so decision 6's abstain arm cannot be audited, retold or chronicled; it needs an
+event, which is `[C]` and the owner's.
+
+**The smaller honest find.** `LedgerModal.OreOfferLine` renders *"({faction} surcharge +N%)"* when
+`TariffAdjustmentPerMille` is negative, and it never is: `OreMarketHandlers.Apply` only ever
+`Min(old + RiseStep, StandingCap)`s a standing, the daily drift returns it toward zero, and nothing
+writes below zero — the sim clamps to `-max` for a branch no state reaches. 125 `FactionStandingShifted`
+events in the corpus, all `Favored` or `Cooled`-from-favored. **P2-HONEST-29** deletes the copy
+branch or, if the owner wants standing to fall, says so first — `[G]` as booked.
+
+**Which of these an unattended session may take.** `P2-PROOF-20`, `P2-PROOF-22`, `P2-PROOF-21`
+(after 22), `P2-LONG-31` and `P2-HONEST-29` are surface work over state the sim already computes:
+no Contracts change, no golden re-record, no balance re-baseline. `P2-MEMORY-24` and `P2-MEMORY-25`
+change the event stream (`[GOLD]`); `P2-PROOF-23`, `P2-LONG-32` and `P2-LONG-33` carry `[BAL]` or
+`[C]` and are gated on P4 by name.
+
+**Booked and landed rows this read argues against, recorded rather than quietly skipped.** The
+P2-PROOF-19 predicate that shipped in #878 is the one measurement 1 refutes: it renders 97.2% of
+kills as decisive, so §11.11's first paragraph — "the render rule that fixes it without touching the
+sim" — describes an intention, not the game; P2-PROOF-20 replaces it and this paragraph is where the
+correction lives, since §11.11 is not edited. `P2-MEMORY-07`'s commendation and `P2-MEMORY-23`'s
+famous-predicate fix both count beats, and measurement 1 says every beat is still "decisive" — both
+inherit the same inflation until P2-PROOF-23 rules what a beat means. `P2-SCREEN-36` and
+`P2-PEOPLE-17` reason about a piece "held for the hero who needs it"; this corpus shows no hold arm
+exists — `BaselinePlayer` accepts every gear commission and shelves every craft, 32% of commissions
+are fulfilled and 39% expire (2,542 posted), and the only way a held piece reaches its hero is the
+counter, which no policy plays. And two link-5 verbs went unexercised by every driver in every
+sweep: `HonorMemorial` was legal at 16,936 decision points and chosen at none (0 `MemorialHonored`
+in 20 seeds), `ReforgeHeirloom` was the most-offered verb in the game (32,043 Morning listings) and
+was never advised or chosen. Nothing in `Category=Balance` can see the rite or the heirloom; that is
+a harness gap for P2-LONG-07's row, noted here so the next census does not rediscover it.
+
+**Ids checked both ways before booking**, per §11.11's own lesson: every id below was grepped
+across `sim/`, `godot/`, `tools/` and `docs/` and against `git log --all --oneline`, and all ten
+missed in both. The only `P2-SCREEN-99` in the tree is a parser fixture.
+
 ## 12. The external reviews — what came from outside, and what we did with it
 
 On 2026-08-06 the owner collected design reviews from three other AI models and asked for
@@ -4844,6 +4986,16 @@ name (§11.6 rule 4).
 | ⚑ P2-HONEST-25 | Every ore row names the faction it feeds, not only the tariffed ones | `godot/scripts/panels/TavernPanel.cs`, `godot/scripts/panels/LedgerModal.cs` | — | [G] |
 | ⚑ P2-HONEST-26 | The night's narration is shown or stops being composed | `godot/scripts/panels/LedgerModal.cs`, `sim/GameSim/Drama/ExpeditionNarrator.cs` | — | [G] |
 | P2-HONEST-28 | Banking a slot is a decision or it is not — measure `ActionBudget` spend, then carry or correct the text | `sim/GameSim/Kernel/ActionBudget.cs`, `sim/GameSim.Tests/` | — | [S] |
+| P2-PROOF-20 | The fold that did not fold — one KillingBlow row per item per card, the deepest kill leads, the count folds | `godot/scripts/panels/LedgerModal.cs`, `godot/scripts/panels/TellingPanel.cs`, `godot/tests/` | — | [G] |
+| P2-PROOF-21 | The night card says the sentence — the lead row is the Telling's own headline, the arithmetic beneath it | `godot/scripts/panels/LedgerModal.cs`, `godot/scripts/panels/TellingPanel.cs`, `sim/GameSim/Flavor/Packs/TellingPack.cs` (read-only) | P2-PROOF-22 | [G] |
+| P2-PROOF-22 | "{hero} lives" is never said of the dead — the Telling reads the night's Deaths before it picks a headline | `godot/scripts/panels/TellingPanel.cs`, `sim/GameSim/Flavor/Packs/TellingPack.cs`, `sim/GameSim.Tests/Flavor/TellingPackTests.cs` | — | [S] |
+| P2-PROOF-23 | "Without the item" means without YOUR item, not bare-handed — the counterfactual strips to the piece the hero would otherwise have carried | `sim/GameSim/Expedition/AttributionEngine.cs`, `sim/GameSim/Expedition/TellingQuery.cs`, `sim/GameSim.Tests/` | P4 | [S][GOLD][BAL] |
+| P2-MEMORY-24 | Gossip stops retelling the kill — deaths, saves and records outrank an incidental kill, one kill line per item per day | `sim/GameSim/Drama/GossipGenerator.cs`, `sim/GameSim.Tests/` | — | [S][GOLD] |
+| P2-MEMORY-25 | The counter sale becomes town memory — `CounterSaleClosed` gets a gossip voice, pinned and fleeced alike | `sim/GameSim/Drama/GossipGenerator.cs`, `sim/GameSim/Flavor/Packs/TavernPack.cs` | P2-MEMORY-24 | [S][GOLD] |
+| P2-LONG-31 | The send-off names what the bounty bought — the venue, not the depth, when the floor was theirs already | `godot/scripts/ui/MusterVoice.cs`, `godot/scripts/panels/RaidForecastBoard.cs`, `sim/GameSim/Drama/ProvenanceQuery.cs` (read-only) | — | [G] |
+| P2-LONG-32 | The bounty follows the party's rung — a Mine-scoped bounty stops pulling graduated parties back down the ladder | `sim/GameSim/Expedition/ExpeditionSystem.cs`, `sim/GameSim/Venues/VenueRouter.cs`, `sim/GameSim/Bounties/BountyRules.cs`, `sim/GameSim.Tests/Balance/` | P4 | [S][GOLD][BAL] |
+| P2-LONG-33 | "Send them deeper" leaves a record — the vigil's abstain arm becomes an event the ledger and chronicle can read | `sim/GameSim/Contracts/Events.cs`, `sim/GameSim/Expedition/CampHandlers.cs`, `godot/scripts/panels/CampPanel.cs` | P4 | [S][C][GOLD] |
+| P2-HONEST-29 | The surcharge that cannot happen — the ore line's "surcharge +N%" branch dies, or standing learns to fall | `godot/scripts/panels/LedgerModal.cs`, `sim/GameSim/Economy/OreMarketHandlers.cs` (read-only), `godot/tests/` | — | [G] |
 
 Depends-on cells hold unit ids and the owner gate `P4` only, so `tools/Progress --frontier` can
 resolve every one of them; what a cell used to say in prose lives here instead. `P2-PEOPLE-03`
