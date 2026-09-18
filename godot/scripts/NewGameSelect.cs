@@ -96,8 +96,11 @@ public partial class NewGameSelect : Control
     /// is hidden outright for this door (<see cref="OnProfessionPicked"/>), and <see
     /// cref="OnBeginPressed"/> never reads it when <c>_pendingSeedIsWarrant</c> is true — the pin
     /// wins by an explicit branch, not by the field happening to be empty or disabled.</para>
+    /// <para><b>Re-pinned 1 → 4 on 2026-09-18 (P2-LONG-29, §11.7.13):</b> the camp now sits below the
+    /// TARGET floor, seed 1 stopped clearing the Warrant's seven criteria (6/7), and the same
+    /// seed-search found seed 4 the first that does. <c>OpeningCampaignPinTests</c> pins the week.</para>
     /// </summary>
-    public const ulong WarrantSeed = 1;
+    public const ulong WarrantSeed = 4;
 
     /// <summary>
     /// P2-ONBOARD-05: prints where <c>"Seed: {number}"</c> used to print, for the one campaign

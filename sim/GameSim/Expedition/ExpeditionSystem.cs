@@ -17,18 +17,23 @@ namespace GameSim.Expedition;
 /// </summary>
 public sealed class ExpeditionSystem : IPhaseSystem
 {
-    // THE tuning knob (kill-risk 2). Step-0 histogram (20 seeds × 100 days, recounted from the
-    // runs/ corpus 2026-07-17): deaths by floor 1/2/3/4 = 59/182/191/25 (n=457). 87.1% of deaths
-    // happen ABOVE floor 1, i.e. in stage 2, after the camp window. Deepening this to 2 puts the
-    // modal death floor (3, with 2 close behind) partly before the window; do that only if
-    // post-staging telemetry shows deaths migrating deeper. Depth-scaling (e.g. target-3 late game)
-    // is a v2 data-tuning PR.
+    // THE tuning knob (kill-risk 2), RETUNED P2-LONG-29 (§11.7.5, owner's August direction
+    // "checkpoints scale with depth", taken under §11.7.13). The fixed depth-1 checkpoint camped
+    // below floor 1 on EVERY target, so a floor-5 run parked with floors 2-5 still undrawn — a
+    // near-full party, no reach-into-the-dark moment, and the vigil's decision was live only on a
+    // floor-2 run. Step-0's histogram (deaths by floor 1/2/3/4 = 59/182/191/25, n=457, 87.1% above
+    // floor 1) still holds, but it measured where deaths land, not where the LAST floor is — the
+    // camp now sits one floor below the FINAL floor on every target, so the door it camps at is
+    // always the one the party has not yet opened.
     internal const int CampCheckpointDepth = 1;
 
-    /// <summary>The stage-1 checkpoint floor for a target: camp sits below this floor. Clamped so
-    /// the checkpoint can never equal the target — <c>checkpoint &lt; 1</c> means an unstaged
-    /// expedition (target floor 1: the whole run resolves at the Expedition tick as today).</summary>
-    internal static int CheckpointFor(int targetFloor) => Math.Min(CampCheckpointDepth, targetFloor - 1);
+    /// <summary>The stage-1 checkpoint floor for a target: camp sits one floor below the target
+    /// (the FINAL floor), not a fixed depth — <see cref="CampCheckpointDepth"/> is now the floor
+    /// under a target-1 run only (the smallest legal gap), not the checkpoint for every target.
+    /// Clamped so the checkpoint can never equal the target — <c>checkpoint &lt; 1</c> means an
+    /// unstaged expedition (target floor 1: the whole run resolves at the Expedition tick as
+    /// today, unchanged by this retune).</summary>
+    internal static int CheckpointFor(int targetFloor) => targetFloor - CampCheckpointDepth;
 
     public DayPhase Phase => DayPhase.Expedition;
 

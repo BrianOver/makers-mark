@@ -98,6 +98,24 @@ namespace GameSim.Tests.Balance;
 ///
 /// The retune was taken as P2-LONG-25 (2026-09-04) — the too-hurt bar, on the owner's ruling, with
 /// the golden re-record recorded in AtomicEquivalenceTests and PhaseBNoDrawGateTests.
+///
+/// <para><b>P2-LONG-29 (2026-09-18, §11.7.5/§11.7.13) — the checkpoint now scales with depth: camp
+/// sits one floor below the TARGET, not a fixed floor-1 depth, so a floor-5 run camps at floor 4
+/// and the vigil's reach-into-the-dark decision is live on every staged run, not just a floor-2
+/// one. This is the PRE-REGISTERED cost gate: deeper stage-1 runs resolve more floors before the
+/// Camp tick, so a party is more likely to finalise (wipe/gate/floor-lost/too-hurt) before it ever
+/// parks — camps get rarer and heavier. Both sides measured on this same 20-seed sweep, BEFORE
+/// (fixed depth-1) vs AFTER (target-1) this unit's change:</b></para>
+///
+///   deliveries per sweep:        BEFORE=20   AFTER=52   (did not collapse toward zero — rose)
+///   camped-hero HP median:       BEFORE=100% AFTER=90%  (structural floor unchanged: min=30% both)
+///   camped-hero observations:    BEFORE=10787 AFTER=8496 (fewer camps, as the gate predicted)
+///   NEVER-SEND deaths/targetReached: BEFORE=304/1398  AFTER=255/1434
+///
+/// <see cref="KillRisk1_NeverSend_vs_SendBelow40_HarnessRuns_BothArmsComplete"/> and <see
+/// cref="CampedHeroHpDistribution_AtParkTime_AcrossTheSweep"/> now each pin one side of this gate
+/// as a floor, not the exact figure (a floor survives the next unrelated balance retune; an exact
+/// pin would not).
 /// </summary>
 public class CampProvisioningBalanceTests
 {
@@ -140,6 +158,14 @@ public class CampProvisioningBalanceTests
         // MEASUREMENT, not a band: assert only that the harness ran and both arms completed.
         Assert.True(never.Expeditions > 0, "never-send arm ran no expeditions");
         Assert.True(send.Expeditions > 0, "send arm ran no expeditions");
+
+        // P2-LONG-29 cost-gate floor (a), deliveries side: the depth-scaled checkpoint measured
+        // 52 deliveries on this sweep against a 20-delivery pre-change baseline (class doc above).
+        // Pinned well under both as a floor, not the figure itself, so an unrelated balance retune
+        // does not false-fail this gate — the thing this line guards against is the send verb's
+        // band collapsing back toward zero the way P2-LONG-23 found it once already.
+        Assert.True(send.Deliveries >= 10,
+            $"deliveries per sweep fell to {send.Deliveries} — the camp depth-scaling retune (P2-LONG-29) may have starved the send verb's band");
     }
 
     /// <summary>
@@ -187,6 +213,16 @@ public class CampProvisioningBalanceTests
         // a false failure in a file whose job is to report the distribution, not to freeze it.
         Assert.Equal(0, pcts.Count(p => p < CombatMath.TooHurtThresholdPct));
         Assert.NotEmpty(pcts.Where(p => p >= CombatMath.TooHurtThresholdPct && p < SendThresholdPct));
+
+        // P2-LONG-29 cost-gate floor (b), HP side: a deeper checkpoint means stage 1 draws more
+        // floors before it can park, so a camped hero is measurably more worked-over than under the
+        // fixed depth-1 checkpoint — median fell from 100% (before) to 90% (after) on this same
+        // sweep (class doc above), and that is the retune working as intended, not a regression.
+        // "≥50%" is the structural half of the intent this gate exists to hold: a camped hero must
+        // still read as mostly-healthy, not as a party that only parked because it had nothing left.
+        var median = pcts[pcts.Count / 2];
+        Assert.True(median >= 50,
+            $"camped-hero HP median fell to {median}% — camp is no longer a healthy-party moment (P2-LONG-29 gate)");
     }
 
     /// <summary>Every camped hero's hp% at the Camp window (the Expedition tick has just parked and

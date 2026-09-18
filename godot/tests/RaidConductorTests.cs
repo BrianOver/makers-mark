@@ -21,14 +21,14 @@ public class RaidConductorTests
     // ── Fixtures ───────────────────────────────────────────────────────────────────────────────
 
     // A fresh Day-1 campaign is GUARANTEED unstaged: every hero's first-ever trip targets floor 1,
-    // and ExpeditionSystem.CheckpointFor(1) = min(1, 0) = 0 < 1, so the whole run resolves at the
+    // and ExpeditionSystem.CheckpointFor(1) = 1 - 1 = 0 < 1, so the whole run resolves at the
     // Expedition tick and InFlight never populates (see ExpeditionSystem's own class doc). This is
     // the common case this unit exists to fix, not a contrived edge case.
     private const ulong UnstagedSeed = 2026;
 
     // Mirrors CampPanelTests' own precedent exactly (duplicated per BellTrayTests' own documented
     // reasoning for why fixture duplication across test files is fine here): DeepestFloorReached: 1
-    // pushes the target floor to 2, so CheckpointFor(2) = min(1, 1) = 1 — staged, and two strong
+    // pushes the target floor to 2, so CheckpointFor(2) = 2 - 1 = 1 — staged, and two strong
     // vanguards reliably clear floor 1 clean rather than wipe/gate/lose it, so they PARK rather than
     // finalizing badly.
     private const ulong StagedSeed = 6;
