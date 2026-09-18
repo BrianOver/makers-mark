@@ -244,4 +244,79 @@ public class GossipTests
         new ExpeditionSystem(),
         new ExpeditionRevealSystem(),
     ];
+
+    // ---------------------------------------------------------------- P2-MEMORY-24: what the town talks about
+
+    private static AttributionBeatEvent Kill(ItemId item, int hero, int id, int floor = 2) =>
+        new(BeatType.KillingBlow, item, new HeroId(hero), floor, "detail") { Id = new EventId(id), Day = 1 };
+
+    [Fact]
+    public void Generator_TellsTheDeathBeforeAnyKill_AndAtMostOneKillLinePerItem()
+    {
+        var blade = PlayerItem(10, "Fine Iron Blade", ItemSlot.Weapon, 8, 0);
+        var axe = PlayerItem(12, "Notched Axe", ItemSlot.Weapon, 6, 0);
+        var state = WithItem(WithItem(NewWorld(), blade), axe);
+
+        // Five kills on two items, the death stamped LAST (least recent-first), so recency alone
+        // would have buried it behind the kills.
+        var lines = Generate(
+            state, 6,
+            Kill(blade.Id, 1, 1), Kill(blade.Id, 1, 2), Kill(blade.Id, 2, 3), Kill(axe.Id, 3, 4), Kill(axe.Id, 3, 5),
+            new HeroDied(new HeroId(4), 2, "slain by a Tunnel Spider", GearSet.Empty) { Id = new EventId(6), Day = 1 });
+
+        Assert.Equal(6, lines[0].Source.Value); // the death leads
+        var killLines = lines.Where(l => l.Source.Value != 6).ToList();
+        Assert.Equal(2, killLines.Count); // one per item — never one per kill
+        Assert.Equal(new[] { 1, 4 }, killLines.Select(l => l.Source.Value).OrderBy(v => v)); // the first stamped kill on each item survives
+    }
+
+    [Fact]
+    public void Generator_ADayOfKillsOnOneItem_YieldsExactlyOneLine()
+    {
+        var blade = PlayerItem(10, "Fine Iron Blade", ItemSlot.Weapon, 8, 0);
+        var state = WithItem(NewWorld(), blade);
+
+        var lines = Generate(state, 3, Kill(blade.Id, 1, 1), Kill(blade.Id, 2, 2), Kill(blade.Id, 3, 3));
+
+        Assert.Single(lines);
+    }
+
+    [Fact]
+    public void Generator_RanksADecisiveKillAheadOfAnIncidentalOne_WhenTheCallerCanTellThemApart()
+    {
+        var blade = PlayerItem(10, "Fine Iron Blade", ItemSlot.Weapon, 8, 0);
+        var axe = PlayerItem(12, "Notched Axe", ItemSlot.Weapon, 6, 0);
+        var state = WithItem(WithItem(NewWorld(), blade), axe);
+        var events = new GameEvent[] { Kill(blade.Id, 1, 1), Kill(axe.Id, 2, 2) };
+
+        // Without a predicate both are incidental and recency puts the axe (id 2) first.
+        var blind = GossipGenerator.Generate(events, state.Heroes, state.Items, Campaign, 1);
+        Assert.Equal(2, blind[0].Source.Value);
+
+        // Told that only the blade's kill was decisive, the tavern leads with it.
+        var told = GossipGenerator.Generate(
+            events, state.Heroes, state.Items, Campaign, 1,
+            isDecisiveKillingBlow: beat => beat.Item == blade.Id);
+        Assert.Equal(1, told[0].Source.Value);
+    }
+
+    [Fact]
+    public void Generator_RankingIsTotalAndDeterministic()
+    {
+        var blade = PlayerItem(10, "Fine Iron Blade", ItemSlot.Weapon, 8, 0);
+        var state = WithItem(NewWorld(), blade);
+        var events = new GameEvent[]
+        {
+            Kill(blade.Id, 1, 1),
+            new AttributionBeatEvent(BeatType.LethalSave, blade.Id, new HeroId(2), 2, "detail") { Id = new EventId(2), Day = 1 },
+            new FloorRecordSet(new HeroId(3), 4) { Id = new EventId(3), Day = 1 },
+            new RecruitArrived(new HeroId(4)) { Id = new EventId(4), Day = 1 },
+        };
+
+        var first = GossipGenerator.Generate(events, state.Heroes, state.Items, Campaign, 4);
+        var second = GossipGenerator.Generate(events, state.Heroes, state.Items, Campaign, 4);
+
+        Assert.Equal(first.Select(l => l.Line), second.Select(l => l.Line));
+        Assert.Equal(new[] { 2, 3, 4, 1 }, first.Select(l => l.Source.Value)); // save, record, recruit, incidental kill
+    }
 }

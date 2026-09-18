@@ -1,5 +1,7 @@
 using GameSim.Contracts;
+using GameSim.Expedition;
 using GameSim.Heroes;
+using GameSim.Venues;
 
 namespace GameSim.Drama;
 
@@ -51,11 +53,35 @@ public sealed class GossipSystem : IPhaseSystem
             state.Heroes,
             state.Items,
             campaignId: state.Rng.Inc,
-            affinityLookup: (a, b) => RelationshipSystem.Affinity(new HeroId(a), new HeroId(b), state)))
+            affinityLookup: (a, b) => RelationshipSystem.Affinity(new HeroId(a), new HeroId(b), state),
+            isDecisiveKillingBlow: beat => KillingBlowWasDecisive(state, beat)))
         {
             events.Emit(gossip);
         }
 
         return state;
+    }
+
+    /// <summary>P2-MEMORY-24: the same predicate the night card uses to decide a kill earned its own
+    /// row — <see cref="TellingQuery.KillingBlowIsDecisive"/> over the recorded fight — so the tavern
+    /// and the ledger never disagree about which kills mattered. A beat whose result is no longer
+    /// held (or that never matched one) ranks as incidental.</summary>
+    private static bool KillingBlowWasDecisive(GameState state, AttributionBeatEvent beatEvent)
+    {
+        foreach (var result in state.LastNightExpeditions)
+        {
+            var beat = result.Beats.FirstOrDefault(b =>
+                b.Beat == beatEvent.Beat && b.Item == beatEvent.Item && b.Hero == beatEvent.Hero
+                && b.Floor == beatEvent.Floor && b.Detail == beatEvent.Detail);
+            if (beat is null)
+            {
+                continue;
+            }
+
+            var venue = VenueRegistry.All.TryGetValue(result.VenueId, out var v) ? v : VenueRegistry.Mine;
+            return TellingQuery.KillingBlowIsDecisive(result, beat, state.Items, venue);
+        }
+
+        return false;
     }
 }
