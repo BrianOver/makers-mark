@@ -20,7 +20,8 @@ public sealed record FrontierRow(
     string? RefusalReason,
     bool ShippedByEvidence = false,
     string? EvidenceDetail = null,
-    bool Unverified = false);
+    bool Unverified = false,
+    bool LandedByTagOnly = false);
 
 /// <summary>
 /// The machine-readable half of this tool: which units an unattended session may take, derived
@@ -77,10 +78,30 @@ public static class Frontier
             .Where(s => s.HasCodeHit)
             .ToDictionary(s => s.UnitId, s => s, StringComparer.Ordinal);
 
-        var rows = new List<FrontierRow>();
-        foreach (var row in result.Domains.SelectMany(d => d.Rows))
+        // A commit subject can NAME a unit without delivering it -- a booking PR whose subject reads
+        // "... is booked as P2-PROOF-24" lands that id in the commit-tag index the moment it merges,
+        // and the row disappears from the frontier as LANDED with nothing built (2026-09-18, #894).
+        // The census outranks the receipt: when such a row carries an `evidence:` marker and the
+        // check comes back NotFound, the tag is treated as a booking and the row stays unbuilt --
+        // for itself AND for anything that depends on it.
+        var allRows = result.Domains.SelectMany(d => d.Rows).ToList();
+        var landedByTagOnly = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var row in allRows)
         {
-            if (row.Status != UnitStatus.Unbuilt)
+            if (row.Status == UnitStatus.Landed
+                && row.Unit.Evidence.Count > 0
+                && EvidenceCheck.Check(row.Unit.Evidence, repoRoot).Status == EvidenceStatus.NotFound)
+            {
+                landedByTagOnly.Add(row.Unit.Id);
+                status[row.Unit.Id] = UnitStatus.Unbuilt;
+            }
+        }
+
+        var rows = new List<FrontierRow>();
+        foreach (var row in allRows)
+        {
+            var tagOnly = landedByTagOnly.Contains(row.Unit.Id);
+            if (row.Status != UnitStatus.Unbuilt && !tagOnly)
             {
                 continue;
             }
@@ -104,7 +125,8 @@ public static class Frontier
                 row.Unit.Flags,
                 row.Unit.Files.Select(f => f.Path).ToList(),
                 Refusal(row.Unit, status, sourceTaggedByCode),
-                Unverified: evidence.Status == EvidenceStatus.NoMarker));
+                Unverified: evidence.Status == EvidenceStatus.NoMarker,
+                LandedByTagOnly: tagOnly));
         }
 
         return rows
@@ -216,6 +238,13 @@ public static class Frontier
                 sb.AppendLine(
                     "    note  this row carries no `evidence:` marker, so \"unbuilt\" here is an INFERENCE from "
                     + "commit tags and file existence, not a check. Grep for the deliverable before dispatching.");
+            }
+
+            if (row.LandedByTagOnly)
+            {
+                sb.AppendLine(
+                    "    note  a merged commit subject names this id, but its `evidence:` marker is NOT in the tree -- "
+                    + "the subject was a booking, not a delivery. Still unbuilt.");
             }
 
             foreach (var file in row.Files)

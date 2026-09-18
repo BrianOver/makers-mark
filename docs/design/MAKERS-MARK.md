@@ -4912,7 +4912,7 @@ name (§11.6 rule 4).
 | ⚑ P2-PROOF-14 | The counterfactual reaches the ledger — the beat carries its own arithmetic | `sim/GameSim/Expedition/AttributionEngine.cs`, `godot/scripts/panels/LedgerModal.cs` | — | [S][GOLD] |
 | P2-PROOF-17 | The rank-up says which part of it your mark earned — an XP split that cannot disagree with the grant | `sim/GameSim/Drama/`, `sim/GameSim.Tests/`, `godot/scripts/panels/LedgerModal.cs` | — | [S] |
 | P2-PROOF-18 | The closest call — the survivor who nearly didn't, with the floor, the monster and the slot | `sim/GameSim/Drama/`, `godot/scripts/panels/LedgerModal.cs` | — | [S] |
-| P2-PROOF-24 | The killing blow has a pose — `MonsterSlain` gives the hero whose item killed a distinct beat, drawn on the frame the sim says it landed (motion-only, no new art; U52's part (c)) | `godot/scripts/panels/DelveStage.cs`, `godot/tests/DelveStageTests.cs` | — | [G] |
+| P2-PROOF-24 | The killing blow has a pose — `MonsterSlain` gives the hero whose item killed a distinct beat, drawn on the frame the sim says it landed (motion-only, no new art; U52's part (c)) | `godot/scripts/panels/DelveStage.cs`, `godot/tests/DelveStageTests.cs` `evidence:godot/scripts/panels/DelveStage.cs:CombatPoseKind.Kill` | — | [G] |
 | P2-MEMORY-02 | The death card reads the pack and the last blow | `godot/scripts/panels/LedgerModal.cs` | — | [G] |
 | P2-MEMORY-05 | The Signed Work speaks; the idle line varies | `godot/scripts/panels/ForgePanel.cs`, advisor idle copy | — | [G] |
 | P2-MEMORY-06 | Provenance derives sales instead of omitting them | `godot/scripts/panels/ProvenanceCard.cs` | — | [G] |
