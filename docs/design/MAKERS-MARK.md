@@ -1760,6 +1760,139 @@ a harness gap for P2-LONG-07's row, noted here so the next census does not redis
 across `sim/`, `godot/`, `tools/` and `docs/` and against `git log --all --oneline`, and all ten
 missed in both. The only `P2-SCREEN-99` in the tree is a parser fixture.
 
+### 11.13 The town wave — measured 2026-09-18
+
+Ten units booked from a read of the running game on `main @ 0514cca0`, the same day as §11.12 and
+in its form: every number below was measured on that SHA and quoted with its n and spread. The
+owner's standing direction for the day was *"find more, keep going — add more assets, features,
+events; make things fun"*, so this read went looking for what a player would call an event, what
+they would see as a blank or hear as silence, and which of the six decisions still has a dead arm.
+The instruments were the standard corpus (`batch --seeds 20 --days 100` under `BaselinePlayer`,
+seeds 1–20, 4,409 party-nights, 45,105 beats, parsed from the chronicles `BatchRunner` writes), the
+same sweep under `--policy counter`, `felt-wall --seeds 20 --days 100`, a reader census over
+`godot/scripts/` for every `GameEvent` subtype, and two throwaway drivers over
+`GameComposition.BuildKernel()` that were run and not committed (a masked verbatim-repeat census
+over the day's rendered sim-side lines, and a one-line serializer probe). Four measurements chose
+the units.
+
+**1. Fifty-two event types; thirty-two ever happen, and two of the readers are broken.** Under
+`BaselinePlayer`, 32 of the 52 `GameEvent` subtypes fire in a 100-day campaign and 20 never do
+(among the never: every counter event, every bounty event, `ItemSigned`, `MemorialHonored`,
+`HeirloomReforged`, `DenThreatShifted`, `RivalExpansionTriggered`, `HeroConsideringLeaving`,
+`TownConfidenceCollapsed`). What a human would call an event does happen, and at a rate worth
+staging: **15 deaths per campaign (n=20, 6–27), the first on day 6 (4–12); 44 rank-ups (36–54); 48.5
+floor records (35–63); 15 director incidents (12–20); 17.5 market-share shifts (7–48), the first on
+day 58 (14–81).** Of the town-level happenings the direction named, none exist: no hero ever retires
+(`HeroConsideringLeaving` is a warning with nothing after it and fired 0 times in 20 seeds), no rival
+ever poaches a named regular (`grep poach` is empty), no party brings news, no caravan, no feast
+(`festival` matches one plaza-garland comment in `TownLayout2D.cs:333`). `THE-GAME.md` §7 already
+states two of those as properties — "no hero ever quits, and the town cannot fail" — so they are
+not booked as gaps here. Two things ARE booked from this census. **`DuesPledged` is emitted
+(`PledgeDuesHandlers.cs:111`), tested, rendered by `PledgePanel`, and absent from the
+`[JsonDerivedType]` list on `GameEvent`** — the probe confirms that serializing an
+`ImmutableList<GameEvent>` holding one throws `NotSupportedException: Runtime type
+'GameSim.Contracts.DuesPledged' is not supported by polymorphic type 'GameSim.Contracts.GameEvent'`,
+and `SaveCodec.Serialize` is the serialized `GameState`, `EventLog` included. A human who pledges a
+piece against the Guild's dues — a verb the client offers — and then autosaves loses the save. No
+harness ever pledges, which is why nothing has seen it. That is **P2-HONEST-31**, `[S][C]` because
+the fix is an attribute in `Contracts/Events.cs`; it is interrupt-class under §11.6 rule 2 (link 5's
+record), and the orchestrating session should take it ahead of the queue. The other is
+**P2-HONEST-32**: `MineWatch` reads `DenThreatShifted` in four places (`:696`, `:1468`, `:1490`,
+`:1491`) to light a den's threat tier, and the event fired **0 times in 2,000 days** —
+`DirectorSystem.DenStep` adds 18‰ a day and takes 30‰ per clear, and with a median 2.2 party-nights
+a day the meter never leaves zero, so the first tier (250‰) is unreachable under any policy that
+raids. Measure, then move the arithmetic or delete the reader; changing when it fires changes the
+event stream, so `[S][GOLD]`.
+
+**2. The rival never takes a name, and the last hour is never called.** The rival sells 63 pieces
+per campaign against the player's 102 (§11.12 measurement 5), undercuts by up to 40% at full share
+(`RivalRestockSystem.cs:26-28`), and every one of those sales is a named hero buying a specific
+piece — `ItemSold(Item, Buyer, Price, FromPlayerShop: false)`. `LegendsWall.FormatLine` renders it
+as *"Rival's {item} sold to {hero} for {price}g."* and `MarketShareShifted` reaches the ticker as a
+percentage; nothing anywhere joins the rival sale to the fact that the player's own matching piece
+sat on the shelf that morning (`grep FromPlayerShop godot/scripts` is six sites, none of which read
+the shelf). **P2-MEMORY-26** is a pure query over recorded facts — the night's rival `ItemSold`s
+against the morning's shop inventory — with one line on the night card: *Torvald bought a rival
+shortsword for 22g; yours sat at 40g.* No event, no sim change, `[S]` for the query. On the
+commission side: **a commission is fulfilled on its own deadline day a median 2 times per campaign
+(n=20, 0–7)**, out of 38 fulfilments — the real last-hour moment the six-decisions text promises,
+and `CommissionFulfilled(Hero, Item, Premium)` reaches the ledger with no word about the day.
+**P2-SCREEN-39** joins it to the `CommissionPosted.DeadlineDay` the log already holds and says so,
+`[G]`.
+
+**3. Fourteen of nineteen monsters are a dim painting, and the record is silent.** The sim names
+19 monster kinds across the four live venues (`VenueRegistry.LiveRotation`); all 19 have an SDXL
+portrait, and **only the Mine's five have a walking pixel mini** (`town2d-monster-*`, 25 files with
+variants). For the other 14 — every Gloomwood, Sunken Crypt and Emberfall creature, i.e. every
+monster a party meets once it graduates — `DelveStage.ShowMonster` (`:753-763`) falls through to the
+portrait under `FallbackMonsterTint`, and `AssetResolutionCensusTests` pins only the Mine's five by
+name, so the fallback is green. `tools/art/gen_town_sprites.py` already carries the rig
+(`MONSTER_GRIDS`, `monster_palette`, the variant pool) that authored the five; the remaining
+fourteen are grid rows, not a pipeline, and no GPU is involved. **P2-SCREEN-37**, `[G]`, and the
+census stops hand-listing a venue. On sound: `SfxLibrary` holds 22 code-synthesized cues and no
+files. The forge has a sting per grade; the counter has its coin; the death has `DeathToll` (only
+when the narrator's epitaph fires). **`LedgerModal.cs`, `TellingPanel.cs` and `MineWatch.cs` have
+zero audio call sites** — the night card opens mute, the record is set mute, and 44 rank-ups a
+campaign pass as a text line. Sixteen of 24 panel files play nothing. The narrator does voice the
+Telling's verdict at night (`SelectForNight` picks `DeathEpitaph`, `ProvenSave`, `KillingBlow`), so
+the sentence is not silent; the moments around it are. **P2-SCREEN-38** adds three synthesized cues
+— record, rank-up, night-card open — each with a declared rank in `TickCuePriority` so P2-SCREEN-16's
+one-cue-per-tick rule still holds, `[G]`, no asset.
+
+**4. Decision 1 has no hold verb, decision 2 has never been measured, and the wall moved less than
+the instrument did.** The first of the six decisions is "sell the good one, or hold it for the hero
+who needs it", and **no verb holds anything for anyone**: `UnstockAction` pulls a piece with no
+target (`ShopHandlers.cs:126-144`), `PresentItemAction` shows a piece to whichever hero the counter
+queue made active (`CounterHandlers.cs:86-111`), `Item` carries no reservation field, and
+`CommissionHandlers.cs:190-208` says in its own comment that a piece stocked for one hero's ask is
+bought out from under them by an earlier hero's ordinary shopping. 2,542 commissions posted, 825
+fulfilled (32.5%), 994 expired (39.1%). P2-PEOPLE-17 named that risk on a forecast; **P2-PEOPLE-28**
+is the verb — an earmark that hides a stocked piece from `HeroShoppingSystem` and shows it to one
+named hero — and it is a new action, so `[S][C][GOLD]` and the owner's. The second decision is
+alive in code and dead in every corpus: `HaggleResolver.CloseSale` moves `MoodPermille` **+60 on a
+pin and −80 on a fleece, flat, and not at all on an in-band sale** (`moodDelta: null`,
+`HaggleResolver.cs:180-209`; `WillingnessModel.cs:82,88`) — a 1g pin and a 500g pin are the same
+kindness. And no harness has ever closed a counter sale: `CounterPlayer` opens 2,000 sessions in 20
+seeds and closes **0**, because it never crafts or stocks and every session ends on an empty shelf;
+`BaselinePlayer` never opens the counter. **P2-HONEST-30** is the policy that does both, `[S]` and
+harness-only, and **P2-PEOPLE-29** — the margin moving the mood — depends on it, `[S][BAL]`.
+Decisions 3 and 5 were read and are not booked: `ShoppingAi.EvaluateItem` scores an empty slot and
+a worse slot through the same `gain > 0` (`:154-186`), which makes "fill or upgrade" the player's
+choice of whom to serve rather than a sim distinction, and every `BuyOreAction` raises standing
+(`OreMarketHandlers.cs:121-140`), so "ore or favour" is one purchase whose only fork is whose — both
+true to `THE-GAME.md` §3.5 as written. On the wall: the masked verbatim-repeat share of the day's
+sim-side lines (narration, gossip, beat detail, decision reasons) is **median 14% on day 3 (n=20,
+7–21%), 56% on day 12 (47–65%), 66% on day 25 (39–80%)**; by kind on day 12, beat detail 88%,
+narration 52%, gossip 14%, reasons 100%. `felt-wall` reports the same half-life as before, **day 12.0**
+(n=20). §11.12 quoted 20/82/83 from a different throwaway, so the drop is the instrument, not
+P2-PROOF-20/21/22 — and neither driver can see those fixes at all, because they are render-side in
+`LedgerModal` and every census so far reads the sim. **P2-LONG-34** puts the census where the player
+reads: a Godot-side verbatim-repeat over the night card's rendered lines on days 3, 12 and 25, `[G]`.
+
+**Which of these an unattended session may take.** `P2-SCREEN-37`, `P2-SCREEN-38`, `P2-SCREEN-39`,
+`P2-MEMORY-26`, `P2-HONEST-30` and `P2-LONG-34` are surface, asset or harness work over state the
+sim already computes: no Contracts change, no golden re-record, no balance re-baseline.
+`P2-HONEST-31` and `P2-PEOPLE-28` touch `Contracts/` (`[C]`); `P2-HONEST-32` changes the event
+stream (`[GOLD]`); `P2-PEOPLE-29` is a balance change (`[BAL]`). Under the owner's direction of this
+date the flagged rows are takeable with their ceremony performed; `P2-HONEST-31` should go first
+regardless, because it is a save-loss bug reachable from the client today.
+
+**Booked rows this read argues against, recorded rather than quietly skipped.** `P2-LONG-07`
+(§11.12 measurement 5's "harness-honesty row") sits behind the P4-gated `P2-LONG-02..03` chain, which
+means the counter — the whole of decision 2 — stays unmeasurable until the owner's evening;
+`P2-HONEST-30` is booked standalone so the instrument does not wait on the demand engine. `P2-LONG-16`
+builds the Quiet Morning on `TownConfidenceCollapsed`, and §11.11 asked for a measurement first:
+0 in 20 seeds is the measurement. `P2-MEMORY-24`'s premise that gossip is the kill retold stands
+(86.7% by source), but masked for names and numbers gossip is the FRESHEST text in the game — 14%
+verbatim repeat on day 12 against beat detail's 88% — so the day-12 wall is the beat rows and the
+narration, and P2-PROOF-20's fold is the right first cut. `THE-GAME.md` §7's "no hero ever quits"
+and "the town cannot fail" are confirmed as properties, not gaps.
+
+**Ids checked both ways before booking**, per §11.11's lesson: every id below was grepped across
+`sim/`, `godot/`, `tools/` and `docs/` and against `git log --all --oneline`, and all ten missed in
+both. `P2-PROOF-25` was skipped because `tools/Progress.Tests/FrontierEvidenceTests.cs` uses it as a
+fixture.
+
 ## 12. The external reviews — what came from outside, and what we did with it
 
 On 2026-08-06 the owner collected design reviews from three other AI models and asked for
@@ -5011,6 +5144,16 @@ name (§11.6 rule 4).
 | P2-LONG-32 | The bounty follows the party's rung — a Mine-scoped bounty stops pulling graduated parties back down the ladder | `sim/GameSim/Expedition/ExpeditionSystem.cs`, `sim/GameSim/Venues/VenueRouter.cs`, `sim/GameSim/Bounties/BountyRules.cs`, `sim/GameSim.Tests/Balance/` | P4 | [S][GOLD][BAL] |
 | P2-LONG-33 | "Send them deeper" leaves a record — the vigil's abstain arm becomes an event the ledger and chronicle can read | `sim/GameSim/Contracts/Events.cs`, `sim/GameSim/Expedition/CampHandlers.cs`, `godot/scripts/panels/CampPanel.cs` | P4 | [S][C][GOLD] |
 | P2-HONEST-29 | The surcharge that cannot happen — the ore line's "surcharge +N%" branch dies, or standing learns to fall | `godot/scripts/panels/LedgerModal.cs`, `sim/GameSim/Economy/OreMarketHandlers.cs` (read-only), `godot/tests/` | — | [G] |
+| P2-SCREEN-37 | Every venue's monsters walk — the fourteen Gloomwood, Crypt and Foundry kinds get pixel minis from the rig the Mine's five already use, and the census pins all nineteen | `tools/art/gen_town_sprites.py`, `godot/assets/art/`, `godot/tests/AssetResolutionCensusTests.cs`, `godot/scripts/panels/DelveStage.cs` (read-only) `evidence:godot/assets/art/town2d-monster-bramble-boar.png` | — | [G] |
+| P2-SCREEN-38 | The record and the rank-up get a sting, and the night card opens on a cue — three synthesized cues, each with a declared rank | `godot/scripts/audio/SfxLibrary.cs`, `godot/scripts/audio/TickCuePriority.cs`, `godot/scripts/panels/LedgerModal.cs`, `godot/tests/` | — | [G] |
+| P2-SCREEN-39 | The deadline kept — a commission fulfilled on its due day says so on the night it lands | `godot/scripts/panels/LedgerModal.cs`, `godot/scripts/panels/LegendsWall.cs`, `godot/tests/` | — | [G] |
+| P2-MEMORY-26 | The rival takes a name — when a hero buys rival iron while your matching piece sat on the shelf that morning, the night says who, what, and at what price | new `sim/GameSim/Drama/RivalSaleQuery.cs`, `sim/GameSim.Tests/`, `godot/scripts/panels/LedgerModal.cs`, `godot/scripts/panels/LegendsWall.cs` `evidence:sim/GameSim/Drama/RivalSaleQuery.cs` | — | [S] |
+| P2-HONEST-30 | A harness policy that crafts, stocks and works the counter — decisions 1 and 2 get their first measured occurrence | new `sim/GameSim/Harness/ForgeCounterPlayer.cs`, `sim/GameSim.Cli/BatchRunner.cs`, `sim/GameSim.Tests/` `evidence:sim/GameSim/Harness/ForgeCounterPlayer.cs` | — | [S] |
+| P2-HONEST-31 | `DuesPledged` is emitted and never registered — the first pledged cycle makes the save unwritable | `sim/GameSim/Contracts/Events.cs`, `sim/GameSim.Tests/` `evidence:sim/GameSim/Contracts/Events.cs:JsonDerivedType(typeof(DuesPledged)` | — | [S][C] |
+| P2-HONEST-32 | `DenThreatShifted` never fires in 2,000 days while `MineWatch` reads it in four places — measure the den arithmetic, then make it reachable or delete the reader | `sim/GameSim/Drama/DirectorSystem.cs`, `godot/scripts/panels/MineWatch.cs`, `sim/GameSim.Tests/` | — | [S][GOLD] |
+| P2-LONG-34 | Measure the felt wall where the player reads it — a Godot-side verbatim-repeat census over the night card's rendered lines on days 3, 12 and 25 | `godot/tests/`, `godot/scripts/panels/LedgerModal.cs` (read-only), `tools/Analytics/` | — | [G] |
+| P2-PEOPLE-28 | Hold it for Torvald — an earmark hides a stocked piece from ordinary shopping and shows it to the one hero it was made for | `sim/GameSim/Contracts/Actions.cs`, `sim/GameSim/Economy/ShopHandlers.cs`, `sim/GameSim/Heroes/HeroShoppingSystem.cs`, `godot/scripts/panels/ShopPanel.cs` | P2-HONEST-30 | [S][C][GOLD] |
+| P2-PEOPLE-29 | The price moves the relationship by its margin — pin and fleece scale with the gap, and an in-band sale is not nothing | `sim/GameSim/Counter/HaggleResolver.cs`, `sim/GameSim/Counter/WillingnessModel.cs`, `sim/GameSim.Tests/Balance/` | P2-HONEST-30 | [S][BAL] |
 
 Depends-on cells hold unit ids and the owner gate `P4` only, so `tools/Progress --frontier` can
 resolve every one of them; what a cell used to say in prose lives here instead. `P2-PEOPLE-03`
