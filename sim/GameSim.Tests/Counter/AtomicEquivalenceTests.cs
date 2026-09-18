@@ -465,8 +465,15 @@ public class AtomicEquivalenceTests
     // and the probe run's 43 gossip lines now come out in a different ORDER with some kills folded
     // away — same seed, same rolls, same 10 deaths, same floors; only which lines the tavern repeats
     // and in what order. Previous pin B6A40A15646B6EDFCC851DCC80DC257BDADFC3D3B617F9AD537FD3A3DE0822E1.
+    //
+    // Re-baselined 2026-09-18 for P2-LONG-29 (the camp checkpoint moved from below floor 1 to below
+    // the TARGET floor; owner ruling §11.7.13). More floors resolve in stage 1 before the camp, the
+    // camp's own draws land at different stream positions (PhaseBNoDrawGateTests re-pins the RngState),
+    // and the 30-day probe's fights, deaths and deliveries all shift with it — a real mechanic change,
+    // gated two-sided by CampProvisioningBalanceTests' 20-seed sweep (deliveries 20 → 52 per sweep,
+    // camped-hero HP median 100% → 90%). Previous pin 7B3D203BEAE77D02B1E8F3E87B37F0C40086B9CDA228B19813EA4C0755AD4D09.
     private const string ExpectedPreCounterSha256 =
-        "7B3D203BEAE77D02B1E8F3E87B37F0C40086B9CDA228B19813EA4C0755AD4D09";
+        "ABD7AF21FE7054D250EDDD3903228FC585260CD6E01530438AB861C14522B643";
 
     [Fact]
     public void ThirtyDayRun_NoCounterActions_IsByteIdenticalToPrePa3Kernel()
