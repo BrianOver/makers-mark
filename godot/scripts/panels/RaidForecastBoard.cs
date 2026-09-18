@@ -85,6 +85,15 @@ public partial class RaidForecastBoard : Control
         Clear(_body!);
         _title!.Text = $"Tomorrow's Raids — Day {state.Day + 1}";
 
+        // P2-SCREEN-35 ("follow one piece"): the followed item's own line leads the send-off,
+        // ahead of the counter section and every party card below it. Absent (never a blank row)
+        // when nothing is followed.
+        if (MusterVoice.FollowedSendOffLine(state, parties) is { } followedLine)
+        {
+            var line = AddLabel(_body!, followedLine);
+            line.Name = "FollowedItemSendOffLine";
+        }
+
         RenderCounterSection(state);
 
         if (parties.IsEmpty)
