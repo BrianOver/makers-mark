@@ -534,11 +534,7 @@ public sealed partial class TellingPanel : SimPanel
         // that the SAME hero's night did not end at the beat's own floor.
         if (_result!.Deaths.Contains(_beat!.Hero))
         {
-            var deathFloor = _result.Floors
-                .Where(f => f.Combats.Any(c => c.Hero == _beat.Hero))
-                .Select(f => f.Floor)
-                .DefaultIfEmpty(_beat.Floor)
-                .Max();
+            var deathFloor = DeepestCombatFloor(_beat.Hero);
             if (deathFloor > _beat.Floor)
             {
                 var closer = AddLabel(
@@ -567,16 +563,38 @@ public sealed partial class TellingPanel : SimPanel
         var heroName = _script!.Hero.Name;
         var floor = _beat.Floor;
 
+        // P2-PROOF-22: "{hero} lives." is never said of a hero this same night's ExpeditionResult
+        // records as dead -- the ONE fact check that decides KillingBlow/LethalSave's key (the only
+        // two shapes whose living phrasing claims survival). Died() is a recorded fact
+        // (ExpeditionResult.Deaths), never a second counterfactual.
+        var died = _result!.Deaths.Contains(_beat.Hero);
+
         return _script.Payload switch
         {
-            KillingBlowPayload p => PickVerdictLine(TellingPack.KillingBlow, FlavorEngine.Slots(
-                ("item", itemName), ("hero", heroName), ("floor", Digits(floor)),
-                ("heroRoll", Digits(p.HeroRoll)), ("dealtWithout", Digits(p.DamageDealtWithoutItem)),
-                ("dealtWith", Digits(p.DamageDealtWithItem)), ("monsterHpWithout", Digits(p.MonsterHpWithoutItem)))),
-            LethalSavePayload p => PickVerdictLine(TellingPack.LethalSave, FlavorEngine.Slots(
-                ("item", itemName), ("hero", heroName), ("floor", Digits(floor)),
-                ("rawBlow", Digits(p.RawBlow)), ("itemDefense", Digits(p.ItemDefenseStat)),
-                ("heroHpAfter", Digits(p.HeroHpAfterWithItem)))),
+            KillingBlowPayload p => PickVerdictLine(
+                died ? TellingPack.KillingBlowDied : TellingPack.KillingBlow,
+                died
+                    ? FlavorEngine.Slots(
+                        ("item", itemName), ("hero", heroName), ("floor", Digits(floor)),
+                        ("heroRoll", Digits(p.HeroRoll)), ("dealtWithout", Digits(p.DamageDealtWithoutItem)),
+                        ("dealtWith", Digits(p.DamageDealtWithItem)), ("monsterHpWithout", Digits(p.MonsterHpWithoutItem)),
+                        ("deathFloor", Digits(DeepestCombatFloor(_beat.Hero))))
+                    : FlavorEngine.Slots(
+                        ("item", itemName), ("hero", heroName), ("floor", Digits(floor)),
+                        ("heroRoll", Digits(p.HeroRoll)), ("dealtWithout", Digits(p.DamageDealtWithoutItem)),
+                        ("dealtWith", Digits(p.DamageDealtWithItem)), ("monsterHpWithout", Digits(p.MonsterHpWithoutItem)))),
+            LethalSavePayload p => PickVerdictLine(
+                died ? TellingPack.LethalSaveDied : TellingPack.LethalSave,
+                died
+                    ? FlavorEngine.Slots(
+                        ("item", itemName), ("hero", heroName), ("floor", Digits(floor)),
+                        ("rawBlow", Digits(p.RawBlow)), ("itemDefense", Digits(p.ItemDefenseStat)),
+                        ("heroHpAfter", Digits(p.HeroHpAfterWithItem)),
+                        ("deathFloor", Digits(DeepestCombatFloor(_beat.Hero))))
+                    : FlavorEngine.Slots(
+                        ("item", itemName), ("hero", heroName), ("floor", Digits(floor)),
+                        ("rawBlow", Digits(p.RawBlow)), ("itemDefense", Digits(p.ItemDefenseStat)),
+                        ("heroHpAfter", Digits(p.HeroHpAfterWithItem)))),
             BreakpointClearPayload p => PickVerdictLine(TellingPack.BreakpointClear, FlavorEngine.Slots(
                 ("item", itemName), ("floor", Digits(floor)),
                 ("avgWith", Digits(p.PartyAveragePowerWithItem)), ("gate", Digits(p.Gate)),
@@ -616,6 +634,21 @@ public sealed partial class TellingPanel : SimPanel
     }
 
     private static string Digits(int value) => value.ToString(CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// P2-PROOF-22/P2-MEMORY-17-adjacent shared derivation: the deepest floor a hero has a logged
+    /// <see cref="CombatEvent"/> on this night — the recorded-fact stand-in for "where they died"
+    /// (<see cref="ExpeditionResult"/> carries no explicit death-floor field; a dead hero's last
+    /// logged combat floor IS the floor that took them). Falls back to the beat's own floor when the
+    /// hero has no logged combat at all (should not happen for a hero in <c>Deaths</c>, but this
+    /// stays a pure read either way — never a second counterfactual).
+    /// </summary>
+    private int DeepestCombatFloor(HeroId hero) =>
+        _result!.Floors
+            .Where(f => f.Combats.Any(c => c.Hero == hero))
+            .Select(f => f.Floor)
+            .DefaultIfEmpty(_beat!.Floor)
+            .Max();
 
     private HeroAtDeparture? DepartureOf(HeroId id) => _result!.PartyAtDeparture.FirstOrDefault(h => h.Id == id);
 

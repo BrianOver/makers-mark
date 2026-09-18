@@ -604,6 +604,55 @@ public class TellingPanelTests
         }
     }
 
+    /// <summary>
+    /// P2-PROOF-22: the finding was "{hero} lives." rendered for a hero this same night's
+    /// <see cref="ExpeditionResult.Deaths"/> already recorded dead (317 of 45,105 beats measured,
+    /// §11.12). This is the SAME fixture as <see cref="LethalSave_VerdictStage_StampsAndPrintsTheMarginNumbers"/>
+    /// with one fact changed -- <see cref="Hero"/> now also appears in <c>Deaths</c> -- proving the
+    /// panel reads that recorded fact and reroutes to <see cref="TellingPack.LethalSaveDied"/>
+    /// instead of silently keeping the living copy.
+    /// </summary>
+    [TestCase]
+    public void LethalSave_VerdictStage_HeroDiedThisSameNight_NeverSaysLives_NamesTheFloorThatTookThem()
+    {
+        var (baseState, baseResult, beatEvent) = LethalSaveNight();
+        var died = baseResult with { Deaths = ImmutableList.Create(Hero) };
+        var state = baseState with { LastNightExpeditions = ImmutableList.Create(died) };
+
+        var beat = died.Beats.Single();
+        var script = TellingQuery.Build(died, beat, state.Items, VenueRegistry.Mine);
+        var payload = (LethalSavePayload)script.Payload;
+
+        // LethalSaveNight's own fixture fights every round on Floor -- the deepest (and only)
+        // combat floor for Hero, so that IS the recorded floor that took them.
+        var (expectedHeadline, expectedDetail) = ExpectedVerdictCopy(
+            TellingPack.LethalSaveDied,
+            FlavorEngine.Slots(
+                ("item", "Emberbite"), ("hero", "Torvald"), ("floor", "3"),
+                ("rawBlow", Digits(payload.RawBlow)), ("itemDefense", Digits(payload.ItemDefenseStat)),
+                ("heroHpAfter", Digits(payload.HeroHpAfterWithItem)), ("deathFloor", Digits(Floor))),
+            state, beatEvent);
+
+        var panel = new TellingPanel();
+        try
+        {
+            panel.ShowFor(state, died, beatEvent);
+            panel.Dev_Advance(6); // Framing -> 3 factual rounds -> Fork -> Fall -> Verdict
+
+            AssertThat(panel.CurrentStage).IsEqual(TellingPanel.TellingStage.Verdict);
+            var text = RenderedText(panel);
+            AssertThat(text).Contains(expectedHeadline);
+            AssertThat(text).Contains(expectedDetail);
+            AssertThat(text).NotContains("lives");
+            AssertThat(text).Contains("MAKER'S MARK"); // still a recorded kill/save -- still stamped
+        }
+        finally
+        {
+            panel.Free();
+            MainUi.DrainDetachedPanelsForTests();
+        }
+    }
+
     // ── The copy pack: deterministic pick (P2-PROOF-06) ─────────────────────────────────────────
 
     /// <summary>
