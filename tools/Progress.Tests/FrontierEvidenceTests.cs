@@ -89,6 +89,32 @@ public class FrontierEvidenceTests : IDisposable
     /// on offer. The check ran, so this row is NOT <see cref="FrontierRow.Unverified"/> — that word
     /// is reserved for rows nobody checked at all.</summary>
     [Fact]
+    public void ACommitSubjectThatOnlyNamesTheUnit_DoesNotLandIt_WhenItsEvidenceIsMissing()
+    {
+        // #894's subject read "... is booked as P2-PROOF-24" and the commit-tag index landed the id.
+        var path = WriteFile("godot/scripts/panels/DelveStage.cs", "enum CombatPoseKind { Attack }\n");
+        var unit = Row("P2-PROOF-24", [new EvidenceMarker(path, "CombatPoseKind.Kill")]);
+        var dependent = new UnitRow(UnitTable.P2, "P2-PROOF-25", "t", Array.Empty<FileRef>(),
+            new[] { "P2-PROOF-24" }, "", Array.Empty<string>(), 2, null, null);
+        var landed = new Dictionary<string, LandedUnit>(StringComparer.Ordinal)
+        {
+            ["P2-PROOF-24"] = new("P2-PROOF-24", "665c74b3", 894),
+        };
+        var result = Reconciler.Reconcile(
+            new PlanParseResult(new[] { unit, dependent }, Array.Empty<UnparseableRow>(), Array.Empty<DocRef>()),
+            landed, new Dictionary<string, OpenUnit>(StringComparer.Ordinal), new HashSet<string>());
+
+        var rows = Frontier.Compute(result, _root);
+        var booked = rows.Single(r => r.UnitId == "P2-PROOF-24");
+        Assert.Null(booked.RefusalReason);
+        Assert.True(booked.LandedByTagOnly);
+        Assert.False(booked.ShippedByEvidence);
+        // ...and nothing downstream is unblocked by the booking.
+        Assert.Contains("P2-PROOF-24", rows.Single(r => r.UnitId == "P2-PROOF-25").RefusalReason);
+        Assert.Contains("booking, not a delivery", Frontier.Render(rows));
+    }
+
+    [Fact]
     public void EvidenceWhoseSymbolIsMissing_StaysRunnableAndIsNotCalledUnverified()
     {
         var path = WriteFile("sim/GameSim/Contracts/Events.cs", "public record SomethingElse();\n");
