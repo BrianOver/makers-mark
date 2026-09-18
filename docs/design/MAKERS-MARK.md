@@ -2590,7 +2590,7 @@ changes when it is done. A regression pin now holds that.
 | U49 | A player can set a price, and a test proves it | `godot/tests/HumanPlayer.cs`, `godot/tests/ShopPanelTests.cs` | — |
 | U50 | The cast stops scattering | `godot/scripts/town2d/Town2D.cs`, `godot/scripts/town2d/HeroActor2D.cs`, `godot/scripts/town2d/TownsfolkNpc2D.cs` | — |
 | U51 | Lantern lights | `godot/scripts/town2d/Town2D.cs`, `godot/scripts/town2d/TownLayout2D.cs` | — |
-| U52 | Per-class attack and impact frames | `tools/art/gen_town_sprites.py`, `godot/scripts/panels/DelveStage.cs` | U50 |
+| U52 | Per-class attack and impact frames (hero bodies ship from the SDXL composite job, not `gen_town_sprites.py` — which pipeline authors two more frames per class is the owner's call) | `art/specs/`, `godot/scripts/panels/DelveStage.cs` | U50, P4 |
 
 U52 needs U50 for its art rig only, nothing else of it. U34 used to name wave 1's U4 ("Bryn answers on
 her own surface", `MentorStationLiveTests`) as well; that unit is in `git log` (#618 retired the wave's
@@ -3284,6 +3284,20 @@ nowhere is a dropped item. U48 is the only one of the five that breaks a §2 lin
   plus the engine suite run whole and compared on its pass count.
 
 #### U52. Per-class attack and impact frames
+
+**Spec corrected 2026-09-18 — the Approach below names the wrong pipeline.** A builder took this row
+off the frontier and stopped on the first read of `gen_town_sprites.py`: its 2026-08-15 ship-wave block
+says the six hero classes' base, `_step`, `_walk2` and `_walk4` frames "no longer come from THIS script"
+— they ship from the SDXL AI-composite job — and P2-SCREEN-34's `_stowaways` guard `die()`s the run if
+any `town2d-hero-*` id reaches its emit set, precisely so nobody renders a human body through the
+ASCII rig again. An `_attack`/`_impact` frame drawn by that rig would also flash a visibly different art
+style every swing against the composite gait it interrupts — a worse defect than the MOTION-only status
+quo. So the two frames per class are SDXL work (GPU, the art-direction loop of `calibrate-a-gate`), and
+whether to spend that is the owner's; the row is gated on `P4`. Part (c) of the original three-part unit
+— staging the kill itself — is confirmed unbuilt (`DelveBeatKind.MonsterSlain` spawns poof, sparkle,
+kill-credit and an impact pulse; `CombatPoseKind` has no kill case) and is booked as `P2-PROOF-24`
+below, where the spec said it belongs: it is a link-4 item and outranks this one.
+
 
 - Goal: a hero visibly swings and visibly takes a hit, drawn, on the frame the sim says it happened.
 - Requirements: R41
@@ -4756,6 +4770,7 @@ name (§11.6 rule 4).
 | ⚑ P2-PROOF-14 | The counterfactual reaches the ledger — the beat carries its own arithmetic | `sim/GameSim/Expedition/AttributionEngine.cs`, `godot/scripts/panels/LedgerModal.cs` | — | [S][GOLD] |
 | P2-PROOF-17 | The rank-up says which part of it your mark earned — an XP split that cannot disagree with the grant | `sim/GameSim/Drama/`, `sim/GameSim.Tests/`, `godot/scripts/panels/LedgerModal.cs` | — | [S] |
 | P2-PROOF-18 | The closest call — the survivor who nearly didn't, with the floor, the monster and the slot | `sim/GameSim/Drama/`, `godot/scripts/panels/LedgerModal.cs` | — | [S] |
+| P2-PROOF-24 | The killing blow has a pose — `MonsterSlain` gives the hero whose item killed a distinct beat, drawn on the frame the sim says it landed (motion-only, no new art; U52's part (c)) | `godot/scripts/panels/DelveStage.cs`, `godot/tests/DelveStageTests.cs` | — | [G] |
 | P2-MEMORY-02 | The death card reads the pack and the last blow | `godot/scripts/panels/LedgerModal.cs` | — | [G] |
 | P2-MEMORY-05 | The Signed Work speaks; the idle line varies | `godot/scripts/panels/ForgePanel.cs`, advisor idle copy | — | [G] |
 | P2-MEMORY-06 | Provenance derives sales instead of omitting them | `godot/scripts/panels/ProvenanceCard.cs` | — | [G] |
