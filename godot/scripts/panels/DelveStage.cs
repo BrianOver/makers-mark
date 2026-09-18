@@ -17,7 +17,9 @@ namespace GodotClient.Panels;
 /// floor chip, the current floor's monster + HP bar, a distinct per-beat combat MOTION for the
 /// acting hero (attack lunge-and-recover, a light recoil or a heavier stagger scaled off how much
 /// of their own MaxHp the hit cost them, a heal's lean-lift-settle, a fall that goes down and stays
-/// down — see the "combat pose tuning" constants and <see cref="CombatPoseKind"/>), plus the
+/// down, and — P2-PROOF-24 — the killing hero's own deeper, held-peak follow-through on <see
+/// cref="DelveBeatKind.MonsterSlain"/> — see the "combat pose tuning" constants and <see
+/// cref="CombatPoseKind"/>), plus the
 /// original cheap FX (hit-flash tint, drifting damage numbers, a kill poof, a loot sparkle, the
 /// constitutional death-cloud, a quaff tint, and <see cref="ImpactPulse"/> — a weight cue
 /// <c>MineWatch</c> reads for a torch/campfire light punch and a short world-nudge). Presentation-
@@ -160,6 +162,15 @@ public sealed partial class DelveStage : Node2D
     private const float AttackWindupPx = 3f;
     private const float AttackLungePx = 11f;
 
+    // ── kill (P2-PROOF-24, "the killing blow has a pose") ───────────────────────────────────────
+    // Nearly double AttackDuration and a deeper lunge, so the killing blow is unmistakably a
+    // bigger beat than an ordinary exchange even at a glance — the follow-through HOLDS at the
+    // peak (see KillCurveX) instead of recovering straight away, then settles slower than Attack's
+    // symmetric-ish recover.
+    private const float KillDuration = 0.6f;
+    private const float KillWindupPx = 4f;
+    private const float KillLungePx = 18f;
+
     private const float RecoilDuration = 0.24f;
     private const float RecoilPx = 4f;
 
@@ -248,6 +259,17 @@ public sealed partial class DelveStage : Node2D
         /// LEFT instead, paired with <see cref="ImpactPulse"/> so <c>MineWatch.AnimateWorldShake</c>
         /// rattles the whole scene on the way out.</summary>
         ExitRout,
+
+        /// <summary>P2-PROOF-24 ("the killing blow has a pose"): the hero <see
+        /// cref="DelveBeat.Hero"/> recorded on a <see cref="DelveBeatKind.MonsterSlain"/> beat plays
+        /// this instead of the generic <see cref="Attack"/> lunge — a longer follow-through of the
+        /// SAME wind-up/thrust shape (<see cref="KillCurveX"/> shares <see cref="AttackCurveX"/>'s
+        /// phases), but the thrust reaches further, HOLDS at that peak instead of immediately
+        /// recovering, then settles back slower. Fires whether or not the killing item was
+        /// player-crafted (<see cref="DelveBeat.KillingItemName"/> may be null here) — the pose is
+        /// about the fight the sim recorded, never the credit, which stays <see
+        /// cref="SpawnKillCredit"/>'s call alone (no participation credit, law 12).</summary>
+        Kill,
     }
 
     private struct CombatPose
@@ -574,6 +596,14 @@ public sealed partial class DelveStage : Node2D
                 if (beat.KillingItemName is { Length: > 0 } killCredit)
                 {
                     SpawnKillCredit(_monsterSprite.Position + new Vector2(-40, -56), killCredit);
+                }
+
+                // P2-PROOF-24: the killing blow gets its own pose, regardless of whether the item
+                // that landed it was player-crafted (credit above is the player-only gate; the pose
+                // is about the fight, not the credit).
+                if (beat.Hero is { } killingHero)
+                {
+                    BeginCombatPose(killingHero.Value, CombatPoseKind.Kill, KillDuration);
                 }
 
                 HideMonster();
@@ -958,6 +988,10 @@ public sealed partial class DelveStage : Node2D
             case CombatPoseKind.ExitRout:
                 sprite.Position += new Vector2(-ExitCurveX(progress), 0f);
                 break;
+
+            case CombatPoseKind.Kill:
+                sprite.Position += new Vector2(KillCurveX(progress), 0f);
+                break;
         }
     }
 
@@ -983,6 +1017,31 @@ public sealed partial class DelveStage : Node2D
         }
 
         return Mathf.Lerp(AttackLungePx, 0f, EaseIn((progress - 0.5f) / 0.5f));
+    }
+
+    /// <summary>Kill: the same wind-up/thrust shape as <see cref="AttackCurveX"/>, but reaching a
+    /// deeper peak (<see cref="KillLungePx"/> &gt; <see cref="AttackLungePx"/>), HOLDING there
+    /// through the middle of the beat instead of recovering right away, then settling back slower
+    /// (the recover phase alone spans 0.4 of <see cref="KillDuration"/>, itself already ~2x <see
+    /// cref="AttackDuration"/> — the killing blow reads as deliberate, not a faster attack).</summary>
+    private static float KillCurveX(float progress)
+    {
+        if (progress < 0.15f)
+        {
+            return Mathf.Lerp(0f, -KillWindupPx, EaseOut(progress / 0.15f));
+        }
+
+        if (progress < 0.35f)
+        {
+            return Mathf.Lerp(-KillWindupPx, KillLungePx, EaseOut((progress - 0.15f) / 0.2f));
+        }
+
+        if (progress < 0.6f)
+        {
+            return KillLungePx; // held peak — the follow-through Attack never gets
+        }
+
+        return Mathf.Lerp(KillLungePx, 0f, EaseIn((progress - 0.6f) / 0.4f));
     }
 
     /// <summary>Recoil/stagger: a brief brace (the instant of impact — no motion yet), a snap AWAY
