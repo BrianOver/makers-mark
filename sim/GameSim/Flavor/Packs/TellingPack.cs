@@ -54,6 +54,21 @@ public static class TellingPack
     public const string MarginOnly = "marginOnly";
 
     /// <summary>
+    /// P2-PROOF-22: the death-aware counterparts of <see cref="KillingBlow"/>/<see cref="LethalSave"/>
+    /// — the two shapes whose living phrasing ends "{hero} lives." Picked instead of the living key
+    /// whenever the beat's hero is recorded in that night's <c>ExpeditionResult.Deaths</c>
+    /// (<c>TellingPanel.VerdictLines</c> makes the choice; this pack only supplies the words). The
+    /// blow/save itself still happened exactly as recorded -- only the closing clause changes, from a
+    /// claim the record cannot back to one it can: the hero did not survive the night, full stop,
+    /// with the floor that took them (<c>TellingPanel</c>'s own recorded-fact derivation: the deepest
+    /// floor the hero has a logged combat on, the same fact <c>RenderVerdict</c>'s composite closer
+    /// already reads). No punchline on a death (tone-register.md guardrail), no imperative, never
+    /// "lives".
+    /// </summary>
+    public const string KillingBlowDied = "killingBlowDied";
+    public const string LethalSaveDied = "lethalSaveDied";
+
+    /// <summary>
     /// The slot names each base key's phrasing provides — the single source of truth shared by
     /// <c>TellingPanel.VerdictLines</c> (which fills them) and <c>TellingPackTests</c> (which
     /// sweeps them). <c>MarginOnly</c> is the one shape with no <c>floor</c> slot — the original
@@ -64,6 +79,8 @@ public static class TellingPack
         {
             [KillingBlow] = ["item", "hero", "floor", "heroRoll", "dealtWithout", "dealtWith", "monsterHpWithout"],
             [LethalSave] = ["item", "hero", "floor", "rawBlow", "itemDefense", "heroHpAfter"],
+            [KillingBlowDied] = ["item", "hero", "floor", "heroRoll", "dealtWithout", "dealtWith", "monsterHpWithout", "deathFloor"],
+            [LethalSaveDied] = ["item", "hero", "floor", "rawBlow", "itemDefense", "heroHpAfter", "deathFloor"],
             [BreakpointClear] = ["item", "floor", "avgWith", "gate", "avgWithout"],
             [Provisioned] = ["item", "hero", "floor", "quaffRound", "hpBefore", "hpAfter", "naiveHp"],
             [PotionLifesave] = ["item", "hero", "floor", "divergenceRound", "hpAtDivergence"],
@@ -95,6 +112,30 @@ public static class TellingPack
                 $"Floor {{floor}}'s killing blow passed through {{item}}. {{hero}} lives.{Delim}" +
                 "The recorded blow read {rawBlow}; {item} took {itemDefense} off it, and {hero} stood at " +
                 "{heroHpAfter}. Without it, {hero} does not stand."),
+
+            [KillingBlowDied] = ImmutableList.Create(
+                $"{{item}} turned the killing blow on floor {{floor}}. {{hero}} did not come back.{Delim}" +
+                "The blow read {heroRoll}. Without {item}, it deals {dealtWithout}, not {dealtWith} -- " +
+                "the beast still stands at {monsterHpWithout}. Floor {deathFloor} took {hero} anyway. " +
+                "There the record ends. No one rolled what comes next.",
+                $"{{item}} landed the killing blow on floor {{floor}}. {{hero}} fell on floor {{deathFloor}} anyway.{Delim}" +
+                "Roll {heroRoll}. Strip {item} from that same roll and it deals {dealtWithout}, not {dealtWith} -- " +
+                "the beast holds at {monsterHpWithout}. The record stops there; nothing past it was ever rolled.",
+                $"Floor {{floor}}'s killing blow was {{item}}'s. {{hero}} did not survive the night.{Delim}" +
+                "{heroRoll} was the roll. Without {item} behind it, {dealtWithout} lands, not {dealtWith} -- " +
+                "{monsterHpWithout} hp still stands on the beast. Floor {deathFloor} is where {hero}'s night ended. " +
+                "No further round was ever rolled."),
+
+            [LethalSaveDied] = ImmutableList.Create(
+                $"{{item}} turned the killing blow on floor {{floor}}. {{hero}} did not come back.{Delim}" +
+                "The blow read {rawBlow}. {item} drank {itemDefense} of it. {hero} stood at {heroHpAfter}. " +
+                "Without it, {hero} falls there. Floor {deathFloor} took {hero} anyway.",
+                $"{{item}} carried the killing blow on floor {{floor}}. {{hero}} fell on floor {{deathFloor}} anyway.{Delim}" +
+                "{rawBlow} was the raw blow. {item} absorbed {itemDefense} of it, leaving {hero} at {heroHpAfter}. " +
+                "Remove it and {hero} falls there.",
+                $"Floor {{floor}}'s killing blow passed through {{item}}. {{hero}} did not survive the night.{Delim}" +
+                "The recorded blow read {rawBlow}; {item} took {itemDefense} off it, and {hero} stood at " +
+                "{heroHpAfter}. Without it, {hero} does not stand. Floor {deathFloor} is where {hero}'s night ended."),
 
             [BreakpointClear] = ImmutableList.Create(
                 $"{{item}} opened floor {{floor}}.{Delim}" +
@@ -151,6 +192,15 @@ public static class TellingPack
                 $"{{item}} turned the killing blow on floor {{floor}}. {{hero}} lives.{Delim}" +
                 "The blow read {rawBlow}. {item} drank {itemDefense} of it. {hero} stood at {heroHpAfter}. " +
                 "Without it, {hero} falls.",
+            [KillingBlowDied] =
+                $"{{item}} turned the killing blow on floor {{floor}}. {{hero}} did not come back.{Delim}" +
+                "The blow read {heroRoll}. Without {item}, it deals {dealtWithout}, not {dealtWith} -- the beast " +
+                "still stands at {monsterHpWithout}. Floor {deathFloor} took {hero} anyway. There the record " +
+                "ends. No one rolled what comes next.",
+            [LethalSaveDied] =
+                $"{{item}} turned the killing blow on floor {{floor}}. {{hero}} did not come back.{Delim}" +
+                "The blow read {rawBlow}. {item} drank {itemDefense} of it. {hero} stood at {heroHpAfter}. " +
+                "Without it, {hero} falls there. Floor {deathFloor} took {hero} anyway.",
             [BreakpointClear] =
                 $"{{item}} opened floor {{floor}}.{Delim}" +
                 "The party's power read {avgWith} against the gate at {gate}. Without {item}, it reads " +

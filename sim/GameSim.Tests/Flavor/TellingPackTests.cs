@@ -44,6 +44,7 @@ public class TellingPackTests
             ["hpAtDivergence"] = "-4",
             ["minHp"] = "1",
             ["minHpRound"] = "2",
+            ["deathFloor"] = "5",
         }.ToImmutableSortedDictionary(StringComparer.Ordinal);
 
     private static IReadOnlyDictionary<string, string> SlotsFor(string baseKey)
@@ -145,6 +146,103 @@ public class TellingPackTests
             Assert.True(
                 seen.Count == variants.Count,
                 $"'{key}': {seen.Count}/{variants.Count} variants reached over {sweep} event ids");
+        }
+    }
+
+    // ---------------------------------------------------------------- P2-PROOF-22: never "lives" for the dead
+
+    /// <summary>
+    /// The property, not the instance: EVERY living <see cref="TellingPack.KillingBlow"/>/
+    /// <see cref="TellingPack.LethalSave"/> phrasing claims survival ("lives"), and its death-aware
+    /// counterpart (<see cref="TellingPack.KillingBlowDied"/>/<see cref="TellingPack.LethalSaveDied"/>)
+    /// NEVER does -- across every variant either side ships, plus both fallbacks, not just the one
+    /// phrasing today's fixtures happen to pick.
+    /// </summary>
+    [Fact]
+    public void LivingKillingBlowAndLethalSave_EveryVariantSaysLives_DeadCounterpartNeverDoes()
+    {
+        foreach (var (livingKey, deadKey) in new[]
+                 {
+                     (TellingPack.KillingBlow, TellingPack.KillingBlowDied),
+                     (TellingPack.LethalSave, TellingPack.LethalSaveDied),
+                 })
+        {
+            foreach (var variant in TellingPack.Pack.Variants[livingKey])
+            {
+                Assert.Contains("lives", variant, StringComparison.Ordinal);
+            }
+
+            Assert.Contains("lives", TellingPack.Pack.Fallbacks[livingKey], StringComparison.Ordinal);
+
+            foreach (var variant in TellingPack.Pack.Variants[deadKey])
+            {
+                Assert.DoesNotContain("lives", variant);
+            }
+
+            Assert.DoesNotContain("lives", TellingPack.Pack.Fallbacks[deadKey]);
+        }
+    }
+
+    /// <summary>
+    /// Tone-register.md's own guardrail ("deaths never joke -- warmth yes, punchlines no") extends
+    /// to instructions: a death line states the record, it never tells the reader what to do.
+    /// Sentence-initial verbs a death line could plausibly reach for to address the reader rather
+    /// than the record.
+    /// </summary>
+    private static readonly string[] ImperativeOpeners =
+    [
+        "remember", "mourn", "grieve", "honor", "toast", "pray", "weep", "rejoice", "raise", "forget",
+    ];
+
+    [Fact]
+    public void DeadVariants_NoSentence_OpensWithAnImperative()
+    {
+        foreach (var key in new[] { TellingPack.KillingBlowDied, TellingPack.LethalSaveDied })
+        {
+            var templates = TellingPack.Pack.Variants[key].Append(TellingPack.Pack.Fallbacks[key]);
+            foreach (var template in templates)
+            {
+                foreach (var sentence in template.Split(['.', '!', '?'], StringSplitOptions.RemoveEmptyEntries))
+                {
+                    var firstWord = sentence
+                        .TrimStart(' ', '-', '|')
+                        .Split([' '], StringSplitOptions.RemoveEmptyEntries)
+                        .FirstOrDefault()
+                        ?.Trim('{', '}', ',', ';', ':')
+                        .ToLowerInvariant();
+
+                    if (string.IsNullOrEmpty(firstWord))
+                    {
+                        continue;
+                    }
+
+                    Assert.False(
+                        ImperativeOpeners.Contains(firstWord),
+                        $"'{key}' sentence opens with imperative '{firstWord}': \"{sentence}\"");
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Renderer-level property (the pick a real <see cref="TellingPanel"/> would reach through
+    /// <c>FlavorEngine.Render</c>): sweeping event ids the way <c>Pack_EveryVariant_ReachableOverAnEventIdSweep</c>
+    /// does above, no rendered dead-key line ever contains "lives" -- the exact claim the panel-level
+    /// fixture (<c>TellingPanelTests</c>, godot/tests) proves reaches the screen for a hero recorded
+    /// in <c>ExpeditionResult.Deaths</c>.
+    /// </summary>
+    [Fact]
+    public void Render_DeadKeys_OverEventIdSweep_NeverContainsLives()
+    {
+        const int sweep = 64;
+        foreach (var key in new[] { TellingPack.KillingBlowDied, TellingPack.LethalSaveDied })
+        {
+            var slots = SlotsFor(key);
+            for (var eventId = 1UL; eventId <= sweep; eventId++)
+            {
+                var rendered = FlavorEngine.Render(TellingPack.Pack, key, slots, Campaign, eventId);
+                Assert.DoesNotContain("lives", rendered);
+            }
         }
     }
 
