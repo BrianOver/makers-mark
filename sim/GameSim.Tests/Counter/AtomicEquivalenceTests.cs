@@ -472,8 +472,13 @@ public class AtomicEquivalenceTests
     // and the 30-day probe's fights, deaths and deliveries all shift with it — a real mechanic change,
     // gated two-sided by CampProvisioningBalanceTests' 20-seed sweep (deliveries 20 → 52 per sweep,
     // camped-hero HP median 100% → 90%). Previous pin 7B3D203BEAE77D02B1E8F3E87B37F0C40086B9CDA228B19813EA4C0755AD4D09.
+    //
+    // Re-baselined 2026-09-18 for the ShelfEntry.StockedDay stamp (Contracts micro-PR for P2-MEMORY-26,
+    // owner ruling §11.7.13): every shelf entry the probe stocks now serializes one more field. Same
+    // seed, same rolls, same deaths, same floors, same prices — only the shape of a shelf entry.
+    // Previous pin ABD7AF21FE7054D250EDDD3903228FC585260CD6E01530438AB861C14522B643.
     private const string ExpectedPreCounterSha256 =
-        "ABD7AF21FE7054D250EDDD3903228FC585260CD6E01530438AB861C14522B643";
+        "4FD28EBF21F04BC595CED938C6A481A3D4671B1E3986037429976E346A5DC90B";
 
     [Fact]
     public void ThirtyDayRun_NoCounterActions_IsByteIdenticalToPrePa3Kernel()
