@@ -197,8 +197,13 @@ public class FactionVoicingTests
         var lines = GossipGenerator.Generate(sources, state.Heroes, state.Items, Campaign, GossipGenerator.MaxLinesPerDay);
 
         Assert.Equal(GossipGenerator.MaxLinesPerDay, lines.Count);
-        Assert.Equal(new[] { 4, 3, 2 }, lines.Select(l => l.Source.Value)); // most recent three win the tie
-        Assert.Contains(Deepvein.DisplayName, lines[0].Line, StringComparison.Ordinal); // the faction line — freshest news — took the top slot
+        // P2-MEMORY-24: the tavern talks about the death first, then the floor record; the recruit
+        // and the faction shift tie on rank and recency breaks the tie, so the faction line — the
+        // freshest news — takes the last slot and the recruit (older) drops off the cap. The faction
+        // line still competes for a slot exactly like a hero line would; it just no longer outranks
+        // a death by being newer.
+        Assert.Equal(new[] { 2, 1, 4 }, lines.Select(l => l.Source.Value));
+        Assert.Contains(Deepvein.DisplayName, lines[2].Line, StringComparison.Ordinal);
     }
 
     [Fact]

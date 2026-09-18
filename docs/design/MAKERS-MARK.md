@@ -909,6 +909,33 @@ reached for" are indistinguishable, and that confusion has now cost two investig
 curve measurement therefore reports at more than one named skill level, and the levels are defined
 once for all crafts rather than per craft.
 
+**11.7.13 Keep going — ruled 2026-09-18.** *(Authorizes the unattended loop to take ceremony-flagged
+rows; lives here so a pinned exception has a ruling to cite.)* The owner's words, verbatim, at the end
+of a session that had emptied the frontier of every `[G]`/`[S]` row: *"Continue lol. Find more, keep
+going. Add more assets, features, events etc. Make things fun. Think and loop. Don't end."* Read as
+four grants and one thing that is not granted:
+
+1. **`[GOLD]` and `[BAL]` rows no longer wait for a per-row ruling.** The loop may take them. The
+   ceremony itself does not soften: the golden re-record is its own reviewed commit in the same PR,
+   the PR body carries the two-sided sweep (20 seeds x 100 days, the row's own pre-registered gate —
+   e.g. P2-LONG-29's deliveries-per-sweep AND camped-hero HP median), and every band that moves is
+   named with its before/after number. A row whose sweep fails its own gate is `@@LOOP HALTED`, not
+   re-tuned until it passes.
+2. **`[C]` micro-PRs** stay orchestrator-authored and land before the module PR, as the multi-agent
+   rules already say.
+3. **New waves are booked from the running game and built in the same session** — §11.11 and §11.12's
+   form: measured on a SHA, n and spread quoted, each unit tagged for who may take it. "Assets" means
+   the existing pipelines (`tools/art/gen_town_sprites.py`, the icon/SDXL jobs at draw size, the
+   audio content gate) — never a runtime `Scale` knob and never a GPU job past the hard limits.
+   "Events" means sim events the ledger, gossip and chronicle can read — law 4, show only what the sim
+   decided; law 1, influence never orders.
+4. **"Make things fun" is the filter**, and §10's test is how it is applied: a unit ships when it names
+   the hero it is for and the ledger line it will produce.
+
+**Not granted:** the rows whose `Depends on` cell says `P4`. That token is the owner's own evening
+with the game (§9.8), and no message can play it for him. `P2-PROOF-23`, `P2-LONG-02/08`,
+`P2-PEOPLE-03/08/18/19/20`, `P2-PROOF-13` and `U52` stay refused until then.
+
 ### 11.8 The finale is unreachable — measured 2026-08-08, root cause found
 
 P3's assertions were written and went red on their first run. This is not a test that needs

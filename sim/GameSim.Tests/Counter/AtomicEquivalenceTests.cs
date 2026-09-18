@@ -459,8 +459,14 @@ public class AtomicEquivalenceTests
     // changing it moves this hash by construction — the same class of legitimate move as every prior
     // re-baseline above, just triggered by a content rewrite instead of a new system. No RNG stream
     // and no mechanic changed: same seed, same rolls, same deaths, same floors — only the words.
+    //
+    // Re-baselined 2026-09-18 for P2-MEMORY-24 (gossip ranks by what the town would talk about, one
+    // kill line per item per day; owner ruling §11.7.13). GossipEmitted lines are serialized state,
+    // and the probe run's 43 gossip lines now come out in a different ORDER with some kills folded
+    // away — same seed, same rolls, same 10 deaths, same floors; only which lines the tavern repeats
+    // and in what order. Previous pin B6A40A15646B6EDFCC851DCC80DC257BDADFC3D3B617F9AD537FD3A3DE0822E1.
     private const string ExpectedPreCounterSha256 =
-        "B6A40A15646B6EDFCC851DCC80DC257BDADFC3D3B617F9AD537FD3A3DE0822E1";
+        "7B3D203BEAE77D02B1E8F3E87B37F0C40086B9CDA228B19813EA4C0755AD4D09";
 
     [Fact]
     public void ThirtyDayRun_NoCounterActions_IsByteIdenticalToPrePa3Kernel()
@@ -476,7 +482,7 @@ public class AtomicEquivalenceTests
         var json = SaveCodec.Serialize(state);
         var actualHash = Sha256Hex(json);
 
-        Assert.Equal(ExpectedPreCounterSha256, actualHash);
+        Assert.True(ExpectedPreCounterSha256 == actualHash, $"Pre-counter kernel fingerprint moved. Actual: {actualHash}");
     }
 
     private static string Sha256Hex(string text)

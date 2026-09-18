@@ -43,6 +43,19 @@ namespace GameSim.Drama;
 /// with real history, not just raw event count. A null lookup (every existing call site that predates
 /// B3) degrades to exactly the old v1 ranking — involvement then recency, byte-identical — so this is
 /// purely additive for callers that opt in.</para>
+///
+/// <para><b>Kind-first ranking (P2-MEMORY-24, §11.7.13).</b> Before involvement, every tellable
+/// event is bucketed by what the town would actually talk about: a death, then a LethalSave/
+/// PotionLifesave, then a floor record/BreakpointClear, then a KillingBlow — split further into
+/// DECISIVE (the item was needed for the kill) and INCIDENTAL (it wasn't). Involvement/affinity/
+/// recency remain the tie-break WITHIN a bucket, so determinism holds exactly as before. A single
+/// item's KillingBlow is also capped at one told line per day (<see cref="DedupeKillsPerItem"/>) —
+/// the census (§11.12 measurement 3) found KillingBlow retold 86.7% of gossip lines, crowding out
+/// every rarer, more consequential beat. <paramref name="isDecisiveKillingBlow"/> (optional; wired
+/// by <see cref="GossipSystem"/> off <see cref="Expedition.TellingQuery.KillingBlowIsDecisive"/>, the
+/// SAME arithmetic the Telling modal stages — never a second copy) reports which; a null lookup
+/// (every pre-existing call site) treats every KillingBlow as decisive, degrading to the old
+/// involvement-first behavior for kills specifically.</para>
 /// </summary>
 public static class GossipGenerator
 {
@@ -57,13 +70,57 @@ public static class GossipGenerator
     private static int ParseHeroSubjectId(string subjectKey) =>
         int.Parse(subjectKey.AsSpan(HeroSubjectPrefix.Length), CultureInfo.InvariantCulture);
 
+    /// <summary>P2-MEMORY-24: what the tavern would actually talk about, lowest first. A death
+    /// outranks a save, a save outranks a record or a breakpoint, and those outrank a kill — a
+    /// decisive kill (the swing would not have killed without the item) ahead of an incidental one.
+    /// Ties keep the involvement/affinity order below, so the pick stays total and deterministic.
+    /// The predicate is the caller's (it needs last night's <c>ExpeditionResult</c>); with none
+    /// supplied every kill ranks as incidental, which is the honest default.</summary>
+    private static int Rank(GameEvent gameEvent, Func<AttributionBeatEvent, bool>? isDecisiveKillingBlow) =>
+        gameEvent switch
+        {
+            HeroDied => 0,
+            AttributionBeatEvent { Beat: BeatType.LethalSave or BeatType.PotionLifesave } => 1,
+            FloorRecordSet => 2,
+            VenueGraduated => 2,
+            AttributionBeatEvent { Beat: BeatType.BreakpointClear } => 2,
+            AttributionBeatEvent { Beat: BeatType.KillingBlow } kill =>
+                isDecisiveKillingBlow is not null && isDecisiveKillingBlow(kill) ? 3 : 4,
+            AttributionBeatEvent => 3,
+            _ => 3,
+        };
+
+    /// <summary>P2-MEMORY-24: at most ONE kill line per item per day. The ledger already carries
+    /// every kill (law 4 — nothing is dropped from the record); this only decides what the tavern
+    /// repeats. Which kill survives is fixed by the event order the log already has (earliest
+    /// stamped first), so the same day always keeps the same line.</summary>
+    private static List<(GameEvent Event, string SubjectKey)> DedupeKillsPerItem(
+        List<(GameEvent Event, string SubjectKey)> tellable)
+    {
+        var seenKillItems = new HashSet<int>();
+        var kept = new List<(GameEvent Event, string SubjectKey)>(tellable.Count);
+        foreach (var entry in tellable)
+        {
+            if (entry.Event is AttributionBeatEvent { Beat: BeatType.KillingBlow } kill
+                && !seenKillItems.Add(kill.Item.Value))
+            {
+                continue;
+            }
+
+            kept.Add(entry);
+        }
+
+        return kept;
+    }
+
     public static ImmutableList<GossipEmitted> Generate(
         IEnumerable<GameEvent> stampedEvents,
         ImmutableSortedDictionary<int, Hero> heroes,
         ImmutableSortedDictionary<int, Item> items,
         ulong campaignId,
         int maxLines = MaxLinesPerDay,
-        Func<int, int, int>? affinityLookup = null)
+        Func<int, int, int>? affinityLookup = null,
+        Func<AttributionBeatEvent, bool>? isDecisiveKillingBlow = null)
     {
         var events = stampedEvents as IReadOnlyList<GameEvent> ?? stampedEvents.ToList();
 
@@ -110,11 +167,18 @@ public static class GossipGenerator
             // else: untold kind (Describe returned null) — excluded, matches the old RenderHero-null path.
         }
 
+        // P2-MEMORY-24: at most ONE KillingBlow line told per item per day (§11.12 measurement 3
+        // found one item's kills alone taking a median 31% of a seed's beat gossip). The rest of
+        // that item's kills this day are not dropped from the LOG — only from what the tavern
+        // repeats (law 4 holds). Keep the EARLIEST by EventId, deterministic regardless of input
+        // order, so this can never depend on collection iteration.
+        var deduped = DedupeKillsPerItem(tellable);
+
         // Salience rank (B1e): involvement (how many of yesterday's tellable events name this
         // subject) descending, then recency (EventId) descending — the freshest news of an
         // equally-involved subject is told first. EventId is unique per event, so this second key
         // is simultaneously "recency" AND the total deterministic tie-break (no further ties possible).
-        var involvement = tellable
+        var involvement = deduped
             .GroupBy(t => t.SubjectKey, StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
 
@@ -124,7 +188,7 @@ public static class GossipGenerator
         // — the EventId recency key below still decides everything, exactly like v1.
         var heroSubjectIds = affinityLookup is null
             ? ImmutableArray<int>.Empty
-            : tellable
+            : deduped
                 .Select(t => t.SubjectKey)
                 .Distinct(StringComparer.Ordinal)
                 .Where(key => key.StartsWith(HeroSubjectPrefix, StringComparison.Ordinal))
@@ -152,8 +216,9 @@ public static class GossipGenerator
             }
         }
 
-        var ranked = tellable
-            .OrderByDescending(t => involvement[t.SubjectKey])
+        var ranked = deduped
+            .OrderBy(t => Rank(t.Event, isDecisiveKillingBlow))
+            .ThenByDescending(t => involvement[t.SubjectKey])
             .ThenByDescending(t => affinityScore.TryGetValue(t.SubjectKey, out var score) ? score : 0)
             .ThenByDescending(t => t.Event.Id.Value)
             .Take(maxLines);

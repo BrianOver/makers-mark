@@ -227,11 +227,15 @@ public class TavernPackTests
         // sole tie-break and the TELLING ORDER reverses (freshest first): event 7 (RecruitArrived,
         // hero 5), then event 6 (KillingBlow, hero 3), then event 5 (HeroDied, hero 1). The three
         // prose strings themselves are unchanged — only their order moved.
-        Assert.Equal("Herald Elowen, come at last! Trumpets would be fitting. We have a spoon and a tankard. They shall have to do!", lines[0].Line);
-        Assert.Equal("With one stroke of Fine Iron Blade, Kael silenced floor 4!", lines[1].Line);
+        //
+        // Re-pinned for P2-MEMORY-24 (gossip ranks by what the town would talk about): the death
+        // leads, the recruit's arrival next, and the kill — incidental here, no counterfactual
+        // predicate supplied — last. Same three strings; only their order moved, again.
         Assert.Equal(
             "The deep keeps its own, and it kept a good one — Torvald, slain by a Tunnel Spider, floor 2. Remember them kindly, and ward the door.",
-            lines[2].Line);
+            lines[0].Line);
+        Assert.Equal("Herald Elowen, come at last! Trumpets would be fitting. We have a spoon and a tankard. They shall have to do!", lines[1].Line);
+        Assert.Equal("With one stroke of Fine Iron Blade, Kael silenced floor 4!", lines[2].Line);
     }
 
     // ---------------------------------------------------------------- Plan U4 scenarios
