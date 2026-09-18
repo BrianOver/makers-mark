@@ -33,8 +33,9 @@ Steps:
 3. **Rules of the data:**
    - `Recipe.Profession` on every recipe == your profession id (lowercase kebab, e.g. `"tanning"`).
    - Recipe ids globally unique (prefix with your profession, e.g. `tanning-leather-cap`).
-   - Material keys must exist in the material table (`RecipeTable.MaterialGrades` until the
-     P4 material registry lands) or ship with your definition once P4 allows it.
+   - Material keys must exist in `MaterialRegistry.PricedPool` (`sim/GameSim/Materials/MaterialRegistry.cs`;
+     `RecipeTable.MaterialGrades` is derived from it). A registered-but-unpriced material (electrum,
+     orichalcum) is rejected at craft time; pricing one is orchestrator core work.
    - Tier gates only on tier ≥ 2; every referenced node id must exist in your `TalentNodes`.
    - Quality shifts are integers; universal quality math (±8/grade, threshold table) is shared —
      you only supply per-talent shifts (`FlatShifts`, `SlotShifts`, `MaterialMasteryNode`).
@@ -120,8 +121,8 @@ Steps mirror the profession flow:
      shopping and party-formation levers.
    - NO RNG, no wall clock, no floats, no Godot references — definitions are constant data.
 4. **Recruitability is a separate, determinism-gated decision.** Registering a class does NOT add
-   it to `ClassRegistry.RecruitPool` — that array is frozen at the three built-ins because the
-   recruit draw is `rng.NextInt(0, RecruitPool.Length)` and changing its length/order shifts every
+   it to `ClassRegistry.RecruitPool` — that array holds six entries (the three built-ins, then
+   sentinel/skirmisher/occultist, appended in the T1 re-baseline window) because the recruit draw is `rng.NextInt(0, RecruitPool.Length)` and changing its length/order shifts every
    existing seed's world. A class that should spawn from the recruit trickle needs an
    orchestrator-owned change to the recruit mechanism, not just a registry entry. Until then a new
    class reaches play only through a bespoke spawn path (a companion summon, a scripted arrival).
@@ -158,8 +159,7 @@ Steps mirror the profession/class flow:
      event as the `{faction}` slot value — no registry lookup in the renderer).
    - `SuppliesOreKeys` = the material keys this faction supplies (`ImmutableArray`, `StringComparer.Ordinal`).
      Every key must be a known, priced ore key (a Mine floor material in this single-venue core —
-     `copper…adamant`; add-ons with their own materials associate those once the P4 material registry
-     lands). `SuppliesOreKeys` must be non-empty with no repeat within the faction.
+     the `MaterialRegistry.PricedPool` keys). `SuppliesOreKeys` must be non-empty with no repeat within the faction.
    - **Single supplier per ore key (R6/KTD6):** no two registered factions may supply the same ore
      key — the handler resolves exactly one faction per ore via `FactionRegistry.ByOreKey`. Bring your
      own materials; never contend for another faction's ore.
@@ -196,12 +196,22 @@ Steps mirror the profession/class flow:
    Deepvein, so the shipped bands must not move (see `FactionTariffBalanceTests` for the tariff
    acceptance shape if your faction warrants its own scenario).
 
-## Coming registries (don't build against these until the core lands)
+## Adding a venue (available now — P4 core)
 
-- **Venues/maps** — P4 core: `VenueDefinition` registry (floors, monster/loot tables, gates).
-- **Materials/markets** — P4 core: material registry replaces `RecipeTable.MaterialGrades` as
-  the source of truth for material keys.
-- **Traits/arcs** — P5 core: personality + story-arc templates.
+A venue is pure data: `VenueDefinition` in `sim/GameSim/Venues/VenueDefinition.cs` (floors, monster and loot
+tables, gates). `VenueRegistry.All` (`sim/GameSim/Venues/VenueRegistry.cs`, an `ImmutableSortedDictionary`)
+is the registry; `Gloomwood/`, `SunkenCrypt/` and `Emberfall/` under `sim/GameSim/Venues/` are the shipped
+pattern. Same flow as a faction: claim, `sim/GameSim/Venues/<Name>/<Name>Venue.cs` exposing
+`public static readonly VenueDefinition Definition`, constant data only, tests in
+`sim/GameSim.Tests/Venues/`, and the registration line `VenueRegistry.All: add <YourVenue>.Definition` in the
+PR description for the orchestrator. `VenueConformanceTests` and `VenueRegistryTests` pick a registered venue
+up automatically. Whether a venue is *live* (in the forward ladder heroes actually march) is a separate,
+determinism-gated flip — the recruitability caveat again.
 
-Each will follow the same shape: definition record + registry + conformance suite + one
-orchestrator-applied registration line. This guide gains a section as each core ships.
+## Materials and traits
+
+- **Materials** — `MaterialRegistry` (`sim/GameSim/Materials/MaterialRegistry.cs`) is the source of truth for
+  material keys and grades; `MaterialRegistryTests` covers it. The priced pool is frozen (draw-neutral), so
+  registering a material does not price it — see the profession rules above.
+- **Traits** — `TraitDefinition` / `TraitRegistry.All` / `TraitEffects` in `sim/GameSim/Heroes/`. No
+  conformance suite yet; mirror the class flow and add behaviour tests under `sim/GameSim.Tests/Heroes/`.

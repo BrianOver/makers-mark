@@ -5390,7 +5390,7 @@ beside `P2-MEMORY-03`, whose grammar it extends.
   that complaint tracks whether the DAY repeats, not whether some unseen verb or slot still exists
   in the build. Measure the second thing before the middle wave scopes against either number.
 - Requirements: `P2-LONG-01` (the `long-wall` machinery this extends, not rebuilds); the
-  indirect-agency research (`docs/design/2026-09-03-indirect-agency-research.md`, #701)
+  indirect-agency research (#701; its doc was deleted once §11 adopted it, per its own §7 — git history holds it)
 - Files: `sim/GameSim.Cli/` (one instrumented sweep, new `felt-wall` CLI command), no shipped code
 - Approach: five candidate signals named in the brief; two were built and rejected in code before
   the measurement was trusted, because both are cheap to see wrong and expensive to leave unstated:
@@ -5440,7 +5440,7 @@ beside `P2-MEMORY-03`, whose grammar it extends.
     conflict — they measure different things. Day 25 answers "does the game ever offer something
     genuinely new again" (yes, for a long time). Day 12 answers "by when has the day's routine
     stopped changing at the pace it did at first" (much sooner). The research
-    (`docs/design/2026-09-03-indirect-agency-research.md`) predicts the second is what a bored
+    (#701) predicts the second is what a bored
     player notices — this unit does not re-argue scope from that; the owner does.
 - Wall-clock conversion (informational, not a measurement): `HumanPlayer`/`ForgePlayer`
   (`godot/tests/HumanPlayer.cs`, `ForgePlayer.cs`) are DELIBERATELY clock-free — both class docs say
@@ -5459,7 +5459,7 @@ beside `P2-MEMORY-03`, whose grammar it extends.
   reasoned from the one pinned real-second constant this codebase has, not a measurement. At that
   rate this unit's headline (day 12) falls at roughly 40–95 minutes of real play — under an hour at
   the low end, under the genre's cited hour 3–4 either way. Flagged, not resolved: the existing
-  research citation (`docs/design/2026-09-03-indirect-agency-research.md`, "the day-8–18 wall...at
+  research citation (#701, "the day-8–18 wall...at
   the same wall-clock hour" as the genre's hour-3–4 complaint) implies roughly 13–20 minutes/day,
   2–4x this estimate. Neither figure is a measurement of a real session; reconciling them needs an
   actual timed human playthrough (§11.4 P4's evening), not another sweep.
@@ -6317,7 +6317,7 @@ and rule 8 says a doc git contradicts is an instruction the next session obeys.
 
 ### The indirect-agency research round (2026-09-03)
 
-`docs/design/2026-09-03-indirect-agency-research.md` (#701) read ~25 shipped games against this
+The indirect-agency research (#701; doc deleted after adoption, per its own shelf-life clause) read ~25 shipped games against this
 game's structural risk: the player prepares, then watches. Its finding reframes the risk and is the
 reason these five units exist rather than a sixth round of verbs.
 
