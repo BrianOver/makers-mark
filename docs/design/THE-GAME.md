@@ -22,10 +22,10 @@ counter, and then watch what your work does to someone else's life.
 **The whole game is one sentence: a specific person's fate provably turned on work your hands did,
 and you were watching when it happened.**
 
-Four links carry that. You make a thing, and it is stamped with your mark. The thing reaches a hero
+Five links carry that. You make a thing, and it is stamped with your mark. The thing reaches a hero
 through one of four honest channels. The hero carries it into the dark on their own judgment. The
 game then proves, by re-running the fight without your item, that it mattered — and the proof
-arrives on your screen that night with the hero's name in it.
+arrives on your screen that night with the hero's name in it, and stays in the town's memory.
 
 *Emberbite turned the killing blow on floor 3. Torvald lives.*
 
@@ -37,8 +37,9 @@ a floor, and every eligible hero weighs it for themselves against their greed, t
 depth. One of them may take it. Sometimes they take it and die on the floor you paid them to reach.
 The mechanism, move by move, is §4.5.
 
-**Narrow now, by choice.** Six hero classes, four professions, three live venues, a five-floor mine,
-a campaign that resolves in about six weeks of in-game days. The narrowness is a focus decision, not
+**Narrow now, by choice.** Six hero classes, four professions, four live venues on one ladder, a
+five-floor mine, a campaign whose Ending the balance gate pins at or before day 60 across its seed
+sweep (`ArcBalanceTests.EndingByDayAcrossSweep`). The narrowness is a focus decision, not
 a ceiling: it exists so every system ships finished rather than sketched, and the architecture is
 built to widen — content can sit inert in the code until a determinism-gated flip turns it on. Deep
 before wide.
@@ -81,10 +82,12 @@ No channel lets you push an item onto a hero. Every one of them ends with the he
 
 ### Link 3 — The hero carries it into the dark, on their own judgment
 
-Parties form themselves — three heroes, anchored by a Vanguard or Sentinel where one is available,
-in roster order, with no player input at any point. They target exactly one floor past their
-personal best, unless someone on the party accepted your bounty, in which case the bounty's floor
-wins.
+Parties form themselves — three heroes, with no player input at any point. The living roster is
+first split by ladder rank, so a party never mixes a Mine-rank hero with a graduate; inside each
+rank the anchor classes (Vanguard, Sentinel) lead, and the rest fill in hero-id order
+(`PartyFormation.FormParties`). A party targets one floor past the deepest any of its members has
+reached, capped at the venue's bottom floor (`ExpeditionSystem.TargetFloorFor`) — unless someone on
+the party accepted your bounty, in which case the bounty's floor wins.
 
 They fight, they take wounds, they quaff what they packed, they push or they turn back. Every one of
 those decisions is theirs.
@@ -95,9 +98,16 @@ This is the part no other shop game has.
 
 When the expedition resolves, an attribution engine re-runs the recorded fight *counterfactually*:
 it asks what would have happened with your item removed. It draws no new randomness — it replays
-the rolls that already happened against different numbers. When the answer changes, it emits a beat:
+the rolls that already happened against different numbers. Four of the five beats fire only when
+that answer changes. The fifth, `KillingBlow`, fires on every kill a player-crafted weapon lands,
+decisive or not — the counterfactual rides along as arithmetic on the beat ("without it, the swing
+deals N, not M"; `AttributionEngine`, `TellingQuery.KillingBlowPayload.MonsterHpWithoutItem`). The
+night's ledger ranks a life saved above a threshold cleared above a killing blow
+(`BeatVocab.Rank`); it does not yet fold the killing blows that would have landed anyway, which is
+why 97.5% of a night's beats are recorded kills (MAKERS-MARK.md §11.11, P2-PROOF-19):
 
-- **KillingBlow** — your weapon landed the hit that ended it.
+- **KillingBlow** — your weapon landed the hit that ended it, with what the swing would have dealt
+  without it.
 - **LethalSave** — your armour or shield absorbed what would have killed them.
 - **BreakpointClear** — your gear took them over a threshold they could not otherwise cross.
 - **Provisioned** / **PotionLifesave** — the consumable you sent kept them standing.
@@ -168,18 +178,23 @@ show, and *Hurry* skips the choreography without skipping the question that foll
 
 **The vigil stop.** If a party clears the first checkpoint cleanly, they camp — and the world stops.
 There is no timer. The winch-house slate shows who is down there, their remaining HP, the heals they
-carry (*of which yours: N*), and what still waits below. Three verbs end it:
+carry (*of which yours: N*), and what still waits below. Two verbs and the bell end it:
 
-- **Send the runner** — a fee, and one consumable from your inventory goes to the front of their
-  pack.
+- **Send the runner** — a fee (6 gold plus 3 per checkpoint floor, `CampHandlers.SupplyFee`), and
+  one consumable from your inventory goes to the front of their pack. Whether they drink it is
+  still their rule, not yours.
 - **Bring them home** — they bank what they have and surface without rolling the deep floors.
-- **Send them deeper.**
+- **Send them deeper** — this one is the bell itself. The sim records no action for it
+  (`SendSupplyAction` and `RecallPartyAction` are the only Camp verbs); it is the phase moving on
+  with nothing sent.
 
 You can craft the salve from inside the stop and hand it over in the same breath. The world waits
 while you work.
 
-**Deep Vigil is a held breath.** No verbs, deliberately. Nothing has been rolled yet that a verb
-could honestly touch.
+**Deep Vigil is a held breath.** No verbs of its own, deliberately. Nothing has been rolled yet
+that a verb could honestly touch. The forge, the shelf and the price tag stay open here as in every
+phase (`CraftAction`, `StockAction`, `SetPriceAction` carry no phase gate in `ActionLegality`);
+what is absent is anything aimed at the party below.
 
 **Night — "Snuff the lanterns."** The reveal leads with your mark. The first card is the one
 carrying an attribution beat, the item's own icon on the line:
@@ -208,9 +223,9 @@ it has verbs of its own; the rest conduct themselves.
 
 | Phase | Called | The question it asks | Your verbs |
 |---|---|---|---|
-| Morning | Dawn / Prepare | *What do you make, and who do you make it for?* | ~20 of the 24 — craft, stock, price, counter, commissions, bounty, Foundry, professions, talents |
+| Morning | Dawn / Prepare | *What do you make, and who do you make it for?* | 21 of the 26 action types (`Contracts/Actions.cs`) — craft, stock, price, counter, commissions, bounty, Foundry, professions, talents, dues, graduation |
 | Expedition | Quest | *Whose work goes with them?* | none — the send-off names the carriers |
-| Camp | Vigil | *Do you reach into the dark, or let them decide?* | send supply, bring home, send deeper |
+| Camp | Vigil | *Do you reach into the dark, or let them decide?* | send supply, bring home; the bell sends them deeper |
 | ExpeditionDeep | Deep Vigil | — | none, by design |
 | Evening | Night | *What did your work do?* | buy ore, honor, reforge, post bounty |
 
@@ -248,10 +263,13 @@ pickier, and the shelf you stocked on day two is the wrong shelf by day seven.
 
 ### 3.4 The shape of a campaign
 
-Around day ten the heroes stop accepting Poor work. A veteran with a floor-3 record will not spend
-on something that will get them killed at floor 4, and the commission board starts asking for
-Superior before floor 5 is reachable at all. This is the point where the forge minigame stops being
-a formality.
+Once a hero has stood on floor 3 they stop accepting Poor work: a veteran of that depth refuses
+anything below Common (`ShoppingAi.VeteranFloorThreshold = 3`, `VeteranMinQualityGrade = Common`),
+and Poor costs 120 willingness points at the counter regardless (`WillingnessModel`). On a typical
+seed that turn arrives around day ten. The commission board's bar climbs the same way: Common for a
+floor-1 or floor-2 target, Fine from floor 3, Superior at floor 5 — and Superior from any Sworn
+hero, Fine from any Patron, whatever the floor (`CommissionSystem.FloorMinQuality`,
+`BandMinQuality`). This is the point where the forge minigame stops being a formality.
 
 Relationship bands accumulate quietly underneath. Heroes remember who fleeced them at the counter,
 and it shows in willingness and in which commissions come your way.
@@ -283,8 +301,15 @@ The decisions the game is actually made of.
    compounds. A fleece earns gold once.
 3. **Fill the empty slot, or upgrade the full one?** The muster board tells you who is marching
    under-equipped. It does not tell you who will survive.
-4. **Spend the slot, or bank it?** Five actions a day, and shelf work is free — the budget is a
-   real constraint on ambition, not a formality.
+4. **Spend the slot, or bank it?** Five slots a day (`ActionBudget.SlotsPerDay`), ten action types
+   spend one, shelf work is free, and nothing carries over — an unspent slot is simply gone at
+   dawn. The budget CAN bind: a driver that greedily tops up to the legal maximum is refused a
+   sixth action (`SixDilemmasLivenessTests.TheActionSlotBudget_ActuallyBinds`). Measured
+   2026-09-17 across nine drivers and 18,000 day-samples it rarely does: eight of nine spend a
+   median of three slots or fewer, and the one that maxes out never leaves a slot to bank
+   (MAKERS-MARK.md §11.11, P2-HONEST-28). So today this is a ceiling you can hit, not a choice
+   you make most days — and the honest ruling on record is that the text says so rather than
+   the kernel changing.
 5. **Buy the ore, or buy the faction's favour?** Every purchase pays the returning hero their ask
    and raises your standing with their faction, which cheapens every future load. The fork is whose
    ore you buy: the faction you will need, or the hero standing in front of you tonight.
@@ -324,7 +349,8 @@ formality.
 
 ### 4.2 The heroes
 
-Six classes across anchor and striker roles, each with traits, needs, relationships, XP and levels,
+Six classes — Vanguard, Sentinel, Striker, Mystic, Skirmisher, Occultist — of which the first two
+are anchors (`ClassDefinition.IsAnchor`), each with traits, needs, relationships, XP and levels,
 permadeath, memorials, and heirlooms.
 
 Their autonomy is five legible arithmetic rules over true memories — what they can afford, what they
@@ -374,8 +400,9 @@ mentions.
 The two channels where the town asks *you* for something.
 
 A commission is a named hero's specific request — slot, minimum quality, five-day window, premium
-on delivery. Weapons, shields, armour, consumables and trinkets can all be asked for; trinkets only
-by heroes who have been around long enough to want one.
+on delivery. Weapons, shields, armour, consumables and trinkets can all be asked for; a trinket
+only by a hero at Regular band or better — one purchase from your shop, or a mood of 80
+(`CommissionSystem`, `RelationshipBands.RegularMinPurchases`/`RegularMinMood`).
 
 A bounty is the inverse, and it is the game's only lever aimed at *where* heroes go. It runs in four
 moves:
@@ -493,7 +520,7 @@ Stated as description. These are properties of the game as it stands, not gaps a
   ladder's last dungeon — its own floor 5 — the climax fires; five days later the game reads back
   everything your mark touched. There is no staged final scene — the tally is the ending.
 - **The camp simulates nothing while a party sleeps.** It is a decision, not a place. Its entire
-  weight is the one question and the three verbs.
+  weight is the one question, two verbs, and the bell.
 - **Four venues are live, and that is the whole ladder.** There is no rung past the Emberfall
   Foundry — beating its floor 5 is the campaign's climax, not a step toward a fifth dungeon.
 - **The heroes' autonomy is five rules over true memories.** There is no goal system and no inner
