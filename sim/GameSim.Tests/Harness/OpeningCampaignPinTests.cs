@@ -60,11 +60,17 @@ namespace GameSim.Tests.Harness;
 /// </summary>
 public class OpeningCampaignPinTests
 {
-    private const ulong ChosenSeed = 1;
+    // Re-pinned 2026-09-18 for P2-LONG-29 (the camp moved from below floor 1 to below the TARGET
+    // floor; owner ruling §11.7.13). Seed 1 stopped clearing the Warrant's seven criteria under the
+    // new camp (6/7 — the days-4-6 death no longer lands), and the same `seed-search --seeds 2000
+    // --seed 1 --days 7` re-run found seed 4 the FIRST seed that clears all seven (959/2000 do).
+    // Under seed 4 the days-4-6 death is Moss (hero 6), not Elowen (hero 5). Same rule as before:
+    // first hit, lowest seed, default start — no cherry-picking.
+    private const ulong ChosenSeed = 4;
     private const int Days = 7;
 
     private static readonly HeroId Torvald = new(1);
-    private static readonly HeroId Elowen = new(5);
+    private static readonly HeroId Moss = new(6);
 
     /// <summary>
     /// Replays <see cref="ChosenSeed"/> under <see cref="ApprenticePlayer"/> to the end of day
@@ -143,10 +149,10 @@ public class OpeningCampaignPinTests
         var deathsInWindow = events.OfType<HeroDied>().Where(e => e.Day is >= 4 and <= 6).ToImmutableList();
 
         var death = Assert.Single(deathsInWindow);
-        Assert.Equal(Elowen, death.Hero);
+        Assert.Equal(Moss, death.Hero);
         Assert.NotEqual(Torvald, death.Hero);
 
-        // Not a wipe: the party that lost Elowen still returned survivors the same day.
+        // Not a wipe: the party that lost Moss still returned survivors the same day.
         Assert.Contains(events.OfType<PartyReturned>(), e => e.Day == death.Day && !e.Survivors.IsEmpty);
     }
 
