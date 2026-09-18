@@ -579,6 +579,162 @@ public class DelveStageTests
         }
     }
 
+    // ── P2-PROOF-24 ("the killing blow has a pose") ─────────────────────────────────────────────
+    // The killing hero (DelveBeat.Hero on a MonsterSlain beat) gets a distinct pose from the
+    // generic Attack lunge: deeper peak extent AND a longer hold before it settles. These three
+    // tests pin the property ("Kill reads as bigger and slower than Attack"), not one instance.
+
+    [TestCase]
+    public void MonsterSlain_KillingHero_LungesFurtherThanAnOrdinaryAttack()
+    {
+        var attackStage = new DelveStage();
+        var killStage = new DelveStage();
+        var attackSprite = new Sprite2D { Position = new Vector2(200f, 150f) };
+        var killSprite = new Sprite2D { Position = new Vector2(200f, 150f) };
+        try
+        {
+            attackStage.Build();
+            killStage.Build();
+            attackStage.SyncHeroSprites(new Dictionary<int, Sprite2D> { [1] = attackSprite });
+            killStage.SyncHeroSprites(new Dictionary<int, Sprite2D> { [1] = killSprite });
+
+            attackStage.RenderBeat(Beat(DelveBeatKind.Exchange, floor: 1, hero: 1, dealt: 5, taken: 0), Heroes());
+            killStage.RenderBeat(Beat(DelveBeatKind.MonsterSlain, floor: 1, hero: 1, dealt: 10, taken: 0), Heroes());
+
+            // Sample each pose at its OWN peak (Attack's thrust crests at progress 0.5 of its own
+            // 0.32s duration; Kill's crests at progress 0.35 of its own longer 0.6s duration and
+            // then holds) -- comparing the two peaks' magnitude, not an arbitrary shared instant.
+            attackStage.Process(0.16f);
+            killStage.Process(0.25f);
+
+            var attackPeak = attackSprite.Position.X - 200f;
+            var killPeak = killSprite.Position.X - 200f;
+
+            AssertThat(attackPeak).IsGreater(0f); // sanity: Attack is mid-lunge, toward the monster
+            AssertThat(killPeak)
+                .OverrideFailureMessage(
+                    "The killing blow's peak lunge must reach further than an ordinary Attack's -- " +
+                    "otherwise it is not a distinct pose, just the same animation renamed.")
+                .IsGreater(attackPeak);
+        }
+        finally
+        {
+            attackSprite.Free();
+            killSprite.Free();
+            attackStage.Free();
+            killStage.Free();
+        }
+    }
+
+    [TestCase]
+    public void MonsterSlain_KillPose_StillMidFlight_WhenAnOrdinaryAttackWouldAlreadyBeSettled()
+    {
+        var attackStage = new DelveStage();
+        var killStage = new DelveStage();
+        var attackSprite = new Sprite2D { Position = new Vector2(200f, 150f) };
+        var killSprite = new Sprite2D { Position = new Vector2(200f, 150f) };
+        try
+        {
+            attackStage.Build();
+            killStage.Build();
+            attackStage.SyncHeroSprites(new Dictionary<int, Sprite2D> { [1] = attackSprite });
+            killStage.SyncHeroSprites(new Dictionary<int, Sprite2D> { [1] = killSprite });
+
+            attackStage.RenderBeat(Beat(DelveBeatKind.Exchange, floor: 1, hero: 1, dealt: 5, taken: 0), Heroes());
+            killStage.RenderBeat(Beat(DelveBeatKind.MonsterSlain, floor: 1, hero: 1, dealt: 10, taken: 0), Heroes());
+
+            // 0.32s is comfortably past AttackDuration -- an ordinary attack lunge is fully
+            // recovered by then (see the Attack test above). The killing blow's own duration is
+            // ~2x longer, so at the SAME elapsed time it must still be away from rest.
+            attackStage.Process(0.32f);
+            killStage.Process(0.32f);
+
+            AssertThat(attackSprite.Position.X)
+                .OverrideFailureMessage("Sanity check: an ordinary Attack should be fully settled by 0.32s.")
+                .IsEqualApprox(200f, 0.1f);
+            AssertThat(Mathf.Abs(killSprite.Position.X - 200f))
+                .OverrideFailureMessage(
+                    "The killing blow's follow-through must outlast an ordinary Attack -- at the " +
+                    "elapsed time an Attack has already settled back to rest, Kill must still be " +
+                    "held away from it (a longer pose, not a faster one).")
+                .IsGreater(0.1f);
+        }
+        finally
+        {
+            attackSprite.Free();
+            killSprite.Free();
+            attackStage.Free();
+            killStage.Free();
+        }
+    }
+
+    [TestCase]
+    public void MonsterSlain_KillPose_NonPlayerCraftedKill_StillPlaysThePose()
+    {
+        // No participation credit (law 12) governs SpawnKillCredit, not the pose itself -- the pose
+        // is about the fight the sim recorded, and Beat() never sets KillingItemName, so this beat
+        // is exactly the "kill landed by unmarked/rival gear" case.
+        var stage = new DelveStage();
+        var sprite = new Sprite2D { Position = new Vector2(200f, 150f) };
+        try
+        {
+            stage.Build();
+            stage.SyncHeroSprites(new Dictionary<int, Sprite2D> { [1] = sprite });
+            stage.RenderBeat(Beat(DelveBeatKind.MonsterSlain, floor: 1, hero: 1, dealt: 10, taken: 0), Heroes());
+
+            stage.Process(0.25f);
+            AssertThat(Mathf.Abs(sprite.Position.X - 200f))
+                .OverrideFailureMessage("MonsterSlain must pose the killing hero even with no credited item.")
+                .IsGreater(0.1f);
+        }
+        finally
+        {
+            sprite.Free();
+            stage.Free();
+        }
+    }
+
+    [TestCase]
+    public void MonsterSlain_KillPose_SameBeatsSameTicks_ProducesIdenticalTrajectory()
+    {
+        // Determinism: same seed input (identical beat, identical Process cadence) must reproduce
+        // the identical pose trajectory across two independent stage instances -- no clock reads,
+        // no RNG, in ApplyCombatPose/KillCurveX.
+        var stageA = new DelveStage();
+        var stageB = new DelveStage();
+        var spriteA = new Sprite2D { Position = new Vector2(200f, 150f) };
+        var spriteB = new Sprite2D { Position = new Vector2(200f, 150f) };
+        try
+        {
+            stageA.Build();
+            stageB.Build();
+            stageA.SyncHeroSprites(new Dictionary<int, Sprite2D> { [1] = spriteA });
+            stageB.SyncHeroSprites(new Dictionary<int, Sprite2D> { [1] = spriteB });
+
+            stageA.RenderBeat(Beat(DelveBeatKind.MonsterSlain, floor: 1, hero: 1, dealt: 10, taken: 0), Heroes());
+            stageB.RenderBeat(Beat(DelveBeatKind.MonsterSlain, floor: 1, hero: 1, dealt: 10, taken: 0), Heroes());
+
+            foreach (var step in new[] { 0.05f, 0.1f, 0.15f, 0.2f, 0.3f, 0.5f })
+            {
+                spriteA.Position = new Vector2(200f, 150f);
+                spriteB.Position = new Vector2(200f, 150f);
+                stageA.Process(step);
+                stageB.Process(step);
+
+                AssertThat(spriteA.Position.X)
+                    .OverrideFailureMessage($"Kill pose trajectory diverged at step {step}s -- not deterministic.")
+                    .IsEqualApprox(spriteB.Position.X, 0.0001f);
+            }
+        }
+        finally
+        {
+            spriteA.Free();
+            spriteB.Free();
+            stageA.Free();
+            stageB.Free();
+        }
+    }
+
     [TestCase]
     public void Exchange_LightDamageTaken_RecoilsAway_LighterThanAHeavyStagger()
     {
