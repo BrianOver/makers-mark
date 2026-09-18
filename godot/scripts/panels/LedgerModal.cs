@@ -1094,19 +1094,38 @@ public partial class LedgerModal : SimPanel
             // the actual item's icon so the beat reads as THAT item's moment, not just prose.
             var beatRow = AddRow(telling.Body);
             AddIcon(beatRow, ResolveItemIcon(state, beat.Item));
-            // P2-MEMORY-01: the raw BeatType prefix ("KillingBlow:") was not just jargon, it was
-            // REDUNDANT — Detail already carries the full sentence. Drop the prefix rather than
-            // translating it in place; BeatVocab.Label exists for surfaces that need the SHORT
-            // caption instead (Chronicle Night, the commendation — later units).
-            var beatText = BeatLine(state, beat);
+
+            // P2-PROOF-20's own copy: plain, past tense, no verdict — the same register the
+            // pre-existing incidental fold (AddIncidentalKillsFold, below) already uses.
+            var foldSuffix = string.Empty;
             if (beat.Beat == BeatType.KillingBlow
                 && killingBlowFoldExtras.TryGetValue(beat.Item, out var foldedGroup)
                 && foldedGroup.Count > 1)
             {
-                // P2-PROOF-20's own copy: plain, past tense, no verdict — the same register the
-                // pre-existing incidental fold (AddIncidentalKillsFold, below) already uses.
                 var extra = foldedGroup.Count - 1;
-                beatText += $" — and {extra} more kill{(extra == 1 ? "" : "s")} tonight.";
+                foldSuffix = $" — and {extra} more kill{(extra == 1 ? "" : "s")} tonight.";
+            }
+
+            // P2-PROOF-21: the lead row is the Telling's own headline — the same sentence "Ask how
+            // it happened." proves, not the arithmetic it rests on (TellingPanel.HeadlineFor is the
+            // ONE creation site both this row and the Telling panel call, so the two can never say
+            // different things about the same beat). Only beatIndex 0 gets the split; every other
+            // row keeps the old single-line BeatLine text unchanged. Falls back to that same old
+            // text when the beat cannot be staged (an old night rolled out of retention, or a beat
+            // type the Telling has no staging for) — the row still says SOMETHING, never a blank.
+            var headline = beatIndex == 0 ? TellingPanel.HeadlineFor(state, beat) : null;
+            string beatText;
+            if (headline is { } h)
+            {
+                beatText = h.Headline + foldSuffix;
+            }
+            else
+            {
+                // P2-MEMORY-01: the raw BeatType prefix ("KillingBlow:") was not just jargon, it was
+                // REDUNDANT — Detail already carries the full sentence. Drop the prefix rather than
+                // translating it in place; BeatVocab.Label exists for surfaces that need the SHORT
+                // caption instead (Chronicle Night, the commendation — later units).
+                beatText = BeatLine(state, beat) + foldSuffix;
             }
 
             var beatLabel = AddLabel(beatRow, beatText);
@@ -1120,6 +1139,28 @@ public partial class LedgerModal : SimPanel
                 // above body text that the card's headline sentence uses) — this IS the card's
                 // headline whenever the card earned one.
                 beatLabel.AddThemeFontSizeOverride("font_size", GameTheme.HudValueFontSize);
+            }
+
+            if (headline is { } withDetail)
+            {
+                // The arithmetic (the Telling's own Detail half, e.g. "the blow read 0. Without it,
+                // the swing deals 4, not 17.") moves to a quieter second line under the headline —
+                // same secondary-line styling as the channel/presence line just below. The forge
+                // moment clause (link 1 — "quenched clean and true; your anvil, day 3") used to ride
+                // the single combined line; it rides this one now, so it is never dropped, only
+                // demoted alongside the arithmetic it was always secondary to.
+                var detailText = withDetail.Detail;
+                if (ForgeMomentClause(state, beat.Item) is { } forgeClause)
+                {
+                    detailText = detailText.Length > 0 ? $"{detailText} — {forgeClause}" : forgeClause;
+                }
+
+                if (detailText.Length > 0)
+                {
+                    var detailLabel = AddLabel(telling.Body, detailText);
+                    detailLabel.Name = $"BeatLineDetail_{beatIndex}";
+                    detailLabel.AddThemeColorOverride("font_color", GameTheme.TextDim);
+                }
             }
 
             // P2-MEMORY-03: the beat names its channel — a second line saying how the item

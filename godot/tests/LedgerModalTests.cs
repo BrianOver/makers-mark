@@ -2220,12 +2220,29 @@ public class LedgerModalTests
                 .IsEqual(cards.Sum(card => card.Beats.Count));
 
             var ledgerText = RenderedText(ui.Ledger);
-            foreach (var beat in cards.SelectMany(card => card.Beats))
+            foreach (var card in cards)
             {
-                AssertThat(ledgerText)
-                    .OverrideFailureMessage($"'{beat.Detail}' stopped rendering after the reorder")
-                    .Contains(beat.Detail);
-                AssertThat(ledgerText).Contains($"(floor {beat.Floor})");
+                var lead = card.Beats.IsEmpty ? null : BeatVocab.LeadFirst(card.Beats)[0];
+                foreach (var beat in card.Beats)
+                {
+                    // P2-PROOF-21: the lead row now renders the Telling's own headline instead of
+                    // the beat's raw Detail -- still a fact the sim decided (TellingPanel.HeadlineFor
+                    // is a pure read over the SAME recorded night, never a second counterfactual),
+                    // just phrased as the Telling phrases it. Every non-lead beat is untouched by
+                    // this unit and still renders its own Detail verbatim, law 4 intact.
+                    if (beat.Equals(lead) && TellingPanel.HeadlineFor(ui.Adapter.CurrentState, beat) is { } headline)
+                    {
+                        AssertThat(ledgerText)
+                            .OverrideFailureMessage($"the lead beat's headline stopped rendering after the reorder: \"{headline.Headline}\"")
+                            .Contains(headline.Headline);
+                        continue;
+                    }
+
+                    AssertThat(ledgerText)
+                        .OverrideFailureMessage($"'{beat.Detail}' stopped rendering after the reorder")
+                        .Contains(beat.Detail);
+                    AssertThat(ledgerText).Contains($"(floor {beat.Floor})");
+                }
             }
         }
         finally
@@ -2275,12 +2292,29 @@ public class LedgerModalTests
         {
             ui.Ledger.ShowFor(1);
 
-            // Bram's card carries exactly one beat, on the bare-forged Notched Axe.
-            var line = BeatLinesOf(Find<Control>(ui.Ledger, "LedgerCard_1"))[0].Text;
-            AssertThat(line).Contains("Notched Axe landed the killing blow on the cave rat.");
-            AssertThat(line)
-                .OverrideFailureMessage($"a momentless craft grew a forge clause anyway: \"{line}\"")
-                .IsEqual("Notched Axe landed the killing blow on the cave rat. (floor 1)");
+            // Bram's card carries exactly one beat, on the bare-forged Notched Axe -- floor 1 has
+            // staged combat data, so this IS now the P2-PROOF-21 headline row, not the old raw-Detail
+            // line (that fixture used to assert against a literal; it now asserts against the SAME
+            // shared helper the row itself calls).
+            var card = Find<Control>(ui.Ledger, "LedgerCard_1");
+            var beatEvent = new AttributionBeatEvent(
+                BeatType.KillingBlow, PlainAxeId, new HeroId(1), 1, "Notched Axe landed the killing blow on the cave rat.");
+            var headline = TellingPanel.HeadlineFor(ui.Adapter.CurrentState, beatEvent);
+            AssertThat(headline)
+                .OverrideFailureMessage("Bram's floor-1 kill should be stageable -- this test no longer proves anything")
+                .IsNotNull();
+
+            var line = BeatLinesOf(card)[0].Text;
+            AssertThat(line).IsEqual(headline!.Value.Headline);
+
+            // The arithmetic moved beneath it; no forge clause rides it either -- a momentless craft
+            // has nothing to add to the detail line, same as it had nothing to add before.
+            var detailLabel = card.FindChild("BeatLineDetail_0", recursive: true, owned: false) as Label;
+            AssertThat(detailLabel).IsNotNull();
+            AssertThat(detailLabel!.Text).IsEqual(headline.Value.Detail);
+            AssertThat(detailLabel.Text)
+                .OverrideFailureMessage($"a momentless craft grew a forge clause anyway: \"{detailLabel.Text}\"")
+                .NotContains("your anvil");
         }
         finally
         {
