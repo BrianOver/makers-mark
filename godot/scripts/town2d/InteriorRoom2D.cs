@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using Godot;
+using GodotClient.Ui;
 
 namespace GodotClient.Town2d;
 
@@ -58,6 +59,12 @@ public partial class InteriorRoom2D : Node2D
     public IReadOnlyList<Building2D> Stations => _stations;
 
     private readonly List<Building2D> _stations = new();
+
+    /// <summary>U37 (§11, R25/R27): Bryn's own idle-breath driver — null for every room but the
+    /// workshop's (she is the only station this unit gives one to; see <see cref="BuildStations"/>).
+    /// A plain field, not a child node, because <see cref="StationBreath2D"/> is engine-free data
+    /// (mirrors this file's own "the room drives its children, not the other way round" shape).</summary>
+    private StationBreath2D? _mentorBreath;
 
     /// <summary>Raised when a station is picked (E/click) — carries the station's WHOLE <see
     /// cref="InteriorLayout2D.StationSpec"/> (U3: Action/Focus/HoverLine/FlavorLine together, not
@@ -163,8 +170,13 @@ public partial class InteriorRoom2D : Node2D
             // a verb" reads from across the room, not only once close enough to see the nametag's
             // dim/bright color. Exactly non-null Action gets one; flavor gets nothing beyond the
             // dim nametag it already had.
+            // U37 (§11, R27): Bryn is flavor-Action-null like the quench trough, but she is not
+            // furniture — the dim treatment exists to mark "no verb here", and hers already has an
+            // honest one (HoverLine, no bare "E ·" prompt); undimmed so a real person's nametag
+            // never reads as inert scenery.
             station.Configure(stationSpec.Id, stationSpec.Label, sprite, worldPos,
-                hoverLine: stationSpec.HoverLine, dimNametag: stationSpec.Action is null,
+                hoverLine: stationSpec.HoverLine,
+                dimNametag: stationSpec.Action is null && stationSpec.Id != MentorVoice.StationId,
                 showTell: stationSpec.Action is not null);
 
             // stationSpec is the foreach iteration variable — a fresh binding per iteration (C# 5+
@@ -184,7 +196,22 @@ public partial class InteriorRoom2D : Node2D
                 glow.Init(tuning, phaseSeed: stationSpec.Tile.X * 0.7f, stationSize: sprite?.GetSize() ?? Vector2.Zero);
             }
 
+            // U37 (§11, R25/R27, "she breathes"): the one station this unit gives a live actor's
+            // idle-breath driver instead of a frozen sprite — see StationBreath2D's own class doc
+            // for why this is a field advanced from _Process below, not a child node like the
+            // ember glow above (SpriteMotion is engine-free; nothing here needs a second Node).
+            if (stationSpec.Id == MentorVoice.StationId)
+            {
+                _mentorBreath = new StationBreath2D(station.Sprite, phaseSeed: 0f);
+            }
+
             _stations.Add(station);
         }
     }
+
+    /// <summary>U37: advances <see cref="_mentorBreath"/> for the one room that has one. A no-op
+    /// (null-conditional, no branch) for every other room's instance — mirrors <see
+    /// cref="ForgeEmberGlowSprite2D"/>'s own unconditional-<c>_Process</c> precedent (no
+    /// <c>PhaseClock.Playing</c> gate; class doc's "cosmetic animator" carve-out).</summary>
+    public override void _Process(double delta) => _mentorBreath?.Advance(delta);
 }

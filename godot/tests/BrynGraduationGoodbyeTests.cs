@@ -473,6 +473,9 @@ public class BrynGraduationGoodbyeTests
                 .IsTrue();
 
             // The live chooser must actually track the campaign, not just the two strings exist.
+            // U37: a player who never spoke to her gets a third goodbye (MentorPlacementTests owns
+            // that one); this test is about the rule, so she has been spoken to.
+            ui.Tutorial.NotifyMentorSpokenTo();
             AssertThat(ui.Tutorial.GraduationBeatText)
                 .OverrideFailureMessage(
                     "A fresh campaign (her rule never disproved) is speaking the corrected variant.")

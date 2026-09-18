@@ -157,6 +157,51 @@ public static class MentorVoice
         HoverLine: HoverLine,
         FlavorLine: Greeting);
 
+    /// <summary>
+    /// U37 (§11, R25/R27): "the gate" — where she stands while a party is out, keyed off <see
+    /// cref="DayPhase.Expedition"/>/<see cref="DayPhase.Camp"/>/<see cref="DayPhase.ExpeditionDeep"/>
+    /// (the three phases in which a party the player mustered is actually away from town). Same
+    /// row (4) as <see cref="Station"/>'s own tile — the one row no profession's <see
+    /// cref="WorkshopVocab"/> set ever uses (that class doc's own row scheme) — so this can never
+    /// collide with a real station regardless of which craft(s) are selected.
+    /// </summary>
+    private static readonly Vector2I GateTile = new(20, 4);
+
+    /// <summary>U37: "near the wall" — where she stands on an evening a hero was just lost. Same
+    /// row-4 safety as <see cref="GateTile"/>.</summary>
+    private static readonly Vector2I WallTile = new(2, 4);
+
+    /// <summary>
+    /// U37 (§11, R25/R27, "she is sometimes elsewhere"): the pure total function behind her moving
+    /// station — the bench (<see cref="Station"/>'s own default tile) in the morning and on any
+    /// evening with no loss, <see cref="GateTile"/> while a party is away, <see cref="WallTile"/> on
+    /// the evening a hero was just lost. Reads <paramref name="state"/>'s own <see
+    /// cref="GameState.Phase"/> and <see cref="GameState.EventLog"/> only — never independent
+    /// knowledge of what the player is doing (spec's own "location keys off sim phase" line) — so
+    /// the same state always yields the same tile (determinism, class doc's purity contract).
+    /// </summary>
+    public static Vector2I TileFor(GameState state) => state.Phase switch
+    {
+        DayPhase.Expedition or DayPhase.Camp or DayPhase.ExpeditionDeep => GateTile,
+        DayPhase.Evening when LostAHeroToday(state) => WallTile,
+        _ => Station.Tile,
+    };
+
+    /// <summary>U37: <see cref="Station"/> with today's tile — the one call site <see
+    /// cref="InteriorLayout2D.WorkshopRoomFor"/>'s live (<see cref="GameState"/>-aware) overload
+    /// uses. <see cref="Station"/> itself is left untouched so every pre-U37 direct reference (the
+    /// profession-agnostic overload, every reflective test that reads it verbatim) keeps its
+    /// byte-identical default (the bench).</summary>
+    public static InteriorLayout2D.StationSpec StationFor(GameState state) =>
+        Station with { Tile = TileFor(state) };
+
+    /// <summary>A hero's <see cref="HeroDied"/> record carries no cause the player asked for and no
+    /// day of its own beyond <see cref="GameEvent.Day"/> (inherited) — reused here rather than a
+    /// second "was there a death today" query, the same "read the log, never invent a fact" rule
+    /// <see cref="HeroDiedWearing"/> already follows for the observation half of this class.</summary>
+    private static bool LostAHeroToday(GameState state) =>
+        state.EventLog.OfType<HeroDied>().Any(died => died.Day == state.Day);
+
     /// <summary>The pure transform at the heart of R14.5: attribute any already-written line as
     /// spoken dialogue. Never rewrites, trims, or paraphrases <paramref name="line"/> — the sim/
     /// registry's own words reach the screen unchanged (law: "show only what the sim decided"),

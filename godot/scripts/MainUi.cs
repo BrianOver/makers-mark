@@ -5175,6 +5175,12 @@ public partial class MainUi : Control
         // MentorBanner.Show's own doc), so routing here is the whole fix.
         if (station.Id == MentorVoice.StationId)
         {
+            // U37 (§11, R25): the one real press of her station — marks TutorialFlow
+            // .EverSpokenToMentor (once ever), whatever she actually says below. Read by her
+            // graduation farewell to pick the "we never did talk much" variant for a player who
+            // never reaches this branch at all.
+            Tutorial.NotifyMentorSpokenTo();
+
             // P2-MEMORY-05 ("the idle line varies"): once the apprenticeship is done, every press
             // used to answer with the exact same RestingLine forever — the memorial-nag shape
             // (1,287 fires, ObjectiveAdvisor's own U8 doc) said with a different face. MentorIdleVoice
