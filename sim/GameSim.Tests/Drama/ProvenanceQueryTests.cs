@@ -94,6 +94,65 @@ public class ProvenanceQueryTests
     }
 
     [Fact]
+    public void Channel_Commission_FulfilledOnDeadlineDay_ClauseNamesItKept()
+    {
+        var state = WithLog(
+            new CommissionPosted(new HeroId(3), ItemSlot.Weapon, QualityGrade.Fine, DeadlineDay: 7, PremiumGold: 15)
+                with { Id = new EventId(1), Day = 2 },
+            new CommissionFulfilled(new HeroId(3), new ItemId(12), Premium: 15) with { Id = new EventId(2), Day = 7 });
+
+        var channel = ProvenanceQuery.Channel(state, new ItemId(12));
+
+        Assert.True(channel!.OnDeadline);
+        Assert.Equal(
+            "Commissioned, and delivered today — on the day it was due.",
+            ProvenanceQuery.Clause(channel, asOf: 7));
+    }
+
+    [Fact]
+    public void Channel_Commission_FulfilledADayEarly_ClauseSaysNothingExtra()
+    {
+        var state = WithLog(
+            new CommissionPosted(new HeroId(3), ItemSlot.Weapon, QualityGrade.Fine, DeadlineDay: 7, PremiumGold: 15)
+                with { Id = new EventId(1), Day = 2 },
+            new CommissionFulfilled(new HeroId(3), new ItemId(12), Premium: 15) with { Id = new EventId(2), Day = 6 });
+
+        var channel = ProvenanceQuery.Channel(state, new ItemId(12));
+
+        Assert.False(channel!.OnDeadline);
+        Assert.Equal(
+            "Commissioned, and delivered today.",
+            ProvenanceQuery.Clause(channel, asOf: 6));
+    }
+
+    [Fact]
+    public void Channel_Commission_TwoPostsForSameHero_JoinsTheLaterOne()
+    {
+        // The hero's FIRST commission (deadline 5) expired or was replaced; the second (deadline 9)
+        // is the one this delivery actually answers. Joining on the earlier post would wrongly read
+        // day 9 as three days late instead of on time.
+        var state = WithLog(
+            new CommissionPosted(new HeroId(3), ItemSlot.Weapon, QualityGrade.Common, DeadlineDay: 5, PremiumGold: 10)
+                with { Id = new EventId(1), Day = 1 },
+            new CommissionPosted(new HeroId(3), ItemSlot.Weapon, QualityGrade.Fine, DeadlineDay: 9, PremiumGold: 15)
+                with { Id = new EventId(2), Day = 6 },
+            new CommissionFulfilled(new HeroId(3), new ItemId(12), Premium: 15) with { Id = new EventId(3), Day = 9 });
+
+        Assert.True(ProvenanceQuery.FulfilledOnDeadline(state, new HeroId(3), new ItemId(12)));
+    }
+
+    [Fact]
+    public void FulfilledOnDeadline_NoMatchingPost_IsFalse()
+    {
+        // Honest-empty-state: a synthetic/older log with no CommissionPosted at all never claims a
+        // deadline was kept.
+        var state = WithLog(
+            new CommissionFulfilled(new HeroId(3), new ItemId(12), Premium: 15) with { Id = new EventId(1), Day = 2 });
+
+        Assert.False(ProvenanceQuery.FulfilledOnDeadline(state, new HeroId(3), new ItemId(12)));
+    }
+
+    [Fact]
     public void Channel_Runner_ReadsSupplyDelivered_ClauseCarriesNoDayGap()
     {
         var state = WithLog(

@@ -62,6 +62,46 @@ public class UnsilencedEventTests
         AssertThat(text).Contains("S1 gave up waiting on that Shield commission.");
     }
 
+    /// <summary>P2-SCREEN-39: the deadline kept. <see cref="Compose"/> stamps every event onto the
+    /// SAME synthetic day, which cannot express "posted one day, fulfilled on another" — so this
+    /// pair builds the log directly, mirroring the real Morning order (CommissionPosted logged
+    /// before the CommissionFulfilled its deadline later governs).</summary>
+    [TestCase]
+    public void CommissionFulfilled_OnDeadlineDay_NamesTheDeadlineKept()
+    {
+        var state = StagedWorld() with
+        {
+            EventLog = ImmutableList.Create<GameEvent>(
+                new CommissionPosted(new HeroId(1), ItemSlot.Weapon, QualityGrade.Fine, DeadlineDay: 7, PremiumGold: 30)
+                    with { Id = new EventId(9001), Day = 2 },
+                new CommissionFulfilled(new HeroId(1), new ItemId(1), Premium: 30)
+                    with { Id = new EventId(9002), Day = 7 }),
+        };
+
+        var text = Joined(LegendsWall.DayLines(state, 7));
+
+        AssertThat(text).Contains("V1 takes delivery of Dagger");
+        AssertThat(text).Contains("on the day it was due");
+    }
+
+    [TestCase]
+    public void CommissionFulfilled_BeforeDeadlineDay_SaysNothingExtra()
+    {
+        var state = StagedWorld() with
+        {
+            EventLog = ImmutableList.Create<GameEvent>(
+                new CommissionPosted(new HeroId(1), ItemSlot.Weapon, QualityGrade.Fine, DeadlineDay: 7, PremiumGold: 30)
+                    with { Id = new EventId(9001), Day = 2 },
+                new CommissionFulfilled(new HeroId(1), new ItemId(1), Premium: 30)
+                    with { Id = new EventId(9002), Day = 5 }),
+        };
+
+        var text = Joined(LegendsWall.DayLines(state, 5));
+
+        AssertThat(text).Contains("V1 takes delivery of Dagger");
+        AssertThat(text).NotContains("on the day it was due");
+    }
+
     [TestCase]
     public void ConfidenceSpiral_EdgeTriggeredWarnings_Render()
     {
