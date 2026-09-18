@@ -148,11 +148,33 @@ public sealed partial class TellingPanel : SimPanel
     /// case): the game shows only what it can still prove (law 4), never assumes decisiveness it can
     /// no longer recompute.</para>
     /// </summary>
-    public static bool IsDecisiveKillingBlow(GameState state, AttributionBeatEvent beatEvent)
+    public static bool IsDecisiveKillingBlow(GameState state, AttributionBeatEvent beatEvent) =>
+        KillingBlowPayloadOrNull(state, beatEvent) is { } payload && payload.MonsterHpWithoutItem > 0;
+
+    /// <summary>
+    /// P2-PROOF-20: the SAME <see cref="KillingBlowPayload.MonsterHpWithoutItem"/>
+    /// <see cref="IsDecisiveKillingBlow"/> already computes, exposed so <see cref="LedgerModal"/>'s
+    /// per-item fold can break a floor tie by which kill proved the most — never a second formula
+    /// that could disagree with the one the button proves. Zero for a beat this cannot recompute
+    /// (non-KillingBlow, an aged-out night, or a failed precondition — see
+    /// <see cref="KillingBlowPayloadOrNull"/>'s own doc); the fold only ever calls this on beats
+    /// <see cref="IsDecisiveKillingBlow"/> already confirmed decisive, so in practice this is always
+    /// positive there.
+    /// </summary>
+    public static int MonsterHpWithoutItem(GameState state, AttributionBeatEvent beatEvent) =>
+        KillingBlowPayloadOrNull(state, beatEvent)?.MonsterHpWithoutItem ?? 0;
+
+    /// <summary>
+    /// The recomputed <see cref="KillingBlowPayload"/> for a KillingBlow beat, or null when it
+    /// cannot be recomputed at all — shared by <see cref="IsDecisiveKillingBlow"/> and
+    /// <see cref="MonsterHpWithoutItem"/> so the two can never disagree about which beats they can
+    /// even ask the question of.
+    /// </summary>
+    private static KillingBlowPayload? KillingBlowPayloadOrNull(GameState state, AttributionBeatEvent beatEvent)
     {
         if (beatEvent.Beat != BeatType.KillingBlow || FindResult(state, beatEvent) is not { } result)
         {
-            return false;
+            return null;
         }
 
         // Measured regression (engine suite, WaveDLessonsTests): some retained results predate
@@ -177,30 +199,30 @@ public sealed partial class TellingPanel : SimPanel
         // answer as an aged-out night, never a crash.
         if (!result.PartyAtDeparture.Any(h => h.Id == beatEvent.Hero))
         {
-            return false;
+            return null;
         }
 
         var venue = VenueRegistry.All.TryGetValue(result.VenueId, out var v) ? v : VenueRegistry.Mine;
         if (beatEvent.Floor < 1 || beatEvent.Floor > venue.FloorCount)
         {
-            return false;
+            return null;
         }
 
         var floorOutcome = result.Floors.FirstOrDefault(f => f.Floor == beatEvent.Floor);
         if (floorOutcome is null)
         {
-            return false;
+            return null;
         }
 
         var killRounds = floorOutcome.Combats.Where(c => c.Hero == beatEvent.Hero && c.MonsterKilled).ToImmutableList();
         if (killRounds.Count != 1 || killRounds[0].RecordedRolls.IsEmpty)
         {
-            return false;
+            return null;
         }
 
         var beat = result.Beats.First(b => Matches(b, beatEvent));
         var script = TellingQuery.Build(result, beat, state.Items, venue);
-        return script.Payload is KillingBlowPayload payload && payload.MonsterHpWithoutItem > 0;
+        return script.Payload as KillingBlowPayload;
     }
 
     /// <summary>
