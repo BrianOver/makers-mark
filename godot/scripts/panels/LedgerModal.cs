@@ -380,6 +380,10 @@ public partial class LedgerModal : SimPanel
         _cardGrid = new HFlowContainer { Name = "LedgerCardGrid" };
         _cards!.AddChild(_cardGrid);
 
+        // P2-SCREEN-35 ("follow one piece"): the followed item's own night leads the whole card —
+        // ahead of the narrator line, the gate-held streak, and every hero's own return card.
+        AddFollowedItemLine(state, day);
+
         // U-T5-6: the narrator's own line, if it spoke tonight — first in the grid, ahead of every
         // card, tutorial tip, or empty state below.
         AddNarratorLine();
@@ -736,6 +740,31 @@ public partial class LedgerModal : SimPanel
     /// autowrapping Label dropped in without a floor collapses to one character per line (the exact
     /// trap <c>LayoutTests</c> caught at 88px on this same grid).
     /// </summary>
+    /// <summary>
+    /// P2-SCREEN-35 ("follow one piece"): the followed item's own night, ahead of the narrator
+    /// line, the gate-held streak, and every hero's own return card — <see
+    /// cref="MusterVoice.FollowedNightLine"/> owns the sentence, this only places it. Same
+    /// staleness guard every sibling per-day query in this file already keeps (<see
+    /// cref="HaltsForDay"/>'s own doc): a Ledger reopened for a day whose expeditions have rolled
+    /// out of <see cref="SimAdapter.LastRevealedExpeditions"/> renders no followed-item line at all
+    /// rather than a stale one. Absent (no row, not a blank one) when nothing is followed.
+    /// </summary>
+    private void AddFollowedItemLine(GameState state, int day)
+    {
+        if (Adapter is null || Adapter.LastRevealedDay != day)
+        {
+            return;
+        }
+
+        if (MusterVoice.FollowedNightLine(state, Adapter.LastRevealedExpeditions) is { } text)
+        {
+            var line = AddLabel(_cardGrid!, text);
+            line.Name = "FollowedItemNightLine";
+            line.CustomMinimumSize = new Vector2(CardGridColumnWidth, 0);
+            line.AddThemeColorOverride("font_color", GameTheme.AccentColor);
+        }
+    }
+
     private void AddNarratorLine()
     {
         if (_narratorLine is null)

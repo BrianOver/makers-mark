@@ -4,7 +4,10 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using System.Text.RegularExpressions;
+using GameSim.Classes;
+using GameSim.Contracts;
 using GameSim.Heroes;
+using GameSim.Kernel;
 using GdUnit4;
 using GodotClient.Ui;
 using static GdUnit4.Assertions;
@@ -235,6 +238,418 @@ public class MusterVoiceTests
         var parts = gap.Split(": ", 2);
         var slots = parts[1].Split(", ").Select(label => label.Replace("no ", string.Empty)).ToArray();
         return (parts[0], slots);
+    }
+
+    // ── P2-SCREEN-35 ("follow one piece"): FollowedSendOffLine / FollowedNightLine ──────────────────
+    //
+    // Pure functions over GameSim.Contracts state (no Adapter, no mounting) — same "isolated logic,
+    // gdUnit-decorated for suite consistency" idiom as everything above. Every test resets
+    // FollowedItem before AND after itself (TutorialFlow.DeleteForTests()'s own idiom, applied to
+    // this class's own client-side static) so no test can leak its pick into a sibling.
+
+    private static readonly HeroId FollowHeroId = new(41);
+    private static readonly ItemId FollowedWeaponId = new(4100);
+    private static readonly ItemId FollowedArmorId = new(4101);
+    private static readonly ItemId UnfollowedId = new(4102);
+
+    private static Item WeaponItem(ItemId id) => new(
+        id, "dagger", "Emberbite", ItemSlot.Weapon, QualityGrade.Common,
+        new ItemStats(8, 0, 2), new MakersMark("You", 1), ImmutableList<ItemHistoryEntry>.Empty);
+
+    private static Item ArmorItem(ItemId id) => new(
+        id, "plate", "Steadfast Plate", ItemSlot.Armor, QualityGrade.Common,
+        new ItemStats(0, 6, 8), new MakersMark("You", 1), ImmutableList<ItemHistoryEntry>.Empty);
+
+    private static GameState StateWithHolder(ItemId itemId, Item item, ItemSlot slot)
+    {
+        var gear = slot switch
+        {
+            ItemSlot.Weapon => GearSet.Empty with { Weapon = itemId },
+            ItemSlot.Armor => GearSet.Empty with { Armor = itemId },
+            _ => GearSet.Empty,
+        };
+        var hero = new Hero(
+            FollowHeroId, "Torvald", ClassRegistry.VanguardId, Level: 2, MaxHp: 30, Gold: 0,
+            Gear: gear, Memories: ImmutableList<ItemMemory>.Empty, Alive: true,
+            DeepestFloorReached: 1, DiedOnDay: null);
+
+        return GameFactory.NewGame(7001, ImmutableSortedDictionary<int, Hero>.Empty.Add(FollowHeroId.Value, hero))
+            with { Items = ImmutableSortedDictionary<int, Item>.Empty.Add(itemId.Value, item) };
+    }
+
+    // ── FollowedSendOffLine: not-followed and stale-pick absence ────────────────────────────────────
+
+    [TestCase]
+    public void FollowedSendOffLine_NothingFollowed_RendersNothing()
+    {
+        FollowedItem.DeleteForTests();
+        try
+        {
+            var state = GameFactory.NewGame(7002);
+            AssertThat(MusterVoice.FollowedSendOffLine(state, ImmutableList<ForecastParty>.Empty)).IsNull();
+        }
+        finally
+        {
+            FollowedItem.DeleteForTests();
+        }
+    }
+
+    [TestCase]
+    public void FollowedSendOffLine_FollowedItemNoLongerInState_RendersNothing()
+    {
+        FollowedItem.DeleteForTests();
+        try
+        {
+            var state = GameFactory.NewGame(7003); // Items empty — the followed id resolves to nothing
+            FollowedItem.Set(UnfollowedId);
+            AssertThat(MusterVoice.FollowedSendOffLine(state, ImmutableList<ForecastParty>.Empty)).IsNull();
+        }
+        finally
+        {
+            FollowedItem.DeleteForTests();
+        }
+    }
+
+    // ── FollowedSendOffLine: the two honest outcomes, never a third ─────────────────────────────────
+
+    [TestCase]
+    public void FollowedSendOffLine_HolderMustersTomorrow_NamesTheHeroAndTheFloor()
+    {
+        FollowedItem.DeleteForTests();
+        try
+        {
+            var item = WeaponItem(FollowedWeaponId);
+            var state = StateWithHolder(FollowedWeaponId, item, ItemSlot.Weapon);
+            FollowedItem.Set(FollowedWeaponId);
+
+            var party = new ForecastParty(
+                HeroNames: ImmutableList.Create("Torvald"), TargetFloor: 4, VenueId: "mine",
+                Threats: ImmutableList<ForecastThreat>.Empty, GearGaps: ImmutableList<string>.Empty,
+                WornGear: ImmutableList<WornSlot>.Empty, BestRecordedFloor: 0, RecordHolderName: "Torvald",
+                GapCommissions: ImmutableList<GapCommission>.Empty);
+
+            var line = MusterVoice.FollowedSendOffLine(state, ImmutableList.Create(party));
+
+            AssertThat(line).IsNotNull();
+            AssertThat(line!.Contains(item.Name, StringComparison.Ordinal)).IsTrue();
+            AssertThat(line.Contains("Torvald", StringComparison.Ordinal)).IsTrue();
+            AssertThat(line.Contains("floor 4", StringComparison.Ordinal)).IsTrue();
+        }
+        finally
+        {
+            FollowedItem.DeleteForTests();
+        }
+    }
+
+    [TestCase]
+    public void FollowedSendOffLine_HolderIsNotMusteringTomorrow_SaysStaysBehind_NeverAFabricatedMarch()
+    {
+        FollowedItem.DeleteForTests();
+        try
+        {
+            var item = WeaponItem(FollowedWeaponId);
+            var state = StateWithHolder(FollowedWeaponId, item, ItemSlot.Weapon);
+            FollowedItem.Set(FollowedWeaponId);
+
+            // No party names "Torvald" — the item's holder is not mustering tomorrow.
+            var otherParty = new ForecastParty(
+                HeroNames: ImmutableList.Create("Sable"), TargetFloor: 2, VenueId: "mine",
+                Threats: ImmutableList<ForecastThreat>.Empty, GearGaps: ImmutableList<string>.Empty,
+                WornGear: ImmutableList<WornSlot>.Empty, BestRecordedFloor: 0, RecordHolderName: "Sable",
+                GapCommissions: ImmutableList<GapCommission>.Empty);
+
+            var line = MusterVoice.FollowedSendOffLine(state, ImmutableList.Create(otherParty));
+
+            AssertThat(line).IsNotNull();
+            AssertThat(line!.Contains(item.Name, StringComparison.Ordinal)).IsTrue();
+            AssertThat(line.Contains("stays behind", StringComparison.Ordinal)).IsTrue();
+            AssertThat(line.Contains("floor", StringComparison.Ordinal))
+                .OverrideFailureMessage($"a piece staying behind must never also claim a march: \"{line}\"").IsFalse();
+        }
+        finally
+        {
+            FollowedItem.DeleteForTests();
+        }
+    }
+
+    // ── FollowedNightLine: not-followed, and a followed piece that stayed on the shelf ──────────────
+
+    [TestCase]
+    public void FollowedNightLine_NothingFollowed_RendersNothing()
+    {
+        FollowedItem.DeleteForTests();
+        try
+        {
+            var state = GameFactory.NewGame(7004);
+            AssertThat(MusterVoice.FollowedNightLine(state, ImmutableList<ExpeditionResult>.Empty)).IsNull();
+        }
+        finally
+        {
+            FollowedItem.DeleteForTests();
+        }
+    }
+
+    [TestCase]
+    public void FollowedNightLine_FollowedItemInNoRevealedExpedition_HonestShelfLine_NeverAFabricatedNight()
+    {
+        FollowedItem.DeleteForTests();
+        try
+        {
+            var item = WeaponItem(FollowedWeaponId);
+            var state = StateWithHolder(FollowedWeaponId, item, ItemSlot.Weapon);
+            FollowedItem.Set(FollowedWeaponId);
+
+            var line = MusterVoice.FollowedNightLine(state, ImmutableList<ExpeditionResult>.Empty);
+
+            AssertThat(line).IsNotNull();
+            AssertThat(line!.Contains(item.Name, StringComparison.Ordinal)).IsTrue();
+            AssertThat(line.Contains("stayed on the shelf", StringComparison.Ordinal)).IsTrue();
+        }
+        finally
+        {
+            FollowedItem.DeleteForTests();
+        }
+    }
+
+    // ── FollowedNightLine: the followed weapon's own night, across every shape it can take ─────────
+
+    private static HeroAtDeparture Departure(ItemId? weapon = null, ItemId? armor = null) => new(
+        FollowHeroId, "Torvald", ClassRegistry.VanguardId, Level: 2, MaxHp: 30, weapon, Shield: null, armor);
+
+    [TestCase]
+    public void FollowedNightLine_WeaponNeverSwung_SaysSoRatherThanClaimingATurnedNothingNight()
+    {
+        FollowedItem.DeleteForTests();
+        try
+        {
+            var item = WeaponItem(FollowedWeaponId);
+            var state = StateWithHolder(FollowedWeaponId, item, ItemSlot.Weapon);
+            FollowedItem.Set(FollowedWeaponId);
+
+            var result = new ExpeditionResult(
+                Party: ImmutableList.Create(FollowHeroId), TargetFloor: 2, DeepestFloorCleared: 1,
+                Floors: ImmutableList<FloorOutcome>.Empty, Survivors: ImmutableList.Create(FollowHeroId),
+                Deaths: ImmutableList<HeroId>.Empty, Beats: ImmutableList<AttributionBeat>.Empty,
+                Loot: ImmutableList<OreLoot>.Empty, GoldEarnedByHero: ImmutableSortedDictionary<int, int>.Empty)
+            {
+                PartyAtDeparture = ImmutableList.Create(Departure(weapon: FollowedWeaponId)),
+            };
+
+            var line = MusterVoice.FollowedNightLine(state, ImmutableList.Create(result));
+
+            AssertThat(line).IsNotNull();
+            AssertThat(line!.Contains("never swung", StringComparison.Ordinal)).IsTrue();
+        }
+        finally
+        {
+            FollowedItem.DeleteForTests();
+        }
+    }
+
+    [TestCase]
+    public void FollowedNightLine_WeaponSwungAndLandedTheRecordedKill_NamesTheFloorAndWhichSwing()
+    {
+        FollowedItem.DeleteForTests();
+        try
+        {
+            var item = WeaponItem(FollowedWeaponId);
+            var state = StateWithHolder(FollowedWeaponId, item, ItemSlot.Weapon);
+            FollowedItem.Set(FollowedWeaponId);
+
+            var miss = new CombatEvent(
+                Floor: 1, Hero: FollowHeroId, MonsterKind: "cave-rat", RecordedRolls: ImmutableList<int>.Empty,
+                DamageDealt: 0, DamageTaken: 0, MonsterKilled: false, KillingItem: null);
+            var kill = new CombatEvent(
+                Floor: 2, Hero: FollowHeroId, MonsterKind: "cave-rat", RecordedRolls: ImmutableList<int>.Empty,
+                DamageDealt: 10, DamageTaken: 0, MonsterKilled: true, KillingItem: FollowedWeaponId);
+
+            var result = new ExpeditionResult(
+                Party: ImmutableList.Create(FollowHeroId), TargetFloor: 2, DeepestFloorCleared: 2,
+                Floors: ImmutableList.Create(
+                    new FloorOutcome(1, Cleared: true, Combats: ImmutableList.Create(miss)),
+                    new FloorOutcome(2, Cleared: true, Combats: ImmutableList.Create(kill))),
+                Survivors: ImmutableList.Create(FollowHeroId), Deaths: ImmutableList<HeroId>.Empty,
+                Beats: ImmutableList<AttributionBeat>.Empty, Loot: ImmutableList<OreLoot>.Empty,
+                GoldEarnedByHero: ImmutableSortedDictionary<int, int>.Empty)
+            {
+                PartyAtDeparture = ImmutableList.Create(Departure(weapon: FollowedWeaponId)),
+            };
+
+            var line = MusterVoice.FollowedNightLine(state, ImmutableList.Create(result));
+
+            AssertThat(line).IsNotNull();
+            AssertThat(line!.Contains("floor 2", StringComparison.Ordinal)).IsTrue();
+            AssertThat(line.Contains("two times", StringComparison.Ordinal)).IsTrue();
+            AssertThat(line.Contains("died", StringComparison.Ordinal)).IsTrue();
+            AssertThat(line.Contains("second", StringComparison.Ordinal)).IsTrue();
+        }
+        finally
+        {
+            FollowedItem.DeleteForTests();
+        }
+    }
+
+    [TestCase]
+    public void FollowedNightLine_WeaponSwungButLandedNoRecordedKill_TurnedNothingLine_NeverAFabricatedKill()
+    {
+        FollowedItem.DeleteForTests();
+        try
+        {
+            var item = WeaponItem(FollowedWeaponId);
+            var state = StateWithHolder(FollowedWeaponId, item, ItemSlot.Weapon);
+            FollowedItem.Set(FollowedWeaponId);
+
+            var swing = new CombatEvent(
+                Floor: 1, Hero: FollowHeroId, MonsterKind: "cave-rat", RecordedRolls: ImmutableList<int>.Empty,
+                DamageDealt: 3, DamageTaken: 0, MonsterKilled: false, KillingItem: null);
+
+            var result = new ExpeditionResult(
+                Party: ImmutableList.Create(FollowHeroId), TargetFloor: 1, DeepestFloorCleared: 1,
+                Floors: ImmutableList.Create(new FloorOutcome(1, Cleared: false, Combats: ImmutableList.Create(swing))),
+                Survivors: ImmutableList.Create(FollowHeroId), Deaths: ImmutableList<HeroId>.Empty,
+                Beats: ImmutableList<AttributionBeat>.Empty, Loot: ImmutableList<OreLoot>.Empty,
+                GoldEarnedByHero: ImmutableSortedDictionary<int, int>.Empty)
+            {
+                PartyAtDeparture = ImmutableList.Create(Departure(weapon: FollowedWeaponId)),
+            };
+
+            var line = MusterVoice.FollowedNightLine(state, ImmutableList.Create(result));
+
+            AssertThat(line).IsNotNull();
+            AssertThat(line!.Contains("It turned nothing.", StringComparison.Ordinal)).IsTrue();
+            AssertThat(line.Contains("died", StringComparison.Ordinal))
+                .OverrideFailureMessage($"a swing with no recorded kill must never claim one: \"{line}\"").IsFalse();
+        }
+        finally
+        {
+            FollowedItem.DeleteForTests();
+        }
+    }
+
+    // ── FollowedNightLine: the followed defensive piece's own night ────────────────────────────────
+
+    [TestCase]
+    public void FollowedNightLine_DefensivePieceTookNoDamage_NothingTouchedItLine()
+    {
+        FollowedItem.DeleteForTests();
+        try
+        {
+            var item = ArmorItem(FollowedArmorId);
+            var state = StateWithHolder(FollowedArmorId, item, ItemSlot.Armor);
+            FollowedItem.Set(FollowedArmorId);
+
+            var swing = new CombatEvent(
+                Floor: 1, Hero: FollowHeroId, MonsterKind: "cave-rat", RecordedRolls: ImmutableList<int>.Empty,
+                DamageDealt: 5, DamageTaken: 0, MonsterKilled: true, KillingItem: null);
+
+            var result = new ExpeditionResult(
+                Party: ImmutableList.Create(FollowHeroId), TargetFloor: 1, DeepestFloorCleared: 1,
+                Floors: ImmutableList.Create(new FloorOutcome(1, Cleared: true, Combats: ImmutableList.Create(swing))),
+                Survivors: ImmutableList.Create(FollowHeroId), Deaths: ImmutableList<HeroId>.Empty,
+                Beats: ImmutableList<AttributionBeat>.Empty, Loot: ImmutableList<OreLoot>.Empty,
+                GoldEarnedByHero: ImmutableSortedDictionary<int, int>.Empty)
+            {
+                PartyAtDeparture = ImmutableList.Create(Departure(armor: FollowedArmorId)),
+            };
+
+            var line = MusterVoice.FollowedNightLine(state, ImmutableList.Create(result));
+
+            AssertThat(line).IsNotNull();
+            AssertThat(line!.Contains("Nothing touched it.", StringComparison.Ordinal)).IsTrue();
+        }
+        finally
+        {
+            FollowedItem.DeleteForTests();
+        }
+    }
+
+    [TestCase]
+    public void FollowedNightLine_DefensivePieceTookHits_NamesTheWorstOne_NeverASurvivalVerdict()
+    {
+        FollowedItem.DeleteForTests();
+        try
+        {
+            var item = ArmorItem(FollowedArmorId);
+            var state = StateWithHolder(FollowedArmorId, item, ItemSlot.Armor);
+            FollowedItem.Set(FollowedArmorId);
+
+            var lightHit = new CombatEvent(
+                Floor: 1, Hero: FollowHeroId, MonsterKind: "cave-rat", RecordedRolls: ImmutableList<int>.Empty,
+                DamageDealt: 0, DamageTaken: 4, MonsterKilled: false, KillingItem: null);
+            var worstHit = new CombatEvent(
+                Floor: 2, Hero: FollowHeroId, MonsterKind: "cave-troll", RecordedRolls: ImmutableList<int>.Empty,
+                DamageDealt: 0, DamageTaken: 9, MonsterKilled: false, KillingItem: null);
+
+            var result = new ExpeditionResult(
+                Party: ImmutableList.Create(FollowHeroId), TargetFloor: 2, DeepestFloorCleared: 2,
+                Floors: ImmutableList.Create(
+                    new FloorOutcome(1, Cleared: true, Combats: ImmutableList.Create(lightHit)),
+                    new FloorOutcome(2, Cleared: true, Combats: ImmutableList.Create(worstHit))),
+                Survivors: ImmutableList.Create(FollowHeroId), Deaths: ImmutableList<HeroId>.Empty,
+                Beats: ImmutableList<AttributionBeat>.Empty, Loot: ImmutableList<OreLoot>.Empty,
+                GoldEarnedByHero: ImmutableSortedDictionary<int, int>.Empty)
+            {
+                PartyAtDeparture = ImmutableList.Create(Departure(armor: FollowedArmorId)),
+            };
+
+            var line = MusterVoice.FollowedNightLine(state, ImmutableList.Create(result));
+
+            AssertThat(line).IsNotNull();
+            AssertThat(line!.Contains("floor 2", StringComparison.Ordinal)).IsTrue();
+            AssertThat(line.Contains("9", StringComparison.Ordinal)).IsTrue();
+            AssertThat(line.Contains("cave-troll".Replace("-", " "), StringComparison.OrdinalIgnoreCase)).IsTrue();
+        }
+        finally
+        {
+            FollowedItem.DeleteForTests();
+        }
+    }
+
+    // ── FollowedItem: campaign-envelope snapshot/restore round-trip ────────────────────────────────
+
+    [TestCase]
+    public void FollowedItem_SnapshotThenRestore_RoundTripsToTheSameItem()
+    {
+        FollowedItem.DeleteForTests();
+        try
+        {
+            FollowedItem.Set(FollowedWeaponId);
+            var snapshot = FollowedItem.Snapshot();
+
+            FollowedItem.Clear();
+            AssertThat(FollowedItem.Current).IsNull();
+
+            FollowedItem.Restore(snapshot);
+            AssertThat(FollowedItem.Current).IsEqual(FollowedWeaponId);
+        }
+        finally
+        {
+            FollowedItem.DeleteForTests();
+        }
+    }
+
+    [TestCase]
+    public void FollowedItem_RestoreNullOrGarbage_AlwaysLandsOnNothingFollowed()
+    {
+        FollowedItem.DeleteForTests();
+        try
+        {
+            FollowedItem.Set(FollowedWeaponId);
+            FollowedItem.Restore(null);
+            AssertThat(FollowedItem.Current).IsNull();
+
+            FollowedItem.Set(FollowedWeaponId);
+            FollowedItem.Restore("not-an-int");
+            AssertThat(FollowedItem.Current).IsNull();
+
+            FollowedItem.Set(FollowedWeaponId);
+            FollowedItem.Restore(string.Empty);
+            AssertThat(FollowedItem.Current).IsNull();
+        }
+        finally
+        {
+            FollowedItem.DeleteForTests();
+        }
     }
 }
 #endif

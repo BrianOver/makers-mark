@@ -75,10 +75,18 @@ public static class CampaignSave
     /// the same terms as the two fields above, so every save written before this unit still loads,
     /// as a campaign that has simply heard nothing yet. <see cref="SaveCodec"/> is untouched: the
     /// sim's own bytes do not change, so no golden moves.</para>
+    ///
+    /// <para><b>P2-SCREEN-35:</b> <see cref="FollowedItem"/> carries <see
+    /// cref="Ui.FollowedItem.Snapshot"/> — the one item id the player has marked to follow, on the
+    /// SAME "rides the envelope, not a standalone <c>user://</c> file" reasoning as <see
+    /// cref="Scenes"/> above: an <see cref="GameSim.Contracts.ItemId"/> means nothing once the
+    /// campaign that minted it is gone. Trailing-optional on the same terms as every field above.
+    /// </para>
     /// </summary>
     public sealed record Envelope(
         int SchemaVersion, int Day, string Phase, string State,
-        string? ProfessionId = null, string? SavedAtUtc = null, string? Scenes = null);
+        string? ProfessionId = null, string? SavedAtUtc = null, string? Scenes = null,
+        string? FollowedItem = null);
 
     /// <summary>A save's headline, for the Continue button's label. Null when there is nothing to
     /// resume — which is also what a corrupt file reports. <see cref="ProfessionId"/>/
@@ -116,9 +124,12 @@ public static class CampaignSave
             // the world they belong to. Read live off the flow rather than passed in, so no caller
             // has to remember it exists — the same shape UtcNowSource above already takes.
             var scenes = Ui.ArcSceneFlow.Snapshot();
+            // P2-SCREEN-35: the followed item id, read live off the flow the same way scenes are —
+            // no caller has to remember to pass it.
+            var followedItem = Ui.FollowedItem.Snapshot();
             var envelope = new Envelope(
                 Schema, state.Day, state.Phase.ToString(), SaveCodec.Serialize(state), professionId, savedAtUtc,
-                scenes.Length == 0 ? null : scenes);
+                scenes.Length == 0 ? null : scenes, followedItem);
             var json = JsonSerializer.Serialize(envelope, EnvelopeOptions);
 
             using var file = GodotFileAccess.Open(SavePath, GodotFileAccess.ModeFlags.Write);
@@ -172,6 +183,10 @@ public static class CampaignSave
             // caller, of which there are four. Restore fails soft on every bad input, so a save
             // whose scene snapshot is unreadable still returns a fully playable world.
             Ui.ArcSceneFlow.Restore(envelope.Scenes);
+            // P2-SCREEN-35: the followed item comes back with the world it points into — a stale
+            // pick surviving into a save that has since forgotten the item it named would be a
+            // dangling reference, not a preference.
+            Ui.FollowedItem.Restore(envelope.FollowedItem);
             return state;
         }
         catch (Exception ex)
@@ -193,6 +208,9 @@ public static class CampaignSave
     public static void Clear()
     {
         Ui.ArcSceneFlow.ResetForNewGame();
+        // P2-SCREEN-35: a fresh campaign follows nothing — the last campaign's item id would name
+        // nothing real in the new world.
+        Ui.FollowedItem.ResetForNewGame();
 
         try
         {

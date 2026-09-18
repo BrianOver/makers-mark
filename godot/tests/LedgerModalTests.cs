@@ -2559,5 +2559,140 @@ public class LedgerModalTests
 
     private static readonly HeroId OnlyIncidentalKillsHeroId = new(9501);
     private static readonly ItemId OnlyIncidentalKillsItemId = new(9510);
+
+    // ── P2-SCREEN-35 ("follow one piece"): the night card leads with the followed item ─────────────
+    //
+    // MusterVoice.FollowedNightLine's own properties are pinned in MusterVoiceTests; this class
+    // only proves LedgerModal PLACES the line first and respects the SAME staleness guard every
+    // other per-day query on this modal already keeps (HaltsForDay's own doc) — never a stale pick
+    // surviving a Ledger reopened for a day whose expeditions rolled out of the adapter.
+
+    private static readonly HeroId FollowedNightHeroId = new(9601);
+    private static readonly ItemId FollowedNightItemId = new(9610);
+
+    private static GameState FollowedNightDay(int day)
+    {
+        var weapon = new Item(
+            FollowedNightItemId, "dagger", "Emberbite", ItemSlot.Weapon, QualityGrade.Common,
+            new ItemStats(8, 0, 2), new MakersMark("You", 1), ImmutableList<ItemHistoryEntry>.Empty);
+        var hero = new Hero(
+            FollowedNightHeroId, "Torvald", ClassRegistry.VanguardId, Level: 3, MaxHp: 30, Gold: 0,
+            Gear: GearSet.Empty with { Weapon = FollowedNightItemId }, Memories: ImmutableList<ItemMemory>.Empty,
+            Alive: true, DeepestFloorReached: 2, DiedOnDay: null);
+
+        var kill = new CombatEvent(
+            Floor: 3, Hero: FollowedNightHeroId, MonsterKind: "cave-rat", RecordedRolls: ImmutableList<int>.Empty,
+            DamageDealt: 10, DamageTaken: 0, MonsterKilled: true, KillingItem: FollowedNightItemId);
+
+        var result = new ExpeditionResult(
+            Party: ImmutableList.Create(FollowedNightHeroId), TargetFloor: 3, DeepestFloorCleared: 3,
+            Floors: ImmutableList.Create(new FloorOutcome(3, Cleared: true, Combats: ImmutableList.Create(kill))),
+            Survivors: ImmutableList.Create(FollowedNightHeroId), Deaths: ImmutableList<HeroId>.Empty,
+            Beats: ImmutableList<AttributionBeat>.Empty, Loot: ImmutableList<OreLoot>.Empty,
+            GoldEarnedByHero: ImmutableSortedDictionary<int, int>.Empty)
+        {
+            PartyAtDeparture = ImmutableList.Create(new HeroAtDeparture(
+                FollowedNightHeroId, "Torvald", ClassRegistry.VanguardId, Level: 3, MaxHp: 30,
+                Weapon: FollowedNightItemId, Shield: null, Armor: null)),
+        };
+
+        return GameFactory.NewGame(9602, ImmutableSortedDictionary<int, Hero>.Empty.Add(FollowedNightHeroId.Value, hero))
+            with
+            {
+                Day = day,
+                Phase = DayPhase.Evening,
+                Items = ImmutableSortedDictionary<int, Item>.Empty.Add(FollowedNightItemId.Value, weapon),
+                PendingExpeditions = ImmutableList.Create(result),
+            };
+    }
+
+    [TestCase]
+    public void FollowedItemNightLine_RendersFirst_AheadOfTheNarratorLineAndEveryReturnCard()
+    {
+        FollowedItem.DeleteForTests();
+        try
+        {
+            FollowedItem.Set(FollowedNightItemId);
+            var ui = MountMainUi(new SimAdapter(FollowedNightDay(day: 1)));
+            try
+            {
+                ui.Adapter.AdvancePhase(); // Evening -> Morning: populates LastRevealedExpeditions/Day
+                ui.Ledger.ShowFor(1);
+
+                var line = Find<Label>(ui.Ledger, "FollowedItemNightLine");
+                AssertThat(line.Text.Contains("Emberbite")).IsTrue();
+                AssertThat(line.Text.Contains("floor 3")).IsTrue();
+
+                var grid = line.GetParent();
+                AssertThat(ChildIndex(grid, "FollowedItemNightLine")).IsEqual(0);
+
+                var cardIndex = LedgerQuery.ReturnCards(ui.Adapter.CurrentState, 1)
+                    .FindIndex(c => c.Hero == FollowedNightHeroId);
+                AssertThat(ChildIndex(grid, "FollowedItemNightLine")).IsLess(ChildIndex(grid, $"LedgerCard_{cardIndex}"));
+            }
+            finally
+            {
+                Unmount(ui);
+            }
+        }
+        finally
+        {
+            FollowedItem.DeleteForTests();
+        }
+    }
+
+    [TestCase]
+    public void FollowedItemNightLine_Absent_WhenNothingFollowed()
+    {
+        FollowedItem.DeleteForTests();
+        try
+        {
+            var ui = MountMainUi(new SimAdapter(FollowedNightDay(day: 1)));
+            try
+            {
+                ui.Adapter.AdvancePhase();
+                ui.Ledger.ShowFor(1);
+
+                AssertThat(ui.Ledger.FindChild("FollowedItemNightLine", recursive: true, owned: false)).IsNull();
+            }
+            finally
+            {
+                Unmount(ui);
+            }
+        }
+        finally
+        {
+            FollowedItem.DeleteForTests();
+        }
+    }
+
+    [TestCase]
+    public void FollowedItemNightLine_Absent_OnAStaleDay_NeverAStalePick()
+    {
+        // DrivenDay() never populates SimAdapter.LastRevealedExpeditions (no AdvancePhase call) --
+        // the SAME staleness shape SurvivorCard_OnAStaleDay_FallsBackToPlainReturned and
+        // XpSplitAndRankUpLines_OnceTheNightRollsOutOfTheAdapter_RenderNothing already exercise for
+        // their own per-day queries. Follow the beat item that DrivenDay's own fixture already mints
+        // (BeatItemId) so this is a real followed-and-present item, never a dangling id.
+        FollowedItem.DeleteForTests();
+        try
+        {
+            FollowedItem.Set(BeatItemId);
+            var ui = MountMainUi(new SimAdapter(DrivenDay()));
+            try
+            {
+                ui.Ledger.ShowFor(1);
+                AssertThat(ui.Ledger.FindChild("FollowedItemNightLine", recursive: true, owned: false)).IsNull();
+            }
+            finally
+            {
+                Unmount(ui);
+            }
+        }
+        finally
+        {
+            FollowedItem.DeleteForTests();
+        }
+    }
 }
 #endif
