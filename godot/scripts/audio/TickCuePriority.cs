@@ -21,6 +21,15 @@ public enum TickOutcomeKind
     /// <summary>Morning just ended and the party is actually leaving — the send-off beat.</summary>
     Departure,
 
+    /// <summary>A hero's rank advanced this tick (<c>GameSim.Contracts.HeroRankUp</c>, P2-SCREEN-38)
+    /// — good news, so it ranks below Refusal/Departure but above the plain day bell it would
+    /// otherwise be drowned out by.</summary>
+    HeroRankUp,
+
+    /// <summary>A hero went deeper than ever before this campaign (<c>GameSim.Contracts.FloorRecordSet</c>,
+    /// P2-SCREEN-38) — same reasoning as <see cref="HeroRankUp"/>.</summary>
+    FloorRecordSet,
+
     /// <summary>The day's own bell: any other phase completing.</summary>
     DayBell,
 }
@@ -45,21 +54,28 @@ public readonly record struct TickCueDeclaration(TickOutcomeKind Kind, int Rank,
 /// candidate combination a test can construct, not just the ones a session happens to reach by
 /// playing.
 ///
-/// <para><b>Today's three outcomes, ranked worst news first (P2-KTD11):</b> a refusal beats a
-/// departure beats the plain day bell — the exact order <c>SoundTheTick</c>'s own doc has always
-/// stated in prose, now data instead of position-in-a-function.</para>
+/// <para><b>Today's five outcomes, ranked worst-or-biggest news first (P2-KTD11, P2-SCREEN-38):</b>
+/// a refusal beats a departure beats a rank-up beats a floor record beats the plain day bell — the
+/// exact order <c>SoundTheTick</c>'s own doc has always stated in prose, now data instead of
+/// position-in-a-function. The two good-news additions sit below Refusal/Departure (neither
+/// outranks the player being told no, or the send-off beat) and above DayBell (a record or a
+/// rank-up is still worth its own sting, not the catch-all bell) — the same "worse/bigger news
+/// wins the one slot" logic <c>NarratorVoiceDirector.SelectForNight</c> already uses for its own,
+/// separate ranking (death, then a proven save, then a killing blow).</para>
 /// </summary>
 public static class TickCuePriority
 {
-    /// <summary>Every declared outcome, worst news first by construction (see each member's own
-    /// comment) — <see cref="Resolve"/> does not rely on this array's ORDER, only on <see
-    /// cref="TickCueDeclaration.Rank"/>, so a future addition may be appended anywhere in this list
-    /// without disturbing the ones already here.</summary>
+    /// <summary>Every declared outcome, worst-or-biggest news first by construction (see each
+    /// member's own comment) — <see cref="Resolve"/> does not rely on this array's ORDER, only on
+    /// <see cref="TickCueDeclaration.Rank"/>, so a future addition may be appended anywhere in this
+    /// list without disturbing the ones already here.</summary>
     public static readonly IReadOnlyList<TickCueDeclaration> Declarations = new[]
     {
         new TickCueDeclaration(TickOutcomeKind.Refusal, Rank: 0, CueId: Cue.Rejected),
         new TickCueDeclaration(TickOutcomeKind.Departure, Rank: 1, CueId: Cue.PartyDepart),
-        new TickCueDeclaration(TickOutcomeKind.DayBell, Rank: 2, CueId: Cue.Bell),
+        new TickCueDeclaration(TickOutcomeKind.HeroRankUp, Rank: 2, CueId: Cue.RankUp),
+        new TickCueDeclaration(TickOutcomeKind.FloorRecordSet, Rank: 3, CueId: Cue.FloorRecord),
+        new TickCueDeclaration(TickOutcomeKind.DayBell, Rank: 4, CueId: Cue.Bell),
     };
 
     /// <summary>

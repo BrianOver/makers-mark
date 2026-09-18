@@ -4560,6 +4560,19 @@ public partial class MainUi : Control
             candidates.Add(TickOutcomeKind.Refusal);
         }
 
+        // P2-SCREEN-38: gathered unconditionally, same reasoning as Refusal above — the sim's own
+        // reveal is what emitted these this phase, whether or not the phase itself "advanced" by
+        // this method's own narrower definition.
+        if (Adapter.LastEvents.Any(e => e is HeroRankUp))
+        {
+            candidates.Add(TickOutcomeKind.HeroRankUp);
+        }
+
+        if (Adapter.LastEvents.Any(e => e is FloorRecordSet))
+        {
+            candidates.Add(TickOutcomeKind.FloorRecordSet);
+        }
+
         if (tickActuallyAdvanced)
         {
             // Morning ending is the send-off: the party is actually leaving, which deserves its own

@@ -111,6 +111,9 @@ public static class MixBudget
         Cue.GradeStingFine => Category.CeremonialOneShot,
         Cue.GradeStingSuperior => Category.CeremonialOneShot,
         Cue.GradeStingMasterwork => Category.CeremonialOneShot,
+        Cue.FloorRecord => Category.CeremonialOneShot,
+        Cue.RankUp => Category.CeremonialOneShot,
+        Cue.NightCardOpen => Category.CeremonialOneShot,
 
         // UI one-shots: fire constantly, must sit well under the ceremonial cues so the rare moments
         // still read as rare.

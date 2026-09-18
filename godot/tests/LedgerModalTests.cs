@@ -15,6 +15,7 @@ using GameSim.Kernel;
 using GameSim.Materials;
 using GdUnit4;
 using Godot;
+using GodotClient.Audio;
 using GodotClient.Panels;
 using GodotClient.Ui;
 using static GdUnit4.Assertions;
@@ -3033,6 +3034,70 @@ public class LedgerModalTests
         finally
         {
             FollowedItem.DeleteForTests();
+        }
+    }
+
+    /// <summary>
+    /// P2-SCREEN-38: the night card opens on a cue — the Evening Ledger is the one screen the whole
+    /// game's sentence is read on, and it used to open in total silence like any other panel. Mirrors
+    /// <c>BountyPanelTests.PostButton_PlaysTheBountyPostCue</c>'s own technique (clear
+    /// <see cref="AudioDirector.RecentCues"/>, drive the real call, read what actually played) rather
+    /// than a test-only hook into production.
+    /// </summary>
+    [TestCase]
+    public void ShowFor_PlaysExactlyOneCue_AndItIsNightCardOpen()
+    {
+        var ui = MountMainUi(new SimAdapter(DrivenDay()));
+        try
+        {
+            var audio = AudioDirector.For(ui);
+            AssertThat(audio).IsNotNull();
+            audio!.ClearRecentCues();
+
+            ui.Ledger.ShowFor(1);
+
+            AssertThat(audio.RecentCues.Count)
+                .OverrideFailureMessage(
+                    $"Opening the Ledger played [{string.Join(", ", audio.RecentCues)}] — expected " +
+                    "exactly one cue, the card's own open.")
+                .IsEqual(1);
+            AssertThat(audio.RecentCues[0])
+                .OverrideFailureMessage($"Opening the Ledger played {audio.RecentCues[0]}, not NightCardOpen.")
+                .IsEqual(Cue.NightCardOpen);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>Reopening an already-open Ledger (the tray-button path, per <see
+    /// cref="LedgerModal.ShowFor"/>'s own "open the overlay" contract) plays the cue again — an
+    /// explicit re-show is a real re-open of the card, not a stale re-render
+    /// (<see cref="LedgerModal.Refresh"/>'s own no-op path is what stays silent, covered by the
+    /// production reference sweep never firing on a closed-modal Refresh).</summary>
+    [TestCase]
+    public void ShowFor_ReopeningTheLedger_PlaysTheCueAgain()
+    {
+        var ui = MountMainUi(new SimAdapter(DrivenDay()));
+        try
+        {
+            var audio = AudioDirector.For(ui);
+            AssertThat(audio).IsNotNull();
+
+            ui.Ledger.ShowFor(1);
+            audio!.ClearRecentCues();
+            ui.Ledger.ShowFor(1);
+
+            AssertThat(audio.RecentCues)
+                .OverrideFailureMessage(
+                    $"Reopening the Ledger played [{string.Join(", ", audio.RecentCues)}] — expected " +
+                    "NightCardOpen again.")
+                .Contains(Cue.NightCardOpen);
+        }
+        finally
+        {
+            Unmount(ui);
         }
     }
 }
