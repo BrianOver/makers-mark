@@ -212,6 +212,31 @@ public static class TellingQuery
         ImmutableList<TellingRound> factualRounds,
         string monsterKind)
     {
+        var facts = ComputeKillingBlowFacts(hero, beat, items, venue, factualRounds);
+
+        var payload = new KillingBlowPayload(
+            facts.Round, facts.HeroRoll, facts.DamageDealtWithItem, facts.DamageDealtWithoutItem,
+            facts.MonsterHpBeforeKillRound, facts.MonsterHpWithoutItem);
+
+        return new TellingScript(
+            TellingShape.KillingBlowShape, hero, beat.Floor, monsterKind,
+            factualRounds, DivergenceRound: null, ImmutableList<TellingRound>.Empty, payload);
+    }
+
+    /// <summary>The recorded facts a KillingBlow's staging AND P2-MEMORY-24's gossip-ranking
+    /// predicate both need. One source of arithmetic (never a second, independently-typed copy of
+    /// the same recompute-without-item formula) — see <see cref="KillingBlowIsDecisive"/>.</summary>
+    private readonly record struct KillingBlowFacts(
+        int Round, int HeroRoll, int DamageDealtWithItem, int DamageDealtWithoutItem,
+        int MonsterHpBeforeKillRound, int MonsterHpWithoutItem);
+
+    private static KillingBlowFacts ComputeKillingBlowFacts(
+        HeroAtDeparture hero,
+        AttributionBeat beat,
+        ImmutableSortedDictionary<int, Item> items,
+        VenueDefinition venue,
+        ImmutableList<TellingRound> factualRounds)
+    {
         var killRound = factualRounds.Single(r => r.MonsterKilled);
         var heroRoll = killRound.RecordedRolls[0];
         var monsterDefense = venue.MonsterDefense(beat.Floor);
@@ -224,13 +249,31 @@ public static class TellingQuery
         var monsterHpBeforeKillRound = killRound.MonsterHpAfter + killRound.DamageDealt;
         var monsterHpWithoutItem = monsterHpBeforeKillRound - dealtWithoutItem;
 
-        var payload = new KillingBlowPayload(
+        return new KillingBlowFacts(
             killRound.Round, heroRoll, killRound.DamageDealt, dealtWithoutItem,
             monsterHpBeforeKillRound, monsterHpWithoutItem);
+    }
 
-        return new TellingScript(
-            TellingShape.KillingBlowShape, hero, beat.Floor, monsterKind,
-            factualRounds, DivergenceRound: null, ImmutableList<TellingRound>.Empty, payload);
+    /// <summary>
+    /// P2-MEMORY-24 (§11.7.13): was this KillingBlow DECISIVE — would the monster have survived
+    /// the recorded kill round without the player-crafted item (<c>MonsterHpWithoutItem &gt; 0</c>)
+    /// — or INCIDENTAL, one the town does not need retold every time it repeats. Reuses the exact
+    /// <see cref="ComputeKillingBlowFacts"/> arithmetic <see cref="BuildKillingBlow"/> stages with,
+    /// so gossip's ranking can never disagree with the Telling modal's own numbers.
+    /// </summary>
+    public static bool KillingBlowIsDecisive(
+        ExpeditionResult result,
+        AttributionBeat beat,
+        ImmutableSortedDictionary<int, Item> items,
+        VenueDefinition venue)
+    {
+        var hero = result.PartyAtDeparture.First(h => h.Id == beat.Hero);
+        var floorOutcome = result.Floors.First(f => f.Floor == beat.Floor);
+        var fight = floorOutcome.Combats.Where(c => c.Hero == beat.Hero).ToImmutableList();
+        var hpEnteringFloor = ReplayHpThroughFloor(result, beat.Hero, hero.MaxHp, beat.Floor);
+        var factualRounds = BuildFactualRounds(fight, hpEnteringFloor, venue, beat.Floor);
+
+        return ComputeKillingBlowFacts(hero, beat, items, venue, factualRounds).MonsterHpWithoutItem > 0;
     }
 
     // ---- LethalSave ----------------------------------------------------------------------------

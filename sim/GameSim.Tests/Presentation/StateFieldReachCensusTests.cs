@@ -354,6 +354,7 @@ public class StateFieldReachCensusTests
             + "synthetic id — no real-play surface ever reads or shows this counter."),
         ["GameState.OpenOreOffers"] = new(FieldKind.Rendered, "godot/scripts/panels/LedgerModal.cs (\"ORE OFFERED\" rows, BuyOre_{hero}_{mat})"),
         ["GameState.PendingExpeditions"] = new(FieldKind.Rendered, "godot/scripts/panels/MineWatch.cs (party underground)"),
+        ["GameState.LastNightExpeditions"] = new(FieldKind.Rendered, "godot/scripts/panels/TellingPanel.cs (the Telling; P2-MEMORY-24 also ranks gossip off it)"),
         ["GameState.Phase"] = new(FieldKind.Rendered, "godot/scripts/MainUi.cs:1866-1868 (PhaseChip)"),
         ["GameState.Player"] = new(FieldKind.Rendered, "godot/scripts/MainUi.cs — the whole client's player-state source (GoldChip, StandingChips, etc.)"),
         ["GameState.RivalMarketSharePermille"] = new(FieldKind.Gap,
