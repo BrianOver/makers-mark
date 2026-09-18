@@ -1492,6 +1492,60 @@ public class AudioTests
     }
 
     /// <summary>
+    /// P2-SCREEN-38: "still under a second" is this unit's own brief for the good-news stings —
+    /// pinned as a real bound, not a design intent left to trust.
+    /// </summary>
+    [TestCase]
+    public void FloorRecordAndRankUp_StayUnderOneSecond()
+    {
+        var oneSecond = Synth.Samples(1.0f);
+        AssertThat(Pcm(SfxLibrary.Get(Cue.FloorRecord)).Length)
+            .OverrideFailureMessage("FloorRecord runs a full second or longer.")
+            .IsLess(oneSecond);
+        AssertThat(Pcm(SfxLibrary.Get(Cue.RankUp)).Length)
+            .OverrideFailureMessage("RankUp runs a full second or longer.")
+            .IsLess(oneSecond);
+    }
+
+    /// <summary>
+    /// P2-SCREEN-38: the night card's own open must never sound like a reward — its cue's whole
+    /// design brief is a single dull tone, the opposite shape from the two good-news stings it can
+    /// share a screen with. Measured the same way <see cref="AnOnBeatHammerBlow_SoundsBrighterAndLonger_ThanAMistimedOne"/>
+    /// separates a ringing hit from a dull one: share of energy above the low band.
+    /// </summary>
+    [TestCase]
+    public void NightCardOpen_ReadsDullerThanTheGoodNewsStings()
+    {
+        float HighShare(Cue cue)
+        {
+            var pcm = Pcm(SfxLibrary.Get(cue));
+            var low = (float[])pcm.Clone();
+            for (var pole = 0; pole < BassFilterPoles; pole++)
+            {
+                Synth.LowPass(low, 900f);
+            }
+
+            var full = Rms(pcm);
+            return full <= 0f ? 0f : 1f - (Rms(low) / full);
+        }
+
+        var card = HighShare(Cue.NightCardOpen);
+        var record = HighShare(Cue.FloorRecord);
+        var rankUp = HighShare(Cue.RankUp);
+
+        AssertThat(card < record)
+            .OverrideFailureMessage(
+                $"NightCardOpen is {card:P0} high-band energy, FloorRecord is {record:P0} — the card's " +
+                "own open must read duller than a good-news sting, not brighter or equal.")
+            .IsTrue();
+        AssertThat(card < rankUp)
+            .OverrideFailureMessage(
+                $"NightCardOpen is {card:P0} high-band energy, RankUp is {rankUp:P0} — same requirement " +
+                "against the brighter of the two stings.")
+            .IsTrue();
+    }
+
+    /// <summary>
     /// U5 (playtest-three plan, R6): "the forge stops sounding like a fault." The building cues
     /// already proved (#327) that a soft attack reads as better — this pins that the forge's own
     /// worst offenders (the two hammer blows and the quench) got the same treatment.

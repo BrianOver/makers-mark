@@ -26,6 +26,12 @@ public class TickCuePriorityTests
     private static readonly TickCueDeclaration DayBell =
         TickCuePriority.Declarations.Single(d => d.Kind == TickOutcomeKind.DayBell);
 
+    private static readonly TickCueDeclaration HeroRankUp =
+        TickCuePriority.Declarations.Single(d => d.Kind == TickOutcomeKind.HeroRankUp);
+
+    private static readonly TickCueDeclaration FloorRecordSet =
+        TickCuePriority.Declarations.Single(d => d.Kind == TickOutcomeKind.FloorRecordSet);
+
     [TestCase]
     public void NoCandidates_ResolvesToNull()
     {
@@ -72,6 +78,56 @@ public class TickCuePriorityTests
         var reverse = TickCuePriority.Resolve(new[] { TickOutcomeKind.Departure, TickOutcomeKind.Refusal });
         AssertThat(forward).IsEqual(Refusal);
         AssertThat(reverse).IsEqual(Refusal);
+    }
+
+    /// <summary>P2-SCREEN-38: a record and a rank-up are good news, not a refusal — but they must not
+    /// be drowned out by the plain day bell either. This is the graver-candidate-wins half of that
+    /// claim, mirrored for BOTH new kinds so neither one accidentally shipped with the other's
+    /// rank.</summary>
+    [TestCase]
+    public void RefusalOutranksHeroRankUpAndFloorRecordSet()
+    {
+        var withRankUp = TickCuePriority.Resolve(new[] { TickOutcomeKind.HeroRankUp, TickOutcomeKind.Refusal });
+        var withRecord = TickCuePriority.Resolve(new[] { TickOutcomeKind.FloorRecordSet, TickOutcomeKind.Refusal });
+        AssertThat(withRankUp).IsEqual(Refusal);
+        AssertThat(withRecord).IsEqual(Refusal);
+    }
+
+    /// <summary>The send-off beat still wins over a same-night record/rank-up — a party leaving is
+    /// the one cinematic moment <c>MainUi.SoundTheTick</c> stages extra behaviour around
+    /// (<c>Drawer.Close</c>, the rally pan), so it must never lose the tick's one slot to a sting.</summary>
+    [TestCase]
+    public void DepartureOutranksHeroRankUpAndFloorRecordSet()
+    {
+        var withRankUp = TickCuePriority.Resolve(new[] { TickOutcomeKind.HeroRankUp, TickOutcomeKind.Departure });
+        var withRecord = TickCuePriority.Resolve(new[] { TickOutcomeKind.FloorRecordSet, TickOutcomeKind.Departure });
+        AssertThat(withRankUp).IsEqual(Departure);
+        AssertThat(withRecord).IsEqual(Departure);
+    }
+
+    /// <summary>The other half: a record or a rank-up is still worth its own sting rather than the
+    /// catch-all bell — the whole reason P2-SCREEN-38 exists (44 rank-ups/48 records a campaign
+    /// passing as silent text today).</summary>
+    [TestCase]
+    public void HeroRankUpAndFloorRecordSet_BothOutrankDayBell()
+    {
+        var rankUpWins = TickCuePriority.Resolve(new[] { TickOutcomeKind.DayBell, TickOutcomeKind.HeroRankUp });
+        var recordWins = TickCuePriority.Resolve(new[] { TickOutcomeKind.DayBell, TickOutcomeKind.FloorRecordSet });
+        AssertThat(rankUpWins).IsEqual(HeroRankUp);
+        AssertThat(recordWins).IsEqual(FloorRecordSet);
+    }
+
+    /// <summary>Ranks are strict (<see cref="EveryDeclaration_HasAUniqueRank"/> already pins this
+    /// generally) — this pins it for the one pair those other tests never construct directly: the
+    /// two new kinds never tie with EACH OTHER, so a night carrying both still picks exactly one
+    /// cue, not two and not neither.</summary>
+    [TestCase]
+    public void HeroRankUpAndFloorRecordSet_NeverTie()
+    {
+        var forward = TickCuePriority.Resolve(new[] { TickOutcomeKind.HeroRankUp, TickOutcomeKind.FloorRecordSet });
+        var reverse = TickCuePriority.Resolve(new[] { TickOutcomeKind.FloorRecordSet, TickOutcomeKind.HeroRankUp });
+        AssertThat(forward).IsNotNull();
+        AssertThat(forward).IsEqual(reverse);
     }
 
     /// <summary>Deny-by-default census, reflective over <see cref="TickCuePriority.Declarations"/> —

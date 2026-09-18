@@ -155,6 +155,31 @@ public enum Cue
     /// the narrator's own register for the same moment (<c>NarratorVoiceDirector.Trigger.DeathEpitaph</c>)
     /// — no melodrama, no alarm.</summary>
     DeathToll,
+
+    // ── The record/rank-up stings and the night card's own open (P2-SCREEN-38). 44 rank-ups and
+    //    48 floor records a campaign pass as text lines today — nothing plays when a hero goes
+    //    deeper than ever before, and nothing plays when a hero's rank advances. The Evening
+    //    Ledger itself — the one screen the whole game's sentence is read on — opens in total
+    //    silence, no different from any other panel. Three short cues close both gaps: the two
+    //    good-news stings compete in <see cref="TickCuePriority"/> against the plain day bell (a
+    //    campaign milestone deserves better than the catch-all), and the card's own open gets a
+    //    single quiet tone so the screen announces itself before the player starts reading it. ──
+
+    /// <summary>A hero went deeper than ever before this campaign (<c>GameSim.Contracts.FloorRecordSet</c>).
+    /// A short rising two-note figure — root to a fifth up, the same "going further" shape a fanfare
+    /// would use, kept brief and dry so it reads as a milestone, not a full ceremony.</summary>
+    FloorRecord,
+
+    /// <summary>A hero's rank advanced tonight (<c>GameSim.Contracts.HeroRankUp</c>). A brighter
+    /// three-note rising figure than <see cref="FloorRecord"/> — one voice earned, not just a floor
+    /// reached — still under a second, the same restraint every cue in this file keeps.</summary>
+    RankUp,
+
+    /// <summary>The Evening Ledger opening — the night's own card, where a death is read with the
+    /// same quiet dignity as a record. A single low, soft tone, never a chime or a fanfare: the
+    /// card is neutral on what it is about to say, and this cue must never sound like a reward for
+    /// opening it.</summary>
+    NightCardOpen,
 }
 
 /// <summary>
@@ -634,6 +659,39 @@ public static class SfxLibrary
             Synth.LowPass(buf, 300f);
             Synth.AddPartial(buf, 98f, 0.42f, halfLife: 0.55f, attack: 0.02f);
             Synth.NormaliseRms(buf, CeremonialTargetDbfs); // U-T4-3: was Normalise(buf, 0.26f)
+        }),
+
+        // P2-SCREEN-38: see the Cue enum's own doc for why these three exist. All three land in
+        // MixBudget.Category.CeremonialOneShot, the same bucket every other rare-moment cue in this
+        // file uses (Bell/PartyDepart/CraftDone/DeathToll/MemorialHonor/the grade stings) — a
+        // record, a rank-up, and the night's own open are all ceremonial, not UI chrome.
+        Cue.FloorRecord => Build(0.50f, buf =>
+        {
+            // Root to a fifth, staggered like PartyDepart's own two-note send-off but shorter and
+            // rising rather than falling — "going further" read as a shape, not just a pitch.
+            AddNote(buf, 440f, at: 0.00f, length: 0.22f, amplitude: 0.38f);
+            AddNote(buf, 659f, at: 0.14f, length: 0.36f, amplitude: 0.42f);
+            Synth.NormaliseRms(buf, CeremonialTargetDbfs);
+        }),
+
+        Cue.RankUp => Build(0.62f, buf =>
+        {
+            // Three ascending notes, one octave brighter than CraftDone's own rising figure and
+            // with an extra harmonic per note — a voice earned, not just a floor reached.
+            AddNote(buf, 523f, at: 0.00f, length: 0.20f, amplitude: 0.36f, harmonics: 3);
+            AddNote(buf, 659f, at: 0.10f, length: 0.22f, amplitude: 0.34f, harmonics: 3);
+            AddNote(buf, 880f, at: 0.20f, length: 0.36f, amplitude: 0.38f, harmonics: 3);
+            Synth.NormaliseRms(buf, CeremonialTargetDbfs);
+        }),
+
+        Cue.NightCardOpen => Build(0.46f, buf =>
+        {
+            // One low partial, soft attack, low-passed so nothing bright sneaks in — the opposite
+            // shape from FloorRecord/RankUp's own rising figures on purpose: the card is neutral on
+            // what it is about to say, and a single dull tone cannot read as a reward.
+            Synth.AddPartial(buf, 140f, 0.34f, halfLife: 0.28f, attack: 0.05f);
+            Synth.LowPass(buf, 700f);
+            Synth.NormaliseRms(buf, CeremonialTargetDbfs);
         }),
 
         _ => Build(0.05f, buf => Synth.AddPartial(buf, 440f, 0.4f, halfLife: 0.02f)),

@@ -219,6 +219,12 @@ public partial class LedgerModal : SimPanel
         RenderCards(day);
         Visible = true;
 
+        // P2-SCREEN-38: the night card opens on a cue — a single quiet tone, played once per
+        // ShowFor (the method's own doc: "open the overlay"), never a chime and never additive
+        // with whatever the card is about to say. Same idiom every other panel plays its own cue
+        // through (AudioDirector.For(this)?.Play), never a raw AudioStreamPlayer of this panel's own.
+        GodotClient.Audio.AudioDirector.For(this)?.Play(GodotClient.Audio.Cue.NightCardOpen, why: "LedgerOpened");
+
         // Stamp what the world could prove as of RIGHT NOW — including when `day` is deliberately
         // OLDER than the calendar (a tray-button reopen of a past day to buy, see Refresh's own
         // doc) — so this exact freshness is never later mistaken for drift.
