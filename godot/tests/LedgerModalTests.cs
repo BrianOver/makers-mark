@@ -2557,6 +2557,263 @@ public class LedgerModalTests
         }
     }
 
+    // ── P2-PROOF-20 ("the fold that did not fold"): one row per item, not per decisive kill ─────
+    //
+    // #878's own diet (P2-PROOF-19, above) only gates INCIDENTAL kills. A card can still earn TWO
+    // OR MORE decisive kills on the SAME item (a recurring weapon, or the same forged piece on two
+    // heroes) — measurement (MAKERS-MARK.md §11.12 measurement 1) found proof rows still median 15,
+    // p90 15, max 23 per party-night even after that diet. LedgerModal now folds every card's
+    // decisive KillingBlow beats by item: one row leads (the deepest floor), the rest fold into a
+    // trailing count on that SAME row, and the "Ask how it happened." button renders only on the
+    // lead. Every OTHER beat type (LethalSave, BreakpointClear, ...) is untouched by this grouping.
+
+    private static readonly HeroId FoldTwoHeroId = new(9701);
+    private static readonly HeroId FoldOneHeroId = new(9702);
+    private static readonly HeroId FoldLethalHeroId = new(9703);
+    private static readonly ItemId FoldTwoEmberbiteId = new(9710);
+    private static readonly ItemId FoldTwoWarhammerId = new(9711);
+    private static readonly ItemId FoldOnePikeId = new(9712);
+    private static readonly ItemId FoldLethalWardenplateId = new(9713);
+
+    /// <summary>
+    /// Three cards in one night: <see cref="FoldTwoHeroId"/> earns THREE decisive KillingBlow beats
+    /// across TWO items (Emberbite on floors 3 and 5 — the same weapon carried the whole run, so one
+    /// <see cref="ExpeditionResult"/> covers both floors per <see cref="FoldNight"/>'s own note — and
+    /// Warhammer on floor 1, a separate result since the weapon differs); <see cref="FoldOneHeroId"/>
+    /// earns exactly ONE decisive kill (the no-regression control); <see cref="FoldLethalHeroId"/>
+    /// earns a LethalSave, which carries no decisiveness gate and no fold at all. All three kills use
+    /// the SAME "Level 3, +1000 Attack weapon" shape <see cref="FoldNight"/>'s own decisive dagger
+    /// uses (item Attack utterly dominates the hero's own base attack, so the same recorded roll
+    /// would NOT have killed without it at any of these floors).
+    /// </summary>
+    private static GameState DecisiveFoldNight()
+    {
+        var heroes = ImmutableSortedDictionary<int, Hero>.Empty
+            .Add(FoldTwoHeroId.Value, new Hero(
+                FoldTwoHeroId, "Elara", ClassRegistry.VanguardId, Level: 3, MaxHp: 30, Gold: 0,
+                Gear: GearSet.Empty, Memories: ImmutableList<ItemMemory>.Empty, Alive: true,
+                DeepestFloorReached: 5, DiedOnDay: null))
+            .Add(FoldOneHeroId.Value, new Hero(
+                FoldOneHeroId, "Doran", ClassRegistry.VanguardId, Level: 2, MaxHp: 26, Gold: 0,
+                Gear: GearSet.Empty, Memories: ImmutableList<ItemMemory>.Empty, Alive: true,
+                DeepestFloorReached: 1, DiedOnDay: null))
+            .Add(FoldLethalHeroId.Value, new Hero(
+                FoldLethalHeroId, "Mira", ClassRegistry.VanguardId, Level: 2, MaxHp: 26, Gold: 0,
+                Gear: GearSet.Empty, Memories: ImmutableList<ItemMemory>.Empty, Alive: true,
+                DeepestFloorReached: 2, DiedOnDay: null));
+
+        var emberbite = new Item(
+            FoldTwoEmberbiteId, "recipe-test-emberbite", "Emberbite", ItemSlot.Weapon, QualityGrade.Fine,
+            new ItemStats(1000, 0, 1), new MakersMark("You", 1), ImmutableList<ItemHistoryEntry>.Empty);
+        var warhammer = new Item(
+            FoldTwoWarhammerId, "recipe-test-warhammer", "Warhammer", ItemSlot.Weapon, QualityGrade.Fine,
+            new ItemStats(1000, 0, 1), new MakersMark("You", 1), ImmutableList<ItemHistoryEntry>.Empty);
+        var pike = new Item(
+            FoldOnePikeId, "recipe-test-pike", "Rusty Pike", ItemSlot.Weapon, QualityGrade.Common,
+            new ItemStats(1000, 0, 1), new MakersMark("You", 1), ImmutableList<ItemHistoryEntry>.Empty);
+        var wardenplate = new Item(
+            FoldLethalWardenplateId, "recipe-test-wardenplate", "Wardenplate", ItemSlot.Armor, QualityGrade.Superior,
+            new ItemStats(0, 9, 8), new MakersMark("You", 2), ImmutableList<ItemHistoryEntry>.Empty);
+        var items = ImmutableSortedDictionary<int, Item>.Empty
+            .Add(FoldTwoEmberbiteId.Value, emberbite)
+            .Add(FoldTwoWarhammerId.Value, warhammer)
+            .Add(FoldOnePikeId.Value, pike)
+            .Add(FoldLethalWardenplateId.Value, wardenplate);
+
+        // Elara / Emberbite: one weapon, two floors, both decisive (Level 3's own base attack is
+        // nowhere near either floor's HP without the +1000 Attack weapon).
+        var emberbiteDeparture = new HeroAtDeparture(
+            FoldTwoHeroId, "Elara", ClassRegistry.VanguardId, Level: 3, MaxHp: 30,
+            Weapon: FoldTwoEmberbiteId, Shield: null, Armor: null);
+        var emberbiteFloor3Kill = new CombatEvent(
+            3, FoldTwoHeroId, "Deep Ghoul", ImmutableList.Create(1), DamageDealt: 5000, DamageTaken: 0,
+            MonsterKilled: true, KillingItem: FoldTwoEmberbiteId);
+        var emberbiteFloor5Kill = new CombatEvent(
+            5, FoldTwoHeroId, "The Forgeworm", ImmutableList.Create(1), DamageDealt: 5000, DamageTaken: 0,
+            MonsterKilled: true, KillingItem: FoldTwoEmberbiteId);
+        var emberbiteBeatFloor3 = new AttributionBeat(
+            BeatType.KillingBlow, FoldTwoEmberbiteId, FoldTwoHeroId, 3, "Emberbite landed the killing blow on the Deep Ghoul.");
+        var emberbiteBeatFloor5 = new AttributionBeat(
+            BeatType.KillingBlow, FoldTwoEmberbiteId, FoldTwoHeroId, 5, "Emberbite landed the killing blow on the Forgeworm.");
+        var emberbiteRun = new ExpeditionResult(
+            ImmutableList.Create(FoldTwoHeroId), 5, 5,
+            ImmutableList.Create(
+                new FloorOutcome(3, true, ImmutableList.Create(emberbiteFloor3Kill)),
+                new FloorOutcome(5, true, ImmutableList.Create(emberbiteFloor5Kill))),
+            ImmutableList.Create(FoldTwoHeroId), ImmutableList<HeroId>.Empty,
+            ImmutableList.Create(emberbiteBeatFloor3, emberbiteBeatFloor5),
+            ImmutableList<OreLoot>.Empty, ImmutableSortedDictionary<int, int>.Empty)
+        {
+            PartyAtDeparture = ImmutableList.Create(emberbiteDeparture),
+        };
+
+        // Elara / Warhammer: a second, different weapon for the same hero -- a separate result
+        // (FoldNight's own note: HeroAtDeparture.Weapon is one snapshot per result).
+        var warhammerDeparture = new HeroAtDeparture(
+            FoldTwoHeroId, "Elara", ClassRegistry.VanguardId, Level: 3, MaxHp: 30,
+            Weapon: FoldTwoWarhammerId, Shield: null, Armor: null);
+        var warhammerFloor1Kill = new CombatEvent(
+            1, FoldTwoHeroId, "Cave Rat", ImmutableList.Create(1), DamageDealt: 5000, DamageTaken: 0,
+            MonsterKilled: true, KillingItem: FoldTwoWarhammerId);
+        var warhammerBeat = new AttributionBeat(
+            BeatType.KillingBlow, FoldTwoWarhammerId, FoldTwoHeroId, 1, "Warhammer landed the killing blow on the Cave Rat.");
+        var warhammerRun = new ExpeditionResult(
+            ImmutableList.Create(FoldTwoHeroId), 1, 1,
+            ImmutableList.Create(new FloorOutcome(1, true, ImmutableList.Create(warhammerFloor1Kill))),
+            ImmutableList.Create(FoldTwoHeroId), ImmutableList<HeroId>.Empty,
+            ImmutableList.Create(warhammerBeat),
+            ImmutableList<OreLoot>.Empty, ImmutableSortedDictionary<int, int>.Empty)
+        {
+            PartyAtDeparture = ImmutableList.Create(warhammerDeparture),
+        };
+
+        // Doran: exactly ONE decisive kill -- the no-regression control (a single-kill card must
+        // render exactly what it renders today: its own row, no folded-count suffix).
+        var pikeDeparture = new HeroAtDeparture(
+            FoldOneHeroId, "Doran", ClassRegistry.VanguardId, Level: 2, MaxHp: 26,
+            Weapon: FoldOnePikeId, Shield: null, Armor: null);
+        var pikeKill = new CombatEvent(
+            1, FoldOneHeroId, "Cave Rat", ImmutableList.Create(4), DamageDealt: 30, DamageTaken: 0,
+            MonsterKilled: true, KillingItem: FoldOnePikeId);
+        var pikeBeat = new AttributionBeat(
+            BeatType.KillingBlow, FoldOnePikeId, FoldOneHeroId, 1, "Rusty Pike landed the killing blow on the Cave Rat.");
+        var pikeRun = new ExpeditionResult(
+            ImmutableList.Create(FoldOneHeroId), 1, 1,
+            ImmutableList.Create(new FloorOutcome(1, true, ImmutableList.Create(pikeKill))),
+            ImmutableList.Create(FoldOneHeroId), ImmutableList<HeroId>.Empty,
+            ImmutableList.Create(pikeBeat),
+            ImmutableList<OreLoot>.Empty, ImmutableSortedDictionary<int, int>.Empty)
+        {
+            PartyAtDeparture = ImmutableList.Create(pikeDeparture),
+        };
+
+        // Mira: a LethalSave -- no decisiveness gate, no fold, always its own row. No matching
+        // ExpeditionResult.Beats entry is staged (this fixture does not exercise her "Ask how it
+        // happened" button, only that the fold above leaves her row untouched).
+        var lethalBeat = new AttributionBeatEvent(
+            BeatType.LethalSave, FoldLethalWardenplateId, FoldLethalHeroId, Floor: 2,
+            "Wardenplate turned a lethal blow. Without it, Mira falls.");
+
+        var events = ImmutableList.Create<GameEvent>(
+            new PartyReturned(ImmutableList.Create(FoldTwoHeroId, FoldOneHeroId, FoldLethalHeroId))
+                { Id = new EventId(20001), Day = 1 },
+            new AttributionBeatEvent(
+                emberbiteBeatFloor3.Beat, emberbiteBeatFloor3.Item, emberbiteBeatFloor3.Hero,
+                emberbiteBeatFloor3.Floor, emberbiteBeatFloor3.Detail) { Id = new EventId(20002), Day = 1 },
+            new AttributionBeatEvent(
+                emberbiteBeatFloor5.Beat, emberbiteBeatFloor5.Item, emberbiteBeatFloor5.Hero,
+                emberbiteBeatFloor5.Floor, emberbiteBeatFloor5.Detail) { Id = new EventId(20003), Day = 1 },
+            new AttributionBeatEvent(
+                warhammerBeat.Beat, warhammerBeat.Item, warhammerBeat.Hero, warhammerBeat.Floor, warhammerBeat.Detail)
+                { Id = new EventId(20004), Day = 1 },
+            new AttributionBeatEvent(
+                pikeBeat.Beat, pikeBeat.Item, pikeBeat.Hero, pikeBeat.Floor, pikeBeat.Detail)
+                { Id = new EventId(20005), Day = 1 },
+            lethalBeat with { Id = new EventId(20006), Day = 1 });
+
+        return GameFactory.NewGame(9701, heroes) with
+        {
+            Items = items, EventLog = events,
+            LastNightExpeditions = ImmutableList.Create(emberbiteRun, warhammerRun, pikeRun),
+        };
+    }
+
+    [TestCase]
+    public void DecisiveKillingBlowsOnTheSameItem_FoldToOneRowPerItem_LeadingOnTheDeepestFloor()
+    {
+        var ui = MountMainUi(new SimAdapter(DecisiveFoldNight()));
+        try
+        {
+            ui.Ledger.ShowFor(1);
+
+            // K=3 decisive KillingBlow beats on Elara's card, M=2 distinct items (Emberbite,
+            // Warhammer) -- exactly M rows render, never K.
+            var card = Find<Control>(ui.Ledger, "LedgerCard_1"); // Mira (LethalSave, rank 4) leads
+            var lines = BeatLinesOf(card);
+            AssertThat(lines.Length)
+                .OverrideFailureMessage($"expected exactly 2 rows (one per item), found {lines.Length}")
+                .IsEqual(2);
+
+            // The lead per item is the DEEPEST floor: Emberbite's row is the floor-5 kill, never
+            // the floor-3 one, even though floor 3 was emitted first.
+            AssertThat(lines[0].Text)
+                .OverrideFailureMessage($"Emberbite's row did not lead on its deepest kill: \"{lines[0].Text}\"")
+                .Contains("Forgeworm");
+            AssertThat(lines[0].Text).NotContains("Deep Ghoul");
+
+            // The fold count on that same row: K-M = 1 extra kill folded, named plainly.
+            AssertThat(lines[0].Text)
+                .OverrideFailureMessage($"the folded decisive kill did not name its count: \"{lines[0].Text}\"")
+                .Contains("and 1 more kill tonight.");
+
+            // Warhammer earned exactly one decisive kill -- its own row, no fold suffix.
+            AssertThat(lines[1].Text).Contains("Warhammer");
+            AssertThat(lines[1].Text).NotContains("more kill");
+
+            // Exactly M=2 "Ask how it happened." buttons -- one per rendered row, never one per
+            // decisive kill (which would be 3).
+            var buttons = card.FindChildren("AskHowItHappened_*", nameof(Button), recursive: true, owned: false);
+            AssertThat(buttons.Count)
+                .OverrideFailureMessage($"expected exactly 2 buttons (one per item), found {buttons.Count}")
+                .IsEqual(2);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void CardWithExactlyOneDecisiveKill_RendersExactlyAsBefore_NoFoldSuffix()
+    {
+        var ui = MountMainUi(new SimAdapter(DecisiveFoldNight()));
+        try
+        {
+            ui.Ledger.ShowFor(1);
+
+            var card = Find<Control>(ui.Ledger, "LedgerCard_2"); // Doran: single decisive kill
+            var lines = BeatLinesOf(card);
+            AssertThat(lines.Length)
+                .OverrideFailureMessage($"a single-kill card should render exactly one row, found {lines.Length}")
+                .IsEqual(1);
+            AssertThat(lines[0].Text).Contains("Rusty Pike landed the killing blow on the Cave Rat.");
+            AssertThat(lines[0].Text)
+                .OverrideFailureMessage($"a single decisive kill grew a fold suffix it never earned: \"{lines[0].Text}\"")
+                .NotContains("more kill");
+
+            AssertThat(card.FindChildren("AskHowItHappened_*", nameof(Button), recursive: true, owned: false).Count)
+                .IsEqual(1);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void LethalSaveRow_IsUnaffectedByTheKillingBlowFold()
+    {
+        var ui = MountMainUi(new SimAdapter(DecisiveFoldNight()));
+        try
+        {
+            ui.Ledger.ShowFor(1);
+
+            // Mira's LethalSave leads the whole night (BeatVocab.Rank: LethalSave outranks every
+            // KillingBlow) -- her row renders exactly the beat's own Detail, with no fold grouping
+            // and no "Ask how it happened" button (no matching ExpeditionResult.Beats entry staged
+            // for her in this fixture -- see DecisiveFoldNight's own note).
+            var card = Find<Control>(ui.Ledger, "LedgerCard_0");
+            var lines = BeatLinesOf(card);
+            AssertThat(lines.Length).IsEqual(1);
+            AssertThat(lines[0].Text).Contains("Wardenplate turned a lethal blow. Without it, Mira falls.");
+            AssertThat(lines[0].Text).NotContains("more kill");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
     private static readonly HeroId OnlyIncidentalKillsHeroId = new(9501);
     private static readonly ItemId OnlyIncidentalKillsItemId = new(9510);
 

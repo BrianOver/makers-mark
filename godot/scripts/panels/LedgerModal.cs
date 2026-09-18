@@ -1047,7 +1047,7 @@ public partial class LedgerModal : SimPanel
         // kill is a real, recorded fact with nothing to prove, and folds below instead (law 4 still
         // holds: nothing is dropped, only how it is GROUPED on screen changes).
         var orderedBeats = BeatVocab.LeadFirst(card.Beats);
-        var renderedBeats = ImmutableList.CreateBuilder<AttributionBeatEvent>();
+        var renderedBeatsBuilder = ImmutableList.CreateBuilder<AttributionBeatEvent>();
         var incidentalKills = ImmutableList.CreateBuilder<AttributionBeatEvent>();
         foreach (var orderedBeat in orderedBeats)
         {
@@ -1057,9 +1057,34 @@ public partial class LedgerModal : SimPanel
             }
             else
             {
-                renderedBeats.Add(orderedBeat);
+                renderedBeatsBuilder.Add(orderedBeat);
             }
         }
+
+        // P2-PROOF-20: even after the beat-volume diet above, a night can still prove the SAME
+        // item decisive on more than one floor (one hero-item pairing repeats, or two heroes carry
+        // the same forged piece) — each one its own row with its own "Ask how it happened." button,
+        // which is exactly the fold this unit exists to close. Every decisive KillingBlow beat that
+        // survived the diet is grouped by item; the deepest-floor kill leads (ties broken by the
+        // larger proven margin, then by emission order) and the rest fold into a trailing count on
+        // that SAME row. Every OTHER beat type (LethalSave, BreakpointClear, ...) is already rare
+        // and proves its own counterfactual, so it passes through this grouping untouched.
+        var killingBlowFoldExtras = renderedBeatsBuilder
+            .Where(b => b.Beat == BeatType.KillingBlow)
+            .GroupBy(b => b.Item)
+            .ToImmutableDictionary(
+                g => g.Key,
+                g => g
+                    .OrderByDescending(b => b.Floor)
+                    .ThenByDescending(b => TellingPanel.MonsterHpWithoutItem(state, b))
+                    .ThenBy(b => b.Id.Value)
+                    .ToImmutableList());
+        var leadKillingBlowIds = killingBlowFoldExtras.Values
+            .Select(group => group[0].Id.Value)
+            .ToImmutableHashSet();
+        var renderedBeats = renderedBeatsBuilder
+            .Where(b => b.Beat != BeatType.KillingBlow || leadKillingBlowIds.Contains(b.Id.Value))
+            .ToImmutableList();
 
         for (var beatIndex = 0; beatIndex < renderedBeats.Count; beatIndex++)
         {
@@ -1073,7 +1098,18 @@ public partial class LedgerModal : SimPanel
             // REDUNDANT — Detail already carries the full sentence. Drop the prefix rather than
             // translating it in place; BeatVocab.Label exists for surfaces that need the SHORT
             // caption instead (Chronicle Night, the commendation — later units).
-            var beatLabel = AddLabel(beatRow, BeatLine(state, beat));
+            var beatText = BeatLine(state, beat);
+            if (beat.Beat == BeatType.KillingBlow
+                && killingBlowFoldExtras.TryGetValue(beat.Item, out var foldedGroup)
+                && foldedGroup.Count > 1)
+            {
+                // P2-PROOF-20's own copy: plain, past tense, no verdict — the same register the
+                // pre-existing incidental fold (AddIncidentalKillsFold, below) already uses.
+                var extra = foldedGroup.Count - 1;
+                beatText += $" — and {extra} more kill{(extra == 1 ? "" : "s")} tonight.";
+            }
+
+            var beatLabel = AddLabel(beatRow, beatText);
             // Named by POSITION within this card, so the render order is findable and not merely
             // inferable from a concatenated text blob (P2-PROOF-15's own test contract).
             beatLabel.Name = $"BeatLine_{beatIndex}";
