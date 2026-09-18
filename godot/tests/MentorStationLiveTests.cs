@@ -1,6 +1,9 @@
 #if GDUNIT_TESTS
+using System;
+using System.Collections.Immutable;
 using System.Linq;
 using GameSim;
+using GameSim.Contracts;
 using GdUnit4;
 using Godot;
 using GodotClient.Ui;
@@ -208,6 +211,76 @@ public class MentorStationLiveTests
             AssertThat(room.Stations.Any(s => s.Key == MentorVoice.StationId))
                 .OverrideFailureMessage($"Bryn's station is missing from the '{professionId}' workshop.")
                 .IsTrue();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>
+    /// U34 (§11, R25): the live seam for <see cref="MentorVoice.NextObservation"/> — pressing her
+    /// once the current lesson is exhausted (Dismissed, no live objective) actually speaks a logged
+    /// observation, and pressing her again after it has been told does NOT repeat it. Torvald
+    /// (<c>HeroId</c> 1, <see cref="GameSim.Heroes.HeroRoster.StartingSix"/>'s own anchor) is sent
+    /// underground wearing a player-marked weapon — the one fact this fixture's state carries — and
+    /// nothing else in it (empty materials/shelf/commissions, Day 1 so <c>DemandBoard.DepthStalls</c>'s
+    /// own stall-threshold can never trip, Evening so the Morning-only buy fallback can't fire)
+    /// leaves <see cref="GameSim.Advisor.ObjectiveAdvisor.Suggest"/> with nothing to say — the exact
+    /// precondition <see cref="MentorIdleVoice.HasLiveObjective"/> needs for the observation branch
+    /// to be the thing actually reached.
+    /// </summary>
+    [TestCase]
+    public void PressingBryn_OnceLessonIsExhausted_SpeaksALoggedObservation_ThenDoesNotRepeatIt()
+    {
+        var weaponId = new ItemId(9001);
+        var weapon = new Item(
+            weaponId, "recipe", "Emberbite", ItemSlot.Weapon, QualityGrade.Common,
+            new ItemStats(6, 0, 2), new MakersMark("You", 1), ImmutableList<ItemHistoryEntry>.Empty);
+        var torvaldId = new HeroId(1);
+
+        var baseState = GameComposition.NewCampaign(2026) with { Phase = DayPhase.Evening };
+        var torvald = baseState.Heroes[torvaldId.Value] with { Gear = GearSet.Empty with { Weapon = weaponId } };
+        var expedition = new InFlightExpedition(
+            Party: ImmutableList.Create(torvaldId), TargetFloor: 3, CheckpointFloor: 3, VenueId: "mine",
+            Hp: ImmutableSortedDictionary<int, int>.Empty,
+            Packs: ImmutableSortedDictionary<int, ImmutableList<ItemId>>.Empty,
+            Gold: ImmutableSortedDictionary<int, int>.Empty, Dead: ImmutableSortedSet<int>.Empty,
+            Floors: ImmutableList<FloorOutcome>.Empty, Loot: ImmutableList<OreLoot>.Empty, DeepestFloorCleared: 0);
+        var state = baseState with
+        {
+            Heroes = baseState.Heroes.SetItem(torvaldId.Value, torvald),
+            Items = ImmutableSortedDictionary<int, Item>.Empty.Add(weaponId.Value, weapon),
+            InFlight = ImmutableList.Create(expedition),
+        };
+
+        var ui = MountMainUi(new GodotClient.SimAdapter(state));
+        try
+        {
+            ui.Tutorial.Dismiss();
+            ui.Town.FindBuilding("forge").RaisePick();
+            var room = ui.Town.FindInteriorRoom("forge");
+            var mentorStation = room.Stations.First(s => s.Key == MentorVoice.StationId);
+
+            mentorStation.RaisePick();
+            var firstSpoken = Find<Label>(ui.Mentor, "MentorBannerText").Text;
+
+            AssertThat(firstSpoken.Contains(torvald.Name, StringComparison.Ordinal)
+                       && firstSpoken.Contains(weapon.Name, StringComparison.Ordinal))
+                .OverrideFailureMessage(
+                    $"Pressing Bryn once the lesson was exhausted never spoke the logged observation. Got: \"{firstSpoken}\"")
+                .IsTrue();
+
+            ui.Mentor.Dismiss();
+            mentorStation.RaisePick();
+            var secondSpoken = Find<Label>(ui.Mentor, "MentorBannerText").Text;
+
+            AssertThat(secondSpoken.Contains(weapon.Name, StringComparison.Ordinal))
+                .OverrideFailureMessage($"Pressing Bryn a second time repeated the same told observation: \"{secondSpoken}\"")
+                .IsFalse();
+            AssertThat(secondSpoken)
+                .OverrideFailureMessage($"With the observation told and nothing else live, she must fall back to her resting line. Got: \"{secondSpoken}\"")
+                .IsEqual(MentorVoice.Speak(MentorVoice.RestingLine));
         }
         finally
         {
