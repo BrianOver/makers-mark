@@ -71,7 +71,11 @@ public class StagedResolutionTests
         foreach (var (heroes, target) in scenarios)
         {
             var party = heroes.ToImmutableList();
-            const int checkpoint = 1; // D1: CampCheckpointDepth = 1 (every scenario targets >= 2 → staged)
+            // D1: checkpoint=1 is a fixed test value, not ExpeditionSystem.CheckpointFor's own
+            // output (P2-LONG-29 made that scale with target) — the property under test is that
+            // ANY valid checkpoint's stage1+stage2 combination equals the unstaged run, so a fixed
+            // checkpoint still exercises it regardless of what production picks per target.
+            const int checkpoint = 1;
             Assert.True(target >= 2, "scenario target must stage");
 
             for (ulong seed = 0; seed < 60; seed++)

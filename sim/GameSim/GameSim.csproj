@@ -4,4 +4,12 @@
   <PropertyGroup>
     <RootNamespace>GameSim</RootNamespace>
   </PropertyGroup>
+  <ItemGroup>
+    <!-- P2-LONG-29: ExpeditionSystem.CheckpointFor is the tuning knob itself (kill-risk 2) — it
+         stays internal (mirrors GameSim.Cli's own precedent above it in this repo) rather than
+         widening a knob to public API just so a test can pin it directly. -->
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>GameSim.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
 </Project>
