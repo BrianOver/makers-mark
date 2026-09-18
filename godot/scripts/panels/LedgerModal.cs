@@ -1482,17 +1482,20 @@ public partial class LedgerModal : SimPanel
             return line;
         }
 
-        if (adjPerMille == 0)
+        // P2-HONEST-29: adjPerMille <= 0 renders the neutral line, never a surcharge. Standing only
+        // ever rises (OreMarketHandlers.Apply Min-clamps a raise; daily drift pulls it back toward
+        // zero) so adjPerMille < 0 cannot happen from real play — but this row must never describe a
+        // state the sim can't reach (link 2), so an impossible negative reads as plain neutral
+        // rather than inventing copy for it.
+        if (adjPerMille <= 0)
         {
             return $"{line} ({faction.DisplayName} ore)";
         }
 
         // Round-to-nearest per-mille -> percent for the flavor note only; the charged gold above
         // never goes through this rounding (it comes straight off PricedOffer's Cost).
-        var percent = (Math.Abs(adjPerMille) + 5) / 10;
-        return adjPerMille > 0
-            ? $"{line} ({faction.DisplayName} favor −{percent}%)"
-            : $"{line} ({faction.DisplayName} surcharge +{percent}%)";
+        var percent = (adjPerMille + 5) / 10;
+        return $"{line} ({faction.DisplayName} favor −{percent}%)";
     }
 
     /// <summary>
