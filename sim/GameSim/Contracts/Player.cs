@@ -3,7 +3,11 @@ using System.Collections.Immutable;
 namespace GameSim.Contracts;
 
 /// <summary>An item on the player's shelf with an asking price (R16).</summary>
-public sealed record ShelfEntry(ItemId Item, int Price);
+/// <summary>One piece on a shelf. <paramref name="StockedDay"/> (P2-MEMORY-26's recorded fact) is the
+/// sim day the piece went on the shelf — stocking emits no event by design (see <c>ShopHandlers</c>),
+/// so this stamp is the only durable record that "your piece sat there before today". Repricing
+/// keeps it; a save written before the field deserializes it as 0, which every day is later than.</summary>
+public sealed record ShelfEntry(ItemId Item, int Price, int StockedDay = 0);
 
 /// <summary>
 /// Wave 5 (U23e, "batch echo"): a memory of the player's last hand-forge so the next few IDENTICAL
