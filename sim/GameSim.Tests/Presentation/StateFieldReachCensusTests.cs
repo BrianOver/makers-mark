@@ -285,6 +285,7 @@ public class StateFieldReachCensusTests
         // ---- CounterState: CounterPanel + the clock label's queue count ----
         ["CounterState.Active"] = new(FieldKind.Rendered, "godot/scripts/panels/CounterPanel.cs (the customer card)"),
         ["CounterState.Closed"] = new(FieldKind.Rendered, "godot/scripts/MainUi.cs:2816 (state.Counter is { Closed: false })"),
+        ["CounterState.InterestPermille"] = new(FieldKind.Rendered, "godot/scripts/panels/CounterPanel.cs:413-414 (\"Interest\" stat chip)"),
         ["CounterState.Presented"] = new(FieldKind.Rendered, "godot/scripts/panels/CounterPanel.cs (presented item)"),
         ["CounterState.Queue"] = new(FieldKind.Rendered, "godot/scripts/MainUi.cs:2818 (\"{counter.Queue.Count} at the counter\" clock-label text)"),
         ["CounterState.Round"] = new(FieldKind.Rendered, "godot/scripts/panels/CounterPanel.cs (Round chip)"),
@@ -550,7 +551,7 @@ public class StateFieldReachCensusTests
     // MaxHp AS THEY STOOD AT DEPARTURE, never live GameState.Heroes). Already RENDERED via
     // TellingPanel long before this unit; the census catching up to a surface that was already
     // there, not a new one.
-    private const int ExpectedRenderedCount = 131; // +1 2026-09-18: GameState.LastNightExpeditions (P2-MEMORY-24 gave it a second sim reader)
+    private const int ExpectedRenderedCount = 132; // +1 2026-09-18: CounterState.InterestPermille (P2-HONEST-30 gave it a third sim reader)
     private const int ExpectedRoutedCount = 9;
     private const int ExpectedInternalCount = 6;
     // 12 -> 8: the same join, mirrored — the four fields that left GAP for RENDERED above.

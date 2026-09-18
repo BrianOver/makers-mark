@@ -85,8 +85,13 @@ public static class CounterPlayer
 
     /// <summary>The shelf item this hero/class combination reads best, or <see langword="null"/>
     /// for an empty shelf. Iterates in ItemId order so a score tie always resolves the same way
-    /// (determinism — no hidden dictionary-order dependency).</summary>
-    private static ItemId? BestRoleFitItem(GameState state, Hero hero, ClassDefinition heroClass)
+    /// (determinism — no hidden dictionary-order dependency).
+    ///
+    /// <para>Internal (not private) so <see cref="ForgeCounterPlayer"/> (P2-HONEST-30) can compose
+    /// this exact "show the best role-fit item" opener instead of duplicating it — the two policies
+    /// share the presenting rule and diverge only on how they RESPOND to the resulting offer.</para>
+    /// </summary>
+    internal static ItemId? BestRoleFitItem(GameState state, Hero hero, ClassDefinition heroClass)
     {
         ItemId? best = null;
         var bestScore = int.MinValue;
