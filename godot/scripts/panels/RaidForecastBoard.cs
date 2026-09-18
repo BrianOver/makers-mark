@@ -104,7 +104,7 @@ public partial class RaidForecastBoard : Control
         {
             for (var i = 0; i < parties.Count; i++)
             {
-                RenderParty(parties[i], i + 1);
+                RenderParty(state, parties[i], i + 1);
             }
         }
 
@@ -152,7 +152,7 @@ public partial class RaidForecastBoard : Control
         });
     }
 
-    private void RenderParty(ForecastParty party, int ordinal)
+    private void RenderParty(GameState state, ForecastParty party, int ordinal)
     {
         AddHeader(_body!, $"Party {ordinal}: {string.Join(", ", party.HeroNames)}");
 
@@ -162,6 +162,15 @@ public partial class RaidForecastBoard : Control
         AddLabel(_body!, MusterVoice.AnchorLine(party));
 
         AddLabel(_body!, $"Target: floor {party.TargetFloor}{HalvarsFloorCaption(party)}{RecordCaption(party)}");
+
+        // P2-LONG-31 ("the send-off names what the bounty bought"): a bounty-carrying party's own
+        // line, right under the Target line it explains — what the bounty actually bought was the
+        // VENUE (Mine-scoped, R18), never the depth (law 1). Null for a bounty-free party; renders
+        // nothing at all.
+        if (MusterVoice.BountySendOffLine(state, party) is { } bountyLine)
+        {
+            AddLabel(_body!, bountyLine);
+        }
 
         // Threats floor-ascending, exactly as RaidForecast built them (floor 1..TargetFloor).
         if (!party.Threats.IsEmpty)

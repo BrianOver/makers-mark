@@ -609,6 +609,119 @@ public class MusterVoiceTests
         }
     }
 
+    // ── P2-LONG-31 ("the send-off names what the bounty bought"): BountySendOffLine ────────────────
+    //
+    // §11.12 measurement 4: a bounty never moves the floor (0 muster-override stamps across 1,228
+    // bounty-carrying departures) but it DOES move the venue (bounties are Mine-scoped, R18) — 87%
+    // of those parties were graduated parties pulled back down the ladder. The line must name the
+    // venue and say the floor was already theirs, never imply the bounty set the depth. A table of
+    // (bestRecordedFloor, bounty floor) shapes, not one hand-picked case — the repo's own "a
+    // hand-listed fixture stops covering its family" lesson.
+
+    private static readonly HeroId BountyHeroId = new(51);
+    private static readonly BountyId BountyId1 = new(1);
+
+    private static Hero BountyHero(int deepestFloorReached) => new(
+        BountyHeroId, "Kael", ClassRegistry.VanguardId, Level: 2, MaxHp: 30, Gold: 0,
+        Gear: GearSet.Empty, Memories: ImmutableList<ItemMemory>.Empty, Alive: true,
+        DeepestFloorReached: deepestFloorReached, DiedOnDay: null);
+
+    private static GameState StateWithBounty(int deepestFloorReached, int bountyTargetFloor)
+    {
+        var hero = BountyHero(deepestFloorReached);
+        var bounty = new Bounty(BountyId1, bountyTargetFloor, RewardGold: 60, PostedOnDay: 1, AcceptedBy: BountyHeroId, Paid: false);
+        return GameFactory.NewGame(7101, ImmutableSortedDictionary<int, Hero>.Empty.Add(BountyHeroId.Value, hero))
+            with { Bounties = ImmutableList.Create(bounty) };
+    }
+
+    private static ForecastParty BountyParty(int bestRecordedFloor, int targetFloor, ImmutableList<WornSlot>? wornGear = null) => new(
+        HeroNames: ImmutableList.Create("Kael"), TargetFloor: targetFloor, VenueId: VenueRegistry.MineId,
+        Threats: ImmutableList<ForecastThreat>.Empty, GearGaps: ImmutableList<string>.Empty,
+        WornGear: wornGear ?? ImmutableList<WornSlot>.Empty, BestRecordedFloor: bestRecordedFloor,
+        RecordHolderName: "Kael", GapCommissions: ImmutableList<GapCommission>.Empty);
+
+    [TestCase]
+    public void BountySendOffLine_NoBountyCarriedByAnyPartyMember_RendersNothing()
+    {
+        var state = GameFactory.NewGame(7102,
+            ImmutableSortedDictionary<int, Hero>.Empty.Add(BountyHeroId.Value, BountyHero(0)));
+        var party = BountyParty(bestRecordedFloor: 0, targetFloor: 1);
+
+        AssertThat(MusterVoice.BountySendOffLine(state, party)).IsNull();
+    }
+
+    /// <summary>
+    /// Every (bestRecordedFloor, bounty target floor) pair where the bounty's floor is AT or UNDER
+    /// the ordinary default (bestRecordedFloor + 1, clamped to the Mine's floor count) — the shape
+    /// §11.12 measurement 4 recorded 1,228 out of 1,228 times. The line must name the venue and say
+    /// the floor was already theirs; it must never claim the bounty moved the depth.
+    /// </summary>
+    private static IEnumerable<(int BestRecordedFloor, int BountyFloor)> AtOrUnderDefaultShapes()
+    {
+        yield return (0, 1); // never delved; default floor 1; bounty asks exactly for it.
+        yield return (1, 2); // default floor 2; bounty matches it exactly.
+        yield return (2, 1); // default floor 3; bounty asks for LESS than the default (under it).
+        yield return (4, 5); // default floor 5, clamped at the Mine's own floor count; bounty matches.
+    }
+
+    [TestCase]
+    public void BountySendOffLine_BountyAtOrUnderDefaultFloor_NamesTheVenueAndSaysTheFloorWasTheirsAlready()
+    {
+        foreach (var (bestRecordedFloor, bountyFloor) in AtOrUnderDefaultShapes())
+        {
+            var state = StateWithBounty(bestRecordedFloor, bountyFloor);
+            var party = BountyParty(bestRecordedFloor, bountyFloor);
+
+            var line = MusterVoice.BountySendOffLine(state, party);
+            var context = $"bestRecordedFloor={bestRecordedFloor} bountyFloor={bountyFloor}";
+
+            AssertThat(line).OverrideFailureMessage($"[{context}] expected a rendered line.").IsNotNull();
+            AssertThat(line!.Contains(VenueRegistry.Require(VenueRegistry.MineId).DisplayName, StringComparison.Ordinal))
+                .OverrideFailureMessage($"[{context}] must name the venue the bounty bought. Line: \"{line}\"").IsTrue();
+            AssertThat(line.Contains($"floor {bountyFloor}", StringComparison.Ordinal))
+                .OverrideFailureMessage($"[{context}] must name the floor. Line: \"{line}\"").IsTrue();
+            AssertThat(line.Contains("theirs already", StringComparison.Ordinal))
+                .OverrideFailureMessage($"[{context}] must say the floor was already theirs. Line: \"{line}\"").IsTrue();
+        }
+    }
+
+    /// <summary>The shape §11.12's measurement never recorded once (a bounty's own floor past the
+    /// ordinary default): no honest "floor was theirs already" phrasing is scoped to this unit, so
+    /// this renders nothing rather than a guessed one — never a false claim.</summary>
+    [TestCase]
+    public void BountySendOffLine_BountyAboveDefaultFloor_RendersNothing_NeverAFalseClaim()
+    {
+        var state = StateWithBounty(deepestFloorReached: 1, bountyTargetFloor: 5); // default is floor 2
+        var party = BountyParty(bestRecordedFloor: 1, targetFloor: 5);
+
+        AssertThat(MusterVoice.BountySendOffLine(state, party)).IsNull();
+    }
+
+    [TestCase]
+    public void BountySendOffLine_PartyWearsRivalNotPlayerCraftedGear_TreatedIdentically_BountyIsThePlayersRegardlessOfGear()
+    {
+        var wornRivalGear = ImmutableList.Create(
+            new WornSlot("Kael", ItemSlot.Weapon, "Rival Blade", QualityGrade.Common, PlayerCrafted: false, CraftedOnDay: null));
+
+        var state = StateWithBounty(deepestFloorReached: 1, bountyTargetFloor: 2);
+        var party = BountyParty(bestRecordedFloor: 1, targetFloor: 2, wornGear: wornRivalGear);
+
+        var line = MusterVoice.BountySendOffLine(state, party);
+
+        AssertThat(line).IsNotNull();
+        AssertThat(line!.Contains("theirs already", StringComparison.Ordinal)).IsTrue();
+    }
+
+    [TestCase]
+    public void BountySendOffLine_SameStateAndParty_RendersTheIdenticalLineTwice()
+    {
+        var state = StateWithBounty(deepestFloorReached: 1, bountyTargetFloor: 2);
+        var party = BountyParty(bestRecordedFloor: 1, targetFloor: 2);
+
+        AssertThat(MusterVoice.BountySendOffLine(state, party))
+            .IsEqual(MusterVoice.BountySendOffLine(state, party));
+    }
+
     // ── FollowedItem: campaign-envelope snapshot/restore round-trip ────────────────────────────────
 
     [TestCase]

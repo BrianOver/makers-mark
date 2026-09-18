@@ -225,6 +225,53 @@ public static class MusterVoice
         return $"{item.Name} stayed on the shelf tonight.";
     }
 
+    /// <summary>
+    /// P2-LONG-31 ("the send-off names what the bounty bought"): §11.12 measurement 4 found a bounty
+    /// never moves a party's floor (0 muster-override stamps across 1,228 bounty-carrying departures,
+    /// correctly — law 1, influence never orders) but it DOES move the VENUE: bounties are Mine-scoped
+    /// (R18), so 1,068 of those 1,228 parties (87%) were graduated parties pulled back down the ladder
+    /// to a venue their own rank would not otherwise route them to. Before this, the board never said
+    /// so, and "sends them to the Mine" reads easily as "sends them deeper" — which a bounty never does.
+    ///
+    /// <para>FACTS only, both already on the read-model or a fixed venue lookup, never a second
+    /// derivation of anything the sim decided: whether the party carries a bounty (matched by name
+    /// against <see cref="ForecastParty.HeroNames"/> — the same roster-by-name join
+    /// <see cref="FollowedSendOffLine"/> already uses, no second party-identity scheme), and whether
+    /// <see cref="ForecastParty.TargetFloor"/> is the ordinary depth default. That default is
+    /// <see cref="ForecastParty.BestRecordedFloor"/> + 1, clamped to the venue's own floor count — the
+    /// exact clause <c>ExpeditionSystem.TargetFloorFor</c>'s no-bounty branch and
+    /// <c>MusterSystem.StampTargetFloorDecision</c>'s own default-floor formula both already compute,
+    /// recomputed here from the two recorded facts that feed it rather than threaded through as a new
+    /// field — the same reformat-not-recompute rule <see cref="GapSentence"/> follows.</para>
+    ///
+    /// <para>Two honest outcomes, never a third (law 12, "influence never orders" — this states what
+    /// the bounty bought, never what to do about it): at or under the default, the floor was theirs
+    /// regardless of the bounty, so the line says so. A bounty whose own floor sits PAST the default —
+    /// a shape §11.12's measurement never recorded once — has no honest phrasing scoped to this unit,
+    /// so it renders nothing rather than a guessed one (never a false "floor was theirs already").
+    /// A bounty-free party has nothing to say here at all.</para>
+    /// </summary>
+    public static string? BountySendOffLine(GameState state, ForecastParty party)
+    {
+        var bounty = state.Bounties.FirstOrDefault(b =>
+            b.AcceptedBy is { } acceptor
+            && state.Heroes.TryGetValue(acceptor.Value, out var hero)
+            && party.HeroNames.Contains(hero.Name));
+        if (bounty is null)
+        {
+            return null;
+        }
+
+        var venue = VenueRegistry.Require(party.VenueId);
+        var defaultFloor = System.Math.Clamp(party.BestRecordedFloor + 1, 1, venue.FloorCount);
+        if (party.TargetFloor > defaultFloor)
+        {
+            return null;
+        }
+
+        return $"They take {venue.DisplayName} for your bounty — floor {party.TargetFloor} was theirs already.";
+    }
+
     /// <summary>The hero currently wearing/wielding <paramref name="itemId"/>, or null when nobody
     /// does (on the shelf, in a commission queue, or held in a hero's pack rather than a gear
     /// slot). Reads <c>Hero.Gear</c> directly — the same live snapshot <c>RaidForecast</c> itself
