@@ -49,8 +49,9 @@ namespace GodotClient.Tests;
 /// style/size meant for panels, not the town — see <see cref="TownAssets2D.ForHero"/>'s own "town
 /// bodies win here" comment). Also covers <see cref="TownsfolkNpc2D"/>, which reuses the vanguard
 /// entry verbatim for its civilian body.</item>
-/// <item><see cref="VenueRegistry.Mine"/>'s five <c>VenueFloor.MonsterKind</c> values →
-/// <c>town2d-monster-{slug}</c> (SET: every one of these five has an old, non-<c>town2d-</c>
+/// <item>Every registered <see cref="VenueRegistry.All"/> venue's <c>VenueFloor.MonsterKind</c>
+/// values (Mine + Gloomwood + Sunken Crypt + Emberfall Foundry, nineteen kinds total, P2-SCREEN-37)
+/// → <c>town2d-monster-{slug}</c> (SET: every one of the Mine's five has an old, non-<c>town2d-</c>
 /// portrait committed too — <c>monster-cave-rat.png</c> et al — so this is the exact #316 shape:
 /// a wrong/missing new id would silently draw the old portrait via <c>DelveStage.ShowMonster</c>'s
 /// own fallback, and nothing would fail).</item>
@@ -131,25 +132,40 @@ public class AssetResolutionCensusTests
         }
     }
 
+    /// <summary>
+    /// P2-SCREEN-37: widened from the Mine's five to EVERY registered venue's floors —
+    /// <see cref="VenueRegistry.All"/>, not <see cref="VenueRegistry.Mine"/> alone. The original
+    /// (Mine-only) shape of this test was itself the hand-listed-fixture trap this repo has paid
+    /// for four times over (see the memory lesson): Gloomwood, the Sunken Crypt and the Emberfall
+    /// Foundry shipped fourteen more monster kinds with NO pixel mini at all, and this census
+    /// stayed green throughout because it only ever enumerated <c>VenueRegistry.Mine.Floors</c>.
+    /// Reading <see cref="VenueRegistry.All"/> instead means a FIFTH venue registers into this
+    /// census for free, with zero edits here, the moment its own <c>VenueFloor.MonsterKind</c> rows
+    /// land — the same "read the live table, never a hand-copied list" discipline every other case
+    /// in this file already follows.
+    /// </summary>
     [TestCase]
-    public void MineMonsterKinds_ResolveTheirTownPixelPortrait_NotTheOldSdxlOne()
+    public void EveryVenueMonsterKind_ResolvesItsTownPixelPortrait_NotTheOldSdxlOne()
     {
-        foreach (var floor in VenueRegistry.Mine.Floors)
+        foreach (var venue in VenueRegistry.All.Values)
         {
-            // AssetCatalog.MonsterPortraitId(kind) with no venue prefix returns "monster-{slug}" —
-            // the OLD SDXL family DelveStage.ShowMonster falls back to. Prefixing "town2d-" onto
-            // that gives the exact id ShowMonster tries FIRST, without this file re-deriving
-            // AssetCatalog's private Slugify algorithm by hand (a second, driftable copy of it).
-            var oldSdxlId = AssetCatalog.MonsterPortraitId(floor.MonsterKind);
-            var townPixelId = "town2d-" + oldSdxlId;
+            foreach (var floor in venue.Floors)
+            {
+                // AssetCatalog.MonsterPortraitId(kind) with no venue prefix returns "monster-{slug}" —
+                // the OLD SDXL family DelveStage.ShowMonster falls back to. Prefixing "town2d-" onto
+                // that gives the exact id ShowMonster tries FIRST, without this file re-deriving
+                // AssetCatalog's private Slugify algorithm by hand (a second, driftable copy of it).
+                var oldSdxlId = AssetCatalog.MonsterPortraitId(floor.MonsterKind);
+                var townPixelId = "town2d-" + oldSdxlId;
 
-            AssertResolves(
-                townPixelId,
-                $"floor {floor.Floor}'s monster ('{floor.MonsterKind}') has an old, non-town2d "
-                + $"portrait committed too ({oldSdxlId}.png and friends) — DelveStage.ShowMonster "
-                + "tries the town2d- id first and silently falls back to that old one if it is "
-                + "missing, so a broken new id here shows the OLD art with nothing failing. "
-                + "Exactly the #316 shape, one panel over.");
+                AssertResolves(
+                    townPixelId,
+                    $"'{venue.Id}' floor {floor.Floor}'s monster ('{floor.MonsterKind}') has an old, "
+                    + $"non-town2d portrait committed too ({oldSdxlId}.png and friends) — "
+                    + "DelveStage.ShowMonster tries the town2d- id first and silently falls back to "
+                    + "that old one if it is missing, so a broken new id here shows the OLD art with "
+                    + "nothing failing. Exactly the #316 shape, one panel over.");
+            }
         }
     }
 

@@ -1149,6 +1149,28 @@ MONSTER_HUES: dict[str, tuple[int, int, int]] = {
     "deep-ghoul": (118, 138, 106),   # drowned green
     "ore-golem": (110, 102, 92),     # wet stone
     "forgeworm": (158, 76, 44),      # cooling slag
+
+    # P2-SCREEN-37: the Gloomwood four, Crypt five and Foundry five -- every non-Mine venue kind,
+    # hued from the SAME family each venue's own backdrop/palette already uses (see GloomwoodVenue,
+    # SunkenCryptVenue, EmberfallFoundryVenue doc comments: moss/verdigris/firefly for Gloomwood,
+    # bone/violet for the Crypt, ember/iron for the Foundry), never a colour invented fresh here --
+    # same discipline as the Mine five's own hues above.
+    "bramble-boar": (128, 104, 62),      # Gloomwood F1 -- mossy hide, tusked
+    "lantern-moth": (168, 188, 108),     # Gloomwood F2 -- firefly-pale wing, stolen light
+    "wicker-shepherd": (150, 122, 68),   # Gloomwood F3 -- straw and wicker
+    "old-mossjaw": (78, 102, 58),        # Gloomwood F4 boss -- the forest's oldest moss
+
+    "crypt-crab": (158, 148, 128),       # Crypt F1 -- sun-bleached bone shell
+    "bog-wight": (98, 84, 118),          # Crypt F2 -- drowned violet-grey
+    "choir-of-teeth": (196, 186, 168),   # Crypt F3 -- ivory-bone cluster
+    "reliquary-mimic": (108, 68, 122),   # Crypt F4 -- violet grave-wood
+    "undertow": (56, 46, 88),            # Crypt F5 boss -- deep violet-black water
+
+    "cinder-imp": (204, 92, 42),         # Foundry F1 -- bright ember
+    "slag-hound": (150, 84, 48),         # Foundry F2 -- molten iron-brown
+    "bellows-mad": (142, 108, 78),       # Foundry F3 -- rust and iron
+    "molten-archivist": (176, 88, 52),   # Foundry F4 -- ember-copper
+    "undying-forge-heart": (196, 58, 40),  # Foundry F5 boss -- deep ember red
 }
 
 
@@ -1307,12 +1329,226 @@ FORGEWORM = [
 ]
 
 
+# ── EVERY OTHER VENUE'S MONSTERS (P2-SCREEN-37) ─────────────────────────────────────────────────
+# The Mine's five above got the DelveStage pixel-mini treatment at §11.10 U4; every other live
+# venue's kind (Gloomwood x4, Sunken Crypt x5, Emberfall Foundry x5 -- 14 in all) drew a dim tinted
+# SDXL portrait instead (DelveStage.ShowMonster's fallback rung) for the whole life of those three
+# venues. Same rig, same discipline: DISTINCT OUTLINES first (a boar is low and legged, a moth is
+# flat and winged, a crab is wide and flat, a swarm is a legless cluster, a box has a flat lid, a
+# boss taper-mass has no limbs at all), then the four-step cloth ramp shaded left(light)->right
+# (dark) the same way the Mine five are, plus one 'e' ember/glint pixel for the lit feature.
+
+BRAMBLE_BOAR = [
+    mrow("." * 40),
+    mrow("...............oco....oco..............."),
+    mrow("............occccnnnnkkkwwwo............"),
+    mrow("......ocwoecccccnnnnnkkkkwwwwoocwo......"),
+    mrow(".....occcccccnnnnnnnnkkkkkkkwwwwwwo....."),
+    mrow("....occccccccnnnnnnnnkkkkkkkkwwwwwwo...."),
+    mrow("....occccccccnnnnnnnnkkkkkkkkwwwwwwo...."),
+    mrow(".....occcccccnnnnnnnnkkkkkkkwwwwwwo....."),
+    mrow(".......occccccnnnnnnnkkkkkkwwwwwo......."),
+    mrow("........ocwo...ocwo..ocwo...ocwo........"),
+    mrow("........ocwo...ocwo..ocwo...ocwo........"),
+    mrow("........ocwo...ocwo..ocwo...ocwo........"),
+]
+
+LANTERN_MOTH = [
+    mrow("." * 40),
+    mrow("..................ocwo.................."),
+    mrow("......occcnnkkkwwooceoocccnnkkkwwo......"),
+    mrow("..occccnnnnkkkwwwooceooccccnnnnkkkwwwo.."),
+    mrow("......occcnnkkkwwoocwoocccnnkkkwwo......"),
+    mrow("................occnkwwo................"),
+    mrow("..................ocwo.................."),
+    mrow("...................oo..................."),
+]
+
+WICKER_SHEPHERD = [
+    mrow("." * 40),
+    mrow(".................ocekwo................."),
+    mrow("................occnkwwo................"),
+    mrow("..................ocwo.................."),
+    mrow("..occnkwwoocccccnnnnnkkkkwwwwooccnkwwo.."),
+    mrow("occnkwwo......occcnnkkkwwo......occnkwwo"),
+    mrow("..ocwo..........occnkwwo..........ocwo.."),
+    mrow("...............occnnkkwwo..............."),
+    mrow("..............occcnnkkkwwo.............."),
+    mrow("................occnkwwo................"),
+    mrow("..............ocnwo..ocnwo.............."),
+    mrow("..............ocnwo..ocnwo.............."),
+    mrow(".............ocnkwo..ocnkwo............."),
+]
+
+OLD_MOSSJAW = [
+    mrow("." * 40),
+    mrow("..............occcnnkkkwwo.............."),
+    mrow("..........occccennnnnkkkkwwwwo.........."),
+    mrow("......occcccccnnnnnnnkkkkkkwwwwwwo......"),
+    mrow("..occcccccccnnnnnnnnnnkkkkkkkkwwwwwwwo.."),
+    mrow("...occccccccnnnnnnnnnnkkkkkkkwwwwwwwo..."),
+    mrow("....occccccccnnnnnnnnkkkkkkkkwwwwwwo...."),
+    mrow("......occcccccnnnnnnnkkkkkkwwwwwwo......"),
+    mrow("........occccccnnnnnnkkkkkwwwwwo........"),
+    mrow(".........occnkwwo......occnkwwo........."),
+    mrow(".........occnkwwo......occnkwwo........."),
+    mrow(".......occcnnkkkwwo..occcnnkkkwwo......."),
+]
+
+CRYPT_CRAB = [
+    mrow("." * 40),
+    mrow(".................oo..oo................."),
+    mrow("...............occnnkkwwo..............."),
+    mrow("........occceccnnnnnnkkkkkwwwwwo........"),
+    mrow("occnkwwooccccccnnnnnnkkkkkwwwwwooccnkwwo"),
+    mrow("....occccccccnnnnnnnnkkkkkkkkwwwwwwo...."),
+    mrow(".....occcccccnnnnnnnnkkkkkkkwwwwwwo....."),
+    mrow("..ocwo...ocwo..ocwo..ocwo..ocwo...ocwo.."),
+    mrow("..ocwo...ocwo..ocwo..ocwo..ocwo...ocwo.."),
+    mrow("..ocwo...ocwo..ocwo..ocwo..ocwo...ocwo.."),
+]
+
+BOG_WIGHT = [
+    mrow("." * 40),
+    mrow(".................ocekwo................."),
+    mrow("...............occnnkkwwo..............."),
+    mrow("..............occcnnkkkwwo.............."),
+    mrow("..........occcccnnnnnkkkkwwwwo.........."),
+    mrow(".........occcccnnnnnnkkkkkwwwwo........."),
+    mrow(".........occcccnnnnnnkkkkkwwwwo........."),
+    mrow("......occcccccnnnnnnnkkkkkkwwwwwwo......"),
+    mrow(".....occcnnkkkwwo..occccnnnnkkkwwwo....."),
+    mrow("..............ocnwo..ocnwo.............."),
+    mrow(".............ocnkwo..ocnkwo............."),
+]
+
+CHOIR_OF_TEETH = [
+    mrow("." * 40),
+    mrow(".................ocnkwo................."),
+    mrow(".........ocnkwo.occnkwwo.ocnkwo........."),
+    mrow(".....occcnnkkkwwoocekwoocccnnkkkwwo....."),
+    mrow("....occcnnnnkkwwwoocwoocccnnnnkkwwwo...."),
+    mrow("......occnnkkwwooccnkwwooccnnkkwwo......"),
+    mrow(".........ocnkwo.occnkwwo.ocnkwo........."),
+    mrow("..............ocnwo..ocnwo.............."),
+]
+
+RELIQUARY_MIMIC = [
+    mrow("." * 40),
+    mrow(".........occnnkkwwo..occenkkwwo........."),
+    mrow("......occcccccnnnnnnnkkkkkkwwwwwwo......"),
+    mrow("....occccccccnnnnnnnnkkkkkkkkwwwwwwo...."),
+    mrow("....occccccccnnnnnnnnkkkkkkkkwwwwwwo...."),
+    mrow("....occccccccnnnnnnnnkkkkkkkkwwwwwwo...."),
+    mrow("....occccccccnnnnnnnnkkkkkkkkwwwwwwo...."),
+    mrow("......occcccccnnnnnnnkkkkkkwwwwwwo......"),
+    mrow("........ocnwo..............ocnwo........"),
+]
+
+THE_UNDERTOW = [
+    mrow("." * 40),
+    mrow("................occekwwo................"),
+    mrow("....ocnkwo....occcnnkkkwwo....ocnkwo...."),
+    mrow("ocnkwo....occcccnnnnnkkkkwwwwo....ocnkwo"),
+    mrow(".ocnkwo..occcccnnnnnnkkkkkwwwwo..ocnkwo."),
+    mrow("......occcccccnnnnnnnkkkkkkwwwwwwo......"),
+    mrow(".......occccccnnnnnnnkkkkkkwwwwwo......."),
+    mrow("....ocwo...ocwo..ocwo..ocwo..ocwo..ocwo."),
+    mrow(".....ocwo...ocwo..ocwo..ocwo..ocwo..ocwo"),
+    mrow("......ocwo...ocwo..ocwo..ocwo..ocwo....."),
+]
+
+CINDER_IMP = [
+    mrow("." * 40),
+    mrow("...............oo......oo..............."),
+    mrow("................occekwwo................"),
+    mrow("..........ocnwo.occnkwwo.ocnwo.........."),
+    mrow("...............occnnkkwwo..............."),
+    mrow("...........ocwooccnnkkwwoocwo..........."),
+    mrow("................occnkwwo................"),
+    mrow("...............ocwo..ocwo..............."),
+    mrow("..............ocnwo..ocnwo.............."),
+]
+
+SLAG_HOUND = [
+    mrow("." * 40),
+    mrow("..............oco......oco.............."),
+    mrow("..........occeccnnnnnkkkkwwwwo.........."),
+    mrow("........occccccnnnnnnkkkkkwwwwwo........"),
+    mrow("......occcccccnnnnnnnkkkkkkwwwwwwo......"),
+    mrow("......occcccccnnnnnnnkkkkkkwwwwwwo......"),
+    mrow("........occccccnnnnnnkkkkkwwwwwo........"),
+    mrow(".........oco....oco...oco....oco........"),
+    mrow(".........oco....oco...oco....oco........"),
+    mrow(".........oco....oco...oco....oco........"),
+    mrow(".........oco....oco...oco....oco........"),
+]
+
+THE_BELLOWS_MAD = [
+    mrow("." * 40),
+    mrow(".................ocekwo................."),
+    mrow("...............occnnkkwwo..............."),
+    mrow("..occnkwwo.....occnnkkwwo.....occnkwwo.."),
+    mrow("occcnnkkkwwo...occnnkkwwo...occcnnkkkwwo"),
+    mrow(".occnnkkwwo.....occnkwwo.....occnnkkwwo."),
+    mrow("...ocnkwo.......occnkwwo.......ocnkwo..."),
+    mrow("...............occnnkkwwo..............."),
+    mrow("...............occnnkkwwo..............."),
+    mrow("...............ocwo..ocwo..............."),
+    mrow("..............ocnwo..ocnwo.............."),
+]
+
+MOLTEN_ARCHIVIST = [
+    mrow("." * 40),
+    mrow(".................ocekwo................."),
+    mrow("...............occnnkkwwo..............."),
+    mrow(".............occcnnnnkkwwwo............."),
+    mrow("...........occccnnnnnkkkwwwwo..ocwo....."),
+    mrow("..........occcccnnnnnkkkkwwwwo.........."),
+    mrow(".........occcccnnnnnnkkkkkwwwwo........."),
+    mrow("........occccccnnnnnnkkkkkwwwwwo........"),
+    mrow("......occcccccnnnnnnnkkkkkkwwwwwwo......"),
+    mrow(".....occcccccnnnnnnnnkkkkkkkwwwwwwo....."),
+    mrow("..........occcccnnnnnkkkkwwwwo.........."),
+    mrow("........occnnkwwo..occcnnnkkwwwo........"),
+]
+
+THE_UNDYING_FORGE_HEART = [
+    mrow("." * 40),
+    mrow("..............ocnwo..ocnwo.............."),
+    mrow("..........occcccnnnnnkkkkwwwwo.........."),
+    mrow("....occccccccnnnnnnenkkkkkkkkwwwwwwo...."),
+    mrow(".occcccccccnnnnnnnnnnnkkkkkkkkwwwwwwwwo."),
+    mrow("..occcccccccnnnnnnnnnnkkkkkkkkwwwwwwwo.."),
+    mrow(".....occcccccnnnnnnnnkkkkkkkwwwwwwo....."),
+    mrow("........occccccnnnnnnkkkkkwwwwwo........"),
+    mrow("...........occccnnnnnkkkwwwwo..........."),
+    mrow("..............occcnnkkkwwo.............."),
+    mrow(".................ocnkwo................."),
+    mrow("..................ocwo.................."),
+]
+
+
 MONSTER_GRIDS: dict[str, list[str]] = {
     "cave-rat": CAVE_RAT,
     "tunnel-spider": TUNNEL_SPIDER,
     "deep-ghoul": DEEP_GHOUL,
     "ore-golem": ORE_GOLEM,
     "forgeworm": FORGEWORM,
+    "bramble-boar": BRAMBLE_BOAR,
+    "lantern-moth": LANTERN_MOTH,
+    "wicker-shepherd": WICKER_SHEPHERD,
+    "old-mossjaw": OLD_MOSSJAW,
+    "crypt-crab": CRYPT_CRAB,
+    "bog-wight": BOG_WIGHT,
+    "choir-of-teeth": CHOIR_OF_TEETH,
+    "reliquary-mimic": RELIQUARY_MIMIC,
+    "undertow": THE_UNDERTOW,
+    "cinder-imp": CINDER_IMP,
+    "slag-hound": SLAG_HOUND,
+    "bellows-mad": THE_BELLOWS_MAD,
+    "molten-archivist": MOLTEN_ARCHIVIST,
+    "undying-forge-heart": THE_UNDYING_FORGE_HEART,
 }
 
 MONSTER_SPRITES: dict[str, tuple[list[str], dict[str, tuple[int, int, int, int]]]] = {}
