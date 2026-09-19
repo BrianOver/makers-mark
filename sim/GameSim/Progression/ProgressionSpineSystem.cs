@@ -144,7 +144,7 @@ public static class ProgressionSpineSystem
         var memorials = state.Drama.Memorials;
         var famousDead = memorials.Count(m => LegendQuery.IsFamousDead(state, m.Hero));
         var famousLiving = state.Heroes.Values.Count(h =>
-            h.Alive && LegendQuery.DecisiveBeatCount(state, h.Id) >= LegendQuery.FamousBeatThreshold);
+            h.Alive && LegendQuery.LegendDeedCount(state, h.Id) >= LegendQuery.FamousBeatThreshold);
         var legends = famousDead + famousLiving;
 
         return new ProgressionRung(

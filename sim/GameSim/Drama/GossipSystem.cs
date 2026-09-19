@@ -53,7 +53,7 @@ public sealed class GossipSystem : IPhaseSystem
             state.Items,
             campaignId: state.Rng.Inc,
             affinityLookup: (a, b) => RelationshipSystem.Affinity(new HeroId(a), new HeroId(b), state),
-            isDecisiveKillingBlow: beat => TellingQuery.KillingBlowIsDecisive(state, beat)))
+            isDecisiveKillingBlow: beat => beat.Decisive)) // P2-MEMORY-23: recorded at reveal, never re-derived
         {
             events.Emit(gossip);
         }

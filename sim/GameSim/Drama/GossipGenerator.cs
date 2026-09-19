@@ -77,7 +77,7 @@ public static class GossipGenerator
     /// The predicate is the caller's (it needs last night's <c>ExpeditionResult</c>); with none
     /// supplied every kill ranks as incidental, which is the honest default.
     ///
-    /// <para>Internal rather than private (P2-MEMORY-23): <see cref="LegendQuery.IsDecisiveBeat"/>
+    /// <para>Internal rather than private (P2-MEMORY-23): <see cref="LegendQuery.IsLegendDeed"/>
     /// reuses this exact rank order to decide which logged beats count toward fame — "decisive" for
     /// fame and "worth retelling" for gossip are the SAME definition, never two independently-typed
     /// copies that could quietly drift apart.</para></summary>

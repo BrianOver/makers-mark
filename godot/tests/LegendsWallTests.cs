@@ -47,7 +47,7 @@ public class LegendsWallTests
         new ItemStats(8, 0, 2), new MakersMark("You", 1), ImmutableList<ItemHistoryEntry>.Empty);
 
     private static GameEvent Beat(int n) =>
-        new AttributionBeatEvent(BeatType.KillingBlow, FamousBeatItemId, new HeroId(1), Floor: n, $"beat {n}");
+        new AttributionBeatEvent(BeatType.BreakpointClear, FamousBeatItemId, new HeroId(1), Floor: n, $"beat {n}", Decisive: true);
 
     /// <summary>A world with one memorial, one depths record, a Signed Work, an item with 3+
     /// attribution beats, and an ordinary (non-legendary) item — everything <see

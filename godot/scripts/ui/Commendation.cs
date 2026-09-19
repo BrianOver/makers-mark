@@ -52,7 +52,7 @@ public static class Commendation
     /// beats (P2-MEMORY-23: never three cave rats) — the SAME predicate <c>ArcDirectorSystem</c>'s
     /// own legendary-living tally uses, mirrored here rather than re-derived.</summary>
     public static bool Eligible(GameState state, Hero hero) =>
-        hero.Alive && LegendQuery.DecisiveBeatCount(state, hero.Id) >= LegendQuery.FamousBeatThreshold;
+        hero.Alive && LegendQuery.LegendDeedCount(state, hero.Id) >= LegendQuery.FamousBeatThreshold;
 
     /// <summary>The hero's first three DECISIVE beats, in the order the log recorded them — stable
     /// regardless of how many more the hero earns later, so the words said the one time this ever
@@ -60,7 +60,7 @@ public static class Commendation
     /// (P2-MEMORY-23) is never one of the three reasons, even if it was logged first.</summary>
     public static ImmutableArray<AttributionBeatEvent> Beats(GameState state, HeroId hero) =>
         [.. state.EventLog.OfType<AttributionBeatEvent>()
-            .Where(beat => beat.Hero == hero && LegendQuery.IsDecisiveBeat(state, beat))
+            .Where(beat => beat.Hero == hero && LegendQuery.IsLegendDeed(beat))
             .OrderBy(beat => beat.Id.Value)
             .Take(LegendQuery.FamousBeatThreshold)];
 
