@@ -24,7 +24,7 @@ namespace GameSim.Economy;
 public sealed class ShopHandlers : IActionHandler
 {
     public bool CanHandle(PlayerAction action, DayPhase phase) =>
-        action is StockAction or SetPriceAction or UnstockAction; // all phases legal
+        action is StockAction or SetPriceAction or UnstockAction or EarmarkAction; // all phases legal
 
     public (GameState State, RejectedAction? Rejected) Apply(
         GameState state, PlayerAction action, IDeterministicRng rng, IEventSink events) =>
@@ -33,6 +33,7 @@ public sealed class ShopHandlers : IActionHandler
             StockAction stock => ApplyStock(state, stock),
             SetPriceAction setPrice => ApplySetPrice(state, setPrice),
             UnstockAction unstock => ApplyUnstock(state, unstock),
+            EarmarkAction earmark => ApplyEarmark(state, earmark, events),
             _ => (state, new RejectedAction(action, $"ShopHandlers cannot apply {action.GetType().Name}.")),
         };
 
@@ -140,6 +141,50 @@ public sealed class ShopHandlers : IActionHandler
                 Shelf = state.Player.Shelf.RemoveAt(index),
             },
         };
+        return (newState, null);
+    }
+
+    /// <summary>P2-PEOPLE-28. Check order fixed (on the shelf, hero known, hero alive, not already so) so
+    /// rejection reasons are stable. Setting the same earmark twice — or clearing an open piece — is a
+    /// rejection rather than a silent no-op, so a client cannot read "accepted" off a click that changed
+    /// nothing. Emits <see cref="ShelfEarmarked"/>; the shelf entry keeps its price and StockedDay.</summary>
+    private static (GameState, RejectedAction?) ApplyEarmark(GameState state, EarmarkAction action, IEventSink events)
+    {
+        var index = state.Player.Shelf.FindIndex(e => e.Item == action.Item);
+        if (index < 0)
+        {
+            return (state, new RejectedAction(action, $"Item {action.Item} is not on the shelf."));
+        }
+
+        if (action.Hero is { } heroId)
+        {
+            if (!state.Heroes.TryGetValue(heroId.Value, out var hero))
+            {
+                return (state, new RejectedAction(action, $"Hero {heroId} is not known here."));
+            }
+
+            if (!hero.Alive)
+            {
+                return (state, new RejectedAction(action, $"{hero.Name} is dead; nothing can be held for them."));
+            }
+        }
+
+        var entry = state.Player.Shelf[index];
+        if (entry.EarmarkedFor == action.Hero)
+        {
+            return (state, new RejectedAction(action, action.Hero is null
+                ? $"Item {action.Item} is already on open sale."
+                : $"Item {action.Item} is already held for hero {action.Hero}."));
+        }
+
+        var newState = state with
+        {
+            Player = state.Player with
+            {
+                Shelf = state.Player.Shelf.SetItem(index, entry with { EarmarkedFor = action.Hero }),
+            },
+        };
+        events.Emit(new ShelfEarmarked(action.Item, action.Hero));
         return (newState, null);
     }
 

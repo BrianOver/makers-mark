@@ -499,6 +499,7 @@ public class StateFieldReachCensusTests
         // ---- ShelfEntry ----
         ["ShelfEntry.Item"] = new(FieldKind.Rendered, "godot/scripts/panels/ShopPanel.cs (shelf cards)"),
         ["ShelfEntry.Price"] = new(FieldKind.Rendered, "godot/scripts/panels/ShopPanel.cs (PriceTag / Reprice_{id})"),
+        ["ShelfEntry.EarmarkedFor"] = new(FieldKind.Gap, "P2-PEOPLE-28 sim half: set by ShopHandlers.ApplyEarmark, read by HeroShoppingSystem/CommissionHandlers; the ShopPanel hold verb is the unit's second half"),
 
         // ---- VenueState ----
         ["VenueState.Closed"] = new(FieldKind.Rendered, "godot/scripts/panels/DepthsPanel.cs:172 (lockdown warning line)"),
@@ -555,7 +556,7 @@ public class StateFieldReachCensusTests
     private const int ExpectedRoutedCount = 9;
     private const int ExpectedInternalCount = 6;
     // 12 -> 8: the same join, mirrored — the four fields that left GAP for RENDERED above.
-    private const int ExpectedGapCount = 8;
+    private const int ExpectedGapCount = 9; // 8 -> 9: ShelfEntry.EarmarkedFor, booked as P2-PEOPLE-28 (its ShopPanel half)
 
     // ---------------------------------------------------------------------------------------
     // Guard tests
@@ -770,8 +771,8 @@ public class StateFieldReachCensusTests
         var code = File.ReadAllText(eventsPath);
         var count = Regex.Matches(code, @": GameEvent;").Count;
 
-        Assert.True(count == 52,
-            $"Events.cs now declares {count} GameEvent types, not 52 — the event surface census "
+        Assert.True(count == 53,
+            $"Events.cs now declares {count} GameEvent types, not 53 — the event surface census "
             + "this file deliberately excludes state-field work from needs re-running, not just this "
             + "count updated.");
     }

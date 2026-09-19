@@ -180,7 +180,7 @@ internal static class HaggleResolver
             var fleeceMoodDelta = WillingnessModel.FleeceMoodDelta(price, ceiling, trueWillingness);
             TraceOutcome("fleeced", $"countered {price}g exceeds the round's ceiling of {ceiling}g (mood {fleeceMoodDelta})");
             var fleecedSession = counter with { GoodwillPermille = counter.GoodwillPermille - WillingnessModel.FleeceGoodwillPenaltyPermille };
-            return (CloseSale(state, fleecedSession, hero, item, shelfEntry, price, pinned: false, events, moodDelta: fleeceMoodDelta), null);
+            return (CloseSale(state, fleecedSession, hero, item, shelfEntry, price, pinned: false, events, moodDelta: fleeceMoodDelta, fleeced: true), null);
         }
 
         if (WillingnessModel.IsPin(price, trueWillingness))
@@ -203,7 +203,7 @@ internal static class HaggleResolver
     /// lands on the hero (PKD7: influence only), then the session advances to the next customer.</summary>
     private static GameState CloseSale(
         GameState state, CounterState counter, Hero hero, Item item, ShelfEntry shelfEntry,
-        int price, bool pinned, IEventSink events, int? moodDelta = null)
+        int price, bool pinned, IEventSink events, int? moodDelta = null, bool fleeced = false)
     {
         var boughtHero = item.Effect is not null
             ? hero with { Gold = hero.Gold - price, Pack = hero.Pack.Add(item.Id) }
@@ -223,7 +223,7 @@ internal static class HaggleResolver
             },
         };
 
-        events.Emit(new CounterSaleClosed(hero.Id, item.Id, price, pinned));
+        events.Emit(new CounterSaleClosed(hero.Id, item.Id, price, pinned, fleeced));
 
         return CounterQueueSystem.Advance(newState, counter, hero.Id, events);
     }

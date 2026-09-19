@@ -83,6 +83,7 @@ public static class ActionTiming
         MasterworkAttemptAction => true,
         StockAction => true,            // putting an item on your own shelf
         UnstockAction => true,          // taking it back off
+        EarmarkAction => true,          // P2-PEOPLE-28: a tag on your own shelf, same hands as the price tag
         SetPriceAction => true,         // flipping your own price tag
 
         // The counter conversation (2026-08-02 widening): a hero standing at your counter. The
