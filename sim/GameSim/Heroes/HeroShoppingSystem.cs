@@ -25,10 +25,23 @@ namespace GameSim.Heroes;
 /// (or mid-) counter service, resolved by <see cref="Counter.CounterQueueSystem"/> instead, and running
 /// the atomic pass early would shop them twice. On the CLOSING tick (<c>Counter.Closed == true</c>,
 /// set by <see cref="Counter.CounterHandlers"/>'s <c>CloseCounterAction</c> or by the queue running
-/// dry) this system runs its normal pass but SKIPS every hero already in <see cref="CounterState.Served"/>
-/// — nobody shops twice, nobody starves. <see cref="GameState.Counter"/> null (the default — the ONLY
-/// path <c>BaselinePlayer</c>/the balance gate ever exercise) takes the exact original unconditional
-/// loop, byte-identical to pre-Phase-A (the atomic-equivalence pin).
+/// dry) this system runs its normal BROWSING passes (gear, then consumables) but SKIPS every hero
+/// already in <see cref="CounterState.Served"/> — nobody browses twice, nobody starves.
+/// <see cref="GameState.Counter"/> null (the default — the ONLY path <c>BaselinePlayer</c>/the
+/// balance gate ever exercise) takes the exact original unconditional loop, byte-identical to
+/// pre-Phase-A (the atomic-equivalence pin).
+///
+/// P2-HONEST-33: "served" is not "done for the day" — a served hero's ACCEPTED commission is a
+/// standing forge request the counter's own haggle never touches (<see cref="Counter.HaggleResolver"/>
+/// has no <see cref="Commission"/> reads), so skipping the browsing passes entirely used to also
+/// silently cancel that hero's commission (and any piece earmarked for them) for the whole day —
+/// measured 0-of-1,018 fulfilled under <c>forgecounter</c> (PR #923). A THIRD pass, after the two
+/// browsing passes, walks <see cref="CounterState.Served"/> (ascending — it is an
+/// <c>ImmutableSortedSet</c>) and runs ONLY <see cref="CommissionHandlers.TryFulfillFromShelf"/> for
+/// each served, alive hero — never <see cref="ShopOnce"/> or <see cref="ShopConsumableOnce"/>, so
+/// PKD5's "nobody browses twice" still stands. A hero who already bought their commission's item at
+/// the counter itself leaves no matching shelf entry, so this pass is a no-op for them (no double
+/// sell) — see <see cref="CommissionHandlers.TryFulfillFromShelf"/>'s own shelf scan.
 /// </summary>
 public sealed class HeroShoppingSystem : IPhaseSystem
 {
@@ -56,6 +69,42 @@ public sealed class HeroShoppingSystem : IPhaseSystem
         {
             var hero = state.Heroes[heroId];
             state = ShopConsumableOnce(state, hero, events);
+        }
+
+        state = FulfillServedHeroCommissions(state, events);
+
+        return state;
+    }
+
+    /// <summary>
+    /// P2-HONEST-33: the standing-request pass for heroes the counter itself already served this
+    /// session (<see cref="CounterState.Served"/>) — MorningShoppingOrder (correctly) excludes them
+    /// from both browsing passes above (PKD5: nobody browses twice), but an ACCEPTED commission is
+    /// a promise the SHOP owes, not a browse, and the counter's own haggle never checks
+    /// <see cref="GameState.Commissions"/>. Walked in ascending HeroId order (Served is an
+    /// <c>ImmutableSortedSet&lt;int&gt;</c>) for the same determinism the browsing passes get from
+    /// MorningShoppingOrder. Calls ONLY <see cref="CommissionHandlers.TryFulfillFromShelf"/> — never
+    /// <see cref="ShopOnce"/>/<see cref="ShopConsumableOnce"/>, so a served hero still never browses.
+    /// A no-op when <see cref="GameState.Counter"/> is null (nobody served) or a served hero has no
+    /// accepted commission, no matching shelf piece, or already bought it at the counter itself.
+    /// </summary>
+    private static GameState FulfillServedHeroCommissions(GameState state, IEventSink events)
+    {
+        var served = state.Counter?.Served;
+        if (served is null || served.Count == 0)
+        {
+            return state;
+        }
+
+        foreach (var heroId in served)
+        {
+            var hero = state.Heroes[heroId];
+            if (!hero.Alive)
+            {
+                continue; // dead heroes never shop (R7 permadeath)
+            }
+
+            state = CommissionHandlers.TryFulfillFromShelf(state, hero, events) ?? state;
         }
 
         return state;

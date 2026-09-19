@@ -419,4 +419,143 @@ public class HeroShoppingSystemTests
         Assert.Contains("better gear score per gold", pass.Reason);
         Assert.DoesNotContain("boycott", pass.Reason, StringComparison.OrdinalIgnoreCase);
     }
+
+    // ---- P2-HONEST-33: a counter-served hero still gets their standing request honoured ----
+
+    private static Commission MakeAcceptedCommission(HeroId hero, ItemSlot slot, int premiumGold = 20) =>
+        new(hero, slot, QualityGrade.Common, DeadlineDay: 10, premiumGold, Accepted: true);
+
+    private static GameState WithServed(GameState state, params int[] heroIds) =>
+        state with
+        {
+            Counter = CounterState.Empty with
+            {
+                Closed = true,
+                Served = ImmutableSortedSet.CreateRange(heroIds),
+            },
+        };
+
+    [Fact]
+    public void ServedHero_AcceptedCommissionAndMatchingShelfPiece_FulfilledThatMorning()
+    {
+        var hero = MakeHero(1, "vanguard", gold: 100);
+        var weapon = MakeItem(1, ItemSlot.Weapon, attack: 6, defense: 0, weight: 3, name: "Commissioned Blade");
+        var state = BaseState(Roster(hero), weapon) with
+        {
+            Player = PlayerState.NewGame(0) with { Shelf = ImmutableList.Create(new ShelfEntry(weapon.Id, 50)) },
+            Commissions = ImmutableList.Create(MakeAcceptedCommission(hero.Id, ItemSlot.Weapon, premiumGold: 20)),
+        };
+        state = WithServed(state, hero.Id.Value);
+
+        var (after, events) = Run(state);
+
+        var fulfilled = Assert.Single(events.OfType<CommissionFulfilled>());
+        Assert.Equal(hero.Id, fulfilled.Hero);
+        Assert.Equal(weapon.Id, fulfilled.Item);
+        var sold = Assert.Single(events.OfType<ItemSold>());
+        Assert.Equal(70, sold.Price); // 50 list + 20 premium, both affordable
+        Assert.Equal(30, after.Heroes[1].Gold);
+        Assert.Equal(weapon.Id, after.Heroes[1].Gear.Weapon);
+        Assert.Empty(after.Commissions);
+    }
+
+    [Fact]
+    public void ServedHero_WithAcceptedCommission_NeverAlsoBrowsesOrdinaryGear()
+    {
+        // A second, unrelated-slot item sits on the shelf that ordinary ShoppingAi would snap up
+        // (cheap, clear upgrade) if this hero's turn ever reached the browsing pass. It must not:
+        // a served hero gets ONLY the commission fulfilment pass, never ShopOnce.
+        var hero = MakeHero(1, "vanguard", gold: 200);
+        var weapon = MakeItem(1, ItemSlot.Weapon, attack: 6, defense: 0, weight: 3, name: "Commissioned Blade");
+        var armor = MakeItem(2, ItemSlot.Armor, attack: 0, defense: 10, weight: 3, name: "Cheap Great Armor");
+        var state = BaseState(Roster(hero), weapon, armor) with
+        {
+            Player = PlayerState.NewGame(0) with
+            {
+                Shelf = ImmutableList.Create(new ShelfEntry(weapon.Id, 50), new ShelfEntry(armor.Id, 5)),
+            },
+            Commissions = ImmutableList.Create(MakeAcceptedCommission(hero.Id, ItemSlot.Weapon, premiumGold: 20)),
+        };
+        state = WithServed(state, hero.Id.Value);
+
+        var (after, events) = Run(state);
+
+        Assert.Single(events.OfType<CommissionFulfilled>());
+        Assert.Null(after.Heroes[1].Gear.Armor); // ordinary gear pass never ran for this hero
+        Assert.Empty(events.OfType<HeroPassedOnItem>()); // no browse pass, so no browse-pass events
+        Assert.Contains(after.Player.Shelf, e => e.Item == armor.Id); // armor never left the shelf
+    }
+
+    [Fact]
+    public void EarmarkedForAnotherHero_IsSkipped_ServedHeroTakesTheirOwnMatchInstead()
+    {
+        // Two matching pieces: the LOWER ItemId (scanned first) is held for someone else, so the
+        // served hero must skip it and take the next matching piece instead — never the one
+        // earmarked away from them.
+        var hero = MakeHero(1, "vanguard", gold: 100);
+        var otherHero = MakeHero(2, "vanguard", gold: 100);
+        var heldForOther = MakeItem(1, ItemSlot.Weapon, attack: 6, defense: 0, weight: 3, name: "Not Yours");
+        var heldForThem = MakeItem(2, ItemSlot.Weapon, attack: 6, defense: 0, weight: 3, name: "Yours");
+        var state = BaseState(Roster(hero, otherHero), heldForOther, heldForThem) with
+        {
+            Player = PlayerState.NewGame(0) with
+            {
+                Shelf = ImmutableList.Create(
+                    new ShelfEntry(heldForOther.Id, 50, EarmarkedFor: otherHero.Id),
+                    new ShelfEntry(heldForThem.Id, 50, EarmarkedFor: hero.Id)),
+            },
+            Commissions = ImmutableList.Create(MakeAcceptedCommission(hero.Id, ItemSlot.Weapon, premiumGold: 20)),
+        };
+        // Only `hero` is served -- otherHero is dead so it never enters the browsing passes and
+        // can't take either piece first, isolating this test to the earmark-skip logic itself.
+        state = state with { Heroes = state.Heroes.SetItem(2, otherHero with { Alive = false }) };
+        state = WithServed(state, hero.Id.Value);
+
+        var (after, events) = Run(state);
+
+        var fulfilled = Assert.Single(events.OfType<CommissionFulfilled>());
+        Assert.Equal(heldForThem.Id, fulfilled.Item);
+        Assert.Contains(after.Player.Shelf, e => e.Item == heldForOther.Id); // untouched, still held
+    }
+
+    [Fact]
+    public void ServedHero_ItemAlreadyBoughtAtTheCounterItself_CommissionNeverDoubleSold()
+    {
+        // The counter's own haggle path never reads GameState.Commissions -- a hero who bought
+        // their commission's matching piece there leaves it Accepted but with nothing left on the
+        // shelf to fulfil it from. Modeled directly (empty shelf, commission still Accepted).
+        var hero = MakeHero(1, "vanguard", gold: 100);
+        var commission = MakeAcceptedCommission(hero.Id, ItemSlot.Weapon, premiumGold: 20);
+        var state = BaseState(Roster(hero)) with
+        {
+            Player = PlayerState.NewGame(0), // empty shelf -- already sold at the counter
+            Commissions = ImmutableList.Create(commission),
+        };
+        state = WithServed(state, hero.Id.Value);
+
+        var (after, events) = Run(state);
+
+        Assert.Empty(events);
+        Assert.Equal(100, after.Heroes[1].Gold);
+        Assert.Contains(commission, after.Commissions); // still open -- not silently dropped either
+    }
+
+    [Fact]
+    public void ServedHeroWithNoCommission_IsUntouched()
+    {
+        var hero = MakeHero(1, "vanguard", gold: 100);
+        var weapon = MakeItem(1, ItemSlot.Weapon, attack: 6, defense: 0, weight: 3, name: "Great Sword");
+        var state = BaseState(Roster(hero), weapon) with
+        {
+            Player = PlayerState.NewGame(0) with { Shelf = ImmutableList.Create(new ShelfEntry(weapon.Id, 10)) },
+        };
+        state = WithServed(state, hero.Id.Value);
+
+        var (after, events) = Run(state);
+
+        Assert.Empty(events);
+        Assert.Equal(100, after.Heroes[1].Gold);
+        Assert.Null(after.Heroes[1].Gear.Weapon);
+        Assert.Contains(after.Player.Shelf, e => e.Item == weapon.Id);
+    }
 }
