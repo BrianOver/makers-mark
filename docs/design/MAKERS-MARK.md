@@ -5141,7 +5141,7 @@ name (§11.6 rule 4).
 | P2-LONG-29 | The vigil moves to the last door — `CheckpointFor` camps below the FINAL floor, not floor 1 (§11.7.5) | `sim/GameSim/Expedition/ExpeditionSystem.cs`, `sim/GameSim.Tests/Balance/CampProvisioningBalanceTests.cs` | — | [S][GOLD][BAL] |
 | P2-LONG-30 | The runner's fee names the floor it is reaching — stakes, not decoration | `sim/GameSim/Expedition/CampHandlers.cs`, `godot/scripts/panels/` | P2-LONG-29 | [G] |
 | P2-HONEST-02 | Four dead-mechanism sentences die; `Gate.Reason` splits closed/opened | `godot/scripts/ui/SurfaceUnlocks.cs`, copy | — | [G] |
-| P2-HONEST-03 | The sentence "your commission died with them" gets a home (the sim half landed in #667) | `godot/scripts/panels/LedgerModal.cs`, `godot/scripts/panels/LegendsWall.cs` | P2-PEOPLE-07 | [G] |
+| P2-HONEST-03 | The sentence "your commission died with them" gets a home (the sim half landed in #667) | `godot/scripts/panels/LedgerModal.cs`, `godot/scripts/panels/LegendsWall.cs` `evidence:godot/scripts/panels/LedgerModal.cs:OpenCommissionSentence` | P2-PEOPLE-07 | [G] |
 | P2-HONEST-04 | The queued suffix dies; eight panels stop teaching a console command | `godot/scripts/panels/SimPanel.cs`, `godot/scripts/panels/` | — | [G] |
 | P2-HONEST-05 | Classes and materials get display names | `sim/GameSim/Materials/MaterialDefinition.cs`, `sim/GameSim/Classes/` | — | [S] |
 | P2-HONEST-06 | The vocabulary census — seven generators, first run triaged | `sim/GameSim.Tests/` (`PlayerVocabularyCensusTests`) | P2-HONEST-04, P2-HONEST-05 | [S] |
