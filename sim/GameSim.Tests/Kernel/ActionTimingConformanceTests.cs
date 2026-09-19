@@ -18,7 +18,9 @@ namespace GameSim.Tests.Kernel;
 /// a pact with the Guild) — 24 Now, 3 Bell, 27 total (§11.13 amendment U4a added
 /// <see cref="ConcludeApprenticeshipAction"/> as a 22nd Now verb; P2-LONG-18 added
 /// <see cref="PledgeDuesAction"/> as a 23rd; P2-PEOPLE-28 added <see cref="EarmarkAction"/> as a 24th —
-/// a tag on your own shelf, the same hands as the price tag).
+/// a tag on your own shelf, the same hands as the price tag; P2-PEOPLE-05 added the two wake verbs
+/// <see cref="PlaceGraveMarkerAction"/> and <see cref="ChooseRemembranceAction"/> as 25th and 26th — your
+/// hands at the grave, the same shape as Honor).
 /// </summary>
 public class ActionTimingConformanceTests
 {
@@ -39,6 +41,8 @@ public class ActionTimingConformanceTests
         [typeof(StockAction)] = (true, () => new StockAction(new ItemId(1), 10)),
         [typeof(UnstockAction)] = (true, () => new UnstockAction(new ItemId(1))),
         [typeof(EarmarkAction)] = (true, () => new EarmarkAction(new ItemId(1), new HeroId(1))), // P2-PEOPLE-28
+        [typeof(PlaceGraveMarkerAction)] = (true, () => new PlaceGraveMarkerAction(new HeroId(1), new ItemId(1))), // P2-PEOPLE-05
+        [typeof(ChooseRemembranceAction)] = (true, () => new ChooseRemembranceAction(new HeroId(1), new EventId(1))), // P2-PEOPLE-05
         [typeof(SetPriceAction)] = (true, () => new SetPriceAction(new ItemId(1), 10)),
 
         // The counter conversation (2026-08-02 widening) — Now.
@@ -83,10 +87,10 @@ public class ActionTimingConformanceTests
             .Where(t => typeof(PlayerAction).IsAssignableFrom(t) && !t.IsAbstract && t.IsClass);
 
     [Fact]
-    public void ExpectedLane_Has24NowAnd3Bell_27Total()
+    public void ExpectedLane_Has26NowAnd3Bell_29Total()
     {
-        Assert.Equal(27, ExpectedLane.Count);
-        Assert.Equal(24, ExpectedLane.Values.Count(v => v.Immediate));
+        Assert.Equal(29, ExpectedLane.Count);
+        Assert.Equal(26, ExpectedLane.Values.Count(v => v.Immediate));
         Assert.Equal(3, ExpectedLane.Values.Count(v => !v.Immediate));
     }
 

@@ -63,6 +63,8 @@ public static class ActionSubject
         SetPriceAction a => $"reprice item #{a.Item.Value} to {a.Price}g",
         UnstockAction a => $"unstock item #{a.Item.Value}",
         EarmarkAction a => a.Hero is { } held ? $"hold item #{a.Item.Value} for hero #{held.Value}" : $"put item #{a.Item.Value} back on open sale",
+        PlaceGraveMarkerAction a => $"set item #{a.Item.Value} as hero #{a.Hero.Value}'s grave-marker",
+        ChooseRemembranceAction a => $"remember hero #{a.Hero.Value} by event #{a.Source.Value}",
         BuyOreAction a => $"buy {a.Quantity}x {a.MaterialKey} from hero #{a.From.Value}",
         BuyMaterialAction a => $"buy {a.Quantity}x {a.MaterialKey}",
         PostBountyAction a => $"post bounty for floor {a.TargetFloor} at {a.RewardGold}g",
