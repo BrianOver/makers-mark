@@ -64,6 +64,77 @@ public class ExpeditionRevealSystemTests
         Assert.Equal(1, memory.Saves);
     }
 
+    // ---- Mood (P2-PEOPLE-26, link5: "the outcome becomes the town's memory") ----
+
+    [Fact]
+    public void LegendDeedOnPlayerCraftedItem_MovesBearerMoodTowardTheSmith()
+    {
+        var shield = PlayerItem(60, "Oathkeeper Aegis", ItemSlot.Shield, attack: 0, defense: 7);
+        var state = Equip(NewWorld(), heroId: 1, shield);
+        var result = Result(
+            party: [1], survivors: [1], deaths: [],
+            beats: [new AttributionBeat(BeatType.LethalSave, shield.Id, new HeroId(1), 1, "detail")]);
+
+        var tick = TickEvening(AtEvening(state, result));
+
+        Assert.Equal(ExpeditionRevealSystem.SavedByYourWorkMood, tick.NewState.Heroes[1].MoodPermille);
+    }
+
+    [Fact]
+    public void KillingBlow_EvenWhenGenuinelyDecisive_MovesMoodByExactlyZero()
+    {
+        // A real recorded fight, so IsDecisiveBeat's KillingBlow branch is genuinely provable
+        // (never the "no fight on record" incidental default) — a kill's mood credit must stay
+        // zero on its own merits, not because the fixture ducked decisiveness.
+        var blade = PlayerItem(61, "Fine Iron Blade", ItemSlot.Weapon, attack: 8, defense: 0);
+        var state = Equip(NewWorld(), heroId: 1, blade);
+        var result = Result(
+            party: [1], survivors: [1], deaths: [],
+            targetFloor: 1, deepestCleared: 1,
+            floors: [new FloorOutcome(1, true, [Combat(1, 1, "Cave Rat", monsterKilled: true, killingItem: 61, dealt: 10)])],
+            beats: [new AttributionBeat(BeatType.KillingBlow, blade.Id, new HeroId(1), 1, "detail")])
+            with { PartyAtDeparture = ImmutableList.Create(new HeroAtDeparture(new HeroId(1), "Torvald", "vanguard", 1, 30, blade.Id, null, null)) };
+
+        var tick = TickEvening(AtEvening(state, result));
+
+        var beat = Assert.Single(tick.Events.OfType<AttributionBeatEvent>());
+        Assert.True(beat.Decisive); // sanity: a weak level-1 hero's blade genuinely mattered here
+        Assert.Equal(0, tick.NewState.Heroes[1].MoodPermille);
+    }
+
+    [Fact]
+    public void LegendDeedOnAnUnmarkedItem_MovesNoMood()
+    {
+        var shield = RivalItem(62, "Rusty Buckler", ItemSlot.Shield, attack: 0, defense: 7);
+        var state = Equip(NewWorld(), heroId: 1, shield);
+        var result = Result(
+            party: [1], survivors: [1], deaths: [],
+            beats: [new AttributionBeat(BeatType.LethalSave, shield.Id, new HeroId(1), 1, "detail")]);
+
+        var tick = TickEvening(AtEvening(state, result));
+
+        Assert.Equal(0, tick.NewState.Heroes[1].MoodPermille);
+    }
+
+    [Fact]
+    public void LegendDeedCreditedToADeadBearer_LeavesMoodUntouched()
+    {
+        // A hero credited a save on an earlier floor who then dies later the SAME reveal — nobody's
+        // memory is a dead hero's to keep.
+        var shield = PlayerItem(63, "Oathkeeper Aegis", ItemSlot.Shield, attack: 0, defense: 7);
+        var state = Equip(NewWorld(), heroId: 1, shield);
+        var result = Result(
+            party: [1], survivors: [], deaths: [1],
+            targetFloor: 2, deepestCleared: 1,
+            floors: [new FloorOutcome(2, false, [Combat(2, 1, "Tunnel Spider", taken: 30)])],
+            beats: [new AttributionBeat(BeatType.LethalSave, shield.Id, new HeroId(1), 1, "detail")]);
+
+        var tick = TickEvening(AtEvening(state, result));
+
+        Assert.False(tick.NewState.Heroes[1].Alive);
+        Assert.Equal(0, tick.NewState.Heroes[1].MoodPermille);
+    }
+
     [Fact]
     public void BreakpointBeat_EmitsEvent_ButNoHistoryOrMemoryTally()
     {

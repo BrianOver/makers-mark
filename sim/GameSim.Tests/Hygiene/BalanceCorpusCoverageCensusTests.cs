@@ -129,16 +129,16 @@ public class BalanceCorpusCoverageCensusTests
     {
         ["PostBountyAction"] = "Bounty posting is never taken by any corpus sweep policy — "
             + "rules-census.md:1236-1241. P2-HONEST-12.",
-        ["OpenCounterAction"] = "Counter-session verbs are exercised only by CounterPlayer, which no "
-            + "Balance-tagged test ever drives — rules-census.md:1236-1241. P2-HONEST-12.",
-        ["PresentItemAction"] = "Counter-session verbs are exercised only by CounterPlayer, which no "
-            + "Balance-tagged test ever drives — rules-census.md:1236-1241. P2-HONEST-12.",
-        ["SuggestItemAction"] = "Counter-session verbs are exercised only by CounterPlayer, which no "
-            + "Balance-tagged test ever drives — rules-census.md:1236-1241. P2-HONEST-12.",
-        ["HaggleResponseAction"] = "Counter-session verbs are exercised only by CounterPlayer, which "
-            + "no Balance-tagged test ever drives — rules-census.md:1236-1241. P2-HONEST-12.",
-        ["CloseCounterAction"] = "Counter-session verbs are exercised only by CounterPlayer, which no "
-            + "Balance-tagged test ever drives — rules-census.md:1236-1241. P2-HONEST-12.",
+        // P2-PEOPLE-26: OpenCounterAction/PresentItemAction/HaggleResponseAction/CloseCounterAction
+        // graduated off this table — SavedHeroMoodBalanceTests (sim/GameSim.Tests/Balance/) is the
+        // first Balance-tagged test to reference ForgeCounterPlayer.ActionsFor, which genuinely
+        // constructs all four (it is the policy that plays the haggle minigame). SuggestItemAction
+        // is the one counter verb ForgeCounterPlayer never calls (it always Presents, never
+        // Suggests), so it alone stays pinned below — a real, reviewed narrowing per this test's own
+        // rule (CLAUDE.md rule 8), not a silent widen.
+        ["SuggestItemAction"] = "Counter-session verbs are exercised only by CounterPlayer/"
+            + "ForgeCounterPlayer, neither of which ever submits Suggest (ForgeCounterPlayer always "
+            + "Presents) — rules-census.md:1236-1241. P2-HONEST-12.",
         ["SetProfessionsAction"] = "Profession selection happens once, out of band, before any "
             + "scripted policy runs a tick; no sweep policy re-submits it — "
             + "rules-census.md:1236-1241. P2-HONEST-12.",
@@ -165,7 +165,7 @@ public class BalanceCorpusCoverageCensusTests
             + "any harness hand that earmarks are the unit's second half. P2-PEOPLE-28.",
     };
 
-    private const int ExpectedNeverSubmittedCount = 16;
+    private const int ExpectedNeverSubmittedCount = 12;
 
     [Fact]
     public void PlayerActionHierarchyHasTheMemberCountThisCensusExpects()
