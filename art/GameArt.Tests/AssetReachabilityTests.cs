@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Text.Json;
 using GameArt;
 using GameSim.Classes;
+using GameSim.Venues;
 
 namespace GameArt.Tests;
 
@@ -77,15 +78,48 @@ public class AssetReachabilityTests
         ["town2d-townsfolk-broad", "town2d-townsfolk-slight", "town2d-townsfolk-bryn"];
 
     /// <summary>town2d-monster-&lt;slug&gt; — <c>DelveStage.MonsterBodyId</c>
-    /// (<c>godot/scripts/panels/DelveStage.cs:717</c>). Only the Mine's five floors have a
-    /// committed town2d pixel body today; Gloomwood/Sunken Crypt/Emberfall monsters resolve
-    /// through the venue-prefixed <c>AssetCatalog</c> family instead (already in
-    /// <see cref="AssetRegistry"/>), so they need no entry here.</summary>
-    private static readonly string[] Town2dMonsterBases =
-    [
-        "town2d-monster-cave-rat", "town2d-monster-tunnel-spider", "town2d-monster-deep-ghoul",
-        "town2d-monster-ore-golem", "town2d-monster-forgeworm",
-    ];
+    /// (<c>godot/scripts/panels/DelveStage.cs:744</c>) composes the id from the venue floor's
+    /// <c>MonsterKind</c>, so every kind any registered venue can spawn is a reader. Enumerated from
+    /// <see cref="VenueRegistry.All"/>, never hand-listed: P2-SCREEN-37 gave the fourteen
+    /// Gloomwood/Crypt/Foundry kinds committed bodies and a literal Mine-five list here read them as
+    /// orphans (a guard iterating a hand-listed array stops covering the family the moment it grows).</summary>
+    private static string[] Town2dMonsterBases =>
+        VenueRegistry.All.Values
+            .SelectMany(v => v.Floors)
+            .Select(f => "town2d-monster-" + MonsterSlug(f.MonsterKind))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+    /// <summary>Mirror of <c>DelveStage.Slug</c> (godot/scripts/panels/DelveStage.cs): drop a leading
+    /// "The ", lowercase letters and digits, collapse every other run into one hyphen, no leading or
+    /// trailing hyphen. Duplicated here because GameArt.Tests cannot reference the Godot assembly;
+    /// <c>AssetResolutionCensusTests</c> in the engine suite pins the two agree on every kind.</summary>
+    private static string MonsterSlug(string kind)
+    {
+        var trimmed = kind.Trim();
+        if (trimmed.StartsWith("The ", StringComparison.OrdinalIgnoreCase))
+        {
+            trimmed = trimmed[4..];
+        }
+
+        var sb = new System.Text.StringBuilder(trimmed.Length);
+        var lastWasHyphen = false;
+        foreach (var ch in trimmed)
+        {
+            if (char.IsLetterOrDigit(ch))
+            {
+                sb.Append(char.ToLowerInvariant(ch));
+                lastWasHyphen = false;
+            }
+            else if (!lastWasHyphen && sb.Length > 0)
+            {
+                sb.Append('-');
+                lastWasHyphen = true;
+            }
+        }
+
+        return sb.ToString().TrimEnd('-');
+    }
 
     /// <summary>Hand-placed town2d furniture/signage/shell/ground ids — literal strings in
     /// <c>Town2D.cs</c> / <c>TownLayout2D.cs</c> / <c>InteriorLayout2D.cs</c>, none composed from a
