@@ -320,6 +320,9 @@ public class TeachingCoverageCensusTests
     /// tension (the verdict moved because the code did, not the other way round).</summary>
     private static readonly Dictionary<Type, string> ActionUntaught = new()
     {
+        [typeof(EarmarkAction)] = "P2-PEOPLE-28 sim half only (#918): no Godot control queues it yet, so there is " +
+            "nothing to teach; the ShopPanel hold verb PR records the teaching decision (first-touch under " +
+            "hold-or-sell, beside UnstockAction).",
         [typeof(CloseCounterAction)] =
             "CounterAnsweredAtLeastOnce (TutorialFlow.cs) recognizes CloseCounterAction as an optional " +
             "fast-path AFTER an answer, but never REQUIRES it -- a player can finish the OpenCounter " +

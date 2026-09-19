@@ -53,6 +53,7 @@ public static class ActionLegality
         StockAction stock => StockLegal(state, stock),
         SetPriceAction setPrice => SetPriceLegal(state, setPrice),
         UnstockAction unstock => UnstockLegal(state, unstock),
+        EarmarkAction earmark => EarmarkLegal(state, earmark),
         BuyOreAction buyOre => phase == DayPhase.Evening && BuyOreLegal(state, buyOre),
         BuyMaterialAction buyMaterial => phase == DayPhase.Morning && BuyMaterialLegal(state, buyMaterial),
         PostBountyAction postBounty => (phase is DayPhase.Morning or DayPhase.Evening) && PostBountyLegal(state, postBounty),
@@ -468,6 +469,24 @@ public static class ActionLegality
     // ---- ShopHandlers.ApplyUnstock guards ----
     private static bool UnstockLegal(GameState state, UnstockAction action) =>
         state.Player.Shelf.Any(e => e.Item == action.Item);
+
+    // ---- ShopHandlers.ApplyEarmark guards (P2-PEOPLE-28) ----
+    private static bool EarmarkLegal(GameState state, EarmarkAction action)
+    {
+        var entry = state.Player.Shelf.FirstOrDefault(e => e.Item == action.Item);
+        if (entry is null)
+        {
+            return false;
+        }
+
+        if (action.Hero is { } heroId
+            && (!state.Heroes.TryGetValue(heroId.Value, out var hero) || !hero.Alive))
+        {
+            return false;
+        }
+
+        return entry.EarmarkedFor != action.Hero;
+    }
 
     // ---- OreMarketHandlers.Apply guards (quantity, offer, hero, tariffed cost) ----
     private static bool BuyOreLegal(GameState state, BuyOreAction action)

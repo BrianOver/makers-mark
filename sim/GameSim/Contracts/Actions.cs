@@ -12,6 +12,7 @@ namespace GameSim.Contracts;
 [JsonDerivedType(typeof(StockAction), "stock")]
 [JsonDerivedType(typeof(SetPriceAction), "setPrice")]
 [JsonDerivedType(typeof(UnstockAction), "unstock")]
+[JsonDerivedType(typeof(EarmarkAction), "earmark")]
 [JsonDerivedType(typeof(BuyOreAction), "buyOre")]
 [JsonDerivedType(typeof(BuyMaterialAction), "buyMaterial")]
 [JsonDerivedType(typeof(PostBountyAction), "postBounty")]
@@ -112,6 +113,13 @@ public sealed record SetPriceAction(ItemId Item, int Price) : PlayerAction;
 
 /// <summary>Take a shelved item back off sale.</summary>
 public sealed record UnstockAction(ItemId Item) : PlayerAction;
+
+/// <summary>P2-PEOPLE-28 ("hold it for Torvald"): set or clear the hero a shelved piece is held for.
+/// While <see cref="ShelfEntry.EarmarkedFor"/> names a hero, ordinary shopping and commission
+/// fulfilment skip the piece for everyone else and offer it to that one hero alone; the hero still
+/// decides (law 1 — influence never orders). <paramref name="Hero"/> null clears the earmark and
+/// puts the piece back on open sale. Free (no slot), instant, legal in every phase.</summary>
+public sealed record EarmarkAction(ItemId Item, HeroId? Hero) : PlayerAction;
 
 /// <summary>Buy ore offered by a returning hero during Evening (R6).</summary>
 public sealed record BuyOreAction(HeroId From, string MaterialKey, int Quantity) : PlayerAction;

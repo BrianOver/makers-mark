@@ -185,7 +185,7 @@ public sealed class HeroShoppingSystem : IPhaseSystem
     /// </summary>
     internal static (Candidate? Best, ImmutableList<Candidate> Candidates) EvaluateGearCandidates(GameState state, Hero hero)
     {
-        var candidates = CollectCandidates(state);
+        var candidates = CollectCandidates(state, hero);
         var boycotting = NeedsSystem.IsBoycotting(hero.Id, state);
 
         Candidate? best = null;
@@ -335,7 +335,7 @@ public sealed class HeroShoppingSystem : IPhaseSystem
             return state; // this hero is content with what they're carrying — no browsing, no events
         }
 
-        var candidates = CollectCandidates(state);
+        var candidates = CollectCandidates(state, hero);
 
         Candidate? best = null;
         foreach (var candidate in candidates)
@@ -378,18 +378,25 @@ public sealed class HeroShoppingSystem : IPhaseSystem
         return best is null ? state : ApplyPurchase(state, hero, best, events);
     }
 
-    private static List<Candidate> CollectCandidates(GameState state)
+    private static List<Candidate> CollectCandidates(GameState state, Hero shopper)
     {
         var candidates = new List<Candidate>(state.Player.Shelf.Count + state.RivalShelf.Count);
-        AddShelf(candidates, state, state.Player.Shelf, fromPlayerShelf: true);
-        AddShelf(candidates, state, state.RivalShelf, fromPlayerShelf: false);
+        AddShelf(candidates, state, state.Player.Shelf, fromPlayerShelf: true, shopper);
+        AddShelf(candidates, state, state.RivalShelf, fromPlayerShelf: false, shopper);
         return candidates;
     }
 
-    private static void AddShelf(List<Candidate> candidates, GameState state, ImmutableList<ShelfEntry> shelf, bool fromPlayerShelf)
+    private static void AddShelf(List<Candidate> candidates, GameState state, ImmutableList<ShelfEntry> shelf, bool fromPlayerShelf, Hero shopper)
     {
         foreach (var entry in shelf)
         {
+            // P2-PEOPLE-28: a piece held for one hero is not on the shelf for anyone else — no candidate,
+            // so no pass event either (they never saw it). The hero it is held for shops it as normal.
+            if (IsHeldForSomeoneElse(entry, shopper))
+            {
+                continue;
+            }
+
             // Defensive: a shelf entry whose item is missing from the catalog is
             // un-evaluable — skip silently rather than crash the morning.
             if (state.Items.TryGetValue(entry.Item.Value, out var item))
@@ -398,6 +405,12 @@ public sealed class HeroShoppingSystem : IPhaseSystem
             }
         }
     }
+
+    /// <summary>P2-PEOPLE-28: true when <paramref name="entry"/> is earmarked for a hero other than
+    /// <paramref name="shopper"/>. Shared with <see cref="CommissionHandlers.TryFulfillFromShelf"/> so the
+    /// two shelf readers cannot disagree about who a held piece is for.</summary>
+    internal static bool IsHeldForSomeoneElse(ShelfEntry entry, Hero shopper) =>
+        entry.EarmarkedFor is { } held && held != shopper.Id;
 
     private static GameState ApplyPurchase(GameState state, Hero hero, Candidate bought, IEventSink events)
     {

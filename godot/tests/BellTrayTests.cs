@@ -50,6 +50,7 @@ public class BellTrayTests
         [typeof(MasterworkAttemptAction)] = () => new MasterworkAttemptAction("dagger", "copper"),
         [typeof(StockAction)] = () => new StockAction(new ItemId(1), 10),
         [typeof(UnstockAction)] = () => new UnstockAction(new ItemId(1)),
+        [typeof(EarmarkAction)] = () => new EarmarkAction(new ItemId(1), new HeroId(1)),
         [typeof(SetPriceAction)] = () => new SetPriceAction(new ItemId(1), 10),
         [typeof(OpenCounterAction)] = () => new OpenCounterAction(),
         [typeof(PresentItemAction)] = () => new PresentItemAction(new ItemId(1)),

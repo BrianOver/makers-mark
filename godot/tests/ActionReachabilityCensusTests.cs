@@ -56,7 +56,7 @@ public class ActionReachabilityCensusTests
     /// add a decision for it — <see cref="EveryConcretePlayerActionType_HasASurfaceOrAReasonedExclusion"/>
     /// fails BY NAME right alongside it.
     /// </summary>
-    private const int ExpectedActionCount = 26;
+    private const int ExpectedActionCount = 27; // 26 -> 27: EarmarkAction (P2-PEOPLE-28 sim half)
 
     /// <summary>
     /// Every concrete <see cref="PlayerAction"/> type mapped to the ONE real Godot submit site that
@@ -139,7 +139,12 @@ public class ActionReachabilityCensusTests
     /// own citation). Left in place because the whole point of this census is that the NEXT action
     /// added to <see cref="PlayerAction"/> must get a decision recorded HERE one way or the other.
     /// </summary>
-    private static readonly Dictionary<Type, string> Exclusions = new();
+    private static readonly Dictionary<Type, string> Exclusions = new()
+    {
+        [typeof(EarmarkAction)] = "P2-PEOPLE-28 landed its sim half first (Contracts micro-PR #918): the earmark " +
+            "verb exists and both shelf readers honour it, but the ShopPanel 'hold for' control is the unit's " +
+            "second half, dispatched next. Moves to Surfaces when that PR lands.",
+    };
 
     private static IEnumerable<Type> ConcretePlayerActionTypesInAssembly() =>
         typeof(PlayerAction).Assembly.GetTypes()
