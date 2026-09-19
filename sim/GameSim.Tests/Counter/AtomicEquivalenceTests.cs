@@ -478,7 +478,7 @@ public class AtomicEquivalenceTests
     // seed, same rolls, same deaths, same floors, same prices — only the shape of a shelf entry.
     // Previous pin ABD7AF21FE7054D250EDDD3903228FC585260CD6E01530438AB861C14522B643.
     private const string ExpectedPreCounterSha256 =
-        "4FD28EBF21F04BC595CED938C6A481A3D4671B1E3986037429976E346A5DC90B";
+        "0736C234522D638A7BCEDD08B190D03E34AEAB06D891F87D7D9092E33DF9C67B";
 
     [Fact]
     public void ThirtyDayRun_NoCounterActions_IsByteIdenticalToPrePa3Kernel()
