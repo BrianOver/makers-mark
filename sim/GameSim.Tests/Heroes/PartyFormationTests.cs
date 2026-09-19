@@ -156,4 +156,94 @@ public class PartyFormationTests
             Assert.Equal(a[i], b[i]);
         }
     }
+
+    // ---- P2-PEOPLE-11 (owner ruling P2-OQ1, full town rest): the wake's no-march day ----
+
+    private static Hero MakeHeroDied(int id, string classId, int? diedOnDay) => new Hero(
+        new HeroId(id), $"Hero{id}", classId, Level: 1, MaxHp: 25, Gold: 40,
+        GearSet.Empty, ImmutableList<ItemMemory>.Empty,
+        Alive: diedOnDay is null, DeepestFloorReached: 0, DiedOnDay: diedOnDay);
+
+    /// <summary>The property under test is "any hero", not "a specific id" — a two-hero roster
+    /// where the SECOND hero (not the first) died still gates the whole town, matching the
+    /// ruling's "the town buries its own," not "the town buries hero #1."</summary>
+    [Fact]
+    public void IsWakeDay_TrueWhenAnyHero_DiedYesterday_RegardlessOfWhichOne()
+    {
+        var roster = Roster(
+            MakeHeroDied(1, "vanguard", diedOnDay: null),
+            MakeHeroDied(2, "striker", diedOnDay: 4));
+
+        Assert.True(PartyFormation.IsWakeDay(roster, day: 5));
+    }
+
+    [Theory]
+    [InlineData(3)] // two days ago
+    [InlineData(4)] // the death's own day
+    [InlineData(6)] // a day since the wake already passed
+    public void IsWakeDay_FalseWhenDeathDidNotHappenExactlyYesterday(int day)
+    {
+        var roster = Roster(MakeHeroDied(1, "vanguard", diedOnDay: 4));
+
+        Assert.False(PartyFormation.IsWakeDay(roster, day));
+    }
+
+    [Fact]
+    public void IsWakeDay_FalseWithNoDeathsAtAll()
+    {
+        Assert.False(PartyFormation.IsWakeDay(StandardSix(), day: 5));
+    }
+
+    [Fact]
+    public void FormParties_DayOverload_OnWakeDay_ReturnsEmpty_EvenWithAliveHeroes()
+    {
+        // Five living heroes with a clean rank-0 cohort would ordinarily form parties; the day
+        // gate must short-circuit before any grouping rule runs at all.
+        var roster = Roster(
+            MakeHeroDied(1, "vanguard", diedOnDay: null),
+            MakeHeroDied(2, "striker", diedOnDay: null),
+            MakeHeroDied(3, "mystic", diedOnDay: null),
+            MakeHeroDied(4, "striker", diedOnDay: null),
+            MakeHeroDied(5, "mystic", diedOnDay: 6));
+
+        Assert.Empty(PartyFormation.FormParties(roster, day: 7));
+    }
+
+    [Fact]
+    public void FormParties_DayOverload_DayAfterTheWake_MarchesNormally_NoChaining()
+    {
+        // Day 8: the wake (day 7, from a day-6 death) has already passed, and there is no NEW
+        // death dated day 7 — wakes cannot chain, so today forms parties exactly like any other.
+        var roster = Roster(
+            MakeHeroDied(1, "vanguard", diedOnDay: null),
+            MakeHeroDied(2, "striker", diedOnDay: null),
+            MakeHeroDied(3, "mystic", diedOnDay: null),
+            MakeHeroDied(4, "striker", diedOnDay: null),
+            MakeHeroDied(5, "mystic", diedOnDay: 6));
+
+        var withDay = PartyFormation.FormParties(roster, day: 8);
+        var withoutDay = PartyFormation.FormParties(roster); // the pure, day-less shape
+
+        Assert.NotEmpty(withDay);
+        Assert.Equal(withoutDay.Count, withDay.Count);
+        for (var i = 0; i < withDay.Count; i++)
+        {
+            Assert.Equal(withoutDay[i], withDay[i]);
+        }
+    }
+
+    [Fact]
+    public void FormParties_DayOverload_DeathTwoDaysAgo_IsNotAWake_MarchesNormally()
+    {
+        var roster = Roster(
+            MakeHeroDied(1, "vanguard", diedOnDay: null),
+            MakeHeroDied(2, "striker", diedOnDay: null),
+            MakeHeroDied(3, "mystic", diedOnDay: 5)); // died day 5, today is day 7 -> not a wake
+
+        var parties = PartyFormation.FormParties(roster, day: 7);
+
+        Assert.NotEmpty(parties);
+        var all = parties.SelectMany(p => p).Select(id => id.Value).OrderBy(v => v).ToArray();
+        Assert.Equal(new[] { 1, 2 }, all); // the dead hero never parties either way
+    }
 }

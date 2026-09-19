@@ -65,6 +65,11 @@ public static class NeedsSystem
     /// hero who has never bought anything streaks from their arrival day (day 1 for the starting
     /// six, the day their own <see cref="RecruitArrived"/> stamped otherwise — the same
     /// arrival-day fallback <see cref="Drama.DemandBoard"/>'s depth-stall read uses).</summary>
+    /// <para>P2-PEOPLE-11: needs no wake-day check of its own — this counts plain calendar days
+    /// since the last purchase, so a wake morning (no expedition, but <see
+    /// cref="Heroes.HeroShoppingSystem"/> still runs) lengthens every unpurchased hero's streak by
+    /// one exactly like any other day. The ruling's own wording: name the cost, don't engineer
+    /// around it.</para>
     public static int UnmetDemandStreakDays(HeroId hero, GameState state) =>
         UnmetDemandStreakDays(hero, state, state.Day);
 

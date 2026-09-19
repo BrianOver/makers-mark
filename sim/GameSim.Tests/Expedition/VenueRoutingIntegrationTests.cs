@@ -105,6 +105,16 @@ public class VenueRoutingIntegrationTests
             state = morning.NewState;
             var predicted = Assert.Single(morning.Events.OfType<PartiesFormed>());
 
+            // P2-PEOPLE-11: a wake morning (death dated yesterday) folds straight to Evening —
+            // Expedition never runs, so there is nothing to byte-match against today. The
+            // prediction itself must already agree (MusterPlan.Compute is wake-aware).
+            if (state.Phase == DayPhase.Evening)
+            {
+                Assert.Empty(predicted.Parties);
+                state = kernel.Tick(state, BaselinePlayer.ActionsFor(state)).NewState; // Evening -> tomorrow's Morning
+                continue;
+            }
+
             var expedition = kernel.Tick(state, BaselinePlayer.ActionsFor(state));
             state = expedition.NewState;
 

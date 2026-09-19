@@ -8,6 +8,14 @@ namespace GameSim.Bounties;
 /// the first acceptance claims it (one hero per bounty). Runs BEFORE the expedition
 /// system in composition so an accepted bounty can shape that day's target floor.
 /// Every judgment — accept or decline — is a visible event (AE7).
+///
+/// <para>P2-PEOPLE-11 (owner ruling P2-OQ1): needs no wake-day check of its own. A wake morning
+/// collapses straight to <see cref="DayPhase.Evening"/> (<see cref="Kernel.GameKernel"/>'s
+/// Morning->Evening fold), so this system — registered on <see cref="DayPhase.Expedition"/> — simply
+/// never runs that day. The visible effect is a bounty's 3-day <see cref="BountyRules.ExpiryDays"/>
+/// window losing one of its judging chances without the window itself changing:
+/// <see cref="BountyPayoutSystem"/> still counts calendar days, never judged days — "the town buries
+/// its own before it hunts," not "the board waits for you."</para>
 /// </summary>
 public sealed class BountyJudgingSystem : IPhaseSystem
 {
@@ -74,6 +82,11 @@ public sealed class BountyPayoutSystem : IPhaseSystem
                 // dead-acceptor (73-79) branches, so this also catches an accepted
                 // hero who lived but never reached the target floor by expiry:
                 // without it, that escrow would leak from the town gold total.
+                //
+                // P2-PEOPLE-11: deliberately still plain calendar days, unwidened by a wake
+                // morning's lost judging chance (see BountyJudgingSystem's own doc) — the ruling's
+                // explicit instruction is to NAME the effective shortening, never extend the window
+                // to compensate for it.
                 state = state with { Player = state.Player with { Gold = state.Player.Gold + bounty.RewardGold } };
                 events.Emit(new BountyRefunded(bounty.Id, bounty.RewardGold, BountyRefundReason.Lapsed, bounty.AcceptedBy));
                 continue;

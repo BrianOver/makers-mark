@@ -812,7 +812,7 @@ public class SixDilemmasLivenessTests
 
         var empty = new HashSet<ItemSlot>();
         var filled = new HashSet<ItemSlot>();
-        foreach (var plan in MusterPlan.Compute(state.Heroes, state.Bounties, state.Items))
+        foreach (var plan in MusterPlan.Compute(state.Heroes, state.Bounties, state.Items, state.Day))
         {
             foreach (var id in plan.Roster)
             {

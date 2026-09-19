@@ -52,31 +52,32 @@ public class RecruitSystemTests
     public void GateDecrementsEachMorning_SecondRecruitArrivesOnGateExpiry()
     {
         // Two deaths, one idle gate: recruit #1 arrives morning 1, recruit #2 exactly
-        // RecruitGateDays mornings later — the trickle, not a flood.
+        // RecruitGateDays CALENDAR DAYS later — the trickle, not a flood.
+        //
+        // P2-PEOPLE-11: killing two heroes on the same day means the very next calendar day is a
+        // wake (a death dated yesterday), which folds that Morning tick straight to Evening —
+        // Expedition/Camp/ExpeditionDeep never run that day, so a calendar day is sometimes 2 ticks,
+        // not 5. RecruitSystem itself is untouched (it still runs on every Morning tick, wake or
+        // not), so this reads arrival off the EVENT'S OWN stamped Day rather than counting a fixed
+        // number of "no-op" ticks per day, which is the assumption the wake day breaks.
         var state = Kill(Kill(NewWorld(), 1), 2);
         var system = new RecruitSystem();
 
-        var tick = Tick(state, system); // morning 1: recruit #1
-        Assert.Single(tick.Events.OfType<RecruitArrived>());
-        Assert.Equal(5, AliveCount(tick.NewState));
-        state = tick.NewState;
+        var first = Tick(state, system); // morning 1: recruit #1
+        var firstArrival = Assert.Single(first.Events.OfType<RecruitArrived>());
+        Assert.Equal(5, AliveCount(first.NewState));
+        state = first.NewState;
 
-        var arrivals = new List<int>(); // mornings (1-based from now) when a recruit arrived
-        for (var morning = 1; morning <= RecruitSystem.RecruitGateDays; morning++)
+        var laterArrivals = new List<RecruitArrived>();
+        for (var i = 0; i < RecruitSystem.RecruitGateDays * 5 && laterArrivals.Count == 0; i++)
         {
-            state = Tick(state, system).NewState;                    // Expedition (no-op)
-            state = Tick(state, system).NewState;                    // Camp (no-op)
-            state = Tick(state, system).NewState;                    // ExpeditionDeep (no-op)
-            state = Tick(state, system).NewState;                    // Evening (no-op)
-            var morningTick = Tick(state, system);                   // next Morning
-            state = morningTick.NewState;
-            if (morningTick.Events.OfType<RecruitArrived>().Any())
-            {
-                arrivals.Add(morning);
-            }
+            var next = Tick(state, system);
+            state = next.NewState;
+            laterArrivals.AddRange(next.Events.OfType<RecruitArrived>());
         }
 
-        Assert.Equal(new[] { RecruitSystem.RecruitGateDays }, arrivals); // within 3 mornings, on the dot
+        var secondArrival = Assert.Single(laterArrivals);
+        Assert.Equal(firstArrival.Day + RecruitSystem.RecruitGateDays, secondArrival.Day); // on the dot
         Assert.Equal(6, AliveCount(state));
         Assert.Equal(9, state.NextHeroId); // two recruits minted: 7 and 8
     }

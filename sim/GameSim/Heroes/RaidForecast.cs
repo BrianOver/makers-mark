@@ -95,7 +95,7 @@ public static class RaidForecast
     /// </summary>
     public static ImmutableList<ForecastParty> ForTomorrow(GameState state)
     {
-        var plans = MusterPlan.Compute(state.Heroes, state.Bounties, state.Items);
+        var plans = MusterPlan.Compute(state.Heroes, state.Bounties, state.Items, state.Day);
 
         var forecast = ImmutableList.CreateBuilder<ForecastParty>();
         foreach (var plan in plans)
