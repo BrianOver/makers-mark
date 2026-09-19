@@ -160,12 +160,9 @@ public class BalanceCorpusCoverageCensusTests
             + "BaselinePlayer (and every other Balance-tagged sweep policy) always pays dues in gold "
             + "when the till covers it, same shape as SetPriceAction/UnstockAction just above: a "
             + "verb offered every cycle that no scripted policy ever chooses. P2-LONG-18.",
-        ["EarmarkAction"] = "No corpus sweep policy holds a shelved piece for one hero — the earmark verb "
-            + "landed with its sim half only (P2-PEOPLE-28, taken under §11.7.13); the Godot ShopPanel and "
-            + "any harness hand that earmarks are the unit's second half. P2-PEOPLE-28.",
     };
 
-    private const int ExpectedNeverSubmittedCount = 12;
+    private const int ExpectedNeverSubmittedCount = 11; // P2-PEOPLE-26's Balance test drives ForgeCounterPlayer, whose earmark hand (P2-PEOPLE-28) now submits EarmarkAction
 
     [Fact]
     public void PlayerActionHierarchyHasTheMemberCountThisCensusExpects()
