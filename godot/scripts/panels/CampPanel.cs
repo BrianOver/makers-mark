@@ -321,7 +321,13 @@ public partial class CampPanel : SimPanel
             .Select(floor => $"floor {floor} ({venue.MonsterKind(floor)})"));
         AddLabel(cardBody, $"Still ahead, in the dark: {floorsAhead}.");
 
-        AddLabel(cardBody, $"Runner: {fee}g per delivery");
+        // P2-LONG-30: the fee names its own stake — the floor it is reaching (party.TargetFloor,
+        // pinned one above CheckpointFloor since P2-LONG-29) and the formula that priced it, read
+        // through CampHandlers.SupplyFeeFormulaCaption() — SupplyFeeCopyCensusTests bans the two
+        // underlying fee constants by name (and the raw arithmetic) anywhere in godot/scripts.
+        AddLabel(cardBody,
+            $"Runner to floor {party.TargetFloor}: {fee}g per delivery " +
+            $"({CampHandlers.SupplyFeeFormulaCaption()})");
 
         // Supply picker: the player's held consumables (exactly the send-legal set the kernel accepts).
         var pick = new OptionButton { Name = $"CampPick_{lead.Value}" };
@@ -407,7 +413,7 @@ public partial class CampPanel : SimPanel
                             ? "Nothing in your hands — what you've got is on the shelf, and the shelf can't send. Press Unstock to hold it back."
                             : "Nothing in your hands to send.")
                     : party.Recalled ? "The recall bell has rung — the runner won't chase them."
-                    : $"You can't pay the {fee}g runner yet.");
+                    : $"You can't pay the {fee}g runner to floor {party.TargetFloor} yet.");
         }
 
         // U17 (Wave 4, "signal retreat"): pure UI framing over the EXISTING legal RecallPartyAction

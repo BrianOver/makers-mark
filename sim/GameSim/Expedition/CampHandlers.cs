@@ -40,6 +40,14 @@ public sealed class CampHandlers : IActionHandler
     /// does not restate it.</summary>
     public static int SupplyFee(int checkpointFloor) => SupplyFeeBase + SupplyFeePerFloor * checkpointFloor;
 
+    /// <summary>P2-LONG-30 ("the runner's fee names the floor it is reaching, not decoration"):
+    /// the player-facing caption for the formula behind <see cref="SupplyFee"/> (e.g. "6g + 3g a
+    /// floor"). The ONE place that renders <see cref="SupplyFeeBase"/>/<see cref="SupplyFeePerFloor"/>
+    /// as text, so the winch-house slate can show its own math without knowing either constant by
+    /// name — <c>SupplyFeeCopyCensusTests</c> bans both names and the formula's arithmetic shape
+    /// from appearing anywhere under <c>godot/scripts</c>.</summary>
+    public static string SupplyFeeFormulaCaption() => $"{SupplyFeeBase}g + {SupplyFeePerFloor}g a floor";
+
     public bool CanHandle(PlayerAction action, DayPhase phase) =>
         (action is SendSupplyAction or RecallPartyAction) && phase == DayPhase.Camp;
 
