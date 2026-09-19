@@ -78,8 +78,14 @@ public sealed record PartyDeparted(System.Collections.Immutable.ImmutableList<He
 
 public sealed record PartyReturned(System.Collections.Immutable.ImmutableList<HeroId> Survivors) : GameEvent;
 
-/// <summary>A proven item-attributable beat (R11/AE1/AE2). The spine of the game.</summary>
-public sealed record AttributionBeatEvent(BeatType Beat, ItemId Item, HeroId Hero, int Floor, string Detail) : GameEvent;
+/// <summary>A proven item-attributable beat (R11/AE1/AE2). The spine of the game.
+/// <para><paramref name="Decisive"/> (P2-MEMORY-23, recorded at reveal): would the town retell this — a
+/// lethal save, a potion life-save, a breakpoint clear, a provisioning that kept a hero fighting, or a
+/// killing blow the monster would have survived without the item (<c>TellingQuery.KillingBlowIsDecisive</c>).
+/// An incidental killing blow is false. Decided once from the recorded fight, which only survives one
+/// night (<c>LastNightExpeditions</c>), so a lifetime count of deeds that mattered can be read off the
+/// log and nowhere else. TRAILING with a default so older saves deserialize it as false.</para></summary>
+public sealed record AttributionBeatEvent(BeatType Beat, ItemId Item, HeroId Hero, int Floor, string Detail, bool Decisive = false) : GameEvent;
 
 /// <summary>Permadeath record naming the worn gear (R13/AE6).</summary>
 public sealed record HeroDied(HeroId Hero, int Floor, string Cause, GearSet WornGear) : GameEvent;
