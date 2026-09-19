@@ -129,16 +129,16 @@ public class BalanceCorpusCoverageCensusTests
     {
         ["PostBountyAction"] = "Bounty posting is never taken by any corpus sweep policy — "
             + "rules-census.md:1236-1241. P2-HONEST-12.",
-        ["OpenCounterAction"] = "Counter-session verbs are exercised only by CounterPlayer, which no "
-            + "Balance-tagged test ever drives — rules-census.md:1236-1241. P2-HONEST-12.",
-        ["PresentItemAction"] = "Counter-session verbs are exercised only by CounterPlayer, which no "
-            + "Balance-tagged test ever drives — rules-census.md:1236-1241. P2-HONEST-12.",
-        ["SuggestItemAction"] = "Counter-session verbs are exercised only by CounterPlayer, which no "
-            + "Balance-tagged test ever drives — rules-census.md:1236-1241. P2-HONEST-12.",
-        ["HaggleResponseAction"] = "Counter-session verbs are exercised only by CounterPlayer, which "
-            + "no Balance-tagged test ever drives — rules-census.md:1236-1241. P2-HONEST-12.",
-        ["CloseCounterAction"] = "Counter-session verbs are exercised only by CounterPlayer, which no "
-            + "Balance-tagged test ever drives — rules-census.md:1236-1241. P2-HONEST-12.",
+        // P2-PEOPLE-26: OpenCounterAction/PresentItemAction/HaggleResponseAction/CloseCounterAction
+        // graduated off this table — SavedHeroMoodBalanceTests (sim/GameSim.Tests/Balance/) is the
+        // first Balance-tagged test to reference ForgeCounterPlayer.ActionsFor, which genuinely
+        // constructs all four (it is the policy that plays the haggle minigame). SuggestItemAction
+        // is the one counter verb ForgeCounterPlayer never calls (it always Presents, never
+        // Suggests), so it alone stays pinned below — a real, reviewed narrowing per this test's own
+        // rule (CLAUDE.md rule 8), not a silent widen.
+        ["SuggestItemAction"] = "Counter-session verbs are exercised only by CounterPlayer/"
+            + "ForgeCounterPlayer, neither of which ever submits Suggest (ForgeCounterPlayer always "
+            + "Presents) — rules-census.md:1236-1241. P2-HONEST-12.",
         ["SetProfessionsAction"] = "Profession selection happens once, out of band, before any "
             + "scripted policy runs a tick; no sweep policy re-submits it — "
             + "rules-census.md:1236-1241. P2-HONEST-12.",
@@ -160,9 +160,6 @@ public class BalanceCorpusCoverageCensusTests
             + "BaselinePlayer (and every other Balance-tagged sweep policy) always pays dues in gold "
             + "when the till covers it, same shape as SetPriceAction/UnstockAction just above: a "
             + "verb offered every cycle that no scripted policy ever chooses. P2-LONG-18.",
-        ["EarmarkAction"] = "No corpus sweep policy holds a shelved piece for one hero — the earmark verb "
-            + "landed with its sim half only (P2-PEOPLE-28, taken under §11.7.13); the Godot ShopPanel and "
-            + "any harness hand that earmarks are the unit's second half. P2-PEOPLE-28.",
         ["PlaceGraveMarkerAction"] = "No corpus sweep policy performs the wake — the grave-marker verb landed "
             + "with its sim half only (P2-PEOPLE-05, wake contracts); the fallen's page and the death-night "
             + "staging are P2-PEOPLE-06. P2-PEOPLE-05.",
@@ -171,7 +168,7 @@ public class BalanceCorpusCoverageCensusTests
             + "staging are P2-PEOPLE-06. P2-PEOPLE-05.",
     };
 
-    private const int ExpectedNeverSubmittedCount = 18;
+    private const int ExpectedNeverSubmittedCount = 13; // 18 -> 13: P2-PEOPLE-26's Balance test drives ForgeCounterPlayer, which submits the four counter verbs and (via its P2-PEOPLE-28 hand) EarmarkAction
 
     [Fact]
     public void PlayerActionHierarchyHasTheMemberCountThisCensusExpects()
