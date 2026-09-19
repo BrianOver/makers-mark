@@ -207,7 +207,7 @@ public class CampPanelTests
                 var text = RenderedText(ui.Camp);
                 var expectedFee = CampHandlers.SupplyFee(checkpointFloor);
                 var expectedLine =
-                    $"Runner to floor {checkpointFloor + 1}: {expectedFee}g per delivery " +
+                    $"Runner to the camp on floor {checkpointFloor}: {expectedFee}g per delivery " +
                     $"({CampHandlers.SupplyFeeFormulaCaption()})";
 
                 AssertThat(text)
@@ -534,7 +534,7 @@ public class CampPanelTests
             AssertThat(send.TooltipText)
                 .OverrideFailureMessage(
                     $"The can't-pay refusal must name the same floor the fee line quotes. Got: \"{send.TooltipText}\"")
-                .Contains($"{Floor1Fee}g runner to floor {party.TargetFloor}");
+                .Contains($"{Floor1Fee}g runner to floor {party.CheckpointFloor}");
         }
         finally
         {
