@@ -276,6 +276,33 @@ public static class TellingQuery
         return ComputeKillingBlowFacts(hero, beat, items, venue, factualRounds).MonsterHpWithoutItem > 0;
     }
 
+    /// <summary>
+    /// P2-MEMORY-23/24: the same decisiveness call, looked up by a bare <see cref="AttributionBeatEvent"/>
+    /// off <see cref="GameState.LastNightExpeditions"/> — the shape both <see cref="Drama.GossipSystem"/>
+    /// (gossip ranking) and <see cref="Drama.LegendQuery"/> (fame) need, so neither carries its own copy
+    /// of this lookup. <see cref="GameState.LastNightExpeditions"/> holds only the most recent night
+    /// (P2-PROOF-01), so a beat whose expedition has aged out — or that never matched one — reports
+    /// incidental: the honest default for a claim that can no longer be proven, never a guess.
+    /// </summary>
+    public static bool KillingBlowIsDecisive(GameState state, AttributionBeatEvent beatEvent)
+    {
+        foreach (var result in state.LastNightExpeditions)
+        {
+            var beat = result.Beats.FirstOrDefault(b =>
+                b.Beat == beatEvent.Beat && b.Item == beatEvent.Item && b.Hero == beatEvent.Hero
+                && b.Floor == beatEvent.Floor && b.Detail == beatEvent.Detail);
+            if (beat is null)
+            {
+                continue;
+            }
+
+            var venue = VenueRegistry.All.TryGetValue(result.VenueId, out var v) ? v : VenueRegistry.Mine;
+            return KillingBlowIsDecisive(result, beat, state.Items, venue);
+        }
+
+        return false;
+    }
+
     // ---- LethalSave ----------------------------------------------------------------------------
 
     private static TellingScript BuildLethalSave(

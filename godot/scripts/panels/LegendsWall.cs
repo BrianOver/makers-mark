@@ -695,7 +695,7 @@ public partial class LegendsWall : Control
             {
                 var label = item.IsSigned
                     ? $"{item.Name} — \"{item.SignedName}\""
-                    : $"{item.Name} — {AttributionBeatCount(state, item.Id)} proven beats";
+                    : $"{item.Name} — {DecisiveBeatCount(state, item.Id)} proven beats";
                 sb.Append("<li>").Append(Html(label)).Append("</li>");
             }
 

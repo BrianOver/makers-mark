@@ -75,8 +75,13 @@ public static class GossipGenerator
     /// decisive kill (the swing would not have killed without the item) ahead of an incidental one.
     /// Ties keep the involvement/affinity order below, so the pick stays total and deterministic.
     /// The predicate is the caller's (it needs last night's <c>ExpeditionResult</c>); with none
-    /// supplied every kill ranks as incidental, which is the honest default.</summary>
-    private static int Rank(GameEvent gameEvent, Func<AttributionBeatEvent, bool>? isDecisiveKillingBlow) =>
+    /// supplied every kill ranks as incidental, which is the honest default.
+    ///
+    /// <para>Internal rather than private (P2-MEMORY-23): <see cref="LegendQuery.IsDecisiveBeat"/>
+    /// reuses this exact rank order to decide which logged beats count toward fame — "decisive" for
+    /// fame and "worth retelling" for gossip are the SAME definition, never two independently-typed
+    /// copies that could quietly drift apart.</para></summary>
+    internal static int Rank(GameEvent gameEvent, Func<AttributionBeatEvent, bool>? isDecisiveKillingBlow) =>
         gameEvent switch
         {
             HeroDied => 0,

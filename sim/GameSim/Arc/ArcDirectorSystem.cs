@@ -132,7 +132,7 @@ public sealed class ArcDirectorSystem : IPhaseSystem
         var gossip = state.EventLog.OfType<GossipEmitted>().Count();
         var legendaryDead = memorials.Count(m => LegendQuery.IsFamousDead(state, m.Hero));
         var legendaryLiving = state.Heroes.Values.Count(h =>
-            h.Alive && LegendQuery.AttributionBeatCount(state, h.Id) >= LegendBeatThreshold);
+            h.Alive && LegendQuery.DecisiveBeatCount(state, h.Id) >= LegendBeatThreshold);
 
         return new CampaignEnded(
             DeepestFloorReached: deepestFloor,
