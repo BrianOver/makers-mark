@@ -61,6 +61,7 @@ public static class ForgeCounterPlayer
             // the routine above is order-independent — mirrors ApprenticePlayer's day-2 opening
             // tick, done every morning here instead of once on a fixed calendar day.
             var actions = BaselinePlayer.ActionsFor(state).ToBuilder();
+            AddCommissionEarmarks(state, actions);
             var open = new OpenCounterAction();
             if (ActionLegality.IsLegal(state, open, state.Phase))
             {
@@ -142,5 +143,53 @@ public static class ForgeCounterPlayer
         return ceiling > 0 && ceiling <= hero.Gold
             ? new HaggleResponseAction(HaggleResponseKind.Counter, ceiling)
             : new HaggleResponseAction(HaggleResponseKind.Accept);
+    }
+
+    /// <summary>
+    /// P2-PEOPLE-28 ("hold it for Torvald"): decision 1's first measured occurrence. A piece
+    /// <see cref="BaselinePlayer"/>'s own stocking loop just proposed to stock this same tick, that
+    /// satisfies a hero's commission — accepted already, or accepted by one of THIS tick's own
+    /// <see cref="AcceptCommissionAction"/> entries above it in <paramref name="actions"/> — gets
+    /// held for that hero instead of going to whoever shops first. <see
+    /// cref="CommissionHandlers.Satisfies"/> is the exact match rule the commission channel checks
+    /// at delivery time (<see cref="CommissionHandlers.TryFulfillFromShelf"/>), asked here rather
+    /// than re-derived, so an earmark this policy places can never disagree with what the
+    /// commission channel would actually accept. Never asks <see cref="ActionLegality.IsLegal"/>
+    /// for the earmark itself: <paramref name="state"/> predates this tick's own StockAction, so
+    /// the item is not on the shelf there yet — <see cref="GameKernel.Tick"/> applies actions in
+    /// order, so by the time this earmark actually runs, its own StockAction (earlier in the same
+    /// list) already put the item there. One earmark per hero (a hero holds at most one open or
+    /// accepted commission at a time — see <see cref="CommissionHandlers"/>'s own class doc).
+    /// </summary>
+    private static void AddCommissionEarmarks(GameState state, ImmutableList<PlayerAction>.Builder actions)
+    {
+        var acceptingNow = actions.OfType<AcceptCommissionAction>().Select(a => a.Hero).ToHashSet();
+        var claimed = new HashSet<HeroId>();
+        foreach (var stock in actions.OfType<StockAction>().ToList())
+        {
+            if (!state.Items.TryGetValue(stock.Item.Value, out var item))
+            {
+                continue;
+            }
+
+            foreach (var commission in state.Commissions)
+            {
+                if (claimed.Contains(commission.Hero)
+                    || (!commission.Accepted && !acceptingNow.Contains(commission.Hero)))
+                {
+                    continue;
+                }
+
+                if (!state.Heroes.TryGetValue(commission.Hero.Value, out var hero) || !hero.Alive
+                    || !CommissionHandlers.Satisfies(commission, item, ClassRegistry.Require(hero.ClassId)))
+                {
+                    continue;
+                }
+
+                actions.Add(new EarmarkAction(stock.Item, commission.Hero));
+                claimed.Add(commission.Hero);
+                break;
+            }
+        }
     }
 }

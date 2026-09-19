@@ -191,6 +191,49 @@ public class ShopPanelTests
         }
     }
 
+    /// <summary>P2-PEOPLE-28 ("hold it for Torvald"): the hold picker queues the exact EarmarkAction for the
+    /// chosen living hero; once the sim has it, the card reads "Held for <name>" straight off
+    /// ShelfEntry.EarmarkedFor (law 4) and the clear control queues the null earmark.</summary>
+    [TestCase]
+    public void HoldForHero_QueuesEarmark_CardReadsHeldFor_AndPutBackQueuesTheClear()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            var itemId = CraftDagger(ui);
+            Find<SpinBox>(ui.Shop, $"StockPrice_{itemId.Value}").Value = StockPrice;
+            PressEnabled(ui.Shop, $"Stock_{itemId.Value}");
+            ui.Adapter.AdvancePhase(); // lands the stock, renders the shelf card
+
+            var pick = Find<OptionButton>(ui.Shop, $"HoldPick_{itemId.Value}");
+            AssertThat(pick.ItemCount).IsGreater(0);
+            pick.Select(0);
+            var heroId = pick.GetItemMetadata(0).AsInt32();
+            var heroName = ui.Adapter.CurrentState.Heroes[heroId].Name;
+            AssertThat(pick.GetItemText(0)).IsEqual(heroName);
+
+            PressEnabled(ui.Shop, $"Hold_{itemId.Value}");
+            var earmarks = ui.Adapter.AppliedThisPhase.OfType<EarmarkAction>().ToList();
+            AssertThat(earmarks.Count).IsEqual(1);
+            AssertThat(earmarks[0].Item).IsEqual(itemId);
+            AssertThat(earmarks[0].Hero).IsEqual(new HeroId(heroId));
+
+            ui.Adapter.AdvancePhase(); // re-render off the sim's own shelf entry
+            var entry = ui.Adapter.CurrentState.Player.Shelf.Single(e => e.Item == itemId);
+            AssertThat(entry.EarmarkedFor).IsEqual(new HeroId(heroId));
+            AssertThat(Find<Label>(ui.Shop, $"HeldFor_{itemId.Value}").Text).Contains($"Held for {heroName}");
+
+            PressEnabled(ui.Shop, $"ClearHold_{itemId.Value}");
+            var clears = ui.Adapter.AppliedThisPhase.OfType<EarmarkAction>().Where(e => e.Hero is null).ToList();
+            AssertThat(clears.Count).IsEqual(1);
+            AssertThat(clears[0].Item).IsEqual(itemId);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
     [TestCase]
     public void StockingWithNoPriceInteraction_AutoPricesAtTheSuggestion_AndShowsWhereItCameFrom()
     {

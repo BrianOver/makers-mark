@@ -5179,8 +5179,16 @@ name (§11.6 rule 4).
 | P2-HONEST-31 | `DuesPledged` is emitted and never registered — the first pledged cycle makes the save unwritable | `sim/GameSim/Contracts/Events.cs`, `sim/GameSim.Tests/` `evidence:sim/GameSim/Contracts/Events.cs:JsonDerivedType(typeof(DuesPledged)` | — | [S][C] |
 | P2-HONEST-32 | `DenThreatShifted` never fires in 2,000 days while `MineWatch` reads it in four places — measure the den arithmetic, then make it reachable or delete the reader | `sim/GameSim/Drama/DirectorSystem.cs`, `godot/scripts/panels/MineWatch.cs`, `sim/GameSim.Tests/` `evidence:sim/GameSim/Drama/DirectorSystem.cs:ClearsLastNight` | — | [S][GOLD] |
 | P2-LONG-34 | Measure the felt wall where the player reads it — a Godot-side verbatim-repeat census over the night card's rendered lines on days 3, 12 and 25 | `godot/tests/`, `godot/scripts/panels/LedgerModal.cs` (read-only), `tools/Analytics/` | — | [G] |
-| P2-PEOPLE-28 | Hold it for Torvald — an earmark hides a stocked piece from ordinary shopping and shows it to the one hero it was made for | `sim/GameSim/Contracts/Actions.cs`, `sim/GameSim/Economy/ShopHandlers.cs`, `sim/GameSim/Heroes/HeroShoppingSystem.cs`, `godot/scripts/panels/ShopPanel.cs` | P2-HONEST-30 | [S][C][GOLD] |
+| P2-PEOPLE-28 | Hold it for Torvald — an earmark hides a stocked piece from ordinary shopping and shows it to the one hero it was made for | `sim/GameSim/Contracts/Actions.cs`, `sim/GameSim/Economy/ShopHandlers.cs`, `sim/GameSim/Heroes/HeroShoppingSystem.cs`, `godot/scripts/panels/ShopPanel.cs` `evidence:godot/scripts/panels/ShopPanel.cs:EarmarkAction` | P2-HONEST-30 | [S][C][GOLD] |
 | P2-PEOPLE-29 | The price moves the relationship by its margin — pin and fleece scale with the gap, and an in-band sale is not nothing | `sim/GameSim/Counter/HaggleResolver.cs`, `sim/GameSim/Counter/WillingnessModel.cs`, `sim/GameSim.Tests/Balance/` | P2-HONEST-30 | [S][BAL] |
+| P2-HONEST-33 | Counter-served heroes never take the shelf path — an accepted commission or an earmarked piece is never fulfilled on a day the counter served that hero (0 of 1,018 commissions fulfilled under `forgecounter`, with or without earmarks); make the counter honour the standing request, or say in copy that it does not | `sim/GameSim/Heroes/HeroShoppingSystem.cs`, `sim/GameSim/Counter/`, `sim/GameSim.Tests/` | P2-PEOPLE-28 | [S][GOLD] |
+
+**P2-HONEST-33** is booked from P2-PEOPLE-28's own measurement: `HeroShoppingSystem.ShoppingOrder` skips
+every hero the counter served that day ("counter-served heroes don't shop twice", PKD5), and
+`CommissionHandlers.TryFulfillFromShelf` only runs inside that ordinary pass — so under `ForgeCounterPlayer`,
+which opens the counter every morning, 1,018 commissions were posted across 20 seeds x 100 days and 0 were
+fulfilled, and every one of its 348 earmarks went unbought by the hero it was held for. The hold verb is
+honest on the shelf path (the tests prove it); the counter path is where a standing request goes to die.
 
 Depends-on cells hold unit ids and the owner gate `P4` only, so `tools/Progress --frontier` can
 resolve every one of them; what a cell used to say in prose lives here instead. `P2-PEOPLE-03`
