@@ -284,6 +284,12 @@ public class TeachingCoverageCensusTests
         // illegal to send) in the same breath it names the dilemma -- the "foundry-four-verbs"
         // precedent for one id covering more than one action already exists on this same dict.
         [typeof(UnstockAction)] = "hold-or-sell",
+        // P2-PEOPLE-28: the OTHER verb the hold-or-sell dilemma names — Unstock pulls a piece off
+        // the shelf entirely, Earmark holds it in plain sight for one named hero. Same dilemma,
+        // same lesson id — CommissionBoard.ShowHoldOrSellLesson already fires "hold-or-sell" the
+        // first time a commission delivery is possible, before the player has reached for either
+        // verb, so there is no second banner to wire.
+        [typeof(EarmarkAction)] = "hold-or-sell",
         // P2-LONG-18: PledgePanel.ShowPledgeLesson fires this once, the first time the panel ever
         // opens (clicking Voss) — the mechanic explainer, distinct from the cost-naming quote shown
         // every time a pledge is actually about to happen (PledgePanel.VossConfirmQuote, deliberately
@@ -320,9 +326,6 @@ public class TeachingCoverageCensusTests
     /// tension (the verdict moved because the code did, not the other way round).</summary>
     private static readonly Dictionary<Type, string> ActionUntaught = new()
     {
-        [typeof(EarmarkAction)] = "P2-PEOPLE-28 sim half only (#918): no Godot control queues it yet, so there is " +
-            "nothing to teach; the ShopPanel hold verb PR records the teaching decision (first-touch under " +
-            "hold-or-sell, beside UnstockAction).",
         [typeof(CloseCounterAction)] =
             "CounterAnsweredAtLeastOnce (TutorialFlow.cs) recognizes CloseCounterAction as an optional " +
             "fast-path AFTER an answer, but never REQUIRES it -- a player can finish the OpenCounter " +

@@ -990,6 +990,28 @@ public partial class ShopPanel : SimPanel
     }
 
     /// <summary>
+    /// P2-PEOPLE-28 ("hold it for Torvald", decision 1 — sell the good one or hold it for the
+    /// hero who needs it): queues <see cref="EarmarkAction"/> for the hold picker AND the clear
+    /// button — <paramref name="heroId"/> null clears. No client-side validity check duplicated
+    /// here (KTD-A): <see cref="ActionLegality.IsLegal"/> runs at kernel apply time and a
+    /// rejection surfaces the normal way, same as every other queued action from this panel.
+    /// </summary>
+    public void Earmark(int itemId, int? heroId)
+    {
+        if (Adapter is null)
+        {
+            return;
+        }
+
+        var id = new ItemId(itemId);
+        var hero = heroId is { } h ? new HeroId(h) : (HeroId?)null;
+        Adapter.Queue(new EarmarkAction(id, hero));
+        SetShopFeedback(hero is { } heldHero
+            ? $"queued: hold {id} for {HeroName(heldHero)}"
+            : $"queued: put {id} back on open sale");
+    }
+
+    /// <summary>
     /// U1 (§11.14.14 defect, "pricing-as-a-decision" fired from the wrong surface): the SHELF
     /// half of the pricing dilemma — named the first time the player EVER sets a shelf price, which
     /// is the initial stock price, not a later reprice edit. Before this unit the only firing site

@@ -405,6 +405,11 @@ public partial class LedgerModal : SimPanel
         // the narrator line and the gate-held streak above it.
         AddRivalSaleLines(state, day);
 
+        // P2-PEOPLE-28 ("hold it for Torvald"): decision 1's own payoff — the hero the piece was
+        // held for actually came for it, or it is still waiting for them tonight. Same "one shared
+        // fact, not one per hero card" placement as the two lines above it.
+        AddEarmarkLines(state, day);
+
         if (cards.IsEmpty)
         {
             AddTutorialTip();

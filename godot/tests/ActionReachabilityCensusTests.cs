@@ -129,6 +129,11 @@ public class ActionReachabilityCensusTests
             "the confirm row's PledgeConfirm_{id} button (PledgePanel.cs, RenderItem) is what actually " +
             "queues PledgeDuesAction. The panel itself opens only from clicking Voss at the " +
             "noticeboard (Town2D.AssessorClicked -> MainUi.OnAssessorClicked), not a HUD tray button.",
+        [typeof(EarmarkAction)] =
+            "P2-PEOPLE-28's second half: ShopPanel.BuildShelfSection's per-shelf-card hold row " +
+            "(ShopPanel.cs:372). An open piece with a living hero in town shows a Hold_{id} button " +
+            "(:396, queues :397) beside a HoldPick_{id} hero OptionButton; a held piece shows " +
+            "ClearHold_{id} (:378, queues :379). Both route through ShopPanel.Earmark.",
     };
 
     /// <summary>
@@ -141,9 +146,6 @@ public class ActionReachabilityCensusTests
     /// </summary>
     private static readonly Dictionary<Type, string> Exclusions = new()
     {
-        [typeof(EarmarkAction)] = "P2-PEOPLE-28 landed its sim half first (Contracts micro-PR #918): the earmark " +
-            "verb exists and both shelf readers honour it, but the ShopPanel 'hold for' control is the unit's " +
-            "second half, dispatched next. Moves to Surfaces when that PR lands.",
     };
 
     private static IEnumerable<Type> ConcretePlayerActionTypesInAssembly() =>
