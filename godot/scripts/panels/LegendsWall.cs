@@ -369,9 +369,19 @@ public partial class LegendsWall : Control
     /// this one hero: their memorial line and Honor button (if unhonored), their Reforge rows (if
     /// any worn gear is still eligible), and their depths record. This one only moves the
     /// pre-existing verbs onto it, unchanged; <see cref="ShowItemPage"/> is the book's other page
-    /// kind, for an item rather than an actor.</summary>
-    private void ShowActorPage(GameState state, HeroId hero)
+    /// kind, for an item rather than an actor.
+    ///
+    /// <para>P2-PEOPLE-07: public (was private) so the night card's "Sit the wake" button can jump
+    /// straight here — <see cref="EnsureBuilt"/>/<c>Visible = true</c> added at the top so an
+    /// external caller gets the same "open the overlay" contract <see cref="ShowWall"/>/<see
+    /// cref="ShowBindPage"/> already give; both are no-ops for the existing internal call from
+    /// <see cref="RenderActorBook"/>, where the wall is already built and visible. The SAME page
+    /// either way — never a second one built for the wake.</para>
+    /// </summary>
+    public void ShowActorPage(GameState state, HeroId hero)
     {
+        EnsureBuilt();
+        Visible = true;
         Clear(_body!);
 
         AddButton(_body!, "LegendsWallBack", "‹ Back to the book", () => ShowIndex(state));
