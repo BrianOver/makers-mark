@@ -160,13 +160,19 @@ public class BalanceCorpusCoverageCensusTests
             + "BaselinePlayer (and every other Balance-tagged sweep policy) always pays dues in gold "
             + "when the till covers it, same shape as SetPriceAction/UnstockAction just above: a "
             + "verb offered every cycle that no scripted policy ever chooses. P2-LONG-18.",
+        ["PlaceGraveMarkerAction"] = "No corpus sweep policy performs the wake — the grave-marker verb landed "
+            + "with its sim half only (P2-PEOPLE-05, wake contracts); the fallen's page and the death-night "
+            + "staging are P2-PEOPLE-06. P2-PEOPLE-05.",
+        ["ChooseRemembranceAction"] = "No corpus sweep policy performs the wake — the remembrance verb landed "
+            + "with its sim half only (P2-PEOPLE-05, wake contracts); the fallen's page and the death-night "
+            + "staging are P2-PEOPLE-06. P2-PEOPLE-05.",
     };
 
-    private const int ExpectedNeverSubmittedCount = 11; // P2-PEOPLE-26's Balance test drives ForgeCounterPlayer, whose earmark hand (P2-PEOPLE-28) now submits EarmarkAction
+    private const int ExpectedNeverSubmittedCount = 13; // 18 -> 13: P2-PEOPLE-26's Balance test drives ForgeCounterPlayer, which submits the four counter verbs and (via its P2-PEOPLE-28 hand) EarmarkAction
 
     [Fact]
     public void PlayerActionHierarchyHasTheMemberCountThisCensusExpects()
-        => Assert.True(AllActionTypes.Length == 27,
+        => Assert.True(AllActionTypes.Length == 29,
             $"PlayerAction now reflects {AllActionTypes.Length} concrete derived types — "
             + "sanity-check this census's reflection query still finds them all before trusting the "
             + "coverage split below (and if a type was really added or removed, the offered/"

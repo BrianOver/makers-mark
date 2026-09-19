@@ -56,7 +56,7 @@ public class ActionReachabilityCensusTests
     /// add a decision for it — <see cref="EveryConcretePlayerActionType_HasASurfaceOrAReasonedExclusion"/>
     /// fails BY NAME right alongside it.
     /// </summary>
-    private const int ExpectedActionCount = 27; // 26 -> 27: EarmarkAction (P2-PEOPLE-28 sim half)
+    private const int ExpectedActionCount = 29; // 26 -> 27: EarmarkAction (P2-PEOPLE-28); 27 -> 29: the two wake verbs (P2-PEOPLE-05 sim half)
 
     /// <summary>
     /// Every concrete <see cref="PlayerAction"/> type mapped to the ONE real Godot submit site that
@@ -146,6 +146,10 @@ public class ActionReachabilityCensusTests
     /// </summary>
     private static readonly Dictionary<Type, string> Exclusions = new()
     {
+        [typeof(PlaceGraveMarkerAction)] = "P2-PEOPLE-05 landed the wake CONTRACTS and handlers only; the fallen's page " +
+            "with its three verbs on the death night is P2-PEOPLE-06, which moves this to Surfaces.",
+        [typeof(ChooseRemembranceAction)] = "P2-PEOPLE-05 landed the wake CONTRACTS and handlers only; the fallen's page " +
+            "with its three verbs on the death night is P2-PEOPLE-06, which moves this to Surfaces.",
     };
 
     private static IEnumerable<Type> ConcretePlayerActionTypesInAssembly() =>

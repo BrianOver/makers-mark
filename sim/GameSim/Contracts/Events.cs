@@ -62,6 +62,8 @@ namespace GameSim.Contracts;
 [JsonDerivedType(typeof(DuesPledged), "duesPledged")]
 [JsonDerivedType(typeof(ShelfEarmarked), "shelfEarmarked")]
 [JsonDerivedType(typeof(BountyRefunded), "bountyRefunded")]
+[JsonDerivedType(typeof(GraveMarkerPlaced), "graveMarkerPlaced")]
+[JsonDerivedType(typeof(RemembranceChosen), "remembranceChosen")]
 public abstract record GameEvent
 {
     public EventId Id { get; init; }
@@ -280,6 +282,13 @@ public sealed record ItemSigned(ItemId Item, string SignedName) : GameEvent;
 /// <summary>Wave 4c (U18, farewell rite): the player performed a fallen hero's farewell, marking
 /// their <see cref="Memorial"/> honored (once, idempotent). An earned goodbye (R6).</summary>
 public sealed record MemorialHonored(HeroId Hero, string HeroName) : GameEvent;
+
+/// <summary>P2-PEOPLE-05: the player set <paramref name="Item"/> (their own craft) as the fallen's grave-marker.</summary>
+public sealed record GraveMarkerPlaced(HeroId Hero, string HeroName, ItemId Item) : GameEvent;
+
+/// <summary>P2-PEOPLE-05: the player chose the logged event <paramref name="Source"/> as what the fallen is
+/// remembered by; it named the hero when chosen (<c>RemembranceQuery.NamesHero</c>).</summary>
+public sealed record RemembranceChosen(HeroId Hero, string HeroName, EventId Source) : GameEvent;
 
 /// <summary>Wave 4c (U20, heirloom reforge): a fallen hero's worn gear was reforged into a new item
 /// carrying their legend-line forward (<see cref="Item.HeirloomLineage"/>). The dead persist as

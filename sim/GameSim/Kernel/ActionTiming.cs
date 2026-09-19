@@ -118,6 +118,8 @@ public static class ActionTiming
         // shows nothing is a dead click, not a rite (2026-08-02 widening).
         UnlockTalentAction => true,
         HonorMemorialAction => true,
+        PlaceGraveMarkerAction => true,     // P2-PEOPLE-05: your hands at the grave, same shape as Honor
+        ChooseRemembranceAction => true,    // P2-PEOPLE-05: a fact you assert, nothing the world must act on
 
         // §11.13 amendment (U4a): walking out of the apprenticeship is the player's own stance,
         // taken the instant the graduation confirm is pressed — same shape as HonorMemorialAction

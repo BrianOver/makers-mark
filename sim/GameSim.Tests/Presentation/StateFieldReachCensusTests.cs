@@ -556,7 +556,7 @@ public class StateFieldReachCensusTests
     private const int ExpectedRoutedCount = 9;
     private const int ExpectedInternalCount = 6;
     // 12 -> 8: the same join, mirrored — the four fields that left GAP for RENDERED above.
-    private const int ExpectedGapCount = 9; // 8 -> 9: ShelfEntry.EarmarkedFor, booked as P2-PEOPLE-28 (its ShopPanel half)
+    private const int ExpectedGapCount = 9; // 8 -> 9: ShelfEntry.EarmarkedFor, booked as P2-PEOPLE-28 (its ShopPanel half). Memorial.MarkerItem/Remembrance (P2-PEOPLE-05) sit below the N=3 reader bar until P2-PEOPLE-06 renders them.
 
     // ---------------------------------------------------------------------------------------
     // Guard tests
@@ -771,8 +771,8 @@ public class StateFieldReachCensusTests
         var code = File.ReadAllText(eventsPath);
         var count = Regex.Matches(code, @": GameEvent;").Count;
 
-        Assert.True(count == 54,
-            $"Events.cs now declares {count} GameEvent types, not 54 — the event surface census "
+        Assert.True(count == 56,
+            $"Events.cs now declares {count} GameEvent types, not 56 — the event surface census "
             + "this file deliberately excludes state-field work from needs re-running, not just this "
             + "count updated.");
     }
