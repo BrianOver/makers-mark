@@ -62,6 +62,7 @@ public static class ActionSubject
         StockAction a => $"stock item #{a.Item.Value} at {a.Price}g",
         SetPriceAction a => $"reprice item #{a.Item.Value} to {a.Price}g",
         UnstockAction a => $"unstock item #{a.Item.Value}",
+        EarmarkAction a => a.Hero is { } held ? $"hold item #{a.Item.Value} for hero #{held.Value}" : $"put item #{a.Item.Value} back on open sale",
         BuyOreAction a => $"buy {a.Quantity}x {a.MaterialKey} from hero #{a.From.Value}",
         BuyMaterialAction a => $"buy {a.Quantity}x {a.MaterialKey}",
         PostBountyAction a => $"post bounty for floor {a.TargetFloor} at {a.RewardGold}g",
