@@ -1541,7 +1541,7 @@ public sealed partial class TutorialFlow : PanelContainer
         // own instruction — "the world waits," and "it fires on a run aiming deeper" were redundant
         // restatements of the clause each already carries. "No stop today" stays pinned verbatim
         // (three assertions in TutorialFlowTests); neither branch had its own separate pin.
-        var stagedDeeper = MusterPlan.Compute(state.Heroes, state.Bounties, state.Items).Any(p => p.TargetFloor > 1);
+        var stagedDeeper = MusterPlan.Compute(state.Heroes, state.Bounties, state.Items, state.Day).Any(p => p.TargetFloor > 1);
         return stagedDeeper
             ? "They'll stop below the checkpoint if they get there clean — no clock on it."
             : "No stop today — one floor down only.";
@@ -1851,7 +1851,7 @@ public sealed partial class TutorialFlow : PanelContainer
     /// the real precondition was never the day at all — a Day-2 party aiming for floor 1 still
     /// never stops, and the old text told the player it was coming anyway.</summary>
     private static bool AnyPartyStagedForCheckpointToday(GameState state) =>
-        MusterPlan.Compute(state.Heroes, state.Bounties, state.Items).Any(p => p.TargetFloor >= 2);
+        MusterPlan.Compute(state.Heroes, state.Bounties, state.Items, state.Day).Any(p => p.TargetFloor >= 2);
 
     /// <summary>
     /// U5: the WHOLE ten-slot checklist, done/current/skipped/upcoming — one row per DISPLAYED

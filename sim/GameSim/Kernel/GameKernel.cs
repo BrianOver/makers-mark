@@ -194,7 +194,7 @@ public sealed class GameKernel
     private static (int Day, DayPhase Phase) Advance(int day, DayPhase phase, CounterState? counter, ImmutableSortedDictionary<int, Hero> heroes) => phase switch
     {
         DayPhase.Morning when counter is { Closed: false } => (day, DayPhase.Morning),
-        DayPhase.Morning when NoRaidToHost(heroes) => (day, DayPhase.Evening),
+        DayPhase.Morning when NoRaidToHost(heroes, day) => (day, DayPhase.Evening),
         DayPhase.Morning => (day, DayPhase.Expedition),
         DayPhase.Expedition => (day, DayPhase.Camp),
         DayPhase.Camp => (day, DayPhase.ExpeditionDeep),
@@ -219,8 +219,8 @@ public sealed class GameKernel
     /// case (both still "went down"), so Expedition/Camp/ExpeditionDeep are unaffected once any party
     /// forms at all.
     /// </summary>
-    private static bool NoRaidToHost(ImmutableSortedDictionary<int, Hero> heroes) =>
-        PartyFormation.FormParties(heroes).IsEmpty;
+    private static bool NoRaidToHost(ImmutableSortedDictionary<int, Hero> heroes, int day) =>
+        PartyFormation.FormParties(heroes, day).IsEmpty;
 
     /// <summary>
     /// U-T6: the kernel's own sink implements <see cref="ITraceSink"/> alongside the required

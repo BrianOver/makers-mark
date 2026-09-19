@@ -41,7 +41,7 @@ public sealed class ExpeditionSystem : IPhaseSystem
 
     public GameState Process(GameState state, IDeterministicRng rng, IEventSink events)
     {
-        var parties = PartyFormation.FormParties(state.Heroes); // filters dead internally
+        var parties = PartyFormation.FormParties(state.Heroes, state.Day); // filters dead + wake day internally
 
         // Phase C U-C4: parties already routed to each live venue THIS TICK, so later parties in the
         // same tick see the updated count (the queue-length half of VenueRouter's comparator). Seeded

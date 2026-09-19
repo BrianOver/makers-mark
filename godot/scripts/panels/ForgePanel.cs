@@ -1348,7 +1348,7 @@ public partial class ForgePanel : SimPanel
             .ToImmutableSortedDictionary(h => h.Id.Value, h => h);
 
         var candidatesBySlot = new Dictionary<ItemSlot, List<Hero>>();
-        foreach (var plan in MusterPlan.Compute(musterableHeroes, state.Bounties, state.Items))
+        foreach (var plan in MusterPlan.Compute(musterableHeroes, state.Bounties, state.Items, state.Day))
         {
             foreach (var heroId in plan.Roster)
             {

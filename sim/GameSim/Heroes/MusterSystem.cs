@@ -36,11 +36,16 @@ public static class MusterPlan
     public static ImmutableList<PartyPlan> Compute(
         ImmutableSortedDictionary<int, Hero> heroes,
         ImmutableList<Bounty> bounties,
-        ImmutableSortedDictionary<int, Item> items)
+        ImmutableSortedDictionary<int, Item> items,
+        int day)
     {
         var predictedBounties = BountyRules.JudgeFirstAccept(heroes, bounties);
 
-        var parties = PartyFormation.FormParties(heroes);
+        // P2-PEOPLE-11: the day-authoritative overload — see PartyFormation.FormParties(heroes,day)'s
+        // own doc, which names this call site explicitly. Without it, a wake morning's prediction
+        // would announce a march (PartiesFormed) that the Expedition tick, two phases later, never
+        // actually stages — the exact byte-match property this projection exists to guarantee.
+        var parties = PartyFormation.FormParties(heroes, day);
 
         // Phase C U-C4: the SAME queue-seeded routing ExpeditionSystem.Process runs, over the
         // identical parties in the identical order — so this Morning prediction never disagrees
@@ -101,7 +106,7 @@ public sealed class MusterSystem : IPhaseSystem
 
     public GameState Process(GameState state, IDeterministicRng rng, IEventSink events)
     {
-        var parties = MusterPlan.Compute(state.Heroes, state.Bounties, state.Items);
+        var parties = MusterPlan.Compute(state.Heroes, state.Bounties, state.Items, state.Day);
         events.Emit(new PartiesFormed(parties));
 
         // Phase B (B1a, R-B1): explain the muster's target-floor decision — capped to the one case

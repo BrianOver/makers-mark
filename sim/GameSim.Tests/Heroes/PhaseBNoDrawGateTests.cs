@@ -181,6 +181,14 @@ public class PhaseBNoDrawGateTests
         // to below the TARGET floor, so stage 1 resolves more floors before the camp and the camp's own
         // draws (drink checks, the runner) land at different stream positions. Inc is unchanged — same
         // stream, different position. Previous State 4432103899912625622.
-        Assert.Equal(new RngState(6875362552125328644UL, 13279888329118852579UL), state.Rng);
+        //
+        // Re-pinned 2026-09-19 for P2-PEOPLE-11 (the wake's no-march day; owner ruling P2-OQ1, full
+        // town rest, taken under §11.7.13): this same seed-9001, no-action 30-day trace is the exact
+        // one AtomicEquivalenceTests.ThirtyDayRun_NoCounterActions_IsByteIdenticalToPrePa3Kernel pins
+        // by full-state hash — see that entry for the mechanism (a death dated yesterday folds Morning
+        // straight to Evening, so the fixed 150-tick budget now crosses more than 30 calendar days).
+        // `Inc` is STILL byte-identical (13279888329118852579) — no new draw site, only the day-length
+        // collapse changing how far the SAME stream gets walked. Previous State 6875362552125328644.
+        Assert.Equal(new RngState(9766826890446365413UL, 13279888329118852579UL), state.Rng);
     }
 }

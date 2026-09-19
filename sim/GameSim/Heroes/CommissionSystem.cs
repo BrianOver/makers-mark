@@ -72,7 +72,18 @@ public sealed class CommissionSystem : IPhaseSystem
         }
 
         state = ExpireCommissions(state, events);
-        state = PostCommissions(state, events);
+
+        // P2-PEOPLE-11 (owner ruling P2-OQ1, full town rest): "the town buries its own before it
+        // hunts" — a wake morning posts no new asks. Expiry still runs above (a dead hero's
+        // standing commission is voided the same as any other morning; T10 already handles that),
+        // but the board does not top back up while the town is grieving. Deliberately reuses
+        // PartyFormation.IsWakeDay (the SAME derived predicate FormParties/GameKernel gate the
+        // march on) rather than inventing a second wake check that could desync from it.
+        if (!PartyFormation.IsWakeDay(state.Heroes, state.Day))
+        {
+            state = PostCommissions(state, events);
+        }
+
         return state;
     }
 
@@ -138,7 +149,7 @@ public sealed class CommissionSystem : IPhaseSystem
 
         var heroesWithCommission = new HashSet<int>(state.Commissions.Select(c => c.Hero.Value));
 
-        var plans = MusterPlan.Compute(state.Heroes, state.Bounties, state.Items);
+        var plans = MusterPlan.Compute(state.Heroes, state.Bounties, state.Items, state.Day);
         var targetFloorByHero = new Dictionary<int, int>();
         foreach (var plan in plans)
         {

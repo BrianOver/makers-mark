@@ -29,6 +29,18 @@ public class MusterSystemTests
             state = morning.NewState;
             var predicted = Assert.Single(morning.Events.OfType<PartiesFormed>());
 
+            // P2-PEOPLE-11: a wake morning (a death dated yesterday) folds Morning straight to
+            // Evening — Expedition/Camp/ExpeditionDeep never run today at all, so there is no
+            // ExpeditionSystem tick to byte-match against. The day is 2 ticks long, not 5; the
+            // prediction itself must already agree nobody marches (MusterPlan.Compute is
+            // wake-aware, same as ExpeditionSystem and the kernel's own collapse check).
+            if (state.Phase == DayPhase.Evening)
+            {
+                Assert.Empty(predicted.Parties);
+                state = kernel.Tick(state, BaselinePlayer.ActionsFor(state)).NewState; // Evening -> tomorrow's Morning
+                continue;
+            }
+
             var expedition = kernel.Tick(state, BaselinePlayer.ActionsFor(state));
             state = expedition.NewState;
             var departed = expedition.Events.OfType<PartyDeparted>().ToList();

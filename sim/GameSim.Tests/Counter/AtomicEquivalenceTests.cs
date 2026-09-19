@@ -477,8 +477,16 @@ public class AtomicEquivalenceTests
     // owner ruling §11.7.13): every shelf entry the probe stocks now serializes one more field. Same
     // seed, same rolls, same deaths, same floors, same prices — only the shape of a shelf entry.
     // Previous pin ABD7AF21FE7054D250EDDD3903228FC585260CD6E01530438AB861C14522B643.
+    //
+    // Re-baselined 2026-09-19 for P2-PEOPLE-11 (the wake's no-march day; owner ruling P2-OQ1, full
+    // town rest, taken under §11.7.13): a death dated yesterday now folds that Morning straight to
+    // Evening, so this probe's fixed 150-tick (30-day) budget can cross more than 30 calendar days
+    // whenever the 30-day run's own combat produces a death — a real mechanic change, not a content
+    // rewrite. Same seed, same RNG stream shape (PhaseBNoDrawGateTests re-pins the skipped-Morning
+    // RngState); this run submits NO actions at all, so the shift is purely the day-length collapse.
+    // Previous pin 490387BF2AC294A8CF9062B45D445AECE9C059A4508EF76617C3E4D3DF25336F.
     private const string ExpectedPreCounterSha256 =
-        "490387BF2AC294A8CF9062B45D445AECE9C059A4508EF76617C3E4D3DF25336F";
+        "EEAEDF8E5E2A8165D5632EDEC5C73B14EADA60E0C585525218BB8852F9A44B78";
 
     [Fact]
     public void ThirtyDayRun_NoCounterActions_IsByteIdenticalToPrePa3Kernel()

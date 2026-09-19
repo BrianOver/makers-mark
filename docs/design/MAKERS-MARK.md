@@ -5096,7 +5096,7 @@ name (§11.6 rule 4).
 | P2-PEOPLE-08 | Kin contracts — `KinKind`, `KinLink`, `Hero.Kin`, null default | `sim/GameSim/Contracts/Heroes.cs` `evidence:sim/GameSim/Contracts/Heroes.cs:KinKind` | P4 | [S][C] |
 | P2-PEOPLE-09 | Kin derivation and mood — the blanket +60 dies | `sim/GameSim/Drama/RecruitSystem.cs`, `sim/GameSim/Heroes/HeroRoster.cs` (read-only) | P2-PEOPLE-08, P2-MEMORY-16 | [S][GOLD][BAL] |
 | P2-PEOPLE-10 | Kin surfaces — Wren at the counter, warm and cold | `godot/scripts/panels/CounterPanel.cs`, scene corpus | P2-PEOPLE-09 | [G] |
-| P2-PEOPLE-11 | The no-march day (P2-OQ1, ruled 2026-08-31: full town rest) | `sim/GameSim/Heroes/PartyFormation.cs` | P2-PEOPLE-06 | [S][GOLD][BAL] |
+| P2-PEOPLE-11 | The no-march day (P2-OQ1, ruled 2026-08-31: full town rest) | `sim/GameSim/Heroes/PartyFormation.cs` `evidence:sim/GameSim/Heroes/PartyFormation.cs:IsWakeDay` | P2-PEOPLE-06 | [S][GOLD][BAL] |
 | P2-PEOPLE-12 | Wake staging and the deletions — the advisor nag retires, render ownership fixed | `godot/scripts/`, `sim/GameSim/Advisor/ObjectiveAdvisor.cs` | P2-PEOPLE-07, P2-PEOPLE-11 | [G] |
 | P2-PEOPLE-13 | Recruit micro-arcs — starters and kin first, the rest later | scene corpus | P2-PEOPLE-03 | [G] |
 | ⚑ P2-PEOPLE-14 | Wake versus Quiet Morning — the precedence, written and pinned (P2-KTD12) | `sim/GameSim/Heroes/PartyFormation.cs`, `sim/GameSim.Tests/` | P2-LONG-16 | [S] |
