@@ -3,6 +3,7 @@ using System.Linq;
 using GameSim;
 using GameSim.Contracts;
 using GameSim.Drama;
+using GameSim.Harness;
 using GameSim.Kernel;
 using GameSim.Venues;
 
@@ -261,10 +262,10 @@ public class DirectorSystemTests
     [Fact]
     public void Den_ScheduledIncrement_ShiftsCategoryAtThreshold()
     {
-        // 240 (tier 0) + 18 daily = 258 → crosses the 250 boundary to tier 1.
-        var prev = new VenueState(DaysUntouched: 3, InfectionPerMille: 240, Closed: false, ThreatTier: 0);
+        // 246 (tier 0) + 5 daily = 251 → crosses the 250 boundary to tier 1.
+        var prev = new VenueState(DaysUntouched: 3, InfectionPerMille: 246, Closed: false, ThreatTier: 0);
         var (next, shifted) = DirectorSystem.DenStep(prev, clears: 0, surge: 0);
-        Assert.Equal(258, next.InfectionPerMille);
+        Assert.Equal(251, next.InfectionPerMille);
         Assert.Equal(1, next.ThreatTier);
         Assert.True(shifted);
         Assert.Equal(4, next.DaysUntouched); // an untouched day grows the counter
@@ -273,10 +274,11 @@ public class DirectorSystemTests
     [Fact]
     public void Den_ClearedExpeditions_RelieveThreat()
     {
-        // 300 + 18 daily − 5 clears × 30 relief = 168 → back to tier 0.
+        // 300 + 5 daily − 1 true clear × 100 relief = 205 → back to tier 0. One party clearing
+        // through its target floor is now worth a fortnight of build-up (P2-HONEST-32).
         var prev = new VenueState(DaysUntouched: 6, InfectionPerMille: 300, Closed: false, ThreatTier: 1);
-        var (next, shifted) = DirectorSystem.DenStep(prev, clears: 5, surge: 0);
-        Assert.Equal(168, next.InfectionPerMille);
+        var (next, shifted) = DirectorSystem.DenStep(prev, clears: 1, surge: 0);
+        Assert.Equal(205, next.InfectionPerMille);
         Assert.Equal(0, next.ThreatTier);
         Assert.True(shifted);
         Assert.Equal(0, next.DaysUntouched); // a cleared day resets the untouched counter
@@ -285,7 +287,7 @@ public class DirectorSystemTests
     [Fact]
     public void Den_LatchesLockdownAtCap()
     {
-        // 990 + 18 + a 120 incident surge overflows the 1000 cap → lockdown latches.
+        // 990 + 5 + a 55 incident surge overflows the 1000 cap → lockdown latches.
         var prev = new VenueState(DaysUntouched: 9, InfectionPerMille: 990, Closed: false, ThreatTier: 3);
         var (next, shifted) = DirectorSystem.DenStep(prev, clears: 0, surge: DirectorSystem.DenIncidentSurge);
         Assert.Equal(DirectorSystem.DenThreatCap, next.InfectionPerMille);
@@ -298,10 +300,117 @@ public class DirectorSystemTests
     {
         // Once locked, heavy relief brings the meter down but the closure stays latched (no reopen here).
         var prev = new VenueState(DaysUntouched: 0, InfectionPerMille: 1000, Closed: true, ThreatTier: 3);
-        var (next, shifted) = DirectorSystem.DenStep(prev, clears: 5, surge: 0);
+        var (next, shifted) = DirectorSystem.DenStep(prev, clears: 2, surge: 0);
         Assert.True(next.Closed);
-        Assert.Equal(868, next.InfectionPerMille);
+        Assert.Equal(805, next.InfectionPerMille);
         Assert.False(shifted); // tier 3→3, locked→locked: nothing new to announce
+    }
+
+    // ── P2-HONEST-32: what counts as a clear ─────────────────────────────────────────────────────
+
+    private static ExpeditionResult DenResult(string venueId, ExpeditionHalt halt) => new(
+        Party: ImmutableList.Create(new HeroId(1)),
+        TargetFloor: 3,
+        DeepestFloorCleared: halt == ExpeditionHalt.TargetReached ? 3 : 1,
+        Floors: ImmutableList<FloorOutcome>.Empty,
+        Survivors: halt == ExpeditionHalt.PartyWiped ? ImmutableList<HeroId>.Empty : ImmutableList.Create(new HeroId(1)),
+        Deaths: ImmutableList<HeroId>.Empty,
+        Beats: ImmutableList<AttributionBeat>.Empty,
+        Loot: ImmutableList<OreLoot>.Empty,
+        GoldEarnedByHero: ImmutableSortedDictionary<int, int>.Empty,
+        VenueId: venueId,
+        Halt: halt);
+
+    [Fact]
+    public void Den_OnlyTargetReachedInThisVenueIsAClear()
+    {
+        // Two wipes, a flight and a gate-turn in the Mine relieve nothing; one party that cleared
+        // through its target relieves once; a clear in ANOTHER venue relieves the Mine not at all.
+        var state = GameComposition.NewCampaign(seed: 2026) with
+        {
+            LastNightExpeditions = ImmutableList.Create(
+                DenResult("mine", ExpeditionHalt.PartyWiped),
+                DenResult("mine", ExpeditionHalt.PartyWiped),
+                DenResult("mine", ExpeditionHalt.FloorLost),
+                DenResult("mine", ExpeditionHalt.GateHeld),
+                DenResult("mine", ExpeditionHalt.TargetReached),
+                DenResult("elsewhere", ExpeditionHalt.TargetReached)),
+        };
+
+        Assert.Equal(1, DirectorSystem.ClearsLastNight(state, "mine"));
+        Assert.Equal(1, DirectorSystem.ClearsLastNight(state, "elsewhere"));
+        Assert.Equal(0, DirectorSystem.ClearsLastNight(GameComposition.NewCampaign(seed: 2026), "mine"));
+    }
+
+    [Fact]
+    public void Den_AWipeDoesNotRelieveThreat()
+    {
+        // The old rule counted every PartyReturned as a clear, so a night of wipes still cooled the
+        // den. Now a wipe leaves the increment untouched.
+        var prev = new VenueState(DaysUntouched: 2, InfectionPerMille: 100, Closed: false, ThreatTier: 0);
+        var (next, _) = DirectorSystem.DenStep(prev, clears: 0, surge: 0);
+        Assert.Equal(100 + DirectorSystem.DenDailyIncrement, next.InfectionPerMille);
+        Assert.Equal(3, next.DaysUntouched);
+    }
+
+    [Fact]
+    public void Den_QuietStretchReachesTierOneWithinAPlayableWindow()
+    {
+        // With no true clears and one incident a week, tier 1 lands inside the first month —
+        // the tier ladder is a thing a player can actually watch move (P2-HONEST-32).
+        var venue = new VenueState(DaysUntouched: 0, InfectionPerMille: 0, Closed: false, ThreatTier: 0);
+        var firstTierOneDay = 0;
+        for (var day = 1; day <= 100 && firstTierOneDay == 0; day++)
+        {
+            var surge = day % 7 == 0 ? DirectorSystem.DenIncidentSurge : 0;
+            (venue, _) = DirectorSystem.DenStep(venue, clears: 0, surge);
+            if (venue.ThreatTier >= 1)
+            {
+                firstTierOneDay = day;
+            }
+        }
+
+        Assert.InRange(firstTierOneDay, 10, 30);
+    }
+
+    [Fact]
+    [Trait("Category", "Balance")]
+    public void HundredDay_DenTiersAreReachable_AndLockdownIsNot()
+    {
+        // Two-sided: the meter must actually climb (tier 1 in most seeds, tier 2 in some) AND must not
+        // run away (tier 3 rare, lockdown never) under the scripted BaselinePlayer — the arm the
+        // 20-seed census was taken with (runs/den-sweep-*/den-sweep-summary.md in the P2-HONEST-32
+        // PR: 38/40 tier 1, 5/40 tier 3, 0 lockdowns). An idle smith (no actions at all) runs hotter —
+        // 7/10 seeds hit tier 3 — which is the honest reading, not a defect: nobody armed the heroes.
+        var kernel = GameComposition.BuildKernel();
+        var reachedTier1 = 0;
+        var reachedTier3 = 0;
+        var lockedDown = 0;
+        const int seeds = 10;
+
+        for (var seed = 2026UL; seed < 2026UL + seeds; seed++)
+        {
+            var state = GameComposition.NewCampaign(seed);
+            var maxTier = 0;
+            var locked = false;
+            for (var tick = 0; tick < 100 * 5; tick++)
+            {
+                state = kernel.Tick(state, BaselinePlayer.ActionsFor(state)).NewState;
+                if (state.Venues.TryGetValue("mine", out var mine))
+                {
+                    maxTier = Math.Max(maxTier, mine.ThreatTier);
+                    locked |= mine.Closed;
+                }
+            }
+
+            reachedTier1 += maxTier >= 1 ? 1 : 0;
+            reachedTier3 += maxTier >= 3 ? 1 : 0;
+            lockedDown += locked ? 1 : 0;
+        }
+
+        Assert.True(reachedTier1 >= 7, $"tier 1 reached in only {reachedTier1}/{seeds} seeds — the meter is dead again");
+        Assert.True(reachedTier3 <= 4, $"tier 3 reached in {reachedTier3}/{seeds} seeds — the meter runs away");
+        Assert.Equal(0, lockedDown);
     }
 
     // ── Balance: sane long-run incident pacing + den invariants ──────────────────────────────────

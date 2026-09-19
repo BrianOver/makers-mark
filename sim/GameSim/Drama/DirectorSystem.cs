@@ -270,13 +270,13 @@ public sealed class DirectorSystem : IPhaseSystem
     // ---- Den escalation (pure, no RNG) ----
 
     /// <summary>Scheduled per-mille the den's threat rises each day.</summary>
-    public const int DenDailyIncrement = 18;
+    public const int DenDailyIncrement = 5;
 
     /// <summary>Per-mille relief per cleared expedition that returned yesterday.</summary>
-    public const int DenClearRelief = 30;
+    public const int DenClearRelief = 100;
 
     /// <summary>Extra per-mille surge when an incident fires at this den.</summary>
-    public const int DenIncidentSurge = 120;
+    public const int DenIncidentSurge = 55;
 
     /// <summary>Threat meter bounds; at the cap the den locks down.</summary>
     public const int DenThreatMin = 0;
@@ -320,7 +320,6 @@ public sealed class DirectorSystem : IPhaseSystem
     private static ImmutableSortedDictionary<string, VenueState> TickDens(
         GameState state, int day, string? firedVenueId, IEventSink events)
     {
-        var clears = ClearsYesterday(state, day);
         var venues = state.Venues;
 
         foreach (var venueId in VenueRegistry.LiveRotation)
@@ -329,6 +328,7 @@ public sealed class DirectorSystem : IPhaseSystem
                 ? existing
                 : new VenueState(DaysUntouched: 0, InfectionPerMille: 0, Closed: false, ThreatTier: 0);
 
+            var clears = ClearsLastNight(state, venueId);
             var surge = venueId == firedVenueId ? DenIncidentSurge : 0;
             var (next, shifted) = DenStep(prev, clears, surge);
             venues = venues.SetItem(venueId, next);
@@ -342,20 +342,21 @@ public sealed class DirectorSystem : IPhaseSystem
         return venues;
     }
 
-    /// <summary>Count of parties that returned yesterday (a cleared expedition relieves den pressure).
-    /// Reads the same day slice the gossip system uses; day 1 has no yesterday.</summary>
-    private static int ClearsYesterday(GameState state, int day)
+    /// <summary>
+    /// P2-HONEST-32: a clear is a party that came back having <b>cleared through its target floor</b>
+    /// in THIS venue (<see cref="ExpeditionHalt.TargetReached"/>). Before this, every
+    /// <see cref="PartyReturned"/> counted — wipes, flights and gate-turns included, and against every
+    /// venue at once — so two or three "clears" a night buried the daily increment and the meter never
+    /// left zero except on a surge day (20-seed census: max 78‰, tier 1 never reached, in
+    /// <c>runs/den-sweep-*</c>). Reads <see cref="GameState.LastNightExpeditions"/>, which the Evening
+    /// reveal set the day before this Morning tick; day 1 has none and so counts zero.
+    /// </summary>
+    public static int ClearsLastNight(GameState state, string venueId)
     {
-        var yesterday = day - 1;
-        if (yesterday < 1)
-        {
-            return 0;
-        }
-
         var clears = 0;
-        foreach (var gameEvent in DayLog.For(state.EventLog, yesterday))
+        foreach (var result in state.LastNightExpeditions)
         {
-            if (gameEvent is PartyReturned)
+            if (result.VenueId == venueId && result.Halt == ExpeditionHalt.TargetReached)
             {
                 clears++;
             }
