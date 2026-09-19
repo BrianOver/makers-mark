@@ -32,7 +32,7 @@ public sealed class BountyJudgingSystem : IPhaseSystem
 /// Evening payout: runs AFTER the expedition reveal so DeepestFloorReached is current.
 /// A bounty pays when its accepting hero survived and has reached the target floor;
 /// paid bounties are removed (no double-pay). Unaccepted bounties past expiry refund
-/// the escrowed gold to the player silently (documented policy; no event type exists).
+/// the escrowed gold to the player and say so (<see cref="BountyRefunded"/>, P2-MEMORY-15).
 /// </summary>
 public sealed class BountyPayoutSystem : IPhaseSystem
 {
@@ -64,6 +64,7 @@ public sealed class BountyPayoutSystem : IPhaseSystem
             {
                 // Acceptor died before completing: refund and drop.
                 state = state with { Player = state.Player with { Gold = state.Player.Gold + bounty.RewardGold } };
+                events.Emit(new BountyRefunded(bounty.Id, bounty.RewardGold, BountyRefundReason.AcceptorDied, acceptor));
                 continue;
             }
 
@@ -74,6 +75,7 @@ public sealed class BountyPayoutSystem : IPhaseSystem
                 // hero who lived but never reached the target floor by expiry:
                 // without it, that escrow would leak from the town gold total.
                 state = state with { Player = state.Player with { Gold = state.Player.Gold + bounty.RewardGold } };
+                events.Emit(new BountyRefunded(bounty.Id, bounty.RewardGold, BountyRefundReason.Lapsed, bounty.AcceptedBy));
                 continue;
             }
 

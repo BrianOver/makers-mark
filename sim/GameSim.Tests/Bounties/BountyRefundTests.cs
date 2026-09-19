@@ -67,6 +67,41 @@ public class BountyRefundTests
 
         Assert.Empty(state.Bounties);
         Assert.True(state.Player.Gold >= escrowed + 90 - 200, "floor-5 bounty should have refunded (heroes can't reach it)");
+        // P2-MEMORY-15: the refund is no longer silent — one event, the escrow amount, the lapse reason,
+        // and nobody had accepted it.
+        var refunded = Assert.Single(state.EventLog.OfType<BountyRefunded>());
+        Assert.Equal(90, refunded.RewardGold);
+        Assert.Equal(BountyRefundReason.Lapsed, refunded.Reason);
+        Assert.Null(refunded.AcceptedBy);
+    }
+
+    [Fact]
+    public void EveryRefund_IsAnnounced_AndAnnouncedRefundsSumToEscrowReturned()
+    {
+        // P2-MEMORY-15 two-sided: over a run that posts a bounty every morning none is refunded without
+        // a BountyRefunded, and every BountyRefunded names gold the till actually got back — the sum of
+        // announced refunds plus payouts equals the escrow posted minus what is still on the board.
+        var kernel = GameComposition.BuildKernel();
+        var state = GameComposition.NewCampaign(seed: 2026);
+        var posted = 0L;
+        for (var tick = 0; tick < 5 * 40; tick++)
+        {
+            var actions = state.Phase == DayPhase.Morning && state.Player.Gold >= 60 && state.Bounties.Count < 3
+                ? ImmutableList.Create<PlayerAction>(new PostBountyAction(state.Day % 2 == 0 ? 5 : 2, 40)) // floor 5 lapses, floor 2 pays: both branches
+                : ImmutableList<PlayerAction>.Empty;
+            var result = kernel.Tick(state, actions);
+            posted += result.Events.OfType<BountyPosted>().Sum(b => (long)b.RewardGold);
+            state = result.NewState;
+        }
+
+        var refunds = state.EventLog.OfType<BountyRefunded>().ToList();
+        var paid = state.EventLog.OfType<BountyPaid>().Sum(p => (long)p.RewardGold);
+        var onBoard = state.Bounties.Sum(b => (long)b.RewardGold);
+        Assert.True(posted > 0, "fixture posted nothing");
+        Assert.Equal(posted, refunds.Sum(r => (long)r.RewardGold) + paid + onBoard);
+        Assert.True(refunds.Count > 0, "40 days of bounties produced no refund — widen the run");
+        Assert.All(refunds, r => Assert.True(r.Reason == BountyRefundReason.Lapsed || r.AcceptedBy is not null,
+            "a death refund must name the hero who had taken it"));
     }
 
     /// <summary>
