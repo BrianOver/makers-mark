@@ -27,9 +27,32 @@ public static class LegendQuery
     public const int FamousBeatThreshold = 3;
 
     /// <summary>Count of <see cref="AttributionBeatEvent"/>s crediting <paramref name="hero"/>,
-    /// across the whole campaign so far.</summary>
+    /// across the whole campaign so far — EVERY beat, decisive or not (the P2-MEMORY-23 finding:
+    /// a threshold read off this alone fires on three cave rats). Fame reads
+    /// <see cref="LegendDeedCount"/> instead; this raw count is kept as the honest "every beat
+    /// logged" number for a caller that genuinely wants it.</summary>
     public static int AttributionBeatCount(GameState state, HeroId hero) =>
         state.EventLog.OfType<AttributionBeatEvent>().Count(b => b.Hero == hero);
+
+    /// <summary>
+    /// P2-MEMORY-23 (§11.7.13): is <paramref name="beat"/> a DEED a legend is made of. Measured over
+    /// 20 seeds x 100 days (BaselinePlayer): a campaign logs ~2,200 killing blows — 22 a night, one per
+    /// monster — and the counterfactual "would the monster have survived without the item" test
+    /// (<see cref="AttributionBeatEvent.Decisive"/>) passes 96% of them, because heroes fight with your
+    /// iron. Counting kills, ANY hero is famous by day 5; the "three reasons" were three cave rats. A
+    /// legend's deeds are the rare ones the town retells — a lethal save, a potion life-save, a
+    /// breakpoint clear, a provisioning that kept a hero fighting (50–110 a campaign, concentrated in the
+    /// heroes who lived) — stamped decisive at reveal. With kills excluded, the first famous hero
+    /// arrives on day 16 (median; range 11–27), every seed has one by day 30, 4–11 heroes a campaign earn
+    /// it, and 13% of memorials are famous dead (was 28%). Killing blows stay tellable for gossip and
+    /// the night card; they are the job, not the legend.
+    /// </summary>
+    public static bool IsLegendDeed(AttributionBeatEvent beat) => beat.Decisive && beat.Beat != BeatType.KillingBlow;
+
+    /// <summary>Count of legend DEEDS crediting <paramref name="hero"/> (<see cref="IsLegendDeed"/>) — the number fame reads (<see cref="IsFamousDead"/> and every
+    /// living-hero fame site), so a hero needs three deeds that mattered, never three cave rats.</summary>
+    public static int LegendDeedCount(GameState state, HeroId hero) =>
+        state.EventLog.OfType<AttributionBeatEvent>().Count(b => b.Hero == hero && IsLegendDeed(b));
 
     /// <summary>True iff <paramref name="hero"/> died bearing at least one Signed Work — read off
     /// the recorded <see cref="HeroDied.WornGear"/> for that hero's death (there is at most one:
@@ -50,10 +73,10 @@ public static class LegendQuery
         return false;
     }
 
-    /// <summary>True iff <paramref name="hero"/> is a "famous dead" legend: enough proven
+    /// <summary>True iff <paramref name="hero"/> is a "famous dead" legend: enough DECISIVE
     /// attribution beats, OR died bearing a Signed Work.</summary>
     public static bool IsFamousDead(GameState state, HeroId hero) =>
-        AttributionBeatCount(state, hero) >= FamousBeatThreshold || DiedBearingSignedWork(state, hero);
+        LegendDeedCount(state, hero) >= FamousBeatThreshold || DiedBearingSignedWork(state, hero);
 
     /// <summary>True iff ANY memorialized hero (<see cref="DramaState.Memorials"/>) qualifies as a
     /// famous-dead legend (U22: gates the kin-of-the-dead recruit mood seed). A campaign with no

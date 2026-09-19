@@ -48,18 +48,19 @@ public static class Commendation
 {
     private const string IdPrefix = "commendation-";
 
-    /// <summary>Whether <paramref name="hero"/> qualifies right now: alive, and enough proven
-    /// beats — the SAME predicate <c>ArcDirectorSystem</c>'s own legendary-living tally uses,
-    /// mirrored here rather than re-derived.</summary>
+    /// <summary>Whether <paramref name="hero"/> qualifies right now: alive, and enough DECISIVE
+    /// beats (P2-MEMORY-23: never three cave rats) — the SAME predicate <c>ArcDirectorSystem</c>'s
+    /// own legendary-living tally uses, mirrored here rather than re-derived.</summary>
     public static bool Eligible(GameState state, Hero hero) =>
-        hero.Alive && LegendQuery.AttributionBeatCount(state, hero.Id) >= LegendQuery.FamousBeatThreshold;
+        hero.Alive && LegendQuery.LegendDeedCount(state, hero.Id) >= LegendQuery.FamousBeatThreshold;
 
-    /// <summary>The hero's first three proven beats, in the order the log recorded them — stable
+    /// <summary>The hero's first three DECISIVE beats, in the order the log recorded them — stable
     /// regardless of how many more the hero earns later, so the words said the one time this ever
-    /// fires never change out from under a pursued-but-not-yet-closed scene.</summary>
+    /// fires never change out from under a pursued-but-not-yet-closed scene. An incidental beat
+    /// (P2-MEMORY-23) is never one of the three reasons, even if it was logged first.</summary>
     public static ImmutableArray<AttributionBeatEvent> Beats(GameState state, HeroId hero) =>
         [.. state.EventLog.OfType<AttributionBeatEvent>()
-            .Where(beat => beat.Hero == hero)
+            .Where(beat => beat.Hero == hero && LegendQuery.IsLegendDeed(beat))
             .OrderBy(beat => beat.Id.Value)
             .Take(LegendQuery.FamousBeatThreshold)];
 

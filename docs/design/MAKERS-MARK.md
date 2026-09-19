@@ -5086,7 +5086,7 @@ name (§11.6 rule 4).
 | ⚑ P2-MEMORY-20 | The forecast gets a face (research M3) | `godot/scripts/ui/ArcScenes.cs`, `godot/scripts/panels/RaidForecastBoard.cs` | — | [G] |
 | ⚑ P2-MEMORY-21 | The reforge row previews the lineage it will write, from the one template that writes it | `sim/GameSim/Crafting/HeirloomHandlers.cs`, `godot/scripts/panels/LegendsWall.cs` | — | [S] |
 | ⚑ P2-MEMORY-22 | The east field remembers — the town gets an outdoor memory, one lantern per fallen hero | `godot/scripts/town2d/TownLayout2D.cs`, `godot/scripts/town2d/Town2D.cs` | — | [G] |
-| P2-MEMORY-23 | "Famous" stops counting cave rats — the legend predicate counts decisive deeds, not every beat | `sim/GameSim/Drama/LegendQuery.cs`, `sim/GameSim/Drama/ArcDirectorSystem.cs` | — | [S][GOLD] |
+| P2-MEMORY-23 | "Famous" stops counting cave rats — the legend predicate counts decisive deeds, not every beat | `sim/GameSim/Drama/LegendQuery.cs`, `sim/GameSim/Arc/ArcDirectorSystem.cs` `evidence:sim/GameSim/Drama/LegendQuery.cs:LegendDeedCount` | — | [S][GOLD] |
 | P2-PEOPLE-02 | The register gate's remaining two rules — trigger-id taxonomy validation and no-punchline-on-death scenes (the jargon rule already shipped under P2-PEOPLE-01) | `godot/tests/`, scene corpus | — | [G] |
 | P2-PEOPLE-03 | The remaining arcs — Torvald 4–8, Brunhilde, Kael, Sable, Elowen, Moss | scene corpus | P2-PEOPLE-02, P4 | [G] |
 | P2-PEOPLE-04 | Durable-fact read-back on the VIGIL (the muster board's own half landed) | `godot/scripts/panels/MineWatch.cs`, `godot/scripts/panels/CampPanel.cs` | — | [G] |

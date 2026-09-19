@@ -55,7 +55,7 @@ public class RecruitOpinionSeedTests
         var state = NewWorld();
         var beats = new[]
         {
-            new AttributionBeat(BeatType.KillingBlow, new ItemId(90), new HeroId(1), 1, "beat one"),
+            new AttributionBeat(BeatType.PotionLifesave, new ItemId(90), new HeroId(1), 1, "beat one"), // P2-MEMORY-23: fame counts decisive beats; a fixture kill with no provable fight reads incidental
             new AttributionBeat(BeatType.LethalSave, new ItemId(90), new HeroId(1), 1, "beat two"),
             new AttributionBeat(BeatType.BreakpointClear, new ItemId(90), new HeroId(1), 1, "beat three"),
         };
@@ -106,7 +106,7 @@ public class RecruitOpinionSeedTests
         var world = NewWorld();
         var beats = new[]
         {
-            new AttributionBeat(BeatType.KillingBlow, new ItemId(90), new HeroId(1), 1, "beat one"),
+            new AttributionBeat(BeatType.PotionLifesave, new ItemId(90), new HeroId(1), 1, "beat one"), // P2-MEMORY-23: fame counts decisive beats; a fixture kill with no provable fight reads incidental
             new AttributionBeat(BeatType.LethalSave, new ItemId(90), new HeroId(1), 1, "beat two"),
             new AttributionBeat(BeatType.BreakpointClear, new ItemId(90), new HeroId(1), 1, "beat three"),
         };

@@ -695,7 +695,7 @@ public partial class LegendsWall : Control
             {
                 var label = item.IsSigned
                     ? $"{item.Name} — \"{item.SignedName}\""
-                    : $"{item.Name} — {AttributionBeatCount(state, item.Id)} proven beats";
+                    : $"{item.Name} — {LegendDeedCount(state, item.Id)} proven beats";
                 sb.Append("<li>").Append(Html(label)).Append("</li>");
             }
 
@@ -1017,7 +1017,7 @@ public partial class LegendsWall : Control
             var row = AddRow(legendSection);
             var label = item.IsSigned
                 ? $"✦ {item.Name} — \"{item.SignedName}\""
-                : $"★ {item.Name} — {AttributionBeatCount(state, item.Id)} proven beats";
+                : $"★ {item.Name} — {LegendDeedCount(state, item.Id)} proven beats";
             var button = AddButton(row, $"Legend_{item.Id.Value}", label, () => ShowItemPage(state, item.Id));
             button.SizeFlagsHorizontal = SizeFlags.ExpandFill;
             button.Alignment = HorizontalAlignment.Left;
@@ -1092,6 +1092,7 @@ public partial class LegendsWall : Control
     private static System.Collections.Generic.List<Item> LegendItems(GameState state)
     {
         var beatCounts = state.EventLog.OfType<AttributionBeatEvent>()
+            .Where(LegendQuery.IsLegendDeed) // P2-MEMORY-23: the wall counts deeds a legend is made of, same as fame
             .GroupBy(b => b.Item.Value)
             .ToDictionary(g => g.Key, g => g.Count());
 
@@ -1113,8 +1114,10 @@ public partial class LegendsWall : Control
     /// deriving the beat-count/signed fact a second way.</summary>
     public static bool HasPlayerMarkedRecord(GameState state) => LegendItems(state).Count > 0;
 
-    private static int AttributionBeatCount(GameState state, ItemId item) =>
-        state.EventLog.OfType<AttributionBeatEvent>().Count(b => b.Item == item);
+    /// <summary>P2-MEMORY-23: proven DEEDS (<see cref="LegendQuery.IsLegendDeed"/>) — the same count fame
+    /// reads, so the wall's number and the commendation's agree; a killing blow is the job, not the legend.</summary>
+    private static int LegendDeedCount(GameState state, ItemId item) =>
+        state.EventLog.OfType<AttributionBeatEvent>().Count(b => b.Item == item && LegendQuery.IsLegendDeed(b));
 
     private void EnsureBuilt()
     {
