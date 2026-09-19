@@ -138,7 +138,10 @@ public class CampPanelTests
             }
 
             AssertThat(text).Contains("heals left");
-            AssertThat(text).Contains($"Runner: {Floor1Fee}g"); // fee read from the checkpoint-1 formula
+            // P2-LONG-30: the fee line names the floor the runner actually reaches
+            // (CheckpointFloor, what SupplyFee is charged against) — not TargetFloor, which the
+            // formula caption's "6g + 3g a floor" would not reconcile against.
+            AssertThat(text).Contains($"Runner to the camp on floor {party.CheckpointFloor}: {Floor1Fee}g");
             AssertThat(party.CheckpointFloor).IsEqual(1);
         }
         finally
@@ -173,7 +176,47 @@ public class CampPanelTests
                     .OverrideFailureMessage(
                         $"Checkpoint floor {floor}: slate did not quote {expectedFee}g — the "
                         + "client has drifted from CampHandlers.SupplyFee again.")
-                    .Contains($"Runner: {expectedFee}g");
+                    .Contains($"Runner to the camp on floor {floor}: {expectedFee}g");
+            }
+            finally
+            {
+                Unmount(ui);
+            }
+        }
+    }
+
+    // ── 1a2. P2-LONG-30: the fee names its own stake — the floor it is reaching AND the formula ──
+    // that priced it, at two different depths, sourced from CampHandlers' own consts — never a
+    // second hand-typed 6/3 pair drifting in the client.
+
+    [TestCase]
+    public void CampSlate_FeeLine_NamesTheFloorItIsReaching_AndTheFormulaBehindTheFee_AtTwoDepths()
+    {
+        foreach (var checkpointFloor in new[] { 1, 3 }) // two different depths (9g and 15g fees)
+        {
+            var ui = MountAtCampWith(state => state with
+            {
+                InFlight = ImmutableList.Create(state.InFlight[0] with
+                {
+                    CheckpointFloor = checkpointFloor,
+                    TargetFloor = checkpointFloor + 1,
+                }),
+            });
+            try
+            {
+                var text = RenderedText(ui.Camp);
+                var expectedFee = CampHandlers.SupplyFee(checkpointFloor);
+                var expectedLine =
+                    $"Runner to the camp on floor {checkpointFloor}: {expectedFee}g per delivery " +
+                    $"({CampHandlers.SupplyFeeFormulaCaption()})";
+
+                AssertThat(text)
+                    .OverrideFailureMessage(
+                        $"Checkpoint floor {checkpointFloor}: expected the fee line \"{expectedLine}\" "
+                        + "naming the floor it is reaching and the base/per-floor formula that priced "
+                        + "it — got something else. The line must derive from CampHandlers' own consts, "
+                        + "never a hard-coded 6/3 pair.")
+                    .Contains(expectedLine);
             }
             finally
             {
@@ -463,6 +506,35 @@ public class CampPanelTests
                     "fully inside the scroll body — either the scroll stopped responding to the wheel, or " +
                     "Recall is genuinely unreachable, not merely below an unscrolled fold.")
                 .IsTrue();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    // ── 1a3. P2-LONG-30: the can't-pay refusal names the SAME floor as the fee line ──────────────
+
+    [TestCase]
+    public void CampSend_WhenGoldIsShortOfTheFee_TooltipNamesTheFloorTheFeeIsFor()
+    {
+        var ui = MountAtCampWith(state => state with
+        {
+            Player = state.Player with { Gold = 0 }, // below the checkpoint-1 fee (Floor1Fee)
+        });
+        try
+        {
+            var party = ui.Adapter.CurrentState.InFlight.Single();
+            var lead = party.Party[0];
+
+            var send = Find<Button>(ui.Camp, $"CampSend_{lead.Value}");
+            AssertThat(send.Disabled)
+                .OverrideFailureMessage("Setup check: Send should be disabled — 0 gold can't cover the fee.")
+                .IsTrue();
+            AssertThat(send.TooltipText)
+                .OverrideFailureMessage(
+                    $"The can't-pay refusal must name the same floor the fee line quotes. Got: \"{send.TooltipText}\"")
+                .Contains($"{Floor1Fee}g runner to floor {party.CheckpointFloor}");
         }
         finally
         {

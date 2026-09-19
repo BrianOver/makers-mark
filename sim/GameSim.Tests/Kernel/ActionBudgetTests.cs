@@ -43,7 +43,7 @@ public class ActionBudgetTests
     /// </summary>
     private static readonly Type[] FreeTypes =
     [
-        typeof(StockAction), typeof(SetPriceAction), typeof(UnstockAction),
+        typeof(StockAction), typeof(SetPriceAction), typeof(UnstockAction), typeof(EarmarkAction),
         typeof(SendSupplyAction), typeof(RecallPartyAction), typeof(SetProfessionsAction),
         typeof(OpenCounterAction), typeof(CloseCounterAction), typeof(PresentItemAction),
         typeof(SuggestItemAction), typeof(HaggleResponseAction), typeof(AcceptCommissionAction),

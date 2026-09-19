@@ -93,6 +93,12 @@ public sealed class CommissionHandlers : IActionHandler
         Item? matchItem = null;
         foreach (var entry in state.Player.Shelf.OrderBy(e => e.Item.Value))
         {
+            // P2-PEOPLE-28: a piece held for another hero is not this hero's to take, commission or not.
+            if (HeroShoppingSystem.IsHeldForSomeoneElse(entry, hero))
+            {
+                continue;
+            }
+
             if (!state.Items.TryGetValue(entry.Item.Value, out var item) || !Satisfies(commission, item, heroClass))
             {
                 continue;

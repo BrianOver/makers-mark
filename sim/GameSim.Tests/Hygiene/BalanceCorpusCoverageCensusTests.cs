@@ -160,13 +160,16 @@ public class BalanceCorpusCoverageCensusTests
             + "BaselinePlayer (and every other Balance-tagged sweep policy) always pays dues in gold "
             + "when the till covers it, same shape as SetPriceAction/UnstockAction just above: a "
             + "verb offered every cycle that no scripted policy ever chooses. P2-LONG-18.",
+        ["EarmarkAction"] = "No corpus sweep policy holds a shelved piece for one hero — the earmark verb "
+            + "landed with its sim half only (P2-PEOPLE-28, taken under §11.7.13); the Godot ShopPanel and "
+            + "any harness hand that earmarks are the unit's second half. P2-PEOPLE-28.",
     };
 
-    private const int ExpectedNeverSubmittedCount = 15;
+    private const int ExpectedNeverSubmittedCount = 16;
 
     [Fact]
     public void PlayerActionHierarchyHasTheMemberCountThisCensusExpects()
-        => Assert.True(AllActionTypes.Length == 26,
+        => Assert.True(AllActionTypes.Length == 27,
             $"PlayerAction now reflects {AllActionTypes.Length} concrete derived types — "
             + "sanity-check this census's reflection query still finds them all before trusting the "
             + "coverage split below (and if a type was really added or removed, the offered/"

@@ -60,6 +60,7 @@ namespace GameSim.Contracts;
 [JsonDerivedType(typeof(DecisionExplained), "decisionExplained")]
 [JsonDerivedType(typeof(DuesSettledByPledge), "duesSettledByPledge")]
 [JsonDerivedType(typeof(DuesPledged), "duesPledged")]
+[JsonDerivedType(typeof(ShelfEarmarked), "shelfEarmarked")]
 public abstract record GameEvent
 {
     public EventId Id { get; init; }
@@ -213,8 +214,17 @@ public sealed record CustomerCountered(HeroId Hero, int OfferGold) : GameEvent;
 
 /// <summary>A counter sale closed (PKD6). <paramref name="Pinned"/> = the player countered within the
 /// pin window of the hero's true willingness (mood bonus applied). Gold conservation reconciles against
-/// <paramref name="Price"/> exactly like <see cref="ItemSold"/>.</summary>
-public sealed record CounterSaleClosed(HeroId Hero, ItemId Item, int Price, bool Pinned) : GameEvent;
+/// <paramref name="Price"/> exactly like <see cref="ItemSold"/>. <paramref name="Fleeced"/> (P2-MEMORY-25's
+/// recorded fact) = the player countered ABOVE the round's ceiling and the hero paid anyway (mood penalty
+/// applied); a sale that is neither pinned nor fleeced is the in-band fair deal. The distinction is decided
+/// in <c>HaggleResolver</c> from session state that does not survive the tick, so it is recorded here or
+/// nowhere. TRAILING with a default so older saves deserialize it as false.</summary>
+public sealed record CounterSaleClosed(HeroId Hero, ItemId Item, int Price, bool Pinned, bool Fleeced = false) : GameEvent;
+
+/// <summary>P2-PEOPLE-28: the player set (<paramref name="Hero"/> named) or cleared (null) the earmark on a
+/// shelved piece — the recorded fact behind "you held it for them", so the night can say whether the
+/// hero it was held for came for it. Recorded state only; nothing in routing or combat reads it.</summary>
+public sealed record ShelfEarmarked(ItemId Item, HeroId? Hero) : GameEvent;
 
 /// <summary>The active customer left the counter without buying (patience ran out, price never met,
 /// or nothing fit) — with the legible reason (R8 prose rules). <paramref name="Item"/> is the item

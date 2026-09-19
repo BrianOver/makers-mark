@@ -6,8 +6,10 @@ namespace GameSim.Contracts;
 /// <summary>One piece on a shelf. <paramref name="StockedDay"/> (P2-MEMORY-26's recorded fact) is the
 /// sim day the piece went on the shelf — stocking emits no event by design (see <c>ShopHandlers</c>),
 /// so this stamp is the only durable record that "your piece sat there before today". Repricing
-/// keeps it; a save written before the field deserializes it as 0, which every day is later than.</summary>
-public sealed record ShelfEntry(ItemId Item, int Price, int StockedDay = 0);
+/// keeps it; a save written before the field deserializes it as 0, which every day is later than.
+/// <paramref name="EarmarkedFor"/> (P2-PEOPLE-28) is the one hero this piece is held for — null means
+/// open sale; set and cleared only by <see cref="EarmarkAction"/>; older saves deserialize it as null.</summary>
+public sealed record ShelfEntry(ItemId Item, int Price, int StockedDay = 0, HeroId? EarmarkedFor = null);
 
 /// <summary>
 /// Wave 5 (U23e, "batch echo"): a memory of the player's last hand-forge so the next few IDENTICAL
