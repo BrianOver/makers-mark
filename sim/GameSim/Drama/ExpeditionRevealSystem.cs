@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using GameSim.Contracts;
+using GameSim.Expedition;
 using GameSim.Heroes;
 using GameSim.Venues;
 
@@ -172,9 +173,13 @@ public sealed class ExpeditionRevealSystem : IPhaseSystem
 
         // 4. Attribution beats (R11/F3/AE1/AE2): surface every proven beat, tally kills
         //    and saves onto the item's history and the bearer's memory.
+        // P2-MEMORY-23: decisiveness is decided HERE, from the recorded fight, because the fight is
+        // gone tomorrow (LastNightExpeditions holds one night) and fame needs a lifetime count.
+        var beatVenue = VenueRegistry.All.TryGetValue(result.VenueId, out var knownVenue) ? knownVenue : VenueRegistry.Mine;
         foreach (var beat in result.Beats)
         {
-            events.Emit(new AttributionBeatEvent(beat.Beat, beat.Item, beat.Hero, beat.Floor, beat.Detail));
+            var decisive = TellingQuery.IsDecisiveBeat(result, beat, state.Items, beatVenue);
+            events.Emit(new AttributionBeatEvent(beat.Beat, beat.Item, beat.Hero, beat.Floor, beat.Detail, decisive));
 
             var kind = beat.Beat switch
             {

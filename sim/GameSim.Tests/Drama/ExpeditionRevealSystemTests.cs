@@ -29,6 +29,7 @@ public class ExpeditionRevealSystemTests
 
         var beat = Assert.Single(tick.Events.OfType<AttributionBeatEvent>());
         Assert.Equal(BeatType.KillingBlow, beat.Beat);
+        Assert.False(beat.Decisive); // P2-MEMORY-23: no recorded fight in this fixture, so unprovable -> incidental
         Assert.Equal(blade.Id, beat.Item);
         Assert.Equal(new HeroId(1), beat.Hero);
         Assert.Equal(2, beat.Floor);
@@ -54,7 +55,9 @@ public class ExpeditionRevealSystemTests
 
         var tick = TickEvening(AtEvening(state, result));
 
-        Assert.Equal(BeatType.LethalSave, Assert.Single(tick.Events.OfType<AttributionBeatEvent>()).Beat);
+        var saveBeat = Assert.Single(tick.Events.OfType<AttributionBeatEvent>());
+        Assert.Equal(BeatType.LethalSave, saveBeat.Beat);
+        Assert.True(saveBeat.Decisive); // P2-MEMORY-23: a lethal save is always a deed the town retells
         Assert.Equal("save", Assert.Single(tick.NewState.Items[11].History).Kind);
         var memory = Assert.Single(tick.NewState.Heroes[1].Memories);
         Assert.Equal(0, memory.Kills);
