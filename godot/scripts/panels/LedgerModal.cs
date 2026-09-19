@@ -887,6 +887,41 @@ public partial class LedgerModal : SimPanel
         }
     }
 
+    /// <summary>
+    /// P2-PEOPLE-28 ("hold it for Torvald", decision 1 — sell the good one or hold it for the hero
+    /// who needs it): the hold's own payoff, once the story moves past placing it — one line per
+    /// hero who came for the piece held for them tonight (<see cref="EarmarkQuery.ForDay"/>), and
+    /// one line per piece still waiting on a hold placed before today (<see
+    /// cref="EarmarkQuery.WaitingTonight"/>). Same "one shared fact, not one per hero card"
+    /// placement, past tense, no verb aimed at the player (law 1).
+    /// </summary>
+    private void AddEarmarkLines(GameState state, int day)
+    {
+        foreach (var sale in EarmarkQuery.ForDay(state, day))
+        {
+            var heroName = HeroNameOf(state, sale.Hero);
+            var itemName = ItemNameOf(state, sale.Item);
+            var text = $"{heroName} came for the {itemName} you held for them.";
+
+            var line = AddLabel(_cardGrid!, text);
+            line.Name = $"EarmarkSaleLine_{sale.Hero.Value}_{sale.Item.Value}";
+            line.CustomMinimumSize = new Vector2(CardGridColumnWidth, 0);
+            line.AddThemeColorOverride("font_color", GameTheme.HeaderColor);
+        }
+
+        foreach (var waiting in EarmarkQuery.WaitingTonight(state, day))
+        {
+            var itemName = ItemNameOf(state, waiting.Item);
+            var heroName = HeroNameOf(state, waiting.Hero);
+            var text = $"{itemName} waits for {heroName}.";
+
+            var line = AddLabel(_cardGrid!, text);
+            line.Name = $"EarmarkWaitLine_{waiting.Item.Value}_{waiting.Hero.Value}";
+            line.CustomMinimumSize = new Vector2(CardGridColumnWidth, 0);
+            line.AddThemeColorOverride("font_color", GameTheme.HeaderColor);
+        }
+    }
+
     /// <summary>Hero display name, or the id's own fallback string for the defensive case where a
     /// buyer has somehow left <see cref="GameState.Heroes"/> — mirrors <see cref="ItemNameOf"/>'s
     /// identical no-throw contract.</summary>
