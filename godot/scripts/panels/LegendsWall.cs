@@ -1280,6 +1280,12 @@ public partial class LegendsWall : Control
         // mirrors EventNarration's FromPlayerShop split (sim/GameSim.Cli/EventNarration.cs).
         ItemSold e when e.FromPlayerShop =>
             $"Your {ItemName(state, e.Item)} sold to {HeroName(state, e.Buyer)} for {e.Price}g.",
+        // P2-MEMORY-26 ("the rival takes a name"): when this same sale beat a piece of yours still
+        // on the shelf (RivalSaleQuery.MatchFor owns the match rule), the day page names it too —
+        // the rival stops being a percentage and becomes a person who took something from you.
+        ItemSold e when RivalSaleQuery.MatchFor(state, e) is { } match =>
+            $"Rival's {ItemName(state, e.Item)} sold to {HeroName(state, e.Buyer)} for {e.Price}g. "
+                + $"Yours sat at {match.YourPrice}g.",
         ItemSold e =>
             $"Rival's {ItemName(state, e.Item)} sold to {HeroName(state, e.Buyer)} for {e.Price}g.",
         PartyDeparted e => $"A party of {e.Party.Count} departs for floor {e.TargetFloor}.",

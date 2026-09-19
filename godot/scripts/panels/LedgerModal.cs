@@ -399,6 +399,12 @@ public partial class LedgerModal : SimPanel
         // method's own doc.
         AddGateHeldStreakLine(state, day);
 
+        // P2-MEMORY-26 ("the rival takes a name"): the rival becomes a person who took something
+        // from you, not a percentage — one line per rival sale tonight that beat a piece of yours
+        // still sitting on the shelf. Same "one shared fact, not one per hero card" placement as
+        // the narrator line and the gate-held streak above it.
+        AddRivalSaleLines(state, day);
+
         if (cards.IsEmpty)
         {
             AddTutorialTip();
@@ -850,6 +856,37 @@ public partial class LedgerModal : SimPanel
             line.AddThemeColorOverride("font_color", GameTheme.WarnColor);
         }
     }
+
+    /// <summary>
+    /// P2-MEMORY-26 ("the rival takes a name"): one line per rival sale tonight that beat a piece
+    /// of yours still sitting on the shelf — <see cref="RivalSaleQuery.ForDay"/> owns the match
+    /// rule (same slot, stocked before today), this only names the people and the numbers it
+    /// already found. Plain, past tense, no verb aimed at the player (law 1 — influence never
+    /// orders): "Torvald bought a rival shortsword for 22g; yours sat at 40g." Absent (no row, not
+    /// a blank one) on any night with no such match, same as every sibling shared-fact line here.
+    /// </summary>
+    private void AddRivalSaleLines(GameState state, int day)
+    {
+        foreach (var match in RivalSaleQuery.ForDay(state, day))
+        {
+            var buyer = HeroNameOf(state, match.Buyer);
+            var rivalName = ItemNameOf(state, match.RivalItem);
+            var text = $"{buyer} bought a rival {rivalName} for {match.RivalPrice}g; yours sat at {match.YourPrice}g.";
+
+            var line = AddLabel(_cardGrid!, text);
+            line.Name = $"RivalSaleLine_{match.Buyer.Value}_{match.RivalItem.Value}";
+            // Same width floor as every other loose label in this HFlowContainer grid (AddNarratorLine's
+            // own note explains why an autowrapping Label needs it here).
+            line.CustomMinimumSize = new Vector2(CardGridColumnWidth, 0);
+            line.AddThemeColorOverride("font_color", GameTheme.WarnColor);
+        }
+    }
+
+    /// <summary>Hero display name, or the id's own fallback string for the defensive case where a
+    /// buyer has somehow left <see cref="GameState.Heroes"/> — mirrors <see cref="ItemNameOf"/>'s
+    /// identical no-throw contract.</summary>
+    private static string HeroNameOf(GameState state, HeroId hero) =>
+        state.Heroes.TryGetValue(hero.Value, out var found) ? found.Name : hero.ToString();
 
     /// <summary>U7's own one-line tutorial explainer (R10), now hoisted to render after the lead
     /// card (U1) rather than above every card — see <see cref="_tutorialTip"/>'s doc for the
