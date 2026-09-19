@@ -3100,5 +3100,211 @@ public class LedgerModalTests
             Unmount(ui);
         }
     }
+
+    // ── P2-PEOPLE-07 ("death-night staging"): the wake IS the evening ──
+
+    private static readonly HeroId WakeHeroId = new(3);
+
+    /// <summary>One hero, dead, with a real <see cref="Memorial"/> (name + gear) alongside their
+    /// <see cref="HeroDied"/> — the fixture the DrivenDay/ThreeHeroDay shapes above never build,
+    /// because P2-PEOPLE-07 is the first thing here to read <see cref="Memorial.GearNamed"/> off a
+    /// hand-built state rather than a live ExpeditionRevealSystem run. <paramref
+    /// name="withCommission"/> adds one open <see cref="Commission"/> for the same hero — the
+    /// exact shape <see cref="GameSim.Heroes.CommissionSystem.ExpireCommissions"/> has not yet
+    /// voided (it only drops a dead hero's commission the FOLLOWING Morning), so the commission
+    /// sentence's "still pinned" claim is honestly readable off this state.</summary>
+    private static GameState WakeNight(bool withCommission)
+    {
+        var fallen = new Hero(
+            WakeHeroId, "Torvald", ClassRegistry.VanguardId, Level: 4, MaxHp: 32, Gold: 0,
+            Gear: GearSet.Empty, Memories: ImmutableList<ItemMemory>.Empty, Alive: false,
+            DeepestFloorReached: 3, DiedOnDay: 1);
+        var heroes = ImmutableSortedDictionary<int, Hero>.Empty.Add(WakeHeroId.Value, fallen);
+
+        var events = ImmutableList.Create<GameEvent>(
+            new HeroDied(WakeHeroId, 3, "a Cave Rat", GearSet.Empty) { Id = new EventId(1), Day = 1 });
+
+        var baseState = GameFactory.NewGame(9101, heroes);
+        var state = baseState with
+        {
+            EventLog = events,
+            Drama = baseState.Drama with
+            {
+                Memorials = ImmutableList.Create(new Memorial(WakeHeroId, "Torvald", 1, "Emberbite (your make)")),
+            },
+        };
+
+        return withCommission
+            ? state with
+            {
+                Commissions = ImmutableList.Create(
+                    new Commission(WakeHeroId, ItemSlot.Armor, QualityGrade.Fine, DeadlineDay: 6, PremiumGold: 25)),
+            }
+            : state;
+    }
+
+    /// <summary>Two heroes, dead the same night, each with their own <see cref="Memorial"/> — the
+    /// "never merged into '2 heroes died'" fixture.</summary>
+    private static GameState WakeNightTwoDeaths()
+    {
+        var firstId = WakeHeroId;
+        var secondId = new HeroId(4);
+        var first = new Hero(
+            firstId, "Torvald", ClassRegistry.VanguardId, Level: 4, MaxHp: 32, Gold: 0,
+            Gear: GearSet.Empty, Memories: ImmutableList<ItemMemory>.Empty, Alive: false,
+            DeepestFloorReached: 3, DiedOnDay: 1);
+        var second = new Hero(
+            secondId, "Mira", ClassRegistry.StrikerId, Level: 2, MaxHp: 22, Gold: 0,
+            Gear: GearSet.Empty, Memories: ImmutableList<ItemMemory>.Empty, Alive: false,
+            DeepestFloorReached: 4, DiedOnDay: 1);
+        var heroes = ImmutableSortedDictionary<int, Hero>.Empty
+            .Add(firstId.Value, first)
+            .Add(secondId.Value, second);
+
+        // Log order matters (AddWakeLeads walks the log, not HeroId order) — Mira's event comes
+        // SECOND in the log despite her lower... no, HIGHER id, so a HeroId-order bug would still
+        // pass a naive test; only reading the log's own order catches it.
+        var events = ImmutableList.Create<GameEvent>(
+            new HeroDied(firstId, 3, "a Cave Rat", GearSet.Empty) { Id = new EventId(1), Day = 1 },
+            new HeroDied(secondId, 4, "a Rock Wyrm", GearSet.Empty) { Id = new EventId(2), Day = 1 });
+
+        var baseState = GameFactory.NewGame(9101, heroes);
+        return baseState with
+        {
+            EventLog = events,
+            Drama = baseState.Drama with
+            {
+                Memorials = ImmutableList.Create(
+                    new Memorial(firstId, "Torvald", 1, "Emberbite (your make)"),
+                    new Memorial(secondId, "Mira", 1, "nothing but courage")),
+            },
+        };
+    }
+
+    [TestCase]
+    public void DeathNight_LeadsWithTheDeath_NameFloorCauseAndGear()
+    {
+        var ui = MountMainUi(new SimAdapter(WakeNight(withCommission: false)));
+        try
+        {
+            ui.Ledger.ShowFor(1);
+
+            var grid = Find<Control>(ui.Ledger, "LedgerCardGrid");
+            AssertThat(grid.GetChild(0).Name.ToString())
+                .OverrideFailureMessage("the wake lead must be the FIRST thing in the night card.")
+                .IsEqual($"WakeLead_{WakeHeroId.Value}");
+
+            AssertThat(RenderedText(Find<Control>(ui.Ledger, $"WakeLead_{WakeHeroId.Value}"))).Contains("Torvald");
+
+            var fateLine = RenderedText(Find<Control>(ui.Ledger, $"WakeFateLine_{WakeHeroId.Value}"));
+            AssertThat(fateLine).Contains("floor 3");
+            AssertThat(fateLine).Contains("a Cave Rat");
+            AssertThat(fateLine).Contains("Emberbite (your make)");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void SitTheWake_OpensTheFallensOwnPage()
+    {
+        var ui = MountMainUi(new SimAdapter(WakeNight(withCommission: false)));
+        try
+        {
+            ui.Ledger.ShowFor(1);
+            PressEnabled(ui.Ledger, $"SitTheWake_{WakeHeroId.Value}");
+
+            AssertThat(ui.Legends.Visible).IsTrue();
+            AssertThat(RenderedText(ui.Legends)).Contains("Torvald");
+            // The same page P2-PEOPLE-06 built — never a second one: its own marker/remembrance/
+            // honor controls must be present, not a re-implementation of them.
+            Find<Button>(ui.Legends, $"Honor_{WakeHeroId.Value}");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void NoDeathNight_RendersNoWakeLead()
+    {
+        var ui = MountMainUi(new SimAdapter(ThreeHeroDay(anyBeats: false)));
+        try
+        {
+            ui.Ledger.ShowFor(1);
+
+            foreach (var heroValue in new[] { 1, 2, 3 })
+            {
+                AssertThat(ui.Ledger.FindChild($"WakeLead_{heroValue}", recursive: true, owned: false)).IsNull();
+            }
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void TwoDeathsSameNight_RenderTwoLeads_InLogOrder_NeverMerged()
+    {
+        var ui = MountMainUi(new SimAdapter(WakeNightTwoDeaths()));
+        try
+        {
+            ui.Ledger.ShowFor(1);
+
+            var grid = Find<Control>(ui.Ledger, "LedgerCardGrid");
+            AssertThat(grid.GetChild(0).Name.ToString()).IsEqual("WakeLead_3");
+            AssertThat(grid.GetChild(1).Name.ToString()).IsEqual("WakeLead_4");
+
+            AssertThat(RenderedText(ui.Ledger).Contains("2 heroes died")).IsFalse();
+            AssertThat(RenderedText(Find<Control>(ui.Ledger, "WakeLead_3"))).Contains("Torvald");
+            AssertThat(RenderedText(Find<Control>(ui.Ledger, "WakeLead_4"))).Contains("Mira");
+            AssertThat(RenderedText(Find<Control>(ui.Ledger, "WakeFateLine_3"))).Contains("floor 3");
+            AssertThat(RenderedText(Find<Control>(ui.Ledger, "WakeFateLine_4"))).Contains("floor 4");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void DeathNight_OpenCommission_RendersStillPinnedLine()
+    {
+        var ui = MountMainUi(new SimAdapter(WakeNight(withCommission: true)));
+        try
+        {
+            ui.Ledger.ShowFor(1);
+
+            var line = RenderedText(Find<Control>(ui.Ledger, $"WakeCommissionLine_{WakeHeroId.Value}"));
+            AssertThat(line).Contains("Torvald's ask is still pinned to your board");
+            AssertThat(line).Contains("Fine Armor by day 6");
+            AssertThat(line).Contains("Nobody is coming to collect it");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void DeathNight_NoOpenCommission_RendersNoCommissionLine()
+    {
+        var ui = MountMainUi(new SimAdapter(WakeNight(withCommission: false)));
+        try
+        {
+            ui.Ledger.ShowFor(1);
+
+            AssertThat(ui.Ledger.FindChild($"WakeCommissionLine_{WakeHeroId.Value}", recursive: true, owned: false))
+                .IsNull();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
 }
 #endif
