@@ -80,6 +80,30 @@ public static class PresentationScheduler
     private const int NearMissSeverityWeight = 5;
     private const int ItemDebutBonus = 60; // first floor a given maker's-marked item proved itself
 
+    /// <summary>The bare (no item-debut bonus) stakes score for a proven attribution beat type —
+    /// the one piece of this grammar reused outside a raid's own beat scheduling, by
+    /// <see cref="StakesFor"/> for the wake's remembrance default (P2-PEOPLE-06, KTD9-style: one
+    /// stakes ladder, never a second judgment invented at the wake).</summary>
+    private static int BeatStakes(BeatType beat) => beat switch
+    {
+        BeatType.LethalSave or BeatType.PotionLifesave => ProvenSaveStakes,
+        BeatType.KillingBlow => KillingBlowStakes,
+        BeatType.BreakpointClear => BreakpointClearStakes,
+        _ => ProvisionedStakes, // Provisioned
+    };
+
+    /// <summary>P2-PEOPLE-06: the stakes score this SAME grammar would give <paramref name="gameEvent"/>
+    /// if it were a raid's spotlight candidate — reused (not reinvented) so the wake's default
+    /// remembrance pick (<c>Drama.WakeQuery.DefaultRemembrance</c>) ranks by the one stakes ladder the
+    /// game already has. Events outside the raid grammar (a sale, a commission, a rank-up, ...) score
+    /// 0 and fall back to log order.</summary>
+    internal static int StakesFor(GameEvent gameEvent) => gameEvent switch
+    {
+        HeroDied => DeathStakes,
+        AttributionBeatEvent beat => BeatStakes(beat.Beat),
+        _ => 0,
+    };
+
     /// <summary>
     /// Schedule a resolved expedition into a paced beat list. Pure: same arguments, same output,
     /// forever. <paramref name="campaignId"/> is the seed-derived campaign identity (KTD3, the same
@@ -303,13 +327,7 @@ public static class PresentationScheduler
                 continue; // ToolAssist (P2 contract, no emitter yet) has no pack entry — stays untold
             }
 
-            var stakes = beat.Beat switch
-            {
-                BeatType.LethalSave or BeatType.PotionLifesave => ProvenSaveStakes,
-                BeatType.KillingBlow => KillingBlowStakes,
-                BeatType.BreakpointClear => BreakpointClearStakes,
-                _ => ProvisionedStakes, // Provisioned
-            };
+            var stakes = BeatStakes(beat.Beat);
             var isDebut = itemDebutFloor.TryGetValue(beat.Item.Value, out var debutFloor) && debutFloor == floor.Floor;
             stakes += isDebut ? ItemDebutBonus : 0;
 

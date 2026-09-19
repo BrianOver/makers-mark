@@ -395,6 +395,9 @@ public partial class LegendsWall : Control
             var label = AddLabel(row, text);
             label.SizeFlagsHorizontal = SizeFlags.ExpandFill;
 
+            RenderMarkerRow(pageSection, state, hero, memorial);
+            RenderRemembranceRow(pageSection, state, hero, memorial);
+
             if (!memorial.Honored)
             {
                 // Phase-legality parity (U5, campaign finding: LegendsWall.cs used to disable this
@@ -425,6 +428,17 @@ public partial class LegendsWall : Control
             }
 
             RenderReforgeOptions(pageSection, state, hero, reforgedSourceIds);
+
+            // P2-PEOPLE-06 (law 7): the skip cost, named in copy, never engineered — rendered ONLY
+            // while some wake fact is still choosable (the render predicate is derived and
+            // self-extinguishing, per WakeQuery), never a standing nag once nothing is left open.
+            if (WakeQuery.MarkerOpen(state, hero)
+                || WakeQuery.RemembranceChoices(state, hero).Count > 0
+                || WakeQuery.HeirloomOpen(state, hero))
+            {
+                var skip = AddLabel(pageSection, "  The wall keeps what you'd have chosen. The morning doesn't.");
+                skip.AddThemeColorOverride("font_color", GameTheme.TextDim);
+            }
         }
 
         if (state.Drama.DepthsBoard.TryGetValue(hero.Value, out var floor))
@@ -434,6 +448,118 @@ public partial class LegendsWall : Control
             AddLabel(pageSection, $"  floor {floor}{GodotClient.Ui.ArcScenes.FloorCaption(name, floor)}");
         }
     }
+
+    /// <summary>P2-PEOPLE-06, wake verb one on the fallen's page: "Marked by X" once <see
+    /// cref="Memorial.MarkerItem"/> is set; else a picker of every currently-legal player-crafted
+    /// piece (<see cref="WakeQuery.MarkerCandidates"/> — the exact <see cref="ActionLegality.IsLegal"/>
+    /// chain <see cref="FarewellHandlers"/> itself enforces, never re-derived here) plus a "Set as
+    /// marker" button queuing <see cref="PlaceGraveMarkerAction"/>. Renders nothing when neither is
+    /// true — no marker and nothing legal yet — the render predicate is self-extinguishing, not a nag.</summary>
+    private void RenderMarkerRow(Node parent, GameState state, HeroId hero, Memorial memorial)
+    {
+        if (memorial.MarkerItem is { } markerItem)
+        {
+            AddLabel(parent, $"  Marked by {ItemName(state, markerItem)}.");
+            return;
+        }
+
+        var candidates = WakeQuery.MarkerCandidates(state, hero).ToList();
+        if (candidates.Count == 0)
+        {
+            return;
+        }
+
+        var row = AddRow(parent);
+        AddLabel(row, "  Set the grave marker:");
+        var select = new OptionButton { Name = $"MarkerSelect_{hero.Value}" };
+        foreach (var candidate in candidates)
+        {
+            select.AddItem(ItemName(state, candidate));
+        }
+
+        select.Selected = 0;
+        row.AddChild(select);
+
+        var setButton = new Button { Name = $"SetMarker_{hero.Value}", Text = "Set as marker" };
+        setButton.Pressed += () => Adapter?.Queue(new PlaceGraveMarkerAction(hero, candidates[select.Selected]));
+        setButton.Disabled = Adapter is null;
+        row.AddChild(setButton);
+    }
+
+    /// <summary>P2-PEOPLE-06, wake verb two on the fallen's page: the chosen remembrance's own
+    /// rendered text once <see cref="Memorial.Remembrance"/> is set; else one button per event <see
+    /// cref="WakeQuery.RemembranceChoices"/> says truly names the hero, queuing <see
+    /// cref="ChooseRemembranceAction"/> — <see cref="WakeQuery.DefaultRemembrance"/>'s pick (the raid's
+    /// OWN stakes ladder, never a new judgment) sorted first. Renders nothing once chosen if the
+    /// source event somehow no longer resolves, and offers no button for a choice <see
+    /// cref="RemembranceLine"/> cannot describe — a missing fact renders nothing, never a generic
+    /// line.</summary>
+    private void RenderRemembranceRow(Node parent, GameState state, HeroId hero, Memorial memorial)
+    {
+        if (memorial.Remembrance is { } chosen)
+        {
+            var source = state.EventLog.FirstOrDefault(e => e.Id == chosen);
+            var chosenLine = source is null ? null : RemembranceLine(source, state);
+            if (chosenLine is not null)
+            {
+                AddLabel(parent, $"  Remembered for: {chosenLine}");
+            }
+
+            return;
+        }
+
+        var choices = WakeQuery.RemembranceChoices(state, hero);
+        if (choices.Count == 0)
+        {
+            return;
+        }
+
+        var defaultChoice = WakeQuery.DefaultRemembrance(state, hero);
+        var ordered = defaultChoice is null
+            ? choices
+            : choices.OrderByDescending(c => c.Id == defaultChoice.Id).ToList();
+
+        AddLabel(parent, "  Choose a remembrance:");
+        foreach (var choice in ordered)
+        {
+            var line = RemembranceLine(choice, state);
+            if (line is null)
+            {
+                continue; // no true copy for this event type yet — never a generic placeholder
+            }
+
+            var isDefault = defaultChoice is not null && choice.Id == defaultChoice.Id;
+            var button = new Button
+            {
+                Name = $"Remember_{hero.Value}_{choice.Id.Value}",
+                Text = isDefault ? $"{line} (default)" : line,
+            };
+            button.Pressed += () => Adapter?.Queue(new ChooseRemembranceAction(hero, choice.Id));
+            button.Disabled = Adapter is null;
+            parent.AddChild(button);
+        }
+    }
+
+    /// <summary>The wake's remembrance copy for ANY event <see cref="RemembranceQuery.NamesHero"/>
+    /// admits — a strictly larger set than <see cref="FormatLine"/>'s day-log allow-list (which
+    /// deliberately drops some as daily noise), so this reuses <see cref="FormatLine"/> first and
+    /// only supplies the handful of factual fallbacks <see cref="FormatLine"/> has no case for
+    /// (<see cref="CounterSaleClosed"/>/<see cref="HeroPassedOnItem"/>/<see cref="BountyJudged"/>/
+    /// <see cref="SupplyDelivered"/>) — never a second copy of a line <see cref="FormatLine"/>
+    /// already writes.</summary>
+    private static string? RemembranceLine(GameEvent evt, GameState state) => FormatLine(evt, state) ?? evt switch
+    {
+        CounterSaleClosed e =>
+            $"{HeroName(state, e.Hero)} bought {ItemName(state, e.Item)} at the counter for {e.Price}g.",
+        HeroPassedOnItem e =>
+            $"{HeroName(state, e.Hero)} passed on {ItemName(state, e.Item)} — {e.Reason}.",
+        BountyJudged e => e.Accepted
+            ? $"{HeroName(state, e.Hero)}'s bounty claim was accepted — {e.Reason}."
+            : $"{HeroName(state, e.Hero)}'s bounty claim was refused — {e.Reason}.",
+        SupplyDelivered e =>
+            $"{HeroName(state, e.To)} received a supply run: {ItemName(state, e.Item)}.",
+        _ => null,
+    };
 
     /// <summary>P2-MEMORY-11: an item's own page in the book — where every LEGENDARY GEAR / STORIED
     /// GEAR row on the index now leads, replacing the <see cref="ProvenanceCard"/> popup those rows
@@ -1338,6 +1464,14 @@ public partial class LegendsWall : Control
             $"Your {ItemName(state, e.Item)} is signed into legend as \"{e.SignedName}\".",
         MemorialHonored e =>
             $"The town bids farewell to {e.HeroName} — the rite is done.",
+        // P2-PEOPLE-06: the other two wake verbs, same admission test as MemorialHonored right
+        // above them — a deliberate rite over a named dead hero, not gauge noise.
+        GraveMarkerPlaced e =>
+            $"{e.HeroName}'s grave is marked with {ItemName(state, e.Item)}.",
+        // A remembrance whose source no longer renders shows nothing — a missing fact is never a generic line.
+        RemembranceChosen e => state.EventLog.FirstOrDefault(evt => evt.Id == e.Source) is { } src && RemembranceLine(src, state) is { } line
+            ? $"{e.HeroName} is remembered for: {line}"
+            : null,
 
         // The drama director's daily beat. Five authored incidents, so the prose lives here as a
         // client-side display map — DirectorSystem emits a bare snake_case id and no sim-side

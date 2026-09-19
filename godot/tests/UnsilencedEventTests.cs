@@ -569,6 +569,20 @@ public class UnsilencedEventTests
 
     /// <summary>P2-MEMORY-15: the refund was silent policy; now each of its three shapes reads as one line
     /// that names the gold and the reason the sim recorded — and never invents a hero for an unaccepted lapse.</summary>
+    /// <summary>P2-PEOPLE-06: the two wake rites render once, naming the hero and the fact; a remembrance whose
+    /// source no longer renders shows nothing — never a generic line.</summary>
+    [TestCase]
+    public void WakeRites_RenderOnce_AndAnUnrenderableRemembranceRendersNothing()
+    {
+        var world = StagedWorld();
+        var marked = Compose(world, day: 9, new GraveMarkerPlaced(new HeroId(1), "Torvald", world.Items.Keys.Select(k => new ItemId(k)).First()));
+        AssertThat(marked.Count).IsEqual(1);
+        AssertThat(Joined(marked)).Contains("Torvald's grave is marked with");
+
+        var orphan = Compose(world, day: 9, new RemembranceChosen(new HeroId(1), "Torvald", new EventId(987654)));
+        AssertThat(orphan.Count).IsEqual(0);
+    }
+
     [TestCase]
     public void BountyRefunded_RendersOneLine_PerReason()
     {

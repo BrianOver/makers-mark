@@ -5091,7 +5091,7 @@ name (§11.6 rule 4).
 | P2-PEOPLE-03 | The remaining arcs — Torvald 4–8, Brunhilde, Kael, Sable, Elowen, Moss | scene corpus | P2-PEOPLE-02, P4 | [G] |
 | P2-PEOPLE-04 | Durable-fact read-back on the VIGIL (the muster board's own half landed) | `godot/scripts/panels/MineWatch.cs`, `godot/scripts/panels/CampPanel.cs` | — | [G] |
 | P2-PEOPLE-05 | Wake contracts — `Memorial.MarkerItem`, remembrance action | `sim/GameSim/Contracts/` `evidence:sim/GameSim/Contracts/World.cs:MarkerItem` | — | [S][C] |
-| P2-PEOPLE-06 | The fallen's page and the three verbs, on the death night | `sim/GameSim/Drama/`, `sim/GameSim/Heroes/` | P2-PEOPLE-05 | [S] |
+| P2-PEOPLE-06 | The fallen's page and the three verbs, on the death night | `sim/GameSim/Drama/`, `sim/GameSim/Heroes/`, `godot/scripts/panels/LegendsWall.cs` `evidence:godot/scripts/panels/LegendsWall.cs:PlaceGraveMarkerAction` | P2-PEOPLE-05 | [S] |
 | P2-PEOPLE-07 | Death-night staging | `godot/scripts/panels/LegendsWall.cs`, `godot/scripts/panels/LedgerModal.cs` | P2-PEOPLE-06 | [G] |
 | P2-PEOPLE-08 | Kin contracts — `KinKind`, `KinLink`, `Hero.Kin`, null default | `sim/GameSim/Contracts/Heroes.cs` `evidence:sim/GameSim/Contracts/Heroes.cs:KinKind` | P4 | [S][C] |
 | P2-PEOPLE-09 | Kin derivation and mood — the blanket +60 dies | `sim/GameSim/Drama/RecruitSystem.cs`, `sim/GameSim/Heroes/HeroRoster.cs` (read-only) | P2-PEOPLE-08, P2-MEMORY-16 | [S][GOLD][BAL] |
