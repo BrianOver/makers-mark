@@ -45,7 +45,7 @@ public sealed record SurfaceContract(
         TavernPack.Pack,
         TavernPack.SlotNames,
         VoiceProfile.Voices,
-        Sample(("hero", "Torvald"), ("item", "Fine Iron Blade"), ("floor", "7"), ("cause", "slain by a Tunnel Spider")),
+        Sample(("hero", "Torvald"), ("item", "Fine Iron Blade"), ("floor", "7"), ("cause", "slain by a Tunnel Spider"), ("price", "42")),
         "sim/GameSim/Flavor/Packs/TavernPack.cs");
 
     public static readonly SurfaceContract Faction = new(

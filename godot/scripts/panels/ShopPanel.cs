@@ -363,6 +363,42 @@ public partial class ShopPanel : SimPanel
                 controlsRow, $"Follow_{itemId.Value}", following ? "Following ★" : "Follow", Verdict.Ok,
                 () => ToggleFollow(itemId));
 
+            // P2-PEOPLE-28 ("hold it for Torvald", decision 1 — sell the good one or hold it for
+            // the hero who needs it): show only what the sim decided (law 4) — EarmarkedFor comes
+            // straight off this entry, never a client-side flag. Held: name the hero and offer the
+            // clear control. Open: a living-hero picker plus Hold — absent (no picker row, not a
+            // disabled one) with no living hero to hold it for, mirroring Present/Suggest's own
+            // genuinely-absent-not-disabled rule right below.
+            var holdRow = AddRow(cardBody);
+            if (entry.EarmarkedFor is { } heldFor)
+            {
+                var heldLabel = AddLabel(holdRow, $"Held for {HeroName(heldFor)}");
+                heldLabel.Name = $"HeldFor_{itemId.Value}";
+                AddButton(
+                    holdRow, $"ClearHold_{itemId.Value}", "Put back on sale", Verdict.Ok,
+                    () => Earmark(itemId.Value, null));
+            }
+            else
+            {
+                var holdCandidates = state.Heroes.Values.Where(h => h.Alive).OrderBy(h => h.Id.Value).ToList();
+                if (holdCandidates.Count > 0)
+                {
+                    var holdPick = new OptionButton { Name = $"HoldPick_{itemId.Value}" };
+                    foreach (var candidate in holdCandidates)
+                    {
+                        holdPick.AddItem(candidate.Name);
+                        holdPick.SetItemMetadata(holdPick.ItemCount - 1, candidate.Id.Value);
+                    }
+
+                    holdPick.Select(0);
+                    holdRow.AddChild(holdPick);
+                    AddButton(
+                        holdRow, $"Hold_{itemId.Value}", "Hold for…", Verdict.Ok,
+                        () => Earmark(itemId.Value, holdPick.GetItemMetadata(
+                            holdPick.Selected < 0 ? 0 : holdPick.Selected).AsInt32()));
+                }
+            }
+
             // U8 (§11.12 plan, "shop counters identical and redundant — condense"): Present/Suggest
             // used to render in CounterPanel.BuildShelfActions — a SECOND full iteration of this
             // same Player.Shelf, stacked directly above this list in the same scroll, same item/
@@ -951,6 +987,28 @@ public partial class ShopPanel : SimPanel
         // after the price already queued) and wrong (Reprice-only meant a stock-and-never-touch-it
         // player never heard it at all). Retired into the Lessons book, not deleted:
         // FirstTouch.Fired keeps whatever fired at the first stock re-readable there forever.
+    }
+
+    /// <summary>
+    /// P2-PEOPLE-28 ("hold it for Torvald", decision 1 — sell the good one or hold it for the
+    /// hero who needs it): queues <see cref="EarmarkAction"/> for the hold picker AND the clear
+    /// button — <paramref name="heroId"/> null clears. No client-side validity check duplicated
+    /// here (KTD-A): <see cref="ActionLegality.IsLegal"/> runs at kernel apply time and a
+    /// rejection surfaces the normal way, same as every other queued action from this panel.
+    /// </summary>
+    public void Earmark(int itemId, int? heroId)
+    {
+        if (Adapter is null)
+        {
+            return;
+        }
+
+        var id = new ItemId(itemId);
+        var hero = heroId is { } h ? new HeroId(h) : (HeroId?)null;
+        Adapter.Queue(new EarmarkAction(id, hero));
+        SetShopFeedback(hero is { } heldHero
+            ? $"queued: hold {id} for {HeroName(heldHero)}"
+            : $"queued: put {id} back on open sale");
     }
 
     /// <summary>
