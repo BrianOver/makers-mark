@@ -1920,6 +1920,156 @@ and "the town cannot fail" are confirmed as properties, not gaps.
 both. `P2-PROOF-25` was skipped because `tools/Progress.Tests/FrontierEvidenceTests.cs` uses it as a
 fixture.
 
+### 11.14 The receipts wave — measured 2026-09-19
+
+Eight units booked from a read of the running game on `main @ a48b967c`, the day after §11.13 and
+in its form: every number below was measured on that SHA and quoted with its n and spread, after
+every §11.13 row but the parked P2-PEOPLE-11 had landed (den tiers, the hold verb, the fleece-by-margin,
+counter gossip, the wake and the fallen's page among them). The owner's standing direction is
+§11.7.13's, so this read went where the last two did — a decision with a dead arm, a fact the sim
+proves that no screen shows, an event a player would call an event that fires into silence — and
+it found the same thing four times over: the game records a receipt and never hands it to the
+player. The instruments were the standard corpus (`batch --seeds 20 --days 100` under
+`BaselinePlayer`, seeds 1–20, campaigns ending day 27.5 (23–34), so "in horizon" below means
+day ≤ `CampaignEnded`; 5,750 beats, 195 deaths, 1,152 party-nights in horizon), the same sweep
+under `--policy forgecounter` (551 counter sales, 400 earmarks), `felt-wall --seeds 20 --days 100`
+(novelty half-life day 12.0, n=20, 7–40), `decisions --seeds 20 --days 100` (10,000 decision
+points), `tools/Analytics` over the baseline corpus (five anomalies, all tariff-saturation or
+gold-mint), a reader census over `godot/scripts/` for all 56 `[JsonDerivedType]` event subtypes, a
+one-reader census over 431 Contracts fields, and six throwaway Python joins over the chronicles
+`BatchRunner` writes, kept in the session scratchpad and not committed. Six measurements chose the
+units.
+
+**1. The same sword sells three times, and nobody hands it back.** Under `BaselinePlayer`, in
+horizon, **796 player-shelf sales cover 472 distinct items; 188 of those items (9 per campaign,
+6–13) sell more than once, and 324 sales — 41% — re-sell a piece a hero had already bought.** Seed
+1's item 19 went to four heroes on days 7, 20, 22 and 25; seed 1's item 15 was bought at the counter
+by hero 3 on day 4, landed KillingBlow beats for hero 3 on days 4–7, was earmarked for hero 1 and
+sold to them on day 9, landed beats for hero 1, and sold a third time on day 26. The mechanism is
+three honest pieces that compose into a dishonest one: `HeroShoppingSystem.ApplyPurchase` drops a
+replaced gear piece from the hero's `GearSet` ("it stays in `GameState.Items` … but nobody bears it.
+Resale/trade-in is out of U5's scope"); `ShopHandlers.ApplyStock` rejects only a worn piece, a
+shelved piece, and a consumable that ever sold (rule 3b); so the discarded sword is an "unshelved
+craft" again — `BaselinePlayer` stocks it, and `ShopPanel.UnshelvedPlayerCrafts` lists it for a
+human with the same filter. No event records the piece coming back; the smith pockets the full
+price a second time; `Hero.Memories` and `StoriedGear` now carry one item's kills under two bearers.
+**P2-HONEST-34** closes it the way rule 3b already closes consumables — a gear piece a hero has
+bought does not return to the shelf for free — and because 41% of baseline revenue rides on the
+resale, it is `[S][GOLD][BAL]` with its gate pre-registered as ending day (27.5), in-horizon deaths
+(195) and the smith's gold at the ending (median 51.5g, 3–173, over the `decisions` sweep's seeds 2026–2045). The other honest shape — the hand-back as a
+recorded, priced event — is the third proposal below, and the owner's.
+
+**2. The hold has a receipt; the dead do not.** P2-PEOPLE-28's earmark, measured after landing
+under `forgecounter`: **400 holds in 20 seeds (21 per campaign, 12–29); 214 (53.5%) were bought by
+the hero they were held for; 186 never were — 46 because the hero "can't afford" it, 55 because
+their current piece was better, 84 with no recorded look at it at all — and 62 of the 186 because
+the hero died after the hold.** Nothing releases an earmark but `EarmarkAction` and the sale itself: `EarmarkedFor` is
+written in one place (`ShopHandlers.ApplyEarmark`) and read by `IsHeldForSomeoneElse`, which turns
+every other shopper away for as long as the entry lives. So a piece held for a dead hero stays held
+— **a median 12 days to the campaign's end, max 94** — and the night card says *"Chain Vest waits
+for Elowen."* (`LedgerModal.AddEarmarkLines` over `EarmarkQuery.WaitingTonight`, which reads
+`Shelf` and never `Hero.Alive`) every night after Elowen's wake. **P2-PEOPLE-31** releases the hold
+on the death night with the sentence the wake already knows how to say, `[S]`: no Contracts change,
+and `BaselinePlayer` never earmarks so the idle trace is untouched.
+
+**3. Decision 2's second arm has still never happened, and the receipt for the sixth is unread.**
+`forgecounter` closed **551 counter sales (30 per campaign, 12–35): 270 pinned (49%), 0 fleeced** —
+against 4,356 walks (135 per campaign), 45% of them "no gear-score improvement". P2-PEOPLE-29 landed
+the fleece-by-margin in #913 and its sweep could not have contained a fleece: `ForgeCounterPlayer.RespondToOffer`
+accepts or pins (a counter at the hero's own ceiling) and never counters above it, `CounterSaleClosed.Fleeced` has
+zero readers in `godot/scripts/`, and `WillingnessModel.FleeceMoodPenalty`, the `TavernPack` fleece
+lines and `NeedsSystem`'s boycott (107 "still boycotting the shop" passes per 20 baseline seeds, all
+from unmet demand, none from a fleece) have never been reached by a harness. **P2-HONEST-35** is the
+arm, `[S]` and harness-only. Decision 6: `PartyCampReport` fires **36.5 times per campaign (28–52;
+732 in horizon)** and its `HpByHero`, `HealsLeftByHero` and `CampedBelowFloor` have **zero readers**
+in sim, client, CLI or Analytics — `CampPanel` reads the live `InFlightExpedition` instead, and after
+the night nothing reads either. In **522 of 732 camps (71%) the party carried no heal at all; in 41
+a hero sat under 40% and nothing was sent** (`SendSupply` legal at 1,858 decision points, chosen 0;
+`RecallParty` 3,819 and 0), and six of those parties buried a member that night. The sentence
+exists — `CampNarration.Attribution` renders *"you held the checkpoint window — the depths took them
+anyway"* — and only the CLI calls it. **P2-SCREEN-40** puts it on the night card, `[G]`.
+
+**4. Goodwill is one gold a bag.** Decision 5 as played: **47 ore buys per campaign (24–61) on 19
+days (13–23), 908 in all; 843 (93%) at a discount of exactly 1g; 50g saved per campaign (27–135)
+against 9,470g of shelf revenue per 100-day run (`Analytics`: 189,396g over 20) — half a percent.** `FactionRegistry` sets `RiseStep 5`,
+`StandingCap 100`, `MaxAdjustmentPerMille 100` (a 10% ceiling on a 9g bag), `DriftStep 2`; the
+Favored line is crossed once per campaign (22 crossings up, 24 down, in 20 seeds) and `Analytics`
+flags five seeds as "standing pegged; the lever stopped mattering". 798 of 908 buys were Deepvein —
+`BaselinePlayer` buys what it is offered, so the fork the text names ("whose ore") is never taken —
+and the standing itself is visible on exactly one surface, `LegendsWall`'s crossing line; the offer
+line the buy is made from shows a price. **P2-LONG-35** makes the standing legible where the decision
+is made, `[G]`: the ore line names the faction's standing and what this load moves it to. What would
+make the arm worth taking is the second proposal below.
+
+**5. The newcomer arrives to a wake, and the town says "looking for work".** `RecruitSystem`
+holds the roster at six (`RosterCap`, `RecruitGateDays 2`): **183 recruits in horizon against 195
+deaths (9 per campaign, 6–14), and 143 of them (78%) arrive within a day of a death — 100 the
+morning after, 43 the same day.** `RecruitArrived` reaches two surfaces: `LegendsWall`'s *"{hero}
+has come to town looking for work."* and a name hook in `TavernPanel`. The sim already knows more —
+`KinOfDeadMoodBonus` keys the recruit's mood to a famous dead legend, `WakeQuery` and `FallenQuery`
+know who fell and in what — and the recruit is the hero decision 1 is for: they carry nothing (the
+advisor's *"Kael only carries 0g against the 24g asking price"* fired 32 times). **P2-PEOPLE-30**
+names the vacancy on arrival, `[G]`, and its extension is the first proposal below.
+
+**6. The director's whole vocabulary is the Mine.** `DirectorSystem.Catalog` holds five incidents
+and every one carries `VenueRegistry.MineId`: **121 incidents fired in horizon (6 per campaign, 5–8),
+all in the Mine**, while the first graduation lands on day 19 (16–24) and the campaign ends day 27.5
+— for the last third of every campaign the veterans raid Gloomwood, the Crypt and the Foundry and the
+town's only happenings are about the dungeon they left. The Crypt's floor-2 Bog-Wight kills **64 of
+195 heroes (33%)** and no incident has ever named the Crypt; `DenThreatShifted` now fires there
+(P2-HONEST-32: tier 1 reached in horizon in 2 of 20 baseline seeds, 18 of 20 under `forgecounter`,
+lockdown latched 4 times) into a `MineWatch` reader and a `LegendsWall.IncidentLine` whose five
+copy lines are Mine-only. **P2-MEMORY-27** gives each graduated venue its own two incidents — a rumor
+and a notable — gated on the venue being raided, `[S][GOLD]`: the event stream changes.
+
+**The felt wall, and the advisor's fallback.** `felt-wall` reports the same half-life as the last
+two reads, **day 12.0 (n=20, 7–40; last-novel day 80, 47–100)**; days whose only happening is a
+rank-up or a floor record number 4.5 per campaign (3–7); days with none at all, 10 across 20 campaigns. The advisor's
+top line is its fallback: **"You already have enough copper to craft 'buckler'" is 5,147 of 13,745
+advice lines (37%)** and fires exactly when no hero-named signal exists (`ObjectiveAdvisor`, the
+`suggestions.Count == 0` branch). Repeating a permanent fact as news is the same shape P2-MEMORY-04
+fixed for the rite. **P2-HONEST-36** makes the fallback fire when it is news and otherwise say the
+board is quiet, `[S]`.
+
+**Re-measured and not booked.** Decision 4 (P2-HONEST-28's ruling): slots spent per day median 3
+(0–5) over 2,000 day-samples, 58 days at five (2.9%), 111 at zero (5.6%) — the text's account
+stands. Decision 3 as §11.13 read it. The Decisive stamp: 4,740 of 5,750 beats (82.4%) are decisive
+under the bare-hands counterfactual (4,184 of 5,194 KillingBlows), which is P2-PROOF-23's number and
+P4's. `ItemSigned`, `HeirloomReforged` and `MasterworkAttempt` fired 0 times in 40 seeds because no
+harness crafts a Masterwork — 510 baseline crafts were 64 Fine and 446 Superior — so the whole
+legendary-work chain is unmeasured, a harness gap noted here for the next census. Under
+`forgecounter` 4 of 20 seeds never graduate a venue and never end: the counter policy starves the
+shelf, which is the policy, not the game. `HeroConsideringLeaving` and `TownConfidenceCollapsed`
+stayed at 0: `GuildAssessmentMissed` fires 0 times per campaign in horizon (0–2), so the 200‰ line is
+a 100-day mechanic on a 28-day game. `CampaignEnded`'s five tallies have no client reader by
+`LegendsWall`'s own stated choice.
+
+**Which of these an unattended session may take.** `P2-HONEST-35`, `P2-HONEST-36`, `P2-PEOPLE-31`
+(sim, no Contracts change, idle trace untouched), `P2-SCREEN-40`, `P2-PEOPLE-30` and `P2-LONG-35`
+(client, over state the sim already computes) carry no ceremony. `P2-MEMORY-27` re-records the golden
+trace; `P2-HONEST-34` re-records it and re-baselines, with its gate named above — under §11.7.13
+both are takeable with the ceremony performed. Nothing here waits on P4.
+
+**Three things the measurements argue for, as prose, for the owner to grant.** First, **the
+newcomer's first ask**: 78% of recruits arrive within a day of a death, they carry nothing, and
+P2-PEOPLE-27 already lets a party-mate ask for "one like the one that held"; the recruit posting
+that commission for the fallen's proven piece is honest if it is the hero's own `CommissionPosted`
+(law 1: no order to the player; law 4: the piece is a recorded deed) and the cost of ignoring it is
+the existing expiry. Second, **the favoured load**: decision 5 pays 1g a bag, and the arm becomes a
+choice only if standing buys something a discount cannot — a Favored faction's returning hero
+offering the rarer material or a larger load, as a change to what `OreOffered` carries. Honest if
+the offer is still the hero's (law 1), the standing that earned it is shown (P2-LONG-35), and it is
+`[C][GOLD][BAL]` with the standing-saturation seeds as its gate. Third, **the hand-back**: 41% of
+sales are a piece coming home unrecorded; recorded, it is a story — *"Torvald's old Shortsword, the
+one that held on floor 3, is back on your shelf"* — and `StoriedGear` already carries the history.
+Honest if the return is an event the ledger can read (`[C]`), the smith pays the hero for it (so it
+is not free gold), and P2-HONEST-34 has landed first so the free path is closed before the priced
+one opens.
+
+**Ids checked both ways before booking**, per §11.11's lesson: every id below was grepped across
+`sim/`, `godot/`, `tools/` and `docs/` and against `git log --all --oneline`, and all eight missed in
+both.
+
 ## 12. The external reviews — what came from outside, and what we did with it
 
 On 2026-08-06 the owner collected design reviews from three other AI models and asked for
@@ -5182,6 +5332,14 @@ name (§11.6 rule 4).
 | P2-PEOPLE-28 | Hold it for Torvald — an earmark hides a stocked piece from ordinary shopping and shows it to the one hero it was made for | `sim/GameSim/Contracts/Actions.cs`, `sim/GameSim/Economy/ShopHandlers.cs`, `sim/GameSim/Heroes/HeroShoppingSystem.cs`, `godot/scripts/panels/ShopPanel.cs` `evidence:godot/scripts/panels/ShopPanel.cs:EarmarkAction` | P2-HONEST-30 | [S][C][GOLD] |
 | P2-PEOPLE-29 | The price moves the relationship by its margin — pin and fleece scale with the gap, and an in-band sale is not nothing | `sim/GameSim/Counter/HaggleResolver.cs`, `sim/GameSim/Counter/WillingnessModel.cs`, `sim/GameSim.Tests/Balance/` | P2-HONEST-30 | [S][BAL] |
 | P2-HONEST-33 | Counter-served heroes never take the shelf path — an accepted commission or an earmarked piece is never fulfilled on a day the counter served that hero (0 of 1,018 commissions fulfilled under `forgecounter`, with or without earmarks); make the counter honour the standing request, or say in copy that it does not | `sim/GameSim/Heroes/HeroShoppingSystem.cs`, `sim/GameSim/Counter/`, `sim/GameSim.Tests/` `evidence:sim/GameSim/Heroes/HeroShoppingSystem.cs:FulfillServedHeroCommissions` | P2-PEOPLE-28 | [S][GOLD] |
+| P2-HONEST-34 | A sold piece does not come back for free — a gear piece a hero has bought never returns to the shelf unrecorded (rule 3b, which already closes consumables, extended to gear) | `sim/GameSim/Economy/ShopHandlers.cs`, `sim/GameSim/Harness/BaselinePlayer.cs`, `godot/scripts/panels/ShopPanel.cs`, `sim/GameSim.Tests/Balance/` | — | [S][GOLD][BAL] |
+| P2-HONEST-35 | The harness fleeces — a counter arm that closes above the ask, so the fleece's mood, gossip and boycott get a first measured occurrence | `sim/GameSim/Harness/ForgeCounterPlayer.cs`, `sim/GameSim.Cli/BatchRunner.cs`, `sim/GameSim.Tests/` | — | [S] |
+| P2-HONEST-36 | The advisor's fallback is news or it is quiet — the cheapest-path line fires when something changed, otherwise the board says nothing needs you tonight | `sim/GameSim/Advisor/ObjectiveAdvisor.cs`, `sim/GameSim.Tests/` | — | [S] |
+| P2-PEOPLE-31 | A hold for the dead is released at the wake — the earmark clears on the death night and the card says the piece is yours to sell again | `sim/GameSim/Drama/ExpeditionRevealSystem.cs`, `sim/GameSim/Drama/EarmarkQuery.cs`, `godot/scripts/panels/LedgerModal.cs`, `sim/GameSim.Tests/` | — | [S] |
+| P2-SCREEN-40 | The camp's receipt reaches the night card — where they camped, how low they were, what you did, in `CampNarration`'s own six sentences | `godot/scripts/panels/LedgerModal.cs`, `sim/GameSim/Drama/CampNarration.cs` (read-only), `godot/tests/` | — | [G] |
+| P2-LONG-35 | The ore line names the standing it moves — the faction, where you stand with them, and what this load earns | `godot/scripts/panels/LedgerModal.cs`, `sim/GameSim/Factions/FactionStandingThresholds.cs` (read-only), `godot/tests/` | — | [G] |
+| P2-PEOPLE-30 | The newcomer's arrival names the vacancy — whose seat they take, how many days cold, and what the fallen wore | `godot/scripts/panels/LegendsWall.cs`, `godot/scripts/panels/TavernPanel.cs`, `sim/GameSim/Drama/WakeQuery.cs` (read-only), `godot/tests/` | — | [G] |
+| P2-MEMORY-27 | The director learns three more dungeons — a rumor and a notable each for Gloomwood, the Crypt and the Foundry, gated on the venue being raided | `sim/GameSim/Drama/DirectorSystem.cs`, `godot/scripts/panels/LegendsWall.cs`, `sim/GameSim.Tests/` | — | [S][GOLD] |
 
 **P2-HONEST-33** is booked from P2-PEOPLE-28's own measurement: `HeroShoppingSystem.ShoppingOrder` skips
 every hero the counter served that day ("counter-served heroes don't shop twice", PKD5), and
