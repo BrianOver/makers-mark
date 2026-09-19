@@ -53,6 +53,37 @@ public class CommissionSystemTests
         return (after, sink.Events);
     }
 
+    /// <summary>P2-PEOPLE-27: when a party-mate's legend deed was earned by your piece in the asked slot,
+    /// the posted commission names that piece and that hero; with no such deed both fields stay null.</summary>
+    [Fact]
+    public void PostedCommission_NamesThePieceAPartyMatesDeedProved_OrNothing()
+    {
+        var asker = MakeHero(1); // empty gear -> first gap is Weapon
+        var mate = MakeHero(2, gear: new GearSet(new ItemId(50), null, null), deepestFloor: 1);
+        var emberbite = new Item(
+            new ItemId(50), "longsword", "Emberbite", ItemSlot.Weapon, QualityGrade.Fine,
+            new ItemStats(9, 0, 3), new MakersMark("You", 1), ImmutableList<ItemHistoryEntry>.Empty);
+        var proven = BaseState(asker, mate) with
+        {
+            Items = ImmutableSortedDictionary<int, Item>.Empty.Add(50, emberbite),
+            EventLog = ImmutableList.Create<GameEvent>(
+                new PartyDeparted(ImmutableList.Create(asker.Id, mate.Id), 1) { Id = new EventId(1), Day = 1 },
+                new AttributionBeatEvent(BeatType.LethalSave, new ItemId(50), mate.Id, 1, "Emberbite held", Decisive: true) { Id = new EventId(2), Day = 1 }),
+        };
+
+        var (after, events) = Run(proven);
+
+        var posted = Assert.Single(events.OfType<CommissionPosted>().Where(c => c.Hero == asker.Id));
+        Assert.Equal((new ItemId(50), mate.Id), (posted.ProvenBy, posted.ProvedFor));
+        var commission = Assert.Single(after.Commissions.Where(c => c.Hero == asker.Id));
+        Assert.Equal((new ItemId(50), mate.Id), (commission.ProvenBy, commission.ProvedFor));
+
+        var (_, bare) = Run(BaseState(MakeHero(1)));
+        var unproven = Assert.Single(bare.OfType<CommissionPosted>());
+        Assert.Null(unproven.ProvenBy);
+        Assert.Null(unproven.ProvedFor);
+    }
+
     [Fact]
     public void HeroWithEmptyWeaponSlot_MusteringToFloor1_GetsCommissionPosted_WithExpectedValues()
     {
