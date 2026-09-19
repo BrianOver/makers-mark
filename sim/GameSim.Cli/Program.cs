@@ -226,6 +226,26 @@ if (args.Length > 0 && args[0] == "arc-stall")
     return GameSim.Cli.ArcStallSweep.Run(asSeeds, asStart, asDays, asOut, asPolicy, asTrace, Console.Out, Console.Error, asHand);
 }
 
+// Den-sweep mode (P2-HONEST-32, one-off measurement, not a gate): `-- den-sweep [--seeds N]
+// [--days N] [--out DIR]` measures the Mine's den-threat meter (DirectorSystem.TickDens) under
+// baseline + forgecounter policies — the census behind whether DenThreatShifted (four MineWatch
+// readers) can ever actually fire.
+if (args.Length > 0 && args[0] == "den-sweep")
+{
+    var dsSeeds = 20;
+    var dsDays = 100;
+    var dsOut = Path.Combine("runs", "den-sweep");
+    for (var i = 1; i < args.Length; i++)
+    {
+        if (args[i] == "--seeds" && i + 1 < args.Length && int.TryParse(args[i + 1], out var s)) { dsSeeds = s; i++; }
+        else if (args[i] == "--days" && i + 1 < args.Length && int.TryParse(args[i + 1], out var d)) { dsDays = d; i++; }
+        else if (args[i] == "--out" && i + 1 < args.Length) { dsOut = args[i + 1]; i++; }
+        else { Console.Error.WriteLine($"den-sweep: unknown/invalid arg near '{args[i]}' — usage: den-sweep [--seeds N] [--days N] [--out DIR]"); return 1; }
+    }
+
+    return GameSim.Cli.DenSweep.Run(dsSeeds, 2026UL, dsDays, dsOut, Console.Out, Console.Error);
+}
+
 // Interactive mode accepts ONLY `--seed N`. Anything else is a hard error — a typo'd batch
 // invocation ('Batch', misordered flags) must never fall through to the interactive REPL,
 // where redirected stdin would EOF and exit 0 having written zero chronicles (silent green).
