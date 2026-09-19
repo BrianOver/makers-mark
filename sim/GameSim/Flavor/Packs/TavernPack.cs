@@ -39,6 +39,14 @@ namespace GameSim.Flavor.Packs;
 /// <para><b>Conformance floor:</b> every (baseKey, voice) key carries at least 4 variants —
 /// no fallback-only keys. <c>TavernPackTests</c> enforces all of the above structurally.</para>
 ///
+/// <para><b>Counter-sale memory (P2-MEMORY-25).</b> <see cref="GameSim.Contracts.CounterSaleClosed"/>
+/// carries both <c>Pinned</c> and <c>Fleeced</c> bools (the latter added by the same-named
+/// Contracts amendment), so <see cref="GameSim.Drama.GossipGenerator"/> can tell all three real
+/// outcomes apart: <see cref="CounterSalePinned"/> (a warm read), <see cref="CounterSaleFleeced"/>
+/// (paid above the round's ceiling anyway — a town scandal), <see cref="CounterSaleFairDeal"/> (an
+/// honest in-band close, neither). No predicate wiring needed — unlike the killing-blow
+/// decisive split, the two bools already live on the stamped event.</para>
+///
 /// <para><b>The <c>{cause}</c> grammar contract (P2-MEMORY-08).</b> <c>ExpeditionRevealSystem</c>
 /// mints <c>{cause}</c> as a lowercase predicate completing the sentence frame "[hero] was …" (e.g.
 /// "slain by a Tunnel Spider", "lost to the Mine"). Every <see cref="HeroDied"/> variant may place it
@@ -81,6 +89,21 @@ public static class TavernPack
     /// they left, and it stays true across every rung the ladder ever grows to.</summary>
     public const string VenueGraduated = "venueGraduated";
 
+    /// <summary>Base key for a <c>CounterSaleClosed</c> with <c>Pinned: true</c> (P2-MEMORY-25):
+    /// the player named a price and the hero paid it without a back-and-forth — a warm read.</summary>
+    public const string CounterSalePinned = "counterSalePinned";
+
+    /// <summary>Base key for a <c>CounterSaleClosed</c> with <c>Fleeced: true</c> (P2-MEMORY-25):
+    /// the hero paid a countered price above the round's ceiling anyway — the town's scandal line.</summary>
+    public const string CounterSaleFleeced = "counterSaleFleeced";
+
+    /// <summary>Base key for a <c>CounterSaleClosed</c> that is neither pinned nor fleeced
+    /// (P2-MEMORY-25/P2-PEOPLE-29's "fair deal"): an honest, unremarkable in-band close. Told at
+    /// the same low salience as a pin (<see cref="GameSim.Drama.GossipGenerator"/>'s rank 4) — the
+    /// task's own escape hatch ("one neutral line or none") is spent HERE, on a line, since a
+    /// closed counter sale is still a real link-2 delivery worth naming.</summary>
+    public const string CounterSaleFairDeal = "counterSaleFairDeal";
+
     /// <summary>
     /// The slot names each base key's event provides — the single source of truth shared by
     /// the generator (which fills them) and the conformance tests (which sweep them).
@@ -97,6 +120,9 @@ public static class TavernPack
             [FloorRecordSet] = ["hero", "floor"],
             [RecruitArrived] = ["hero"],
             [VenueGraduated] = ["hero"],
+            [CounterSalePinned] = ["hero", "item", "price"],
+            [CounterSaleFleeced] = ["hero", "item", "price"],
+            [CounterSaleFairDeal] = ["hero", "item", "price"],
         }.ToImmutableSortedDictionary(StringComparer.Ordinal);
 
     /// <summary>The pack itself. Static readonly: built once, immutable forever.</summary>
@@ -636,6 +662,72 @@ public static class TavernPack
                 "{hero} crossed a threshold the mine doesn't give back easily. The deep dark noticed.",
                 "The bottom floor let {hero} pass. Something further down is already waiting.",
                 "{hero}'s shadow grew long enough to reach the next dark. It always does, eventually."),
+
+            // ------------------------------------------------------------- counterSalePinned (P2-MEMORY-25)
+            [$"{CounterSalePinned}/gruff"] = ImmutableList.Create(
+                "{hero} named {price}g for {item} and didn't blink. Good read.",
+                "Priced {item} at {price}g. {hero} paid it on the spot — knew the mark.",
+                "{hero} took {item} at {price}g like it was already theirs. That's a read, not luck.",
+                "{price}g for {item}, and {hero} nodded before I finished the sentence. Good ears."),
+            [$"{CounterSalePinned}/dramatic"] = ImmutableList.Create(
+                "Named the price — {price}g! — and {hero} paid it without a flinch! {item}, sold true!",
+                "A perfect read! {hero} handed over {price}g for {item} like fate itself set the number!",
+                "The smith named {price}g, and {hero}'s coin was already on the counter for {item}!",
+                "Behold the read of the age! {price}g for {item}, and {hero} agreed before the echo died!"),
+            [$"{CounterSalePinned}/wry"] = ImmutableList.Create(
+                "Named {price}g for {item}. {hero} paid it like they'd been waiting to. Unnerving, honestly.",
+                "{hero} handed over {price}g for {item} without the usual theater. Somebody read the room.",
+                "Priced {item} at {price}g. {hero} agreed instantly. I'm choosing to take the compliment.",
+                "{price}g, {item}, {hero} — no haggling, no drama. Suspicious how well that went."),
+            [$"{CounterSalePinned}/omen"] = ImmutableList.Create(
+                "The price came to {price}g before {hero} even reached for {item}. The numbers already knew.",
+                "{item} for {price}g — {hero} paid without a word. The scales were already balanced.",
+                "I named {price}g and the dregs had already shown it. {hero} took {item} same as foretold.",
+                "The coin and the want met at {price}g. {hero}, {item} — written before it was spoken."),
+
+            // ------------------------------------------------------------- counterSaleFleeced (P2-MEMORY-25)
+            [$"{CounterSaleFleeced}/gruff"] = ImmutableList.Create(
+                "Charged {hero} {price}g for {item}. Steep. They paid anyway.",
+                "{item} went for {price}g. {hero} didn't argue hard enough. Their loss, my ledger.",
+                "Named {price}g for {item} and {hero} just paid it. Won't be doing that again, they said. We'll see.",
+                "{price}g for {item} — more than it's worth, and {hero} handed it over anyway."),
+            [$"{CounterSaleFleeced}/dramatic"] = ImmutableList.Create(
+                "{price}g! For {item}! And {hero} paid every coin without a word of protest — the town is TALKING!",
+                "Robbery, some are calling it — {hero} paid {price}g for {item}, and the smith is not complaining!",
+                "{item} sold for {price}g — a king's price — and {hero} never once said no!",
+                "The gasps could be heard three streets over: {price}g for {item}, and {hero} simply paid it!"),
+            [$"{CounterSaleFleeced}/wry"] = ImmutableList.Create(
+                "{hero} paid {price}g for {item}. Nobody made them. That's the part that stings.",
+                "{price}g for {item}. {hero} agreed so fast I almost felt bad. Almost.",
+                "Sold {item} to {hero} for {price}g. They'll figure out the math eventually. Maybe.",
+                "{hero} paid {price}g for {item} without checking the going rate. Bless their confidence."),
+            [$"{CounterSaleFleeced}/omen"] = ImmutableList.Create(
+                "{hero} paid {price}g for {item} and the crows went quiet. Even they were surprised.",
+                "The price read {price}g for {item}, and {hero} paid it whole. The omens noted the number.",
+                "{item} changed hands for {price}g — {hero}'s coin, no argument. The ledger remembers such things.",
+                "I foresaw {hero} haggling hard. Instead: {price}g for {item}, paid flat. The bones were wrong, again."),
+
+            // ------------------------------------------------------------- counterSaleFairDeal (P2-MEMORY-25)
+            [$"{CounterSaleFairDeal}/gruff"] = ImmutableList.Create(
+                "{item} sold to {hero} for {price}g. Fair trade, nothing to write home about.",
+                "{price}g for {item}. {hero} paid, I stocked. Business as usual.",
+                "Closed {item} at {price}g with {hero}. Square deal, both ways.",
+                "{hero} took {item} for {price}g. Honest price, honest sale."),
+            [$"{CounterSaleFairDeal}/dramatic"] = ImmutableList.Create(
+                "A deal struck true! {hero} paid {price}g for {item}, and both sides walked away content!",
+                "{item} changed hands for {price}g — {hero} paying fair, the smith asking fair. Rare harmony!",
+                "Behold an honest bargain! {price}g for {item}, and {hero} shook on it without complaint!",
+                "{hero} and the smith met in the middle — {price}g for {item}, and neither side sang a dirge!"),
+            [$"{CounterSaleFairDeal}/wry"] = ImmutableList.Create(
+                "{hero} paid {price}g for {item}. Nobody got robbed. Slow news day.",
+                "{item} sold for {price}g. {hero} didn't overpay, didn't underpay. Riveting stuff.",
+                "A plain sale: {price}g, {item}, {hero}. Write it down before it becomes interesting by accident.",
+                "{hero} paid {price}g for {item} and everyone went home satisfied. Suspicious how boring that is."),
+            [$"{CounterSaleFairDeal}/omen"] = ImmutableList.Create(
+                "{price}g passed for {item}, and {hero} left balanced. The scales approve, for once.",
+                "{item}, {price}g, {hero} — the numbers agreed with each other. No omen needed here.",
+                "A quiet exchange: {hero} paid {price}g for {item}. Even the dregs had nothing to add.",
+                "The coin met the want at a fair {price}g. {hero} and {item}, no debt either way."),
         },
         new Dictionary<string, string>(StringComparer.Ordinal)
         {
@@ -651,5 +743,9 @@ public static class TavernPack
             [PotionLifesave] = "{item} saved {hero}'s life on floor {floor} — plain as that.",
             // Forward-ladder plan (2026-08-10-003, L5) — no prior line, authored fresh.
             [VenueGraduated] = "{hero} has proven themselves — a harder dark waits now.",
+            // P2-MEMORY-25 — no prior line, authored fresh.
+            [CounterSalePinned] = "{hero} named {price}g for {item} and paid it straight — a good read.",
+            [CounterSaleFleeced] = "{hero} paid {price}g for {item}, well past a fair price, and didn't argue.",
+            [CounterSaleFairDeal] = "{hero} paid {price}g for {item}. An honest sale, plain as that.",
         });
 }
