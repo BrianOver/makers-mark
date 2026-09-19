@@ -43,6 +43,34 @@ namespace GameSim.Drama;
 /// </summary>
 public sealed class ExpeditionRevealSystem : IPhaseSystem
 {
+    /// <summary>
+    /// P2-PEOPLE-26 (link5, "the outcome becomes the town's memory"): the mood a bearer banks
+    /// toward the smith when a LEGEND DEED (<see cref="LegendQuery.IsLegendDeed"/> — decisive, and
+    /// never the killing blow) is credited to a player-crafted item they carried. A kill moves mood
+    /// by exactly 0 — kills are the job (LegendQuery's own doc comment), tallied onto ItemMemory/fame
+    /// already; this is the separate, personal ledger of who kept the hero alive.
+    ///
+    /// <para>Sized against <see cref="Counter.WillingnessModel"/>'s existing mood scale: at least a
+    /// pin's typical reward (<see cref="Counter.WillingnessModel.PinMoodDelta"/> ranges
+    /// <c>FairDealMood+1=5</c> at zero gap up to <c>PinMoodBonus=60</c> at the pin window's edge, so
+    /// ~30 is a typical read) and no more than the fleece penalty's magnitude
+    /// (<see cref="Counter.WillingnessModel.FleeceMoodPenalty"/> = 80). 40 sits above a typical pin
+    /// without spending the whole fleece budget on one save — a single deed does not vault a hero
+    /// into <c>RelationshipBand.Sworn</c> (300) on its own.</para>
+    ///
+    /// <para><b>Measured 2026-09-19</b> (20 seeds x 100 days, BEFORE this unit vs AFTER, ForgeCounter
+    /// policy — the one policy that both stocks the shelf and closes counter sales, so it is not
+    /// swamped by <c>CommissionSystem</c>'s own much larger pre-existing swings the way the Baseline
+    /// policy is): Sworn share 0.0% -> 6.1%, Patron 0.0% -> 4.6%, median mood unchanged at 0, max
+    /// mood 153 -> 5180. Most heroes (74.3% after, Stranger band) are untouched — this is NOT every
+    /// hero saturating, it is the honest long tail of a hero who fights every night for 100 days
+    /// beside the same signed gear and gets saved dozens of times, which is exactly the relationship
+    /// this unit exists to put a number on. 1,135 legend-deed credits landed across the sweep
+    /// (ForgeCounter) / 1,057 (Baseline, via shelf sales alone — P2-HONEST-30's own passive channel).
+    /// Full table in the landing PR.</para>
+    /// </summary>
+    public const int SavedByYourWorkMood = 40;
+
     public DayPhase Phase => DayPhase.Evening;
 
     public string Name => "expedition-reveal";
@@ -179,7 +207,28 @@ public sealed class ExpeditionRevealSystem : IPhaseSystem
         foreach (var beat in result.Beats)
         {
             var decisive = TellingQuery.IsDecisiveBeat(result, beat, state.Items, beatVenue);
-            events.Emit(new AttributionBeatEvent(beat.Beat, beat.Item, beat.Hero, beat.Floor, beat.Detail, decisive));
+            var attributionEvent = new AttributionBeatEvent(beat.Beat, beat.Item, beat.Hero, beat.Floor, beat.Detail, decisive);
+            events.Emit(attributionEvent);
+
+            // P2-PEOPLE-26: a legend deed on a player-crafted item moves the BEARER's opinion of
+            // the smith — reuses LegendQuery.IsLegendDeed exactly (never a second copy of "decisive
+            // and not a kill") so this can never disagree with what the Legends Wall/fame already
+            // counts as a deed. Gated on the bearer being alive HERE: step 1 above already flipped
+            // this same result's deaths for this reveal, so a fallen hero's mood is never moved —
+            // nobody's memory is a dead hero's to keep.
+            if (LegendQuery.IsLegendDeed(attributionEvent)
+                && state.Items.TryGetValue(beat.Item.Value, out var creditedItem)
+                && creditedItem.PlayerCrafted
+                && state.Heroes.TryGetValue(beat.Hero.Value, out var savedHero)
+                && savedHero.Alive)
+            {
+                state = state with
+                {
+                    Heroes = state.Heroes.SetItem(
+                        beat.Hero.Value,
+                        savedHero with { MoodPermille = savedHero.MoodPermille + SavedByYourWorkMood }),
+                };
+            }
 
             var kind = beat.Beat switch
             {
