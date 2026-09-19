@@ -47,6 +47,13 @@ public partial class LedgerModal : SimPanel
     /// rather than reaching across).</summary>
     private const float RowDeadAlpha = 0.55f;
 
+    /// <summary>P2-PEOPLE-07 ("sit the wake"): fired when a death-night lead's own button is
+    /// pressed, carrying which hero's page to open. <c>MainUi</c> forwards this straight to
+    /// <see cref="GodotClient.Panels.LegendsWall.ShowActorPage"/> through the SAME
+    /// <c>OpenGatedSurface("Legends", ...)</c> gate the Legends tray button already goes through —
+    /// same "raise, MainUi wires" shape as <see cref="CampPanel.OpenForgeRequested"/>.</summary>
+    public event Action<HeroId>? SitTheWakeRequested;
+
     private Label? _title;
     private Label? _countLine;
     private VBoxContainer? _cards;
@@ -385,6 +392,11 @@ public partial class LedgerModal : SimPanel
         // first-loss-block live here while THE RETELLING stays a direct _cards child added below.
         _cardGrid = new HFlowContainer { Name = "LedgerCardGrid" };
         _cards!.AddChild(_cardGrid);
+
+        // P2-PEOPLE-07 ("death-night staging", link 5): a death night's own wake leads the WHOLE
+        // card — ahead of even the followed-item line below, because a hero's death outranks every
+        // other fact this night could report. See AddWakeLeads' own doc.
+        AddWakeLeads(state, day);
 
         // P2-SCREEN-35 ("follow one piece"): the followed item's own night leads the whole card —
         // ahead of the narrator line, the gate-held streak, and every hero's own return card.

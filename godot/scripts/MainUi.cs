@@ -4176,6 +4176,14 @@ public partial class MainUi : Control
         Legends.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         Legends.VisibilityChanged += OnLegendsVisibilityChanged;
 
+        // P2-PEOPLE-07 ("sit the wake"): the death night's own lead card opens straight to the
+        // fallen's own page — the SAME gate the "Legends" tray button goes through
+        // (OpenGatedSurface), never a bypass, even though a death night always has Legends unlocked
+        // in practice. Ledger.CloseModal() first, same "close before forwarding" idiom as
+        // Camp.OpenForgeRequested above.
+        Ledger.SitTheWakeRequested += hero =>
+            OpenGatedSurface("Legends", () => Legends.ShowActorPage(Adapter.CurrentState, hero));
+
         // --- P2-LONG-18 the pledge: a code-built modal sibling, mirroring CommissionBoard (submits
         //     an action, so it needs the adapter handed in the same way). Opened by clicking Voss
         //     himself (Town.AssessorClicked), not a HUD tray button — see OnAssessorClicked.
