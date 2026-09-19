@@ -64,6 +64,8 @@ public static class ActionLegality
         AcceptCommissionAction accept => phase == DayPhase.Morning && AcceptCommissionLegal(state, accept),
         DeclineCommissionAction decline => phase == DayPhase.Morning && DeclineCommissionLegal(state, decline),
         HonorMemorialAction honor => phase == DayPhase.Evening && HonorMemorialLegal(state, honor),
+        PlaceGraveMarkerAction marker => phase == DayPhase.Evening && PlaceGraveMarkerLegal(state, marker),
+        ChooseRemembranceAction remembrance => phase == DayPhase.Evening && ChooseRemembranceLegal(state, remembrance),
         ReforgeHeirloomAction reforge => ReforgeHeirloomLegal(state, reforge),
         OpenCounterAction => phase == DayPhase.Morning && OpenCounterLegal(state),
         PresentItemAction present => phase == DayPhase.Morning && PresentItemLegal(state, present),
@@ -671,6 +673,37 @@ public static class ActionLegality
     // mirrors the handler's actual accept/reject boundary, not "first rite only".
     private static bool HonorMemorialLegal(GameState state, HonorMemorialAction action) =>
         state.Drama.Memorials.Any(m => m.Hero == action.Hero);
+
+    // ---- FarewellHandlers.ApplyMarker / ApplyRemembrance guards (P2-PEOPLE-05) ----
+    private static bool PlaceGraveMarkerLegal(GameState state, PlaceGraveMarkerAction action)
+    {
+        var memorial = state.Drama.Memorials.FirstOrDefault(m => m.Hero == action.Hero);
+        if (memorial is null || memorial.MarkerItem is not null)
+        {
+            return false;
+        }
+
+        if (!state.Items.TryGetValue(action.Item.Value, out var item) || !item.PlayerCrafted)
+        {
+            return false;
+        }
+
+        return !state.Heroes.Values.Any(h => WoreItem(h.Gear, action.Item))
+            && !state.Player.Shelf.Any(e => e.Item == action.Item)
+            && !state.Drama.Memorials.Any(m => m.MarkerItem == action.Item);
+    }
+
+    private static bool ChooseRemembranceLegal(GameState state, ChooseRemembranceAction action)
+    {
+        var memorial = state.Drama.Memorials.FirstOrDefault(m => m.Hero == action.Hero);
+        if (memorial is null || memorial.Remembrance is not null)
+        {
+            return false;
+        }
+
+        var source = state.EventLog.FirstOrDefault(e => e.Id == action.Source);
+        return source is not null && Drama.RemembranceQuery.NamesHero(source, action.Hero);
+    }
 
     // ---- HeirloomHandlers.Apply guards (Crafting/HeirloomHandlers.cs): source provenance (worn by
     // a fallen hero, not already reforged) + the SAME recipe/profession/material/tier/quantity chain

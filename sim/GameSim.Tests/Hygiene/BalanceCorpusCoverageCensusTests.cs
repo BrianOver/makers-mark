@@ -163,13 +163,19 @@ public class BalanceCorpusCoverageCensusTests
         ["EarmarkAction"] = "No corpus sweep policy holds a shelved piece for one hero — the earmark verb "
             + "landed with its sim half only (P2-PEOPLE-28, taken under §11.7.13); the Godot ShopPanel and "
             + "any harness hand that earmarks are the unit's second half. P2-PEOPLE-28.",
+        ["PlaceGraveMarkerAction"] = "No corpus sweep policy performs the wake — the grave-marker verb landed "
+            + "with its sim half only (P2-PEOPLE-05, wake contracts); the fallen's page and the death-night "
+            + "staging are P2-PEOPLE-06. P2-PEOPLE-05.",
+        ["ChooseRemembranceAction"] = "No corpus sweep policy performs the wake — the remembrance verb landed "
+            + "with its sim half only (P2-PEOPLE-05, wake contracts); the fallen's page and the death-night "
+            + "staging are P2-PEOPLE-06. P2-PEOPLE-05.",
     };
 
-    private const int ExpectedNeverSubmittedCount = 16;
+    private const int ExpectedNeverSubmittedCount = 18;
 
     [Fact]
     public void PlayerActionHierarchyHasTheMemberCountThisCensusExpects()
-        => Assert.True(AllActionTypes.Length == 27,
+        => Assert.True(AllActionTypes.Length == 29,
             $"PlayerAction now reflects {AllActionTypes.Length} concrete derived types — "
             + "sanity-check this census's reflection query still finds them all before trusting the "
             + "coverage split below (and if a type was really added or removed, the offered/"

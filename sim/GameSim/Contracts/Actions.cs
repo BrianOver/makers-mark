@@ -28,6 +28,8 @@ namespace GameSim.Contracts;
 [JsonDerivedType(typeof(AcceptCommissionAction), "acceptCommission")]
 [JsonDerivedType(typeof(DeclineCommissionAction), "declineCommission")]
 [JsonDerivedType(typeof(HonorMemorialAction), "honorMemorial")]
+[JsonDerivedType(typeof(PlaceGraveMarkerAction), "placeGraveMarker")]
+[JsonDerivedType(typeof(ChooseRemembranceAction), "chooseRemembrance")]
 [JsonDerivedType(typeof(ReforgeHeirloomAction), "reforgeHeirloom")]
 [JsonDerivedType(typeof(UpgradeForgeAction), "upgradeForge")]
 [JsonDerivedType(typeof(BuyForgeSupplyAction), "buyForgeSupply")]
@@ -162,6 +164,16 @@ public sealed record DeclineCommissionAction(HeroId Hero) : PlayerAction;
 /// Evening-only ritual (<c>ActionLegality</c> gates it on <c>phase == DayPhase.Evening</c>); the
 /// day has no Night phase, whatever this comment used to say. Deterministic, draws no RNG.</summary>
 public sealed record HonorMemorialAction(HeroId Hero) : PlayerAction;
+
+/// <summary>P2-PEOPLE-05, wake verb one: set a player-crafted piece as the fallen hero's grave-marker
+/// (<see cref="Memorial.MarkerItem"/>). The piece must be yours (MakersMark), not worn, not on the shelf
+/// and not already a marker; a memorial takes one marker, ever. Evening (the wake), instant, free.</summary>
+public sealed record PlaceGraveMarkerAction(HeroId Hero, ItemId Item) : PlayerAction;
+
+/// <summary>P2-PEOPLE-05, wake verb two: choose the logged event the fallen is remembered by
+/// (<see cref="Memorial.Remembrance"/>). Legal only for an event in the log that truly names the hero
+/// (<c>RemembranceQuery.NamesHero</c>) — never a generic line. One remembrance per memorial. Evening, instant, free.</summary>
+public sealed record ChooseRemembranceAction(HeroId Hero, EventId Source) : PlayerAction;
 
 /// <summary>Wave 4c (U20, heirloom reforge): reforge a fallen hero's worn gear (<paramref name="SourceItem"/>,
 /// drawn from a recorded <c>HeroDied.WornGear</c>) into a new item of <paramref name="RecipeId"/> using

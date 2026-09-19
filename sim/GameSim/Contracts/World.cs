@@ -8,7 +8,12 @@ namespace GameSim.Contracts;
 /// just an economy event (R6). Trailing positional with a default so old saves and existing
 /// constructors deserialize/compile unchanged (default = not yet honored); DATA only, no sim rule
 /// keys off it beyond the rite's own idempotency guard + presentation.</para></summary>
-public sealed record Memorial(HeroId Hero, string HeroName, int Day, string GearNamed, bool Honored = false);
+/// <summary>P2-PEOPLE-05 (wake contracts): <paramref name="MarkerItem"/> is the grave-marker the player forged
+/// and placed — a real player-crafted item, so link 1 is embossed into link 5; <paramref name="Remembrance"/> is
+/// the logged event the player chose to be remembered by, validated at choice time to truly name the fallen
+/// (<c>RemembranceQuery.NamesHero</c>). Both TRAILING with null defaults: older saves load as "no marker, no
+/// remembrance chosen", and skipping either stays legal — the wall keeps what you'd have chosen.</summary>
+public sealed record Memorial(HeroId Hero, string HeroName, int Day, string GearNamed, bool Honored = false, ItemId? MarkerItem = null, EventId? Remembrance = null);
 
 /// <summary>Drama-surface state: memorials, the Depths Progress board, recruit gating (R10, R13, R15).</summary>
 public sealed record DramaState(
