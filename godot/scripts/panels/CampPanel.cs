@@ -321,12 +321,15 @@ public partial class CampPanel : SimPanel
             .Select(floor => $"floor {floor} ({venue.MonsterKind(floor)})"));
         AddLabel(cardBody, $"Still ahead, in the dark: {floorsAhead}.");
 
-        // P2-LONG-30: the fee names its own stake — the floor it is reaching (party.TargetFloor,
-        // pinned one above CheckpointFloor since P2-LONG-29) and the formula that priced it, read
-        // through CampHandlers.SupplyFeeFormulaCaption() — SupplyFeeCopyCensusTests bans the two
-        // underlying fee constants by name (and the raw arithmetic) anywhere in godot/scripts.
+        // P2-LONG-30: the fee names its own stake — the floor the runner actually reaches
+        // (party.CheckpointFloor, what SupplyFee is charged against — the runner reaches the camp,
+        // not the target the party is pressing for) and the formula that priced it, read through
+        // CampHandlers.SupplyFeeFormulaCaption() — SupplyFeeCopyCensusTests bans the two underlying
+        // fee constants by name (and the raw arithmetic) anywhere in godot/scripts. Naming
+        // TargetFloor here would be arithmetically dishonest: the caption names a per-floor price, and
+        // the fee the sim charges is keyed on CheckpointFloor, not TargetFloor.
         AddLabel(cardBody,
-            $"Runner to floor {party.TargetFloor}: {fee}g per delivery " +
+            $"Runner to the camp on floor {party.CheckpointFloor}: {fee}g per delivery " +
             $"({CampHandlers.SupplyFeeFormulaCaption()})");
 
         // Supply picker: the player's held consumables (exactly the send-legal set the kernel accepts).
@@ -413,7 +416,7 @@ public partial class CampPanel : SimPanel
                             ? "Nothing in your hands — what you've got is on the shelf, and the shelf can't send. Press Unstock to hold it back."
                             : "Nothing in your hands to send.")
                     : party.Recalled ? "The recall bell has rung — the runner won't chase them."
-                    : $"You can't pay the {fee}g runner to floor {party.TargetFloor} yet.");
+                    : $"You can't pay the {fee}g runner to floor {party.CheckpointFloor} yet.");
         }
 
         // U17 (Wave 4, "signal retreat"): pure UI framing over the EXISTING legal RecallPartyAction

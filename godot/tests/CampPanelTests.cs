@@ -138,9 +138,10 @@ public class CampPanelTests
             }
 
             AssertThat(text).Contains("heals left");
-            // P2-LONG-30: the fee line names the floor it is reaching (TargetFloor), not just a
-            // bare number — the checkpoint-1 fixture presses for floor 2.
-            AssertThat(text).Contains($"Runner to floor {party.TargetFloor}: {Floor1Fee}g");
+            // P2-LONG-30: the fee line names the floor the runner actually reaches
+            // (CheckpointFloor, what SupplyFee is charged against) — not TargetFloor, which the
+            // formula caption's "6g + 3g a floor" would not reconcile against.
+            AssertThat(text).Contains($"Runner to the camp on floor {party.CheckpointFloor}: {Floor1Fee}g");
             AssertThat(party.CheckpointFloor).IsEqual(1);
         }
         finally
@@ -175,7 +176,7 @@ public class CampPanelTests
                     .OverrideFailureMessage(
                         $"Checkpoint floor {floor}: slate did not quote {expectedFee}g — the "
                         + "client has drifted from CampHandlers.SupplyFee again.")
-                    .Contains($"Runner to floor {floor + 1}: {expectedFee}g");
+                    .Contains($"Runner to the camp on floor {floor}: {expectedFee}g");
             }
             finally
             {
