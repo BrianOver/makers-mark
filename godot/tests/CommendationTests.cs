@@ -57,12 +57,12 @@ public class CommendationTests
         GameFactory.NewGame(seed, Roster(alive)) with
         {
             EventLog = ImmutableList.Create<GameEvent>(
-                new AttributionBeatEvent(BeatType.KillingBlow, Emberbite, Brunhilde, Floor: 3,
-                    "Emberbite landed the killing blow on the Cave Rat") { Id = new EventId(1), Day = 3 },
+                new AttributionBeatEvent(BeatType.BreakpointClear, Emberbite, Brunhilde, Floor: 3,
+                    "Emberbite broke the Tunnel Spider line on floor 3", Decisive: true) { Id = new EventId(1), Day = 3 },
                 new AttributionBeatEvent(BeatType.LethalSave, Buckler, Brunhilde, Floor: 4,
-                    "The Buckler turned a lethal blow") { Id = new EventId(2), Day = 4 },
+                    "The Buckler turned a lethal blow", Decisive: true) { Id = new EventId(2), Day = 4 },
                 new AttributionBeatEvent(BeatType.PotionLifesave, Emberbite, Brunhilde, Floor: 4,
-                    "The salve kept Brunhilde standing") { Id = new EventId(3), Day = 4 }),
+                    "The salve kept Brunhilde standing", Decisive: true) { Id = new EventId(3), Day = 4 }),
         };
 
     /// <summary>One short of the threshold — the honest-empty-state fixture.</summary>
@@ -70,10 +70,10 @@ public class CommendationTests
         GameFactory.NewGame(seed, Roster()) with
         {
             EventLog = ImmutableList.Create<GameEvent>(
-                new AttributionBeatEvent(BeatType.KillingBlow, Emberbite, Brunhilde, Floor: 3,
-                    "Emberbite landed the killing blow on the Cave Rat") { Id = new EventId(1), Day = 3 },
+                new AttributionBeatEvent(BeatType.BreakpointClear, Emberbite, Brunhilde, Floor: 3,
+                    "Emberbite broke the Tunnel Spider line on floor 3", Decisive: true) { Id = new EventId(1), Day = 3 },
                 new AttributionBeatEvent(BeatType.LethalSave, Buckler, Brunhilde, Floor: 4,
-                    "The Buckler turned a lethal blow") { Id = new EventId(2), Day = 4 }),
+                    "The Buckler turned a lethal blow", Decisive: true) { Id = new EventId(2), Day = 4 }),
         };
 
     // ── three reasons, and only three ───────────────────────────────────────────────────────
@@ -112,6 +112,38 @@ public class CommendationTests
             AssertThat(ArcSceneFlow.OfferFor(state))
                 .OverrideFailureMessage("A hero short of three beats was offered a commendation.")
                 .IsNull();
+        }
+        finally
+        {
+            ArcSceneFlow.ResetForNewGame();
+        }
+    }
+
+    [TestCase]
+    public void ThreeIncidentalKills_NeverOfferACommendation_TheReasonsMustBeDeeds()
+    {
+        // P2-MEMORY-23: three cave rats used to trip the threshold on night one. An incidental kill
+        // is not one of the three reasons - nor is any killing blow, decisive or not: 22 a night is the job, not the legend — so three of
+        // them are zero reasons, and no commendation.
+        ArcSceneFlow.ResetForNewGame();
+        try
+        {
+            var state = TwoBeatFixture() with
+            {
+                EventLog = ImmutableList.Create<GameEvent>(
+                    new AttributionBeatEvent(BeatType.KillingBlow, Emberbite, Brunhilde, Floor: 1,
+                        "Emberbite landed the killing blow on the Cave Rat", Decisive: false) { Id = new EventId(1), Day = 2 },
+                    new AttributionBeatEvent(BeatType.KillingBlow, Emberbite, Brunhilde, Floor: 1,
+                        "Emberbite landed the killing blow on the Cave Rat", Decisive: false) { Id = new EventId(2), Day = 3 },
+                    new AttributionBeatEvent(BeatType.KillingBlow, Emberbite, Brunhilde, Floor: 1,
+                        "Emberbite landed the killing blow on the Cave Rat", Decisive: false) { Id = new EventId(3), Day = 4 }),
+            };
+            var hero = state.Heroes[Brunhilde.Value];
+
+            AssertThat(LegendQuery.AttributionBeatCount(state, Brunhilde)).IsEqual(3);
+            AssertThat(LegendQuery.LegendDeedCount(state, Brunhilde)).IsEqual(0);
+            AssertThat(Commendation.Eligible(state, hero)).IsFalse();
+            AssertThat(Commendation.Candidates(state)).IsEmpty();
         }
         finally
         {

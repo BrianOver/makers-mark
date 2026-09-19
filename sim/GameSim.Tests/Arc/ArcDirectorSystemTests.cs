@@ -198,9 +198,9 @@ public class ArcDirectorSystemTests
         var deadHero = new HeroId(2);
 
         var log = ImmutableList.Create<GameEvent>(
-            new AttributionBeatEvent(BeatType.KillingBlow, new ItemId(1), heroWithBeats, 1, "x") { Id = new EventId(1), Day = 1 },
-            new AttributionBeatEvent(BeatType.LethalSave, new ItemId(1), heroWithBeats, 1, "y") { Id = new EventId(2), Day = 1 },
-            new AttributionBeatEvent(BeatType.BreakpointClear, new ItemId(1), heroWithBeats, 1, "z") { Id = new EventId(3), Day = 1 },
+            new AttributionBeatEvent(BeatType.PotionLifesave, new ItemId(1), heroWithBeats, 1, "x", Decisive: true) { Id = new EventId(1), Day = 1 },
+            new AttributionBeatEvent(BeatType.LethalSave, new ItemId(1), heroWithBeats, 1, "y", Decisive: true) { Id = new EventId(2), Day = 1 },
+            new AttributionBeatEvent(BeatType.BreakpointClear, new ItemId(1), heroWithBeats, 1, "z", Decisive: true) { Id = new EventId(3), Day = 1 },
             new GossipEmitted(new EventId(1), "the tavern talks") { Id = new EventId(4), Day = 1 });
 
         const int deepestFloor = 5; // stand-in "deepest floor reached" payload — no longer the arc's own trigger (L5)
