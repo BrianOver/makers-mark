@@ -184,11 +184,14 @@ public sealed class CommissionSystem : IPhaseSystem
             var premium = PremiumFor(targetFloor, band);
             var deadline = state.Day + DeadlineWindowDays;
 
-            events.Emit(new CommissionPosted(hero.Id, slot.Value, minQuality, deadline, premium));
+            // P2-PEOPLE-27: if a party-mate's legend deed was earned by your piece in this slot, the
+            // ask names it — what the hero saw hold beside them, not a new requirement.
+            var proof = CommissionProof.For(state, hero.Id, slot.Value);
+            events.Emit(new CommissionPosted(hero.Id, slot.Value, minQuality, deadline, premium, proof?.Item, proof?.ProvedFor));
             state = state with
             {
                 Commissions = state.Commissions.Add(
-                    new Commission(hero.Id, slot.Value, minQuality, deadline, premium)),
+                    new Commission(hero.Id, slot.Value, minQuality, deadline, premium, ProvenBy: proof?.Item, ProvedFor: proof?.ProvedFor)),
             };
 
             openCount++;
