@@ -762,6 +762,89 @@ public partial class LedgerModal : SimPanel
     private const string ForgedOpening = "Forged at the anvil";
 
     /// <summary>
+    /// P2-PEOPLE-07 ("death-night staging", link 5 — "the outcome becomes the town's memory, with
+    /// your name in it"): on a night a hero died, the wake IS the evening, not a wall a player has
+    /// to go find — one lead card per <see cref="HeroDied"/> event tonight, in the log's own order.
+    /// Two deaths render as two leads, never merged into "2 heroes died" (a merged line would lose
+    /// which name/floor/cause/gear belongs to which hero — the exact loss "no participation
+    /// credit" (law 4) exists to prevent one level up).
+    ///
+    /// <para>Every fact comes straight off <see cref="HeroDied"/> (<see cref="HeroDied.Floor"/>,
+    /// <see cref="HeroDied.Cause"/>) and the SAME night's <see cref="Memorial"/> (<see
+    /// cref="Memorial.HeroName"/>, <see cref="Memorial.GearNamed"/> — <c>ExpeditionRevealSystem</c>
+    /// emits both off the one death, same day, so the join on <c>Hero</c>+<c>Day</c> is exact).
+    /// Never re-derived: no second floor/cause computation, no second gear-naming pass.</para>
+    ///
+    /// <para>"Sit the wake" opens <see cref="GodotClient.Panels.LegendsWall.ShowActorPage"/> on
+    /// this hero — the SAME page P2-PEOPLE-06 built, never a second one.</para>
+    /// </summary>
+    private void AddWakeLeads(GameState state, int day)
+    {
+        foreach (var died in state.EventLog.OfType<HeroDied>().Where(e => e.Day == day))
+        {
+            var memorial = state.Drama.Memorials.FirstOrDefault(m => m.Hero == died.Hero && m.Day == day);
+            var name = memorial?.HeroName ?? HeroNameOf(state, died.Hero);
+
+            var wrap = Card($"WakeLead_{died.Hero.Value}");
+            wrap.CustomMinimumSize = new Vector2(CardGridColumnWidth, 0);
+            wrap.AddThemeStyleboxOverride("panel", CardAccentStyle(survived: false));
+            var body = new VBoxContainer();
+            wrap.AddChild(body);
+
+            var headerRow = AddRow(body);
+            AddIcon(headerRow, IconRegistry.Glyph("skull"));
+            AddHeader(headerRow, name);
+
+            var text = $"Fell on floor {died.Floor} — {died.Cause}.";
+            if (memorial is not null)
+            {
+                text += $" Carrying {memorial.GearNamed}.";
+            }
+
+            var fateLabel = AddLabel(body, text);
+            fateLabel.Name = $"WakeFateLine_{died.Hero.Value}";
+            fateLabel.AddThemeFontSizeOverride("font_size", GameTheme.HudValueFontSize);
+
+            if (OpenCommissionSentence(state, died.Hero, name) is { } commissionLine)
+            {
+                var commissionLabel = AddLabel(body, commissionLine);
+                commissionLabel.Name = $"WakeCommissionLine_{died.Hero.Value}";
+                commissionLabel.AddThemeColorOverride("font_color", GameTheme.WarnColor);
+            }
+
+            AddButton(body, $"SitTheWake_{died.Hero.Value}", "Sit the wake", Verdict.Ok, () =>
+            {
+                CloseModal();
+                SitTheWakeRequested?.Invoke(died.Hero);
+            });
+
+            _cardGrid!.AddChild(wrap);
+        }
+    }
+
+    /// <summary>
+    /// The commission sentence — only if the log lets it be true. <see
+    /// cref="GameSim.Heroes.CommissionSystem.ExpireCommissions"/> (T10) voids a dead hero's
+    /// commission SILENTLY, but only on the FOLLOWING Morning tick — the death-night render (this
+    /// call, same Evening the death happened) runs BEFORE that Morning ever ticks, so an open
+    /// commission is, right now, honestly still sitting in <see cref="GameState.Commissions"/>.
+    /// "Still pinned" is a live read of the board, not a guess about a voiding this method cannot
+    /// see. Null (never a generic line) when this hero has no open commission.
+    /// </summary>
+    private static string? OpenCommissionSentence(GameState state, HeroId hero, string name)
+    {
+        if (state.Commissions.FirstOrDefault(c => c.Hero == hero) is not { } commission)
+        {
+            return null;
+        }
+
+        var quality = ItemVocab.Display(commission.MinQuality);
+        var slot = ItemVocab.Display(commission.Slot);
+        return $"{name}'s ask is still pinned to your board — a {quality} {slot} by day "
+            + $"{commission.DeadlineDay}. Nobody is coming to collect it.";
+    }
+
+    /// <summary>
     /// U-T5-6: the narrator's own line for tonight's reveal (see <see cref="_narratorLine"/>'s doc),
     /// rendered first in the card grid with its own accent color so it reads as narration rather than
     /// another card's prose. Same HFlowContainer width-floor treatment as <see cref="AddTutorialTip"/>
