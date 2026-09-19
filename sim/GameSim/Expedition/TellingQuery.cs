@@ -261,6 +261,29 @@ public static class TellingQuery
     /// <see cref="ComputeKillingBlowFacts"/> arithmetic <see cref="BuildKillingBlow"/> stages with,
     /// so gossip's ranking can never disagree with the Telling modal's own numbers.
     /// </summary>
+    /// <summary>
+    /// P2-MEMORY-23: was <paramref name="beat"/> a DECISIVE deed — one the town would retell — as
+    /// opposed to an incidental one that happened to be logged. Mirrors <c>GossipGenerator.Rank</c>'s
+    /// tellable set exactly (rank 3 or better): saves, life-saves, breakpoint clears and provisioning
+    /// always are; a killing blow is decisive only when <see cref="KillingBlowIsDecisive"/> says the
+    /// monster would have survived without the item. Stamped onto <see cref="AttributionBeatEvent.Decisive"/>
+    /// at reveal, while the recorded fight still exists to prove it.
+    /// </summary>
+    public static bool IsDecisiveBeat(
+        ExpeditionResult result,
+        AttributionBeat beat,
+        ImmutableSortedDictionary<int, Item> items,
+        VenueDefinition venue) => beat.Beat switch
+    {
+        // A kill whose fight the result does not hold (a fixture, a truncated record) cannot be proven
+        // decisive — incidental is the honest default for a claim that cannot be checked.
+        BeatType.KillingBlow => result.PartyAtDeparture.Any(h => h.Id == beat.Hero)
+            && result.Floors.Any(f => f.Floor == beat.Floor && f.Combats.Any(c => c.Hero == beat.Hero))
+            && KillingBlowIsDecisive(result, beat, items, venue),
+        BeatType.LethalSave or BeatType.PotionLifesave or BeatType.BreakpointClear or BeatType.Provisioned => true,
+        _ => false,
+    };
+
     public static bool KillingBlowIsDecisive(
         ExpeditionResult result,
         AttributionBeat beat,
