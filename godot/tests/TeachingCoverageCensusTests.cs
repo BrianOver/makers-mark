@@ -272,6 +272,8 @@ public class TeachingCoverageCensusTests
         // exemption in ActionUntaught until this unit -- the ONE action LegendsWall exists to offer
         // was the only untaught one on it.
         [typeof(HonorMemorialAction)] = "honor-memorial",
+        [typeof(PlaceGraveMarkerAction)] = "honor-memorial", // P2-PEOPLE-06: the wake verbs share the memorial's first touch
+        [typeof(ChooseRemembranceAction)] = "honor-memorial",
         [typeof(UpgradeForgeAction)] = "foundry-four-verbs",
         [typeof(BuyForgeSupplyAction)] = "foundry-four-verbs",
         [typeof(MasterworkAttemptAction)] = "foundry-four-verbs",
@@ -326,10 +328,6 @@ public class TeachingCoverageCensusTests
     /// tension (the verdict moved because the code did, not the other way round).</summary>
     private static readonly Dictionary<Type, string> ActionUntaught = new()
     {
-        [typeof(PlaceGraveMarkerAction)] = "P2-PEOPLE-05 sim half only: no Godot control queues it yet; the fallen's " +
-            "page (P2-PEOPLE-06) records the teaching decision for the wake verbs.",
-        [typeof(ChooseRemembranceAction)] = "P2-PEOPLE-05 sim half only: no Godot control queues it yet; the fallen's " +
-            "page (P2-PEOPLE-06) records the teaching decision for the wake verbs.",
         [typeof(CloseCounterAction)] =
             "CounterAnsweredAtLeastOnce (TutorialFlow.cs) recognizes CloseCounterAction as an optional " +
             "fast-path AFTER an answer, but never REQUIRES it -- a player can finish the OpenCounter " +

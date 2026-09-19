@@ -414,6 +414,107 @@ public class LegendsWallTests
     /// the next refresh. <see cref="GodotClient.Audio.Cue.MemorialHonor"/> is deliberately its own
     /// cue, never <c>Cue.Bell</c> — this is grief acknowledged once, not the day advancing.
     /// </summary>
+    // ── P2-PEOPLE-06: the fallen's page — the two wake verbs beside Honor ────────────────────────
+
+    private static readonly ItemId CairnId = new(811);
+
+    /// <summary>The fallen fixture plus one unworn, unshelved piece of your own work — the only legal
+    /// grave-marker candidate (the worn dagger is on the dead hero's back, so it never qualifies).</summary>
+    private static GameState WorldWithFallenHeroAndACairn(ItemId? marker = null)
+    {
+        var world = WorldWithFallenHero();
+        var cairn = new Item(
+            CairnId, "cairn", "Iron Cairn", ItemSlot.Trinket, QualityGrade.Fine,
+            new ItemStats(0, 0, 4), new MakersMark("You", 2), ImmutableList<ItemHistoryEntry>.Empty);
+        var memorials = marker is { } m
+            ? ImmutableList.Create(world.Drama.Memorials[0] with { MarkerItem = m })
+            : world.Drama.Memorials;
+        return world with
+        {
+            Items = world.Items.Add(CairnId.Value, cairn),
+            Drama = world.Drama with { Memorials = memorials },
+        };
+    }
+
+    [TestCase]
+    public void SetMarkerButton_QueuesPlaceGraveMarkerAction_ForThePickedCandidate()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.Legends.ShowWall(WorldWithFallenHeroAndACairn());
+            PressEnabled(ui.Legends, $"Actor_{FallenHeroId.Value}");
+
+            var pick = Find<OptionButton>(ui.Legends, $"MarkerSelect_{FallenHeroId.Value}");
+            AssertThat(pick.ItemCount).IsEqual(1); // the worn dagger never qualifies; the cairn does
+            PressEnabled(ui.Legends, $"SetMarker_{FallenHeroId.Value}");
+
+            var placed = ui.Adapter.AppliedThisPhase.OfType<PlaceGraveMarkerAction>().Single();
+            AssertThat(placed.Hero).IsEqual(FallenHeroId);
+            AssertThat(placed.Item).IsEqual(CairnId);
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void MarkedGrave_ReadsMarkedBy_AndOffersNoPicker()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.Legends.ShowWall(WorldWithFallenHeroAndACairn(marker: CairnId));
+            PressEnabled(ui.Legends, $"Actor_{FallenHeroId.Value}");
+
+            AssertThat(RenderedText(ui.Legends)).Contains("Marked by Iron Cairn");
+            AssertThat(ui.Legends.FindChild($"SetMarker_{FallenHeroId.Value}", true, false)).IsNull();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void RemembranceButton_QueuesChooseRemembranceAction_ForTheEventThatNamesTheFallen()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.Legends.ShowWall(WorldWithFallenHero());
+            PressEnabled(ui.Legends, $"Actor_{FallenHeroId.Value}");
+
+            // The fixture's log holds exactly one event naming the fallen: her death (EventId 1).
+            PressEnabled(ui.Legends, $"Remember_{FallenHeroId.Value}_1");
+
+            var chosen = ui.Adapter.AppliedThisPhase.OfType<ChooseRemembranceAction>().Single();
+            AssertThat(chosen.Hero).IsEqual(FallenHeroId);
+            AssertThat(chosen.Source).IsEqual(new EventId(1));
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void FallenPage_SkipCostLine_ShowsOnlyWhileSomethingIsChoosable()
+    {
+        var ui = MountMainUi();
+        try
+        {
+            ui.Legends.ShowWall(WorldWithFallenHero());
+            PressEnabled(ui.Legends, $"Actor_{FallenHeroId.Value}");
+            AssertThat(RenderedText(ui.Legends)).Contains("The wall keeps what you'd have chosen.");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
     [TestCase]
     public void HonorButton_PlaysTheMemorialHonorCue()
     {

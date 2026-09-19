@@ -105,6 +105,12 @@ public class ActionReachabilityCensusTests
         [typeof(DeclineCommissionAction)] =
             "CommissionBoard's per-commission \"Decline\" button lambda (CommissionBoard.cs:100, queues :101) " +
             "— Commissions tray book, gated: opens on the sim's first CommissionPosted (SurfaceUnlocks.Gates).",
+        [typeof(PlaceGraveMarkerAction)] =
+            "LegendsWall.RenderMarkerRow's \"Set as marker\" button lambda (queues PlaceGraveMarkerAction for the " +
+            "picked candidate) on the fallen hero's own page — P2-PEOPLE-06, the fallen's page.",
+        [typeof(ChooseRemembranceAction)] =
+            "LegendsWall.RenderRemembranceRow's per-choice \"Remember_{hero}_{event}\" button lambda (queues " +
+            "ChooseRemembranceAction) on the fallen hero's own page — P2-PEOPLE-06, the fallen's page.",
         [typeof(HonorMemorialAction)] =
             "LegendsWall's per-memorial \"Honor\" button lambda (LegendsWall.cs:128, queues :129) " +
             "— Legends tray book, gated: opens on the first AttributionBeatEvent (SurfaceUnlocks.Gates).",
@@ -146,10 +152,6 @@ public class ActionReachabilityCensusTests
     /// </summary>
     private static readonly Dictionary<Type, string> Exclusions = new()
     {
-        [typeof(PlaceGraveMarkerAction)] = "P2-PEOPLE-05 landed the wake CONTRACTS and handlers only; the fallen's page " +
-            "with its three verbs on the death night is P2-PEOPLE-06, which moves this to Surfaces.",
-        [typeof(ChooseRemembranceAction)] = "P2-PEOPLE-05 landed the wake CONTRACTS and handlers only; the fallen's page " +
-            "with its three verbs on the death night is P2-PEOPLE-06, which moves this to Surfaces.",
     };
 
     private static IEnumerable<Type> ConcretePlayerActionTypesInAssembly() =>

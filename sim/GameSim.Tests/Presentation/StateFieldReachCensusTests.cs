@@ -485,6 +485,8 @@ public class StateFieldReachCensusTests
         ["Memorial.Day"] = new(FieldKind.Rendered, "godot/scripts/panels/LegendsWall.cs (FallenSection)"),
         ["Memorial.Hero"] = new(FieldKind.Rendered, "godot/scripts/panels/LegendsWall.cs (per-memorial Honor button keyed by hero)"),
         ["Memorial.Honored"] = new(FieldKind.Rendered, "godot/scripts/panels/LegendsWall.cs (Honor button state / Reforge gate)"),
+        ["Memorial.MarkerItem"] = new(FieldKind.Rendered, "godot/scripts/panels/LegendsWall.cs (RenderMarkerRow: \"Marked by\" / marker picker — P2-PEOPLE-06)"),
+        ["Memorial.Remembrance"] = new(FieldKind.Rendered, "godot/scripts/panels/LegendsWall.cs (RenderRemembranceRow: \"Remembered for\" / choices — P2-PEOPLE-06)"),
 
         // ---- OreLoot: LedgerModal's ore-offer rows ----
         ["OreLoot.Hero"] = new(FieldKind.Rendered, "godot/scripts/panels/LedgerModal.cs:559-568 (\"ORE OFFERED\", BuyOre_{hero}_{mat})"),
@@ -552,7 +554,7 @@ public class StateFieldReachCensusTests
     // MaxHp AS THEY STOOD AT DEPARTURE, never live GameState.Heroes). Already RENDERED via
     // TellingPanel long before this unit; the census catching up to a surface that was already
     // there, not a new one.
-    private const int ExpectedRenderedCount = 132; // +1 2026-09-18: CounterState.InterestPermille (P2-HONEST-30 gave it a third sim reader)
+    private const int ExpectedRenderedCount = 134; // +2: Memorial.MarkerItem/Remembrance rendered on the fallen's page (P2-PEOPLE-06) // +1 2026-09-18: CounterState.InterestPermille (P2-HONEST-30 gave it a third sim reader)
     private const int ExpectedRoutedCount = 9;
     private const int ExpectedInternalCount = 6;
     // 12 -> 8: the same join, mirrored — the four fields that left GAP for RENDERED above.
