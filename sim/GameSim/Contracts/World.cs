@@ -305,13 +305,20 @@ public sealed record GameState(
 /// <see cref="MinQuality"/> by <see cref="DeadlineDay"/> for a <see cref="PremiumGold"/> premium over
 /// list. <see cref="Accepted"/> is false when first posted; the player's AcceptCommissionAction flips
 /// it. Pure data (no Godot, integer-only).</summary>
+/// <summary>A hero's standing forge request. <paramref name="ProvenBy"/> / <paramref name="ProvedFor"/>
+/// (P2-PEOPLE-27, "one like the one that held"): when a party-mate's legend deed — a lethal save, a
+/// life-save, a breakpoint clear — was earned by YOUR piece in this slot, the ask names that piece and
+/// the hero it held for. Fulfilment is unchanged (slot + quality); the name is what the hero saw in
+/// the dark, not a new requirement. TRAILING with null defaults; older saves load as an unnamed ask.</summary>
 public sealed record Commission(
     HeroId Hero,
     ItemSlot Slot,
     QualityGrade MinQuality,
     int DeadlineDay,
     int PremiumGold,
-    bool Accepted = false);
+    bool Accepted = false,
+    ItemId? ProvenBy = null,
+    HeroId? ProvedFor = null);
 
 /// <summary>
 /// One diagnostic reason the sim computed while deciding something — the cheap half of §11.14.8's
