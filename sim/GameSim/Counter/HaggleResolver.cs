@@ -177,19 +177,24 @@ internal static class HaggleResolver
 
         if (price > ceiling)
         {
-            TraceOutcome("fleeced", $"countered {price}g exceeds the round's ceiling of {ceiling}g");
+            var fleeceMoodDelta = WillingnessModel.FleeceMoodDelta(price, ceiling, trueWillingness);
+            TraceOutcome("fleeced", $"countered {price}g exceeds the round's ceiling of {ceiling}g (mood {fleeceMoodDelta})");
             var fleecedSession = counter with { GoodwillPermille = counter.GoodwillPermille - WillingnessModel.FleeceGoodwillPenaltyPermille };
-            return (CloseSale(state, fleecedSession, hero, item, shelfEntry, price, pinned: false, events, moodDelta: -WillingnessModel.FleeceMoodPenalty), null);
+            return (CloseSale(state, fleecedSession, hero, item, shelfEntry, price, pinned: false, events, moodDelta: fleeceMoodDelta), null);
         }
 
         if (WillingnessModel.IsPin(price, trueWillingness))
         {
-            TraceOutcome("pinned", $"countered {price}g landed within the pin window of true willingness {trueWillingness}g");
-            return (CloseSale(state, counter, hero, item, shelfEntry, price, pinned: true, events, moodDelta: WillingnessModel.PinMoodBonus), null);
+            var pinMoodDelta = WillingnessModel.PinMoodDelta(price, trueWillingness);
+            TraceOutcome("pinned", $"countered {price}g landed within the pin window of true willingness {trueWillingness}g (mood {pinMoodDelta})");
+            return (CloseSale(state, counter, hero, item, shelfEntry, price, pinned: true, events, moodDelta: pinMoodDelta), null);
         }
 
+        // P2-PEOPLE-29: an in-band close that is neither a pin nor a fleece is still an honest
+        // sale, not nothing — FairDealMood is deliberately flat (not margin-scaled) and small
+        // relative to the pin/fleece caps.
         TraceOutcome("plain sale", $"countered {price}g inside [{floor},{ceiling}] but outside the pin window");
-        return (CloseSale(state, counter, hero, item, shelfEntry, price, pinned: false, events), null);
+        return (CloseSale(state, counter, hero, item, shelfEntry, price, pinned: false, events, moodDelta: WillingnessModel.FairDealMood), null);
     }
 
     /// <summary>Closes the sale at <paramref name="price"/>: gold moves exactly (hero pays, player

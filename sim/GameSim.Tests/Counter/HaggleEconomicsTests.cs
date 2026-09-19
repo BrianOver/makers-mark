@@ -72,7 +72,11 @@ public class HaggleEconomicsTests
         var round1Result = kernel.Tick(round1State, ImmutableList.Create<PlayerAction>(new HaggleResponseAction(HaggleResponseKind.Counter, 100)));
         var fleeced = Assert.Single(round1Result.Events.OfType<CounterSaleClosed>());
         Assert.False(fleeced.Pinned);
-        Assert.Equal(-WillingnessModel.FleeceMoodPenalty, round1Result.NewState.Heroes[1].MoodPermille);
+        // P2-PEOPLE-29: the flat -FleeceMoodPenalty is gone — the live resolver must land exactly
+        // where the pure model says a 100g counter against a 98g ceiling (true willingness 100g)
+        // scales to, a partial penalty short of the cap.
+        Assert.Equal(WillingnessModel.FleeceMoodDelta(100, 98, 100), round1Result.NewState.Heroes[1].MoodPermille);
+        Assert.True(round1Result.NewState.Heroes[1].MoodPermille > -WillingnessModel.FleeceMoodPenalty);
 
         // Round 2 (fresh run, HoldFirm once first): the SAME counter price of 100 is now a pin.
         var round2State = kernel.Tick(Fresh(), ImmutableList.Create<PlayerAction>(new OpenCounterAction())).NewState;
@@ -83,7 +87,11 @@ public class HaggleEconomicsTests
         var pinned = Assert.Single(round2Result.Events.OfType<CounterSaleClosed>());
         Assert.True(pinned.Pinned);
         Assert.Equal(100, pinned.Price);
-        Assert.Equal(WillingnessModel.PinMoodBonus, round2Result.NewState.Heroes[1].MoodPermille);
+        // 100g against true willingness 100g is a zero-gap pin — the least generous pin possible,
+        // still short of the PinMoodBonus cap but strictly above an in-band FairDealMood close.
+        Assert.Equal(WillingnessModel.PinMoodDelta(100, 100), round2Result.NewState.Heroes[1].MoodPermille);
+        Assert.True(round2Result.NewState.Heroes[1].MoodPermille > WillingnessModel.FairDealMood);
+        Assert.True(round2Result.NewState.Heroes[1].MoodPermille < WillingnessModel.PinMoodBonus);
     }
 
     [Fact]
@@ -159,11 +167,11 @@ public class HaggleEconomicsTests
         var sale = Assert.Single(result.Events.OfType<CounterSaleClosed>());
         Assert.True(sale.Pinned);
         Assert.Equal(96, sale.Price);
-        Assert.Equal(WillingnessModel.PinMoodBonus, result.NewState.Heroes[1].MoodPermille);
+        Assert.Equal(WillingnessModel.PinMoodDelta(96, 100), result.NewState.Heroes[1].MoodPermille);
     }
 
     [Fact]
-    public void Counter_WithinBandOutsidePinWindow_ClosesNormalSale_NoMoodChange()
+    public void Counter_WithinBandOutsidePinWindow_ClosesNormalSale_EarnsFairDealMood()
     {
         var hero = MakeHero(1, "striker", gold: 1000);
         var sword = MakeItem(1, ItemSlot.Weapon, attack: 6, defense: 0, weight: 3);
@@ -179,7 +187,9 @@ public class HaggleEconomicsTests
         var sale = Assert.Single(result.Events.OfType<CounterSaleClosed>());
         Assert.False(sale.Pinned);
         Assert.Equal(85, sale.Price);
-        Assert.Equal(0, result.NewState.Heroes[1].MoodPermille);
+        // P2-PEOPLE-29: an in-band close is not nothing anymore — it earns the flat FairDealMood,
+        // strictly smaller than the smallest possible pin (WillingnessModelTests pins that ordering).
+        Assert.Equal(WillingnessModel.FairDealMood, result.NewState.Heroes[1].MoodPermille);
     }
 
     [Fact]
@@ -199,7 +209,10 @@ public class HaggleEconomicsTests
         var sale = Assert.Single(result.Events.OfType<CounterSaleClosed>());
         Assert.False(sale.Pinned);
         Assert.Equal(99, sale.Price); // the hero still pays — begrudgingly
-        Assert.Equal(-WillingnessModel.FleeceMoodPenalty, result.NewState.Heroes[1].MoodPermille);
+        // P2-PEOPLE-29: 99g barely clears the 98g ceiling — a shallow fleece, well short of the cap.
+        Assert.Equal(WillingnessModel.FleeceMoodDelta(99, 98, 100), result.NewState.Heroes[1].MoodPermille);
+        Assert.True(result.NewState.Heroes[1].MoodPermille < 0);
+        Assert.True(result.NewState.Heroes[1].MoodPermille > -WillingnessModel.FleeceMoodPenalty);
     }
 
     [Fact]
@@ -253,18 +266,25 @@ public class HaggleEconomicsTests
         var skirmisherGlobal = RunCounter(GameSim.Classes.SkirmisherClass.Id, 107);
 
         Assert.False(vanguardGlobal.Sale.Pinned);   // within band [94,112] but outside pin window [108,121] — a flat, unremarkable sale
-        Assert.Equal(0, vanguardGlobal.Mood);
+        // P2-PEOPLE-29: unremarkable no longer means zero — an in-band close earns FairDealMood.
+        Assert.Equal(WillingnessModel.FairDealMood, vanguardGlobal.Mood);
         Assert.False(skirmisherGlobal.Sale.Pinned);
-        Assert.Equal(-WillingnessModel.FleeceMoodPenalty, skirmisherGlobal.Mood); // 107 > ceiling 80 — fleeced
+        // 107 > ceiling 80 by enough (true willingness 82) that FleeceMoodDelta is already maxed —
+        // the flat cap is still the right number here, just no longer the ONLY number this file pins.
+        Assert.Equal(WillingnessModel.FleeceMoodDelta(107, 80, 82), skirmisherGlobal.Mood);
+        Assert.Equal(-WillingnessModel.FleeceMoodPenalty, skirmisherGlobal.Mood);
 
         // Role-fit + mood aware strategy: a DIFFERENT price per class, each landing in ITS OWN pin window.
         var vanguardAware = RunCounter(GameSim.Classes.ClassRegistry.VanguardId, 111);
         var skirmisherAware = RunCounter(GameSim.Classes.SkirmisherClass.Id, 79);
 
         Assert.True(vanguardAware.Sale.Pinned);
-        Assert.Equal(WillingnessModel.PinMoodBonus, vanguardAware.Mood);
+        // P2-PEOPLE-29: both reads are real pins, but neither counter sat at the window's edge, so
+        // neither earns the full PinMoodBonus cap anymore — the margin-scaled amount the pure model
+        // computes for its own (price, trueWillingness) gap.
+        Assert.Equal(WillingnessModel.PinMoodDelta(111, 115), vanguardAware.Mood);
         Assert.True(skirmisherAware.Sale.Pinned);
-        Assert.Equal(WillingnessModel.PinMoodBonus, skirmisherAware.Mood);
+        Assert.Equal(WillingnessModel.PinMoodDelta(79, 82), skirmisherAware.Mood);
 
         var globalGold = vanguardGlobal.Sale.Price + skirmisherGlobal.Sale.Price;
         var globalMood = vanguardGlobal.Mood + skirmisherGlobal.Mood;

@@ -78,14 +78,36 @@ public static class WillingnessModel
     /// the sale — Recettear's "reading the hero IS the counter skill" reward.</summary>
     public const int PinWindowPermille = 60;
 
-    /// <summary>Mood bonus applied to the hero on a pinned sale.</summary>
+    /// <summary>Cap on the mood bonus a pinned sale can earn — reached only at the pin window's
+    /// edge (<see cref="PinMoodDelta"/>). Unchanged by P2-PEOPLE-29 so the extreme stays the same
+    /// number it always was; what changed is that a pin no longer earns this flat, regardless of
+    /// how close a read it actually was.</summary>
     public const int PinMoodBonus = 60;
 
-    /// <summary>Session Goodwill penalty (informational meter) and persistent mood penalty applied
-    /// when the player Counters ABOVE the round's ceiling — Potionomics' Suspicion, the fleece
-    /// memory that feeds future bands and gossip via <c>Hero.MoodPermille</c>.</summary>
+    /// <summary>Session Goodwill penalty (informational meter) and cap on the persistent mood
+    /// penalty applied when the player Counters ABOVE the round's ceiling — Potionomics'
+    /// Suspicion, the fleece memory that feeds future bands and gossip via
+    /// <c>Hero.MoodPermille</c>. The mood cap is reached only once the excess over the ceiling
+    /// spans <see cref="FleeceMoodScaleWindowPermille"/> of true willingness
+    /// (<see cref="FleeceMoodDelta"/>) — unchanged by P2-PEOPLE-29 so the extreme stays the same.</summary>
     public const int FleeceGoodwillPenaltyPermille = 120;
     public const int FleeceMoodPenalty = 80;
+
+    /// <summary>P2-PEOPLE-29 (decision 2, "price for the sale or the relationship"): the mood a
+    /// hero banks for ANY closed sale that is neither a pin nor a fleece — an honest, unremarkable
+    /// exchange. Before this the flat rule paid it exactly 0, so 477 measured counter closes (20
+    /// seeds x 100 days, P2-HONEST-30) moved mood a median of 0 — the decision had one live arm.
+    /// Small and single-digit on purpose: many closes over a campaign should add up to something
+    /// visible in <see cref="Heroes.RelationshipBands"/>' thresholds without swamping a pin's much
+    /// larger, deliberately-earned bonus.</summary>
+    public const int FairDealMood = 4;
+
+    /// <summary>P2-PEOPLE-29: how far (in permille of true willingness) a countered price must
+    /// clear the round's ceiling before <see cref="FleeceMoodDelta"/> maxes out at
+    /// <see cref="FleeceMoodPenalty"/>. Reuses <see cref="PinWindowPermille"/>'s magnitude — the
+    /// same "clearly off" gap this economy already treats as decisive on the pin side — rather
+    /// than inventing an unrelated second scale.</summary>
+    public const int FleeceMoodScaleWindowPermille = PinWindowPermille;
 
     /// <summary>Never let Interest/mood swing the effective price factor at or below zero —
     /// integer safety floor, not a modeled mechanic.</summary>
@@ -172,4 +194,41 @@ public static class WillingnessModel
     /// without bound (integer safety valve).</summary>
     public static int AddInterest(int currentPermille, int bonusPermille) =>
         Math.Min(currentPermille + bonusPermille, MaxInterestPermille);
+
+    /// <summary>Absolute distance between <paramref name="price"/> and
+    /// <paramref name="trueWillingness"/>, in permille of true willingness. Shared by the pin and
+    /// fleece mood scales below. Defensive against a zero/negative willingness (never happens on a
+    /// real hero, but keeps this total).</summary>
+    private static int GapPermille(int price, int trueWillingness) =>
+        trueWillingness > 0 ? (int)(Math.Abs((long)price - trueWillingness) * 1000 / trueWillingness) : 0;
+
+    /// <summary>P2-PEOPLE-29: a pinned sale's mood bonus, scaled by how far the countered price
+    /// sits from true willingness — either direction, since a read that lands exactly AT true
+    /// willingness (zero gap) took no risk, while one that lands near the pin window's edge
+    /// demonstrates a sharper read of the hero and is rewarded more. Linear from
+    /// <c><see cref="FairDealMood"/> + 1</c> at zero gap (still strictly above an in-band close's
+    /// flat reward) up to the unchanged <see cref="PinMoodBonus"/> cap at the window's edge.
+    /// Integer math, no <c>Math.*</c> transcendental. Callers only ever reach this after
+    /// <see cref="IsPin"/> already confirmed the gap is within the window, but the clamp keeps the
+    /// cap exact even given integer-rounding slack at the boundary.</summary>
+    public static int PinMoodDelta(int price, int trueWillingness)
+    {
+        var gap = Math.Min(GapPermille(price, trueWillingness), PinWindowPermille);
+        var span = PinMoodBonus - FairDealMood - 1;
+        return FairDealMood + 1 + (int)((long)span * gap / PinWindowPermille);
+    }
+
+    /// <summary>P2-PEOPLE-29: a fleeced sale's mood penalty, scaled by how far the countered price
+    /// clears the round's ceiling — a price that barely exceeds it costs almost nothing, while one
+    /// far past it maxes out at the unchanged <see cref="FleeceMoodPenalty"/> cap once the excess
+    /// reaches <see cref="FleeceMoodScaleWindowPermille"/> of true willingness. Integer math, no
+    /// <c>Math.*</c> transcendental.</summary>
+    public static int FleeceMoodDelta(int price, int ceiling, int trueWillingness)
+    {
+        var excess = Math.Max(0, price - ceiling);
+        var excessPermille = trueWillingness > 0 ? (int)((long)excess * 1000 / trueWillingness) : 0;
+        var gap = Math.Min(excessPermille, FleeceMoodScaleWindowPermille);
+        var span = FleeceMoodPenalty - 1;
+        return -(1 + (int)((long)span * gap / FleeceMoodScaleWindowPermille));
+    }
 }
