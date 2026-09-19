@@ -76,6 +76,13 @@ public enum ConsumableKind
 /// <see cref="ExpeditionResult"/> (KTD4). TargetReached is the default old saves deserialize to.
 /// Precedence: DeepestCleared == TargetFloor is ALWAYS TargetReached, whatever exit path
 /// ended the loop (a too-hurt break after clearing the target is a success, not a limp).</summary>
+/// <summary>P2-MEMORY-15: why a bounty's escrow came back (<see cref="BountyRefunded"/>).</summary>
+public enum BountyRefundReason
+{
+    AcceptorDied, // the hero who took it died before reaching the floor
+    Lapsed,       // BountyRules.ExpiryDays passed — unaccepted, or accepted and never reached
+}
+
 public enum ExpeditionHalt
 {
     TargetReached, // cleared through the target floor

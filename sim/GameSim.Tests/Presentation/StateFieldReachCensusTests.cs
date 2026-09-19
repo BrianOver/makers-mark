@@ -771,8 +771,8 @@ public class StateFieldReachCensusTests
         var code = File.ReadAllText(eventsPath);
         var count = Regex.Matches(code, @": GameEvent;").Count;
 
-        Assert.True(count == 53,
-            $"Events.cs now declares {count} GameEvent types, not 53 — the event surface census "
+        Assert.True(count == 54,
+            $"Events.cs now declares {count} GameEvent types, not 54 — the event surface census "
             + "this file deliberately excludes state-field work from needs re-running, not just this "
             + "count updated.");
     }

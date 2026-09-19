@@ -61,6 +61,7 @@ namespace GameSim.Contracts;
 [JsonDerivedType(typeof(DuesSettledByPledge), "duesSettledByPledge")]
 [JsonDerivedType(typeof(DuesPledged), "duesPledged")]
 [JsonDerivedType(typeof(ShelfEarmarked), "shelfEarmarked")]
+[JsonDerivedType(typeof(BountyRefunded), "bountyRefunded")]
 public abstract record GameEvent
 {
     public EventId Id { get; init; }
@@ -135,6 +136,13 @@ public sealed record BountyPosted(BountyId Bounty, int TargetFloor, int RewardGo
 public sealed record BountyJudged(BountyId Bounty, HeroId Hero, bool Accepted, string Reason) : GameEvent;
 
 public sealed record BountyPaid(BountyId Bounty, HeroId To, int RewardGold) : GameEvent;
+
+/// <summary>P2-MEMORY-15: the escrow came back to the till. Until this event the refund was silent policy —
+/// gold moved and nothing said so, so a player watching the board saw a bounty vanish and their purse grow
+/// with no line between the two. <paramref name="Reason"/>: the accepting hero died before completing it,
+/// or it lapsed at <c>BountyRules.ExpiryDays</c> (unaccepted, or accepted and never reached).
+/// <paramref name="AcceptedBy"/> is the hero who had taken it, if any.</summary>
+public sealed record BountyRefunded(BountyId Bounty, int RewardGold, BountyRefundReason Reason, HeroId? AcceptedBy) : GameEvent;
 
 /// <summary>A templated tavern line — must cite the event it grew from (R14).</summary>
 public sealed record GossipEmitted(EventId Source, string Line) : GameEvent;

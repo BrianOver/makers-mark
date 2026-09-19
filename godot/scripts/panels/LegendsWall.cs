@@ -1414,6 +1414,13 @@ public partial class LegendsWall : Control
         // posting is the player's own action read back at them, paying out is someone else's gold
         // moving.
         BountyPaid e => $"{HeroName(state, e.To)} collects {e.RewardGold}g on a completed bounty.",
+        // P2-MEMORY-15: the refund used to be silent policy — gold moved, nothing said so. The sim now
+        // records why; the line says exactly that and no more.
+        BountyRefunded { Reason: BountyRefundReason.AcceptorDied } e =>
+            $"{HeroName(state, e.AcceptedBy!.Value)} died holding your {e.RewardGold}g bounty — the escrow is back in your till.",
+        BountyRefunded { AcceptedBy: { } taker } e =>
+            $"Your {e.RewardGold}g bounty lapsed — {HeroName(state, taker)} never reached the floor. The escrow is back in your till.",
+        BountyRefunded e => $"Nobody took your {e.RewardGold}g bounty before it lapsed — the escrow is back in your till.",
 
         // P2-HONEST-23 (law 7 — "skipping stays legal and its cost is named in copy, never
         // engineered"): the idle-day HALF of MarketShareShifted only. MarketShareSystem (Evening)

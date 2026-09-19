@@ -567,6 +567,28 @@ public class UnsilencedEventTests
         AssertThat(text).NotContains("50g");
     }
 
+    /// <summary>P2-MEMORY-15: the refund was silent policy; now each of its three shapes reads as one line
+    /// that names the gold and the reason the sim recorded — and never invents a hero for an unaccepted lapse.</summary>
+    [TestCase]
+    public void BountyRefunded_RendersOneLine_PerReason()
+    {
+        var lapsedUnaccepted = Compose(StagedWorld(), day: 9,
+            new BountyRefunded(new BountyId(1), RewardGold: 90, BountyRefundReason.Lapsed, AcceptedBy: null));
+        AssertThat(lapsedUnaccepted.Count).IsEqual(1);
+        AssertThat(Joined(lapsedUnaccepted)).Contains("Nobody took your 90g bounty");
+
+        var lapsedTaken = Compose(StagedWorld(), day: 9,
+            new BountyRefunded(new BountyId(2), RewardGold: 40, BountyRefundReason.Lapsed, AcceptedBy: new HeroId(1)));
+        AssertThat(lapsedTaken.Count).IsEqual(1);
+        AssertThat(Joined(lapsedTaken)).Contains("40g bounty lapsed");
+        AssertThat(Joined(lapsedTaken)).Contains("V1 never reached the floor");
+
+        var died = Compose(StagedWorld(), day: 9,
+            new BountyRefunded(new BountyId(3), RewardGold: 60, BountyRefundReason.AcceptorDied, AcceptedBy: new HeroId(1)));
+        AssertThat(died.Count).IsEqual(1);
+        AssertThat(Joined(died)).Contains("V1 died holding your 60g bounty");
+    }
+
     // ── the forward ladder (plan 2026-08-10-003, L5) ───────────────────────────────────────────
 
     /// <summary>A solo graduation names the hero singular; a whole-party graduation names the
