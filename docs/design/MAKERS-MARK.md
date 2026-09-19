@@ -5112,7 +5112,7 @@ name (§11.6 rule 4).
 | ⚑ P2-PEOPLE-20 | The Patron (research M1) | `sim/GameSim/Contracts/Player.cs`, `sim/GameSim/Chronicle/`, `godot/scripts/` | P4 | [S][C] |
 | P2-PEOPLE-25 | The customer thanks you for last night's save before they ask for anything | `godot/scripts/ui/CustomerVoice.cs` | — | [G] |
 | P2-PEOPLE-26 | The saved hero remembers the smith — a counterfactual beat moves the bearer's mood, a kill never does | `sim/GameSim/Expedition/ExpeditionRevealSystem.cs`, `sim/GameSim/Heroes/` | — | [S][GOLD][BAL] |
-| P2-PEOPLE-27 | "One like the one that held" — a commission names the recipe a party-mate's save proved | `sim/GameSim/Heroes/CommissionSystem.cs`, `sim/GameSim/Contracts/Events.cs` | P2-PEOPLE-26 | [S][C][GOLD] |
+| P2-PEOPLE-27 | "One like the one that held" — a commission names the recipe a party-mate's save proved | `sim/GameSim/Heroes/CommissionSystem.cs`, `sim/GameSim/Contracts/Events.cs` `evidence:sim/GameSim/Heroes/CommissionProof.cs:CommissionProof` | P2-PEOPLE-26 | [S][C][GOLD] |
 | ⚑ P2-LONG-01 | Re-date the wall on the current build | `sim/GameSim.Cli/`, one instrumented sweep | — | [S] |
 | P2-LONG-02 | Typed consumable kinds; hazard type on `VenueDefinition` | `sim/GameSim/Contracts/`, `sim/GameSim/Venues/VenueDefinition.cs` | P2-LONG-01, P4 | [S][C][GOLD] |
 | P2-LONG-03 | The teeth — the venom week, the redistribution rule, the ToolAssist emitter | `sim/GameSim/Drama/DirectorSystem.cs`, `sim/GameSim/Expedition/` | P2-LONG-02 | [S][BAL] |

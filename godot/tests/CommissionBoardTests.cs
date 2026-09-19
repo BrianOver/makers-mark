@@ -1,4 +1,5 @@
 #if GDUNIT_TESTS
+using System.Collections.Immutable;
 using System.Linq;
 using GameSim;
 using GameSim.Contracts;
@@ -46,6 +47,36 @@ public class CommissionBoardTests
 
             var accepted = ui.Adapter.AppliedThisPhase.OfType<AcceptCommissionAction>().Single();
             AssertThat(accepted.Hero).IsEqual(new HeroId(1));
+        }
+        finally { Unmount(ui); }
+    }
+
+    /// <summary>P2-PEOPLE-27: a commission that carries its proof renders the "one like the one that held"
+    /// line naming the piece and the party-mate; one without proof renders no such line.</summary>
+    [TestCase]
+    public void ProvenCommission_NamesThePieceThatHeld_UnprovenRendersNoProofLine()
+    {
+        var unproven = new Commission(new HeroId(1), ItemSlot.Weapon, QualityGrade.Fine, DeadlineDay: 12, PremiumGold: 30);
+        var ui = MountMainUi(AdapterWithCommission(unproven));
+        try
+        {
+            var state = ui.Adapter.CurrentState;
+            var mateId = state.Heroes.Keys.First(k => k != 1);
+            var emberbite = new Item(
+                new ItemId(777), "longsword", "Emberbite", ItemSlot.Weapon, QualityGrade.Fine,
+                new ItemStats(9, 0, 3), new MakersMark("You", 1), ImmutableList<ItemHistoryEntry>.Empty);
+            var proven = state with
+            {
+                Items = state.Items.Add(777, emberbite),
+                Commissions = ImmutableList.Create(unproven with { ProvenBy = new ItemId(777), ProvedFor = new HeroId(mateId) }),
+            };
+
+            ui.Commissions.ShowOpen(proven);
+            var line = Find<Label>(ui.Commissions, "CommissionProof_1");
+            AssertThat(line.Text).Contains("One like the Emberbite that held for " + state.Heroes[mateId].Name);
+
+            ui.Commissions.ShowOpen(state);
+            AssertThat(ui.Commissions.FindChild("CommissionProof_1", true, false)).IsNull();
         }
         finally { Unmount(ui); }
     }
