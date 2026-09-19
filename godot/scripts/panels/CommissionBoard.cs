@@ -133,6 +133,16 @@ public partial class CommissionBoard : Control
 
         AddHeader(body, $"{heroName} wants a {ItemVocab.Display(commission.MinQuality)} {ItemVocab.Display(commission.Slot)} or better{CommissionSystem.SlotHonestyNote(commission.Slot)}");
 
+        // P2-PEOPLE-27: the ask names the piece a party-mate's deed proved — only when the sim
+        // recorded one (both fields, both still resolvable); a missing fact renders nothing.
+        if (commission.ProvenBy is { } provenBy && commission.ProvedFor is { } provedFor
+            && state.Items.TryGetValue(provenBy.Value, out var provenItem)
+            && state.Heroes.TryGetValue(provedFor.Value, out var provedHero))
+        {
+            var proofLine = new Label { Name = $"CommissionProof_{commission.Hero.Value}", Text = $"\"One like the {provenItem.Name} that held for {provedHero.Name}.\"" };
+            body.AddChild(proofLine);
+        }
+
         // Playtest-pilot3 finding 2: CommissionSystem's own expiry sweep (Heroes/CommissionSystem.cs,
         // ExpireCommissions) only runs when Morning's phase systems actually process — the tick that
         // LEAVES Morning, not the tick that entered it (GameKernel.Tick runs a phase's systems keyed

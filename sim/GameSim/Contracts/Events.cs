@@ -266,7 +266,10 @@ public sealed record PartiesFormed(ImmutableList<PartyPlan> Parties) : GameEvent
 /// <summary>Wave 3 (commissions): a hero asks the player to forge a specific slot at or above a
 /// minimum grade by a deadline, for a gold premium over list. Emitted by <c>CommissionSystem</c>
 /// (Morning); the player accepts/declines (<see cref="AcceptCommissionAction"/>).</summary>
-public sealed record CommissionPosted(HeroId Hero, ItemSlot Slot, QualityGrade MinQuality, int DeadlineDay, int PremiumGold) : GameEvent;
+/// <summary>A hero posted a forge request. <paramref name="ProvenBy"/>/<paramref name="ProvedFor"/> (P2-PEOPLE-27):
+/// the player-crafted piece in this slot whose legend deed a party-mate earned, and that party-mate — null
+/// when no such proof exists. TRAILING with defaults so older logs deserialize.</summary>
+public sealed record CommissionPosted(HeroId Hero, ItemSlot Slot, QualityGrade MinQuality, int DeadlineDay, int PremiumGold, ItemId? ProvenBy = null, HeroId? ProvedFor = null) : GameEvent;
 
 /// <summary>Wave 3: an accepted commission was delivered by its deadline — a guaranteed sale at
 /// list + <paramref name="Premium"/>, plus the mood/attribution payoff.</summary>
