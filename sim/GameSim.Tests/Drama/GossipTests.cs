@@ -319,4 +319,100 @@ public class GossipTests
         Assert.Equal(first.Select(l => l.Line), second.Select(l => l.Line));
         Assert.Equal(new[] { 2, 3, 4, 1 }, first.Select(l => l.Source.Value)); // save, record, recruit, incidental kill
     }
+
+    // ---------------------------------------------------------------- P2-MEMORY-25: counter-sale gossip
+
+    private static CounterSaleClosed Sale(HeroId hero, ItemId item, int price, bool pinned, bool fleeced, int id) =>
+        new(hero, item, price, pinned, fleeced) { Id = new EventId(id), Day = 1 };
+
+    [Fact]
+    public void Generator_PinnedCounterSale_NamesHeroItemPrice_AndReadsUnlikeAFleece()
+    {
+        var blade = PlayerItem(10, "Fine Iron Blade", ItemSlot.Weapon, 8, 0);
+        var state = WithItem(NewWorld(), blade);
+
+        var pinned = Generate(state, 1, Sale(new HeroId(1), blade.Id, 75, pinned: true, fleeced: false, id: 1));
+        var fleeced = Generate(state, 1, Sale(new HeroId(1), blade.Id, 75, pinned: false, fleeced: true, id: 1));
+
+        Assert.Contains("Torvald", pinned[0].Line);
+        Assert.Contains(blade.Name, pinned[0].Line);
+        Assert.Contains("75", pinned[0].Line);
+
+        Assert.Contains("Torvald", fleeced[0].Line);
+        Assert.Contains(blade.Name, fleeced[0].Line);
+        Assert.Contains("75", fleeced[0].Line);
+
+        // Same hero/item/price/id, only the bools differ -> a different base key -> a different
+        // sentiment; never coincidentally the same rendered line.
+        Assert.NotEqual(pinned[0].Line, fleeced[0].Line);
+    }
+
+    [Fact]
+    public void Generator_FairDealCounterSale_IsNeitherThePinNorTheFleeceLine()
+    {
+        var blade = PlayerItem(10, "Fine Iron Blade", ItemSlot.Weapon, 8, 0);
+        var state = WithItem(NewWorld(), blade);
+
+        var fair = Generate(state, 1, Sale(new HeroId(1), blade.Id, 75, pinned: false, fleeced: false, id: 1));
+        var pinned = Generate(state, 1, Sale(new HeroId(1), blade.Id, 75, pinned: true, fleeced: false, id: 1));
+        var fleeced = Generate(state, 1, Sale(new HeroId(1), blade.Id, 75, pinned: false, fleeced: true, id: 1));
+
+        Assert.Contains("Torvald", fair[0].Line);
+        Assert.Contains(blade.Name, fair[0].Line);
+        Assert.Contains("75", fair[0].Line);
+        Assert.NotEqual(fair[0].Line, pinned[0].Line);
+        Assert.NotEqual(fair[0].Line, fleeced[0].Line);
+    }
+
+    [Fact]
+    public void Generator_FleecedCounterSale_NeverOutranksADeath()
+    {
+        var blade = PlayerItem(10, "Fine Iron Blade", ItemSlot.Weapon, 8, 0);
+        var state = WithItem(NewWorld(), blade);
+        var events = new GameEvent[]
+        {
+            Sale(new HeroId(1), blade.Id, 999, pinned: false, fleeced: true, id: 1),
+            new HeroDied(new HeroId(2), 2, "slain by a Tunnel Spider", GearSet.Empty) { Id = new EventId(2), Day = 1 },
+        };
+
+        var lines = GossipGenerator.Generate(events, state.Heroes, state.Items, Campaign, maxLines: 2);
+
+        Assert.Equal(2, lines[0].Source.Value); // the death leads even over a scandalous fleece
+    }
+
+    [Fact]
+    public void Generator_FleecedCounterSale_RanksAheadOfAPinnedOne()
+    {
+        var blade = PlayerItem(10, "Fine Iron Blade", ItemSlot.Weapon, 8, 0);
+        var axe = PlayerItem(12, "Notched Axe", ItemSlot.Weapon, 6, 0);
+        var state = WithItem(WithItem(NewWorld(), blade), axe);
+        var events = new GameEvent[]
+        {
+            Sale(new HeroId(1), blade.Id, 50, pinned: true, fleeced: false, id: 1),
+            Sale(new HeroId(2), axe.Id, 999, pinned: false, fleeced: true, id: 2),
+        };
+
+        var lines = GossipGenerator.Generate(events, state.Heroes, state.Items, Campaign, maxLines: 2);
+
+        Assert.Equal(2, lines[0].Source.Value); // the fleece (rank 3) leads the pin (rank 4)
+    }
+
+    [Fact]
+    public void Generator_KillDedupePerItem_StillHoldsAlongsideCounterSaleRanking()
+    {
+        // Regression (P2-MEMORY-24): adding the counter-sale branch to Rank/Describe must not
+        // disturb the existing at-most-one-kill-line-per-item dedupe.
+        var blade = PlayerItem(10, "Fine Iron Blade", ItemSlot.Weapon, 8, 0);
+        var state = WithItem(NewWorld(), blade);
+        var events = new GameEvent[]
+        {
+            Kill(blade.Id, 1, 1),
+            Kill(blade.Id, 1, 2),
+            Sale(new HeroId(2), blade.Id, 999, pinned: false, fleeced: true, id: 3),
+        };
+
+        var lines = GossipGenerator.Generate(events, state.Heroes, state.Items, Campaign, maxLines: 3);
+
+        Assert.Equal(2, lines.Count); // one kill line (deduped) + the fleece line, never three
+    }
 }

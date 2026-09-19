@@ -29,6 +29,7 @@ public class TavernPackTests
             ["item"] = "Fine Iron Blade",
             ["floor"] = "7",
             ["cause"] = "slain by a Tunnel Spider",
+            ["price"] = "42",
         }.ToImmutableSortedDictionary(StringComparer.Ordinal);
 
     private static IReadOnlyDictionary<string, string> SlotsFor(string baseKey)

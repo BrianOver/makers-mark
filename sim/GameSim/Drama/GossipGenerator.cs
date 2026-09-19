@@ -92,6 +92,11 @@ public static class GossipGenerator
             AttributionBeatEvent { Beat: BeatType.KillingBlow } kill =>
                 isDecisiveKillingBlow is not null && isDecisiveKillingBlow(kill) ? 3 : 4,
             AttributionBeatEvent => 3,
+            // P2-MEMORY-25: a fleeced counter sale is the town's scandal line, ranked with a
+            // decisive kill; a pin or a fair deal is a quieter beat, ranked with an incidental one.
+            // Both bools live on the stamped event — no predicate wiring needed, unlike the kill split.
+            CounterSaleClosed { Fleeced: true } => 3,
+            CounterSaleClosed => 4,
             _ => 3,
         };
 
@@ -331,7 +336,21 @@ public static class GossipGenerator
             ("hero", HeroName(arrived.Hero, heroes)))),
         VenueGraduated { Graduates.Count: > 0 } graduated => (TavernPack.VenueGraduated, graduated.Graduates[0], FlavorEngine.Slots(
             ("hero", GraduatesLabel(graduated.Graduates, heroes)))),
+        CounterSaleClosed sale => (CounterSaleBaseKey(sale), sale.Hero, FlavorEngine.Slots(
+            ("hero", HeroName(sale.Hero, heroes)),
+            ("item", ItemName(sale.Item, items)),
+            ("price", PriceText(sale.Price)))),
         _ => null,
+    };
+
+    /// <summary>P2-MEMORY-25: the three real outcomes a closed counter sale can be, straight off
+    /// the stamped event's own bools — a pin outranks nothing here (Fleeced is checked first only
+    /// because the two are mutually exclusive in practice; ordering is defensive, not load-bearing).</summary>
+    private static string CounterSaleBaseKey(CounterSaleClosed sale) => sale switch
+    {
+        { Fleeced: true } => TavernPack.CounterSaleFleeced,
+        { Pinned: true } => TavernPack.CounterSalePinned,
+        _ => TavernPack.CounterSaleFairDeal,
     };
 
     /// <summary>Forward-ladder plan (L5): one told line per graduation, naming the first graduate
@@ -361,6 +380,10 @@ public static class GossipGenerator
     };
 
     private static string FloorText(int floor) => floor.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>P2-MEMORY-25: gold amount as it appears in the "{price}g" slot — integer, no
+    /// culture-sensitive grouping (matches <see cref="FloorText"/>'s invariant convention).</summary>
+    private static string PriceText(int price) => price.ToString(CultureInfo.InvariantCulture);
 
     private static string HeroName(HeroId id, ImmutableSortedDictionary<int, Hero> heroes) =>
         heroes.TryGetValue(id.Value, out var hero) ? hero.Name : id.ToString();
