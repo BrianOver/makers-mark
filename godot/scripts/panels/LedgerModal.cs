@@ -1024,6 +1024,32 @@ public partial class LedgerModal : SimPanel
             line.CustomMinimumSize = new Vector2(CardGridColumnWidth, 0);
             line.AddThemeColorOverride("font_color", GameTheme.HeaderColor);
         }
+
+        AddReleasedHoldLines(state, day);
+    }
+
+    /// <summary>
+    /// P2-PEOPLE-31 (§11.14, "a hold for the dead is released at the wake"): the wake's own line
+    /// for a hold that has no one left to wait for. Placed beside <see
+    /// cref="AddEarmarkLines"/>'s other earmark lines rather than folded into <see
+    /// cref="AddWakeLeads"/>'s per-hero card — the wake card is the hero's own fate; this is the
+    /// shop's, and the two facts can land on different nights once a save is reloaded mid-wake.
+    /// Same wake voice as <see cref="AddWakeLeads"/> (plain, past tense, no fee or arithmetic —
+    /// this is not a refund, it is the hold letting go).
+    /// </summary>
+    private void AddReleasedHoldLines(GameState state, int day)
+    {
+        foreach (var released in EarmarkQuery.ReleasedForDead(state, day))
+        {
+            var itemName = ItemNameOf(state, released.Item);
+            var heroName = HeroNameOf(state, released.Hero);
+            var text = $"{itemName} was held for {heroName} — yours to sell again.";
+
+            var line = AddLabel(_cardGrid!, text);
+            line.Name = $"EarmarkReleasedLine_{released.Item.Value}_{released.Hero.Value}";
+            line.CustomMinimumSize = new Vector2(CardGridColumnWidth, 0);
+            line.AddThemeColorOverride("font_color", GameTheme.WarnColor);
+        }
     }
 
     /// <summary>Hero display name, or the id's own fallback string for the defensive case where a

@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using GameSim.Contracts;
 
@@ -17,6 +18,10 @@ public static class EarmarkQuery
 
     /// <summary>One piece still sitting held, unsold, as of tonight — earmarked strictly before today.</summary>
     public sealed record StillWaiting(ItemId Item, HeroId Hero);
+
+    /// <summary>One hold <see cref="ExpeditionRevealSystem"/> released tonight because the hero it
+    /// was held for died tonight (P2-PEOPLE-31).</summary>
+    public sealed record ReleasedHold(ItemId Item, HeroId Hero);
 
     /// <summary>
     /// Every player-shelf sale on <paramref name="day"/> whose buyer is the hero the piece was last
@@ -72,6 +77,45 @@ public static class EarmarkQuery
             if (entry.EarmarkedFor is { } hero && EarmarkedSince(state, entry.Item) is { } since && since < day)
             {
                 results.Add(new StillWaiting(entry.Item, hero));
+            }
+        }
+
+        return results.ToImmutable();
+    }
+
+    /// <summary>
+    /// Every hold released tonight because its hero died tonight — a <see cref="ShelfEarmarked"/>
+    /// clearing (<c>Hero: null</c>) on <paramref name="day"/> whose PRIOR holder appears in a
+    /// <see cref="HeroDied"/> the same day. An ordinary player-initiated release (<see
+    /// cref="Heroes.HeroShoppingSystem"/> never clears a hold; only <see
+    /// cref="Economy.ShopHandlers.ApplyEarmark"/> and <see cref="ExpeditionRevealSystem"/> do) would
+    /// also carry a null-Hero <see cref="ShelfEarmarked"/>, but its prior holder is alive — the
+    /// death-day join is what tells the two apart without a second event type.
+    /// </summary>
+    public static ImmutableList<ReleasedHold> ReleasedForDead(GameState state, int day)
+    {
+        var diedToday = new HashSet<int>();
+        foreach (var e in state.EventLog)
+        {
+            if (e is HeroDied died && died.Day == day)
+            {
+                diedToday.Add(died.Hero.Value);
+            }
+        }
+
+        if (diedToday.Count == 0)
+        {
+            return ImmutableList<ReleasedHold>.Empty;
+        }
+
+        var results = ImmutableList.CreateBuilder<ReleasedHold>();
+        for (var i = 0; i < state.EventLog.Count; i++)
+        {
+            if (state.EventLog[i] is ShelfEarmarked { Hero: null } cleared && cleared.Day == day
+                && LastEarmarkBefore(state, cleared.Item, i) is { } hero
+                && diedToday.Contains(hero.Value))
+            {
+                results.Add(new ReleasedHold(cleared.Item, hero));
             }
         }
 
