@@ -157,5 +157,27 @@ public sealed class ItemSpecsExtra : IAssetModule
             Subject: "a large glass vial of crimson greater healing elixir, cork stopper, brightly glowing liquid",
             PaletteId: "hearth",
             Width: IconSize, Height: IconSize),
+
+        // ---- Blacksmith — the light armory (P2-LONG-36, T2 iron / T3 steel, both weight 4) -------
+        // The two pieces a mystic, occultist or skirmisher can actually carry. Each subject names its
+        // baseline material so the tier reads true against its heavy peer at the same tier, and says
+        // "light" in the silhouette rather than the palette — these sit beside Hauberk and Full Plate
+        // in the same menu and must not read as another slab of plate.
+        new AssetSpec(
+            Id: "item-quilted-jack",
+            Module: "items",
+            Track: ArtTrack.Active,
+            Kind: AssetKind.Item,
+            Subject: "a quilted padded jack with small iron studs, soft stitched torso panels, sleeveless and light",
+            PaletteId: "house",
+            Width: IconSize, Height: IconSize),
+        new AssetSpec(
+            Id: "item-silkweave-cuirass",
+            Module: "items",
+            Track: ArtTrack.Active,
+            Kind: AssetKind.Item,
+            Subject: "a slender silkweave cuirass, fine steel threads woven through pale spider-silk, close-fitting and light",
+            PaletteId: "house",
+            Width: IconSize, Height: IconSize),
     ];
 }

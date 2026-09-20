@@ -77,6 +77,17 @@ public static class RecipeTable
         new Recipe("half-plate",   "Half Plate",   BlacksmithProfession, ItemSlot.Armor,  Tier: 2, "iron",   MaterialQuantity: 5, new ItemStats(Attack: 0,  Defense: 24, Weight: 12)), // heavy
         new Recipe("full-plate",   "Full Plate",   BlacksmithProfession, ItemSlot.Armor,  Tier: 3, "steel",  MaterialQuantity: 6, new ItemStats(Attack: 0,  Defense: 38, Weight: 15)), // heavy
 
+        // P2-LONG-36, the light armory. Before these two the mystic (weight 4), occultist (4) and
+        // skirmisher (6) could wear exactly ONE of seven armor recipes — the tier-1 Chain Vest — and
+        // they are 125 of 206 in-horizon deaths, dying on floor 2 with rival iron on their backs in
+        // 81 cases against the player's work in 25 (20%). Both sit at weight 4 so all three classes
+        // carry them, and both pay for that in defense against their heavy peer at the same tier
+        // (14 against Hauberk's 18; 26 against Full Plate's 38) — lightness is bought, never free,
+        // so a vanguard still has every reason to want the plate. Same material keys and the same
+        // quality curve as the rest of the table (§11.7.12): no new ore, no special-cased scaling.
+        new Recipe("quilted-jack", "Quilted Jack", BlacksmithProfession, ItemSlot.Armor,  Tier: 2, "iron",   MaterialQuantity: 4, new ItemStats(Attack: 0,  Defense: 14, Weight: 4)), // light
+        new Recipe("silkweave-cuirass", "Silkweave Cuirass", BlacksmithProfession, ItemSlot.Armor, Tier: 3, "steel", MaterialQuantity: 5, new ItemStats(Attack: 0, Defense: 26, Weight: 4)), // light
+
         // ---- Consumables (P2 reference: proves the loadout spine end-to-end) --------------
         // Field Salve: tier 1, 2x copper (zero new material keys), no combat stats,
         // Heal(6) scaled by the same quality table as gear stats.
