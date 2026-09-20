@@ -9,6 +9,7 @@ using GameSim.Harness;
 using GameSim.Kernel;
 using GameSim.Materials;
 using GameSim.Professions;
+using Xunit.Abstractions;
 
 namespace GameSim.Tests.Advisor;
 
@@ -20,6 +21,10 @@ namespace GameSim.Tests.Advisor;
 /// </summary>
 public class ObjectiveAdvisorTests
 {
+    private readonly ITestOutputHelper _output;
+
+    public ObjectiveAdvisorTests(ITestOutputHelper output) => _output = output;
+
     private const ulong Seed = 4242;
 
     [Fact]
@@ -670,5 +675,95 @@ public class ObjectiveAdvisorTests
             "No memorial suggestion fired at all across 100 days with deaths on record — the rite bridge is dead.");
         Assert.True(memorialSuggestions <= deaths,
             $"{memorialSuggestions} memorial suggestion(s) for {deaths} death(s) — the rite must be suggested at most once per memorial.");
+    }
+
+    // ---------------------------------------------------------------- P2-HONEST-36: fallback fires only as news
+
+    /// <summary>
+    /// P2-HONEST-36: the cheapest-productive-path fallback ("You already have enough copper to
+    /// craft 'buckler'") is a PERMANENT fact once the player has the material — measured at 5,147
+    /// of 13,745 advice lines (37%) repeating it night after night with nothing changed. It must
+    /// fire the day the fact becomes true (day 1, or the day an action logs a change to the
+    /// material), stay quiet on every day nothing touched it, and fire again the next time
+    /// something does.
+    /// </summary>
+    [Fact]
+    public void CraftFallback_FiresOnlyWhenTheMaterialFactChanged_AndIsQuietOtherwise()
+    {
+        var fresh = GameComposition.NewCampaign(Seed);
+        const string materialKey = "copper";
+
+        // Heroes cleared: DemandBoard's depth-stall read (KTD6) measures days since a hero's last
+        // floor record AGAINST state.Day, so bumping Day alone (with hero records left at their
+        // fresh-campaign values) can manufacture a stall that was never there — noise this test
+        // isn't about. An empty roster means DemandBoard.Snapshot has nothing to say, and Suggest
+        // falls straight through to the fallback this unit is testing.
+        GameState AtDay(int day, ImmutableList<LoggedBatch> log) => fresh with
+        {
+            Day = day,
+            Phase = DayPhase.Evening,
+            Player = fresh.Player with { Materials = fresh.Player.Materials.SetItem(materialKey, 2) },
+            Heroes = ImmutableSortedDictionary<int, Hero>.Empty,
+            ActionLog = log,
+        };
+
+        bool FallbackFired(GameState state) => ObjectiveAdvisor.Suggest(state)
+            .Any(s => s.Action is CraftAction && s.Reason.Contains("already have enough", StringComparison.Ordinal));
+
+        // Day 1: no earlier day could have already said this — always news.
+        Assert.True(FallbackFired(AtDay(1, ImmutableList<LoggedBatch>.Empty)),
+            "Day 1 must fire the fallback — nothing was ever said before it.");
+
+        // Day 4: the fact became true TODAY (a buy logged this same day) — news, fires.
+        var boughtDay4 = ImmutableList.Create(
+            new LoggedBatch(4, DayPhase.Morning, ImmutableList.Create<PlayerAction>(new BuyMaterialAction(materialKey, 2))));
+        Assert.True(FallbackFired(AtDay(4, boughtDay4)),
+            "The day copper was bought must fire the fallback — that's when the fact changed.");
+
+        // Day 5: same materials, nothing touched copper today — the SAME permanent fact already
+        // told on day 4. Quiet: no fallback suggestion (callers' existing empty-list copy, e.g.
+        // ObjectiveTracker.NoObjectiveText, covers the silence — no new copy needed here).
+        Assert.False(FallbackFired(AtDay(5, boughtDay4)),
+            "Day 5 repeats day 4's fact with nothing changed — the fallback must stay quiet.");
+
+        // Day 6: the player crafts with copper today — the fact changed again, news again.
+        var craftedDay6 = boughtDay4.Add(
+            new LoggedBatch(6, DayPhase.Morning, ImmutableList.Create<PlayerAction>(new CraftAction("buckler", materialKey))));
+        Assert.True(FallbackFired(AtDay(6, craftedDay6)),
+            "The day copper was spent again must fire the fallback — the fact changed again.");
+    }
+
+    /// <summary>
+    /// P2-HONEST-36 census: driving 10 seeds with <see cref="BaselinePlayer"/> for 60 days each,
+    /// the craft-reachable fallback line must fire on a small minority of advisor reads rather than
+    /// the measured 37% (5,147 of 13,745) baseline — most days it now says nothing at all, and
+    /// existing callers' empty-list copy carries the silence.
+    /// </summary>
+    [Fact]
+    public void CraftFallbackShare_AcrossATenSeedSweep_IsFarBelowTheMeasuredThirtySevenPercent()
+    {
+        var kernel = GameComposition.BuildKernel();
+        var totalAdvice = 0;
+        var fallbackFires = 0;
+
+        for (ulong seed = 0; seed < 10; seed++)
+        {
+            var state = GameComposition.NewCampaign(seed);
+            for (var tick = 0; tick < 60 * 5; tick++)
+            {
+                var suggestions = ObjectiveAdvisor.Suggest(state);
+                totalAdvice += suggestions.Count;
+                fallbackFires += suggestions.Count(s =>
+                    s.Action is CraftAction && s.Reason.Contains("already have enough", StringComparison.Ordinal));
+
+                state = kernel.Tick(state, BaselinePlayer.ActionsFor(state)).NewState;
+            }
+        }
+
+        Assert.True(totalAdvice > 0, "The sweep produced no advice lines at all — the census is vacuous.");
+        var share = (double)fallbackFires / totalAdvice;
+        _output.WriteLine($"P2-HONEST-36 census (10 seeds x 60 days): {fallbackFires} of {totalAdvice} advice lines ({share:P1}) were the craft-reachable fallback (before: 5,147 of 13,745, 37%).");
+        Assert.True(share < 0.10,
+            $"P2-HONEST-36 census: {fallbackFires} of {totalAdvice} advice lines ({share:P1}) were the craft-reachable fallback — expected well under the measured 37% baseline (5,147 of 13,745).");
     }
 }
