@@ -2070,6 +2070,164 @@ one opens.
 `sim/`, `godot/`, `tools/` and `docs/` and against `git log --all --oneline`, and all eight missed in
 both.
 
+### 11.15 The unarmed wave — measured 2026-09-19
+
+Eight units booked from a read of the running game on `main @ e4ffc124`, the same day as §11.14 and
+in its form: every number below was measured on that SHA and quoted with its n and spread, after
+§11.14's fleece arm, advisor fallback, released hold, camp receipt, director venues and newcomer's
+vacancy had landed (P2-LONG-35 was in CI; P2-PEOPLE-11 and P2-HONEST-34 sit parked as drafts
+awaiting rulings and are not re-booked here). The owner's standing direction is still §11.7.13's,
+and this read asked one question the last four did not: **who are the dead, and did the smith ever
+reach them?** The instruments were the standard corpus (`batch --seeds 20 --days 100` under
+`BaselinePlayer`, seeds 1–20, campaigns ending day 27.5 (23–34); in horizon 5,750 beats, 195 deaths,
+183 recruits, 1,152 party-nights, 510 crafts, 796 player sales), the same sweep under
+`--policy forgecounter` (237 deaths, 223 recruits, 554 counter closes of which 83 fleeced — P2-HONEST-35
+measured live for the first time), `felt-wall --seeds 20 --days 100` (half-life day 12.0, n=20, 7–40,
+the third identical read), `den-sweep` (37 of 40 seed-runs reach tier 1, 3 reach tier 3, all three
+under `forgecounter`), `decisions --seeds 20 --days 100` (10,000 decision points, 8,898 advice
+lines), `tools/Analytics` over the baseline corpus (five anomalies: one gold-mint spike, four tariff
+saturations), a reader census over `godot/scripts/` for all 57 `[JsonDerivedType]` event subtypes, a
+constructor census over `sim/GameSim/Harness/` for all 30 `PlayerAction` types, and two throwaway
+xunit probes over the 20 baseline seeds (class, weight, purse and shelf at the moment of each death
+and each newcomer's one shopping morning), kept in the session and deleted before this commit. Five
+measurements chose the units.
+
+**1. The dead are the ones the smith never reached, and most of them are newcomers.** In horizon,
+**88 of 195 dead heroes (45%) wore nothing of the player's; 86 (44%) had never earned a beat; 83
+(43%) had never bought from the shop; their `Memories` at death number 0 (0–5).** The living are
+the opposite: of 108 heroes alive at the ending, 14 (13%) wear no player piece. The dead are
+recruits: **116 of 195 deaths (59%) are heroes who arrived after day 1, and a dead recruit's median
+time in town is 1 day (0–10)** against 3 days (0–26) for the dead as a whole. `RecruitSystem` seats
+them and `PartyFormation` marches them the same morning — **all 183 recruits marched the day they
+arrived (n=183, 0 days, every one)**, 116 of them to the Crypt, 88 (48%) to a party targeting floor
+4 and 18 to floor 5, with a party-mate two levels above them (median 2, 0–5). Only 3 died on that
+first march; the competence retreat holds them at their own ceiling. They die the next day on the
+Crypt's floor 2. Their one shopping morning is the day after arrival: **they carry 22g (7–50,
+n=180) against a median player price of 58g (12–242; 85 of 796 sales were 22g or less); the shelf
+held anything they could afford on 76 of 180 such mornings (42%) and something they could afford
+AND wear on 57 (32%).** 51 of the 116 dead recruits bought from the smith before they died. The
+sim knows every one of these facts on the arrival night — `Hero.Gold`, `ClassDefinition.MaxItemWeight`,
+`AllowsShield`, `ShelfEntry.Price` — and P2-PEOPLE-30 names the vacancy but not the purse.
+**P2-SCREEN-41** puts the purse on the arrival card, `[G]`: what they carry, which shelved piece
+they could afford and wear tomorrow, and that they march at dawn. What would give decision 1 more
+than one morning is the first proposal below, and it is the owner's. The other half of the fact is
+**P2-PEOPLE-32**: the wake already says whose gear held (P2-PROOF-18) and what the pack did
+(`FallenQuery.PackLine`), and for the 88 who wore nothing of yours it says nothing — a grep of
+`godot/scripts/panels/` and `sim/GameSim/Drama/FallenQuery.cs` for "nothing of yours", "never
+carried", "bore nothing" finds no line. Law 7 says the cost of skipping is named in copy; this is the
+copy, `[S]` (a query line, no state change).
+
+**2. The classes that die are the ones the recipe book cannot dress.** `ClassRegistry` caps the
+mystic and occultist at weight 4 and the skirmisher at 6; the vanguard, sentinel and striker carry
+anything. `RecipeTable` holds seven armors — Chain Vest w4 t1, Scale Mail w7 t1, Hauberk w9 t2, Half
+Plate w12 t2, Full Plate w15 t3, Wardenweave Mail w14 t9, Ashguild Plate w17 t13 — so **the three
+light classes can wear exactly one of seven armor recipes, a tier-1 vest, and two of eight weapons
+(three for the skirmisher).** Those three classes are **116 of 195 deaths (59%: mystic 65, occultist
+28, skirmisher 23)** against 4 vanguards and 9 sentinels, and they die on floor 2 (median, all
+three). At death their armor was **rival iron in 80 of 116, the player's in 20 (17%), none in 16**;
+the strikers, who carry any weight, died in player armor 29 times of 66 (44%). `HeroPassedOnItem`
+records 215 "too heavy for a mystic/skirmisher/occultist" passes in horizon, and the Crypt's
+floor-2 Bog-Wight (64 kills, 33% of all deaths, §11.14's unbooked number) is killing mystics in
+rival cloth. **P2-LONG-36** is the light armory, `[S][GOLD][BAL]`: a tier-2 and a tier-3 armor the
+light classes can carry, on §11.7.12's quality curve, with icons through the existing draw-size
+pipeline (a recipe without art renders a placeholder without a warning — `IconRegistry.ItemArtId`
+falls back silently). Its gate is pre-registered here: light-class deaths (116) and the share of
+them wearing player armor (20 of 116), the ending day (27.5, 23–34), in-horizon deaths (195) and
+the smith's gold at the ending (median 51.5g, 3–173, over the `decisions` seeds). The number that
+must move is the second; the three that must not are the last.
+
+**3. The advisor prescribes shields to hands that cannot hold them.** Over the `decisions` sweep,
+**2,243 of 8,898 advice lines (25%) read "{hero}, stalled at floor N, needs Shield for floor 5 —
+'Buckler' is ready"** — the single most repeated thing the game tells the player after "it isn't on
+the shelf yet". `DemandBoard.DepthStalls` builds the stall from `RaidForecast.MissingItemSlots(GearSet)`,
+which takes no class and counts an empty Shield slot for every hero; only the vanguard and sentinel
+equip one (`AllowsShield`). A Morning census over the 20 baseline seeds: **1,610 depth-stalls, 693
+blocking on Shield, 666 of those (96%) for a hero whose class will never wear it.** `CommissionSystem.FindGapSlot`
+fixed exactly this bug on its own side (U-T1-11: "posting a commission for gear the hero can never
+wear") and `RaidForecast.MissingItemSlots` was never given the same class. The same query mislabels
+the newcomer: **176 of the 1,610 stalls (11%) are heroes whose `DeepestFloorReached` is 0**, rendered
+by `DepthCopy.Deepest` as *"Brunhilde, stalled at not yet"* (194 advice lines) — a hero who arrived
+this morning is new, not stalled. `DemandPanel.RenderDepthStalls` and `RaidForecastBoard` render the
+same entry. **P2-HONEST-37** gives `MissingItemSlots` the class and the stall query an arrival
+floor, `[S]`: no state changes, `BaselinePlayer` never reads the advisor, the golden trace is
+untouched.
+
+**4. Link 5 has four player verbs and no harness has ever spoken one.** `HonorMemorialAction`,
+`PlaceGraveMarkerAction`, `ChooseRemembranceAction` and `ReforgeHeirloomAction` are constructed by
+**zero of the eleven policies in `sim/GameSim/Harness/`**; `HonorMemorial` was legal at 23,777
+Evening decision points and chosen 0, `ReforgeHeirloom` legal at 43,815 and chosen 0;
+**`CampaignEnded.HonoredMemorialCount` is 0 in 40 of 40 campaigns** under both sweep policies, and
+`MemorialHonored`, `GraveMarkerPlaced`, `RemembranceChosen`, `HeirloomReforged` and `ItemSigned`
+fired 0 times in 40 campaigns. §11.14 noted the legendary-work chain as "a harness gap noted here
+for the next census"; this is that census, and the gap is wider than masterworks. Three small
+`[S]` units close it, each harness-only and each leaving `BaselinePlayer` and the golden trace
+untouched: **P2-HONEST-38**, the wake arm — `forgecounter` honours the memorial, sets the best
+legal marker, takes `WakeQuery.DefaultRemembrance` and reforges the heirloom when legal;
+**P2-HONEST-39**, the vigil arm — `forgecounter` crafts a heal and sends it to a camper under the
+too-hurt bar P2-LONG-25 (#710) gave the verb (`SendSupply` legal at 1,858 points, chosen 0;
+`SupplyDelivered` 0 in 40 campaigns; **522 of 732 baseline camps (71%) and 1,301 of 1,319
+`forgecounter` camps (98.6%) carried no heal**; `Provisioned` 5 and `PotionLifesave` 1 of 5,750
+beats); and **P2-HONEST-40**, the masterwork policy — `MasterworkSeekingPlayer` exists, is the only
+policy that constructs `MasterworkAttemptAction`, and is not on `BatchRunner`'s `--policy` list, so
+**0 of 1,118 crafts in 40 campaigns were Masterwork** (446 Superior and 64 Fine under baseline, 520
+and 88 under `forgecounter`) and `MasterworkAttempt`, `BuyForgeSupply` and `CommissionLegendaryWork`
+were never once legal in 10,000 baseline decision points — the unit wires the policy and reports
+why the forge-supply verb never opens. Each arm updates `BalanceCorpusCoverageCensusTests.KnownNeverSubmitted`
+by removing the verbs it now submits, which is the pin that makes the arm's existence a test.
+
+**5. "Scale Mail over Scale Mail."** `HeroShoppingSystem.StampGearDecision` writes the chosen item's
+name and the runner-up's name into `HeroDecisionExplained`; **46 of 395 such cards in horizon (12%;
+2 per campaign, 0–5) name the same item on both sides** — two Scale Mails at different grades or
+prices, one yours — and `HeroPanel` renders *"Scale Mail over Scale Mail: upgrade: +6 gear score for
+24g (50‰ gap)"*. The decision was real; the sentence is not. **P2-HONEST-41** breaks the tie with
+the grade and price that split them, `[S][GOLD]`: the event's string changes, so the trace
+re-records.
+
+**Re-measured and not booked.** Commissions under baseline: 866 posted (Weapon 328, Shield 189,
+Armor 179, Trinket 145, Consumable 25), 416 fulfilled, 116 expired at −100 mood each; **77 of 142
+accepted Shield commissions expire (54%) against 13 of 240 Weapon (5%)**, and 126 of 131 under
+`forgecounter` — `BaselinePlayer` crafts "by tier then stat sum" and made 48 shields to 295 weapons,
+so this is the harness's habit, not the game's, and it is left with the third proposal below.
+`GateHeld` ends 274 of 1,152 baseline halts (24%) and 880 of 1,873 under `forgecounter` (47%);
+`LedgerModal.AddGateHeldStreakLine` already says so. The rival takes 52% of hero purchases under
+baseline (876 to 796) and 73% under `forgecounter`; P2-MEMORY-26 names it. `LootIncomeReceived` has
+zero client readers and carries 97,809g of hero income over 20 campaigns (4,811 a campaign against
+2,692g of shelf revenue) — the purse it feeds is P2-SCREEN-41's subject, so it is not booked twice.
+`HeroPassedOnItem` fires 293 times a campaign (183–565) and the same hero passes on the same item up
+to 12.5 times (8–21); `DemandPanel` rolls the reasons up and no card renders them one by one.
+Incidents after P2-MEMORY-27: 96 Mine, 19 Crypt, 3 Foundry, 3 Gloomwood of 121 (21% non-Mine).
+Decisions 4 and 5 stand as §11.14 read them. The felt wall is day 12.0 for the third read running.
+
+**Which of these an unattended session may take.** `P2-HONEST-37`, `P2-HONEST-38`, `P2-HONEST-39`,
+`P2-HONEST-40` and `P2-PEOPLE-32` (sim, no Contracts change, idle trace untouched) and
+`P2-SCREEN-41` (client, over state the sim already computes) carry no ceremony. `P2-HONEST-41`
+re-records the golden trace; `P2-LONG-36` re-records it and re-baselines, with its gate named above
+— under §11.7.13 both are takeable with the ceremony performed. Nothing here waits on P4.
+
+**Three things the measurements argue for, as prose, for the owner to grant.** First, **the
+newcomer's first march**: every recruit marches the morning they arrive, to floor 4 or 5 in half the
+cases, and 59% of the town's dead are heroes with one day in it. Link 3 says the hero picks the
+depth, and the rule that picks it (`ExpeditionSystem.TargetFloorFor`: one past the deepest any
+member has reached) is the veterans' depth, not the newcomer's. A newcomer whose first march targets
+their own rung — or who takes one day in town before mustering, as P2-PEOPLE-11's wake day would
+give the whole roster — is still the hero's judgment (law 1), but it changes who dies and when, and
+that is `[S][GOLD][BAL]` with recruit deaths (116 of 195), median days in town (1) and the ending
+day (27.5) as its gate. Second, **the light classes and the rival**: P2-LONG-36 answers the
+mystic's death with content; the other honest answer is admission — that the smith's book is iron by
+design, the light classes dress at the rival's by design, and the wake says so (P2-PEOPLE-32 would
+carry the line). The owner should say which game this is before both ship. Third, **the promise
+you cannot keep**: `AcceptCommissionLegal` asks only that the commission be open, so a blacksmith
+may accept a Trinket ask with no trinket recipe in any selected profession (145 posted) or a Shield
+ask he will not fill (77 of 142 expire), and the hero docks −100 mood and "gave up waiting" on a
+promise the game let him make. Law 7 keeps the accept legal; the question is whether the cost is
+named at the moment of accepting (copy, `[G]`) or whether legality should refuse a slot no selected
+profession can fill (a rule change to what the player may promise). §11.14's three proposals stand
+as written.
+
+**Ids checked both ways before booking**, per §11.11's lesson: every id below was grepped across
+`sim/`, `godot/`, `tools/` and `docs/` and against `git log --all --oneline`, and all eight missed in
+both.
+
 ## 12. The external reviews — what came from outside, and what we did with it
 
 On 2026-08-06 the owner collected design reviews from three other AI models and asked for
@@ -5340,6 +5498,14 @@ name (§11.6 rule 4).
 | P2-LONG-35 | The ore line names the standing it moves — the faction, where you stand with them, and what this load earns | `godot/scripts/panels/LedgerModal.cs`, `sim/GameSim/Factions/FactionStandingThresholds.cs` (read-only), `godot/tests/` `evidence:godot/scripts/panels/LedgerModal.cs:StandingNote` | — | [G] |
 | P2-PEOPLE-30 | The newcomer's arrival names the vacancy — whose seat they take, how many days cold, and what the fallen wore | `godot/scripts/panels/LegendsWall.cs`, `godot/scripts/panels/TavernPanel.cs`, `sim/GameSim/Drama/WakeQuery.cs` (read-only), `godot/tests/` `evidence:godot/scripts/panels/LegendsWall.cs:VacatedBy` | — | [G] |
 | P2-MEMORY-27 | The director learns three more dungeons — a rumor and a notable each for Gloomwood, the Crypt and the Foundry, gated on the venue being raided | `sim/GameSim/Drama/DirectorSystem.cs`, `godot/scripts/panels/LegendsWall.cs`, `sim/GameSim.Tests/` `evidence:sim/GameSim/Drama/DirectorSystem.cs:RaidedVenues` | — | [S][GOLD] |
+| P2-SCREEN-41 | The newcomer's purse — the arrival card names what they carry, which shelved piece they could afford and wear tomorrow, and that they march at dawn | `godot/scripts/panels/LegendsWall.cs`, `godot/scripts/panels/LedgerModal.cs`, `sim/GameSim/Heroes/ShoppingAi.cs` (read-only), `sim/GameSim/Classes/ClassRegistry.cs` (read-only), `godot/tests/` | P2-PEOPLE-30 | [G] |
+| P2-PEOPLE-32 | The wake names the absence — when the fallen wore and carried nothing of yours and earned no beat, the card says so in one line instead of saying nothing | `sim/GameSim/Drama/FallenQuery.cs`, `godot/scripts/panels/LedgerModal.cs`, `sim/GameSim.Tests/`, `godot/tests/` | — | [S] |
+| P2-LONG-36 | The light armory — a tier-2 and a tier-3 armor a mystic can carry, on §11.7.12's curve, with icons through the existing draw-size pipeline | `sim/GameSim/Crafting/RecipeTable.cs`, `godot/assets/` (icons via `tools/art/`), `godot/scripts/ui/IconRegistry.cs` (read-only), `sim/GameSim.Tests/Balance/` | — | [S][GOLD][BAL] |
+| P2-HONEST-37 | The advisor stops prescribing shields to hands that cannot hold them — `MissingItemSlots` learns the class, and a hero who has never gone down is new, not stalled | `sim/GameSim/Heroes/RaidForecast.cs`, `sim/GameSim/Drama/DemandBoard.cs`, `sim/GameSim/Drama/DepthCopy.cs`, `sim/GameSim/Advisor/ObjectiveAdvisor.cs` (read-only), `sim/GameSim.Tests/` | — | [S] |
+| P2-HONEST-38 | The harness sits the wake — `forgecounter` honours the memorial, sets the best legal marker, takes the default remembrance and reforges the heirloom when legal, so link 5's four verbs get a first measured occurrence | `sim/GameSim/Harness/ForgeCounterPlayer.cs`, `sim/GameSim.Tests/Hygiene/BalanceCorpusCoverageCensusTests.cs`, `sim/GameSim.Tests/` | — | [S] |
+| P2-HONEST-39 | The harness sends the runner — `forgecounter` crafts a heal and sends it to a camper under the too-hurt bar, so `SupplyDelivered` and the two consumable beats get measured | `sim/GameSim/Harness/ForgeCounterPlayer.cs`, `sim/GameSim.Tests/Hygiene/BalanceCorpusCoverageCensusTests.cs`, `sim/GameSim.Tests/` | P2-LONG-25 | [S] |
+| P2-HONEST-40 | The masterwork policy joins the sweep — `--policy masterwork` wires `MasterworkSeekingPlayer` into `BatchRunner`, and the sweep reports why `BuyForgeSupply` never opens under `BaselinePlayer` | `sim/GameSim.Cli/BatchRunner.cs`, `sim/GameSim/Harness/MasterworkSeekingPlayer.cs`, `sim/GameSim.Tests/` | — | [S] |
+| P2-HONEST-41 | "Scale Mail over Scale Mail" — when the chosen piece and its runner-up share a name, the decision card names the grade and price that split them | `sim/GameSim/Heroes/HeroShoppingSystem.cs`, `godot/scripts/panels/HeroPanel.cs` (read-only), `sim/GameSim.Tests/` | — | [S][GOLD] |
 
 **P2-HONEST-33** is booked from P2-PEOPLE-28's own measurement: `HeroShoppingSystem.ShoppingOrder` skips
 every hero the counter served that day ("counter-served heroes don't shop twice", PKD5), and
