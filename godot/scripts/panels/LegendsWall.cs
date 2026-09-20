@@ -1605,6 +1605,15 @@ public partial class LegendsWall : Control
         "ghoul_warren_breaks" => "A ghoul warren has broken open deeper down.",
         "the_forgeworm_stirs" => "The forgeworm stirs. The deep rock is warm to the touch.",
 
+        // P2-MEMORY-27: the graduated venues' own happenings — a rumor and a notable each, in the
+        // same townsperson register as the Mine's five. They only fire once a party has mustered there.
+        "lanterns_in_the_gloomwood" => "Lantern moths thick over the Gloomwood road — the foragers turned back early.",
+        "bramble_chokes_the_paths" => "The bramble has grown over the Gloomwood paths, and the boars are rooting at the treeline.",
+        "the_causeway_sings" => "The ferrymen say the causeway into the Sunken Crypt was singing again last night.",
+        "wights_walk_the_causeway" => "Bog-wights have been seen above the waterline at the Sunken Crypt.",
+        "smoke_over_emberfall" => "Black smoke over Emberfall — the foundry stacks are burning with nobody at the bellows.",
+        "slag_hounds_at_the_gate" => "Slag hounds ran loose at the Emberfall gate in the night.",
+
         // Unknown id: a new incident landed in DirectorSystem.Catalog without copy here. Say
         // something true rather than nothing, so the gap surfaces in play instead of vanishing.
         // The venue half has a registered DisplayName and always resolves (every incident fires
