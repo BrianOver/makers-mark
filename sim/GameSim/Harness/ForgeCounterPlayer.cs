@@ -3,7 +3,9 @@ using GameSim.Advisor;
 using GameSim.Classes;
 using GameSim.Contracts;
 using GameSim.Counter;
+using GameSim.Drama;
 using GameSim.Heroes;
+using GameSim.Professions;
 
 namespace GameSim.Harness;
 
@@ -56,9 +58,19 @@ public static class ForgeCounterPlayer
     public static ImmutableList<PlayerAction> ActionsFor(GameState state) => state.Phase switch
     {
         DayPhase.Morning => MorningActions(state),
-        // Craft/buy loops outside Morning are IDENTICAL to BaselinePlayer's — composed, not copied.
+        DayPhase.Evening => EveningActions(state),
+        // Craft/buy loops outside Morning/Evening are IDENTICAL to BaselinePlayer's — composed, not copied.
         _ => BaselinePlayer.ActionsFor(state),
     };
+
+    /// <summary>P2-HONEST-38: BaselinePlayer's own Evening routine (ore-buying), plus the wake —
+    /// see <see cref="AddWakeActions"/>.</summary>
+    private static ImmutableList<PlayerAction> EveningActions(GameState state)
+    {
+        var actions = BaselinePlayer.ActionsFor(state).ToBuilder();
+        AddWakeActions(state, actions);
+        return actions.ToImmutable();
+    }
 
     private static ImmutableList<PlayerAction> MorningActions(GameState state)
     {
@@ -122,6 +134,163 @@ public static class ForgeCounterPlayer
         return ActionLegality.IsLegal(state, closeEmpty, state.Phase)
             ? ImmutableList.Create<PlayerAction>(closeEmpty)
             : ImmutableList<PlayerAction>.Empty;
+    }
+
+    /// <summary>
+    /// P2-HONEST-38 (docs/design/MAKERS-MARK.md §11.15, "The harness sits the wake"): link 5's four
+    /// verbs get their first measured occurrence. §11.15 measured ZERO of the eleven policies in this
+    /// namespace constructing any of them — <see cref="HonorMemorialAction"/> legal at 23,777 Evening
+    /// decision points and chosen 0, <see cref="ReforgeHeirloomAction"/> legal at 43,815 and chosen 0,
+    /// and <c>MemorialHonored</c> / <c>GraveMarkerPlaced</c> / <c>RemembranceChosen</c> /
+    /// <c>HeirloomReforged</c> never once fired across 40 campaigns. So the town's memory of a fallen
+    /// hero (link 5) had never been exercised end to end by anything but a hand-built fixture.
+    ///
+    /// <para><b>The rule, deterministic off recorded state — no RNG, no clock.</b> Memorials in hero-id
+    /// order (<see cref="DramaState.Memorials"/> is log-ordered; sorting makes the wake's order a
+    /// property of the roster rather than of death order). Per memorial: honour it if not yet honoured;
+    /// set the BEST legal marker — highest <see cref="QualityGrade"/> among
+    /// <see cref="WakeQuery.MarkerCandidates"/>, ties broken by lowest item id, because a smith lays
+    /// their best surviving work on the grave; take <see cref="WakeQuery.DefaultRemembrance"/> (the
+    /// wake's own pre-selected naming event, asked rather than re-derived); and reforge the heirloom
+    /// when <see cref="WakeQuery.HeirloomOpen"/> says the question is still open.</para>
+    ///
+    /// <para><b>Every verb is asked of <see cref="ActionLegality.IsLegal"/> at this phase before it is
+    /// submitted</b>, so this policy never spends a tick on a doomed action — the same contract the
+    /// counter arm above already holds. <paramref name="state"/> predates this tick, so two memorials
+    /// can both see the same marker candidate legal; <c>claimed</c> is what stops the second one from
+    /// submitting an item the first already took (the kernel applies in order, and the second would be
+    /// rejected).</para>
+    ///
+    /// <para><b>The heirloom is decision 4 ("spend the slot or bank it"), honestly paid for.</b>
+    /// <see cref="ReforgeHeirloomAction"/> is the one wake verb that costs an action slot
+    /// (<see cref="ActionBudget.ConsumesSlot"/>) and BaselinePlayer's Evening routine already spends
+    /// the day's remainder on ore. Rather than emit a buy the kernel would reject, this drops
+    /// tonight's LAST ore buy to pay for the reforge — the smith choosing the fallen's legend over one
+    /// more crate of ore. Ore buys are order-independent of each other, so dropping the last is the
+    /// cheapest honest way to make room.</para>
+    /// </summary>
+    private static void AddWakeActions(GameState state, ImmutableList<PlayerAction>.Builder actions)
+    {
+        var slotsLeft = state.ActionSlotsRemaining - actions.Count(ActionBudget.ConsumesSlot);
+        var claimed = new HashSet<int>();
+
+        foreach (var memorial in state.Drama.Memorials.OrderBy(m => m.Hero.Value))
+        {
+            var hero = memorial.Hero;
+
+            var honor = new HonorMemorialAction(hero);
+            if (!memorial.Honored && ActionLegality.IsLegal(state, honor, state.Phase))
+            {
+                actions.Add(honor);
+            }
+
+            if (BestMarker(state, hero, claimed) is { } marker)
+            {
+                var place = new PlaceGraveMarkerAction(hero, marker);
+                if (ActionLegality.IsLegal(state, place, state.Phase))
+                {
+                    actions.Add(place);
+                    claimed.Add(marker.Value);
+                }
+            }
+
+            if (WakeQuery.DefaultRemembrance(state, hero) is { } remembrance)
+            {
+                var choose = new ChooseRemembranceAction(hero, remembrance.Id);
+                if (ActionLegality.IsLegal(state, choose, state.Phase))
+                {
+                    actions.Add(choose);
+                }
+            }
+
+            if (WakeQuery.HeirloomOpen(state, hero)
+                && FirstLegalReforge(state, hero, claimed) is { } reforge
+                && TryPaySlot(actions, ref slotsLeft))
+            {
+                actions.Add(reforge);
+                claimed.Add(reforge.SourceItem.Value);
+            }
+        }
+    }
+
+    /// <summary>P2-HONEST-38: the piece this smith would lay on <paramref name="hero"/>'s grave — the
+    /// highest-quality legal candidate, ties broken by lowest item id so the choice is a function of
+    /// recorded state alone. Legality (yours, not worn, not shelved, not already a marker) is
+    /// <see cref="WakeQuery.MarkerCandidates"/>'s own answer, never re-derived here.</summary>
+    private static ItemId? BestMarker(GameState state, HeroId hero, HashSet<int> claimed)
+    {
+        ItemId? best = null;
+        var bestQuality = QualityGrade.Poor;
+        foreach (var candidate in WakeQuery.MarkerCandidates(state, hero))
+        {
+            if (claimed.Contains(candidate.Value) || !state.Items.TryGetValue(candidate.Value, out var item))
+            {
+                continue;
+            }
+
+            if (best is null || item.Quality > bestQuality
+                || (item.Quality == bestQuality && candidate.Value < best.Value.Value))
+            {
+                best = candidate;
+                bestQuality = item.Quality;
+            }
+        }
+
+        return best;
+    }
+
+    /// <summary>P2-HONEST-38: the fallen's first reforgeable piece — worn at death, not already
+    /// reforged, not claimed by this same tick's wake — paired with the first recipe (in
+    /// <see cref="ProfessionRegistry.AllRecipes"/>'s sorted order) that <see cref="ActionLegality"/>
+    /// actually accepts. Same "one canonical instance per source" shape
+    /// <see cref="ActionLegality"/>'s own heirloom candidate enumeration uses, so the pairing this
+    /// policy names can never disagree with what the handler would accept.</summary>
+    private static ReforgeHeirloomAction? FirstLegalReforge(GameState state, HeroId hero, HashSet<int> claimed)
+    {
+        var sources = state.EventLog.OfType<HeroDied>()
+            .Where(died => died.Hero == hero)
+            .SelectMany(died => new[] { died.WornGear.Weapon, died.WornGear.Shield, died.WornGear.Armor, died.WornGear.Trinket })
+            .Where(item => item is not null)
+            .Select(item => item!.Value)
+            .Where(item => !claimed.Contains(item.Value))
+            .Distinct()
+            .OrderBy(item => item.Value);
+
+        foreach (var source in sources)
+        {
+            foreach (var recipe in ProfessionRegistry.AllRecipes.Values)
+            {
+                var candidate = new ReforgeHeirloomAction(source, recipe.RecipeId, recipe.MaterialKey);
+                if (ActionLegality.IsLegal(state, candidate, state.Phase))
+                {
+                    return candidate;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>P2-HONEST-38: make room in the day's budget for one slot-spending wake verb — either
+    /// a slot this tick has not committed yet, or the last ore buy, dropped to pay for it. False when
+    /// neither is available, and the caller then leaves the heirloom for another night rather than
+    /// submitting a buy-and-reforge pair the kernel would reject.</summary>
+    private static bool TryPaySlot(ImmutableList<PlayerAction>.Builder actions, ref int slotsLeft)
+    {
+        if (slotsLeft > 0)
+        {
+            slotsLeft--;
+            return true;
+        }
+
+        var lastBuy = actions.FindLastIndex(a => a is BuyOreAction);
+        if (lastBuy < 0)
+        {
+            return false;
+        }
+
+        actions.RemoveAt(lastBuy);
+        return true;
     }
 
     /// <summary>Decision 2 ("price for the sale or the relationship"), deterministic off the
