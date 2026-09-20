@@ -119,6 +119,43 @@ public class ForgeCounterPlayerTests
     }
 
     [Fact]
+    public void ActionsFor_RegularWithStandingOffer_OddIdDaySum_CountersAboveTheCeiling_TheFleeceArm()
+    {
+        // P2-HONEST-35 (§11.14): decision 2's second arm. Hero 2 on day 1 sums to an ODD id+day —
+        // the fleece arm — deliberately the opposite parity from the pin test above (hero 1, day 1,
+        // an EVEN sum), so the two tests together prove the split is real rather than one branch
+        // dead code.
+        var hero = MakeHero(2, "striker", gold: 1000, moodPermille: RelationshipBands.RegularMinMood);
+        var state = BaseState(Roster(hero)) with
+        {
+            Player = PlayerState.NewGame(0) with { Shelf = ImmutableList.Create(new ShelfEntry(new ItemId(1), 100)) },
+            Items = ImmutableSortedDictionary<int, Item>.Empty.Add(1, MakeItem(1, ItemSlot.Weapon, 6, 0, 3)),
+            Counter = CounterState.Empty with
+            {
+                Queue = ImmutableList.Create(new HeroId(2)),
+                Active = new HeroId(2),
+                Round = 1,
+                Presented = new ItemId(1),
+                StandingOfferGold = 82,
+            },
+        };
+        Assert.True(RelationshipBands.For(hero.Id, state) >= RelationshipBand.Regular); // test premise
+        Assert.Equal(1, state.Day); // 2 + 1 = 3, odd — the fleece arm's own premise
+
+        var trueWillingness = WillingnessModel.TrueWillingness(
+            100, hero.Gold, hero.ClassId, interestPermille: 0, moodPermille: hero.MoodPermille,
+            traitPermille: TraitEffects.PriceSensitivityPermille(hero));
+        var (_, ceiling) = WillingnessModel.Band(trueWillingness, round: 1);
+
+        var actions = ForgeCounterPlayer.ActionsFor(state);
+
+        var haggle = Assert.IsType<HaggleResponseAction>(Assert.Single(actions));
+        Assert.Equal(HaggleResponseKind.Counter, haggle.Kind);
+        Assert.True(haggle.Price > ceiling, $"fleece price {haggle.Price}g did not clear the ceiling {ceiling}g");
+        Assert.True(haggle.Price <= hero.Gold, $"fleece price {haggle.Price}g exceeds what hero 2 can afford ({hero.Gold}g)");
+    }
+
+    [Fact]
     public void ActionsFor_NoSessionYet_OpensTheCounter_AlongsideTheMorningRoutine()
     {
         var state = BaseState(Roster(MakeHero(1, "striker", 100)));
@@ -225,5 +262,89 @@ public class ForgeCounterPlayerTests
         Assert.True(everStocked, "the policy never put a single item on the shelf in 30 days");
         Assert.NotEmpty(sales); // decision 1 + 2's first measured occurrence: a real counter sale closed
         Assert.True(moodMovedByAPin, "no pinned close ever moved the hero's MoodPermille in 30 days");
+    }
+
+    [Fact]
+    public void DrivenAcrossASeedSweep_ClosesAtLeastOneFleecedSale()
+    {
+        // P2-HONEST-35 (§11.14): §11.14 measured 551 closed sales — 270 pinned, ZERO fleeced —
+        // across the whole 20-seed x 100-day corpus. This is the property that closes that gap:
+        // over a real sweep, driven through the SAME production kernel the batch farm uses, the
+        // fleece arm actually fires at least once.
+        var kernel = GameSim.GameComposition.BuildKernel();
+        var fleeced = 0;
+
+        foreach (var seed in Enumerable.Range(1, 10).Select(i => (ulong)i))
+        {
+            var state = GameSim.GameComposition.NewCampaign(seed);
+            while (state.Day <= 40)
+            {
+                var result = kernel.Tick(state, ForgeCounterPlayer.ActionsFor(state));
+                state = result.NewState;
+                fleeced += result.Events.OfType<CounterSaleClosed>().Count(s => s.Fleeced);
+            }
+        }
+
+        Assert.True(fleeced > 0, "no fleeced counter sale closed across 10 seeds x 40 days");
+    }
+
+    [Fact]
+    public void DrivenAcrossASeedSweep_AFleecedSale_ReachesMoodGossipAndBoycott()
+    {
+        // P2-HONEST-35 (§11.14): closing the sale is only half the gap — §11.14 also found
+        // WillingnessModel.FleeceMoodPenalty, the TavernPack fleece gossip line, and
+        // NeedsSystem's boycott bias had NEVER been reached by any harness, because nothing had
+        // ever stamped a Fleeced sale for them to react to. This drives the same fleece arm across
+        // a wider sweep and confirms all three surfaces are now live — mood actually drops on a
+        // fleece, the tavern actually cites one, and the roster actually reaches a boycott
+        // somewhere in the same runs (boycotting is driven by unmet-demand streaks, not the fleece
+        // itself — CounterSaleClosed never resets ItemSold's streak — so this does not claim the
+        // fleece CAUSES the boycott, only that both surfaces are reached together, honestly, in
+        // the runs this unit adds).
+        var kernel = GameSim.GameComposition.BuildKernel();
+        var sawFleeceMoodPenalty = false;
+        var sawFleeceGossipLine = false;
+        var sawBoycott = false;
+
+        foreach (var seed in Enumerable.Range(1, 10).Select(i => (ulong)i))
+        {
+            var state = GameSim.GameComposition.NewCampaign(seed);
+            var fleecedEventIds = new HashSet<int>();
+
+            while (state.Day <= 60)
+            {
+                var before = state;
+                var result = kernel.Tick(before, ForgeCounterPlayer.ActionsFor(before));
+                state = result.NewState;
+
+                foreach (var sale in result.Events.OfType<CounterSaleClosed>().Where(s => s.Fleeced))
+                {
+                    fleecedEventIds.Add(sale.Id.Value);
+                    if (before.Heroes.TryGetValue(sale.Hero.Value, out var heroBefore)
+                        && state.Heroes.TryGetValue(sale.Hero.Value, out var heroAfter)
+                        && heroAfter.MoodPermille < heroBefore.MoodPermille)
+                    {
+                        sawFleeceMoodPenalty = true;
+                    }
+                }
+
+                foreach (var gossip in result.Events.OfType<GossipEmitted>())
+                {
+                    if (fleecedEventIds.Contains(gossip.Source.Value))
+                    {
+                        sawFleeceGossipLine = true;
+                    }
+                }
+
+                if (!sawBoycott && state.Heroes.Values.Any(h => h.Alive && NeedsSystem.IsBoycotting(h.Id, state)))
+                {
+                    sawBoycott = true;
+                }
+            }
+        }
+
+        Assert.True(sawFleeceMoodPenalty, "a fleeced sale never dropped the hero's MoodPermille across the sweep");
+        Assert.True(sawFleeceGossipLine, "no gossip line was ever emitted citing a fleeced counter sale");
+        Assert.True(sawBoycott, "no hero ever reached a boycott across the sweep");
     }
 }
