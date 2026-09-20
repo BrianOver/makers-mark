@@ -398,6 +398,11 @@ public partial class LedgerModal : SimPanel
         // other fact this night could report. See AddWakeLeads' own doc.
         AddWakeLeads(state, day);
 
+        // P2-SCREEN-40 (decision 6's receipt, §11.14): a camp that buried someone tonight sits
+        // beside the wake lead that already outranks everything else — see AddCampReceiptLines'
+        // own doc for why the split.
+        AddCampReceiptLines(state, day, besideDeathLead: true);
+
         // P2-SCREEN-35 ("follow one piece"): the followed item's own night leads the whole card —
         // ahead of the narrator line, the gate-held streak, and every hero's own return card.
         AddFollowedItemLine(state, day);
@@ -421,6 +426,10 @@ public partial class LedgerModal : SimPanel
         // held for actually came for it, or it is still waiting for them tonight. Same "one shared
         // fact, not one per hero card" placement as the two lines above it.
         AddEarmarkLines(state, day);
+
+        // P2-SCREEN-40: every other camp receipt tonight (nobody from that camp died) sits here,
+        // after the shared-fact blocks and ahead of the individual return cards.
+        AddCampReceiptLines(state, day, besideDeathLead: false);
 
         if (cards.IsEmpty)
         {
@@ -1048,6 +1057,81 @@ public partial class LedgerModal : SimPanel
     /// identical no-throw contract.</summary>
     private static string HeroNameOf(GameState state, HeroId hero) =>
         state.Heroes.TryGetValue(hero.Value, out var found) ? found.Name : hero.ToString();
+
+    /// <summary>
+    /// P2-SCREEN-40 (§11.14, decision 6's receipt, link 4): the winch-house slate's own facts —
+    /// where the party camped, how low each hero actually stood, and the player's own checkpoint
+    /// call — reaching the night card instead of dying with the day's <see cref="InFlightExpedition"/>.
+    /// Every number is read straight off the recorded <see cref="PartyCampReport"/> (never
+    /// recomputed); the "what you did" clause is read off the same <see cref="PartyRecalled"/>/
+    /// <see cref="SupplyDelivered"/> events <see cref="CampNarration.Attribution"/> itself reads,
+    /// never a fresh guess. The outcome sentence per hero calls <see cref="CampNarration.Attribution"/>
+    /// verbatim — the same sentence <c>LedgerQuery.FateLine</c> already appends to that hero's own
+    /// return card — never a second, independently-worded copy of it (law 8).
+    ///
+    /// <para><paramref name="besideDeathLead"/> splits the render into two passes from
+    /// <see cref="RenderCards"/>: a camp that buried one of its own party tonight sits beside the
+    /// wake lead (a death outranks every other fact this night could report, the same rule
+    /// <see cref="AddWakeLeads"/> already states); every other camp's receipt sits after the
+    /// shared-fact blocks (gate-held streak, rival sales, earmarks), ahead of the individual
+    /// return cards.</para>
+    /// </summary>
+    private void AddCampReceiptLines(GameState state, int day, bool besideDeathLead)
+    {
+        var dayEvents = state.EventLog.Where(e => e.Day == day).ToImmutableList();
+        var deaths = dayEvents.OfType<HeroDied>().ToImmutableList();
+
+        foreach (var report in dayEvents.OfType<PartyCampReport>())
+        {
+            var diedHere = report.Party.Any(h => deaths.Any(d => d.Hero == h));
+            if (diedHere != besideDeathLead)
+            {
+                continue;
+            }
+
+            var recalled = dayEvents.OfType<PartyRecalled>()
+                .Any(r => r.Party.Any(h => report.Party.Contains(h)));
+            var supplied = dayEvents.OfType<SupplyDelivered>()
+                .FirstOrDefault(sd => report.Party.Contains(sd.To));
+
+            var wrap = Card($"CampReceipt_{report.Party[0].Value}_{report.CampedBelowFloor}");
+            wrap.CustomMinimumSize = new Vector2(CardGridColumnWidth, 0);
+            var body = new VBoxContainer();
+            wrap.AddChild(body);
+
+            AddHeader(body, $"Camped below floor {report.CampedBelowFloor} — aiming for floor {report.TargetFloor}.");
+
+            var actionText = recalled
+                ? "You rang the recall bell."
+                : supplied is not null
+                    ? $"You sent a runner with supplies to {HeroNameOf(state, supplied.To)}."
+                    : "You held the checkpoint window — no action taken.";
+            var actionLabel = AddLabel(body, actionText);
+            actionLabel.Name = "CampReceiptAction";
+
+            foreach (var heroValue in report.HpByHero.Keys)
+            {
+                var hero = new HeroId(heroValue);
+                var name = HeroNameOf(state, hero);
+                var hp = report.HpByHero[heroValue];
+                var heals = report.HealsLeftByHero.GetValueOrDefault(heroValue);
+                var healsWord = heals == 1 ? "heal" : "heals";
+                var survived = !deaths.Any(d => d.Hero == hero);
+
+                var factLabel = AddLabel(body, $"{name}: {hp} HP, {heals} {healsWord} left.");
+                factLabel.Name = $"CampReceiptFact_{heroValue}";
+
+                if (CampNarration.Attribution(dayEvents, hero, survived) is { } attribution)
+                {
+                    var attributionLabel = AddLabel(body, attribution);
+                    attributionLabel.Name = $"CampReceiptAttribution_{heroValue}";
+                    attributionLabel.AddThemeColorOverride("font_color", GameTheme.HeaderColor);
+                }
+            }
+
+            _cardGrid!.AddChild(wrap);
+        }
+    }
 
     /// <summary>U7's own one-line tutorial explainer (R10), now hoisted to render after the lead
     /// card (U1) rather than above every card — see <see cref="_tutorialTip"/>'s doc for the

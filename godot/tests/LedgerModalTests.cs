@@ -3307,6 +3307,75 @@ public class LedgerModalTests
         }
     }
 
+    private static readonly HeroId CampSurvivorId = new(5);
+
+    /// <summary>One party of one, parked below the checkpoint tonight (P2-SCREEN-40): a
+    /// <see cref="PartyCampReport"/> plus a <see cref="SupplyDelivered"/> runner, then survives
+    /// the Deep tick — the "you sent a runner, it carried them through" shape.</summary>
+    private static GameState CampNight()
+    {
+        var hero = new Hero(
+            CampSurvivorId, "Elowen", ClassRegistry.VanguardId, Level: 3, MaxHp: 30, Gold: 0,
+            Gear: GearSet.Empty, Memories: ImmutableList<ItemMemory>.Empty, Alive: true,
+            DeepestFloorReached: 2, DiedOnDay: null);
+        var heroes = ImmutableSortedDictionary<int, Hero>.Empty.Add(CampSurvivorId.Value, hero);
+
+        var events = ImmutableList.Create<GameEvent>(
+            new PartyCampReport(
+                ImmutableList.Create(CampSurvivorId),
+                CampedBelowFloor: 2, TargetFloor: 3,
+                HpByHero: ImmutableSortedDictionary<int, int>.Empty.Add(CampSurvivorId.Value, 9),
+                HealsLeftByHero: ImmutableSortedDictionary<int, int>.Empty.Add(CampSurvivorId.Value, 1))
+            { Id = new EventId(1), Day = 1 },
+            new SupplyDelivered(CampSurvivorId, new ItemId(1), Fee: 4) { Id = new EventId(2), Day = 1 },
+            new PartyReturned(ImmutableList.Create(CampSurvivorId)) { Id = new EventId(3), Day = 1 });
+
+        var baseState = GameFactory.NewGame(9101, heroes);
+        return baseState with { EventLog = events };
+    }
+
+    [TestCase]
+    public void CampedParty_RendersTheReceipt_FloorHpHealsActionAndAttribution()
+    {
+        var ui = MountMainUi(new SimAdapter(CampNight()));
+        try
+        {
+            ui.Ledger.ShowFor(1);
+
+            var wrap = Find<Control>(ui.Ledger, $"CampReceipt_{CampSurvivorId.Value}_2");
+            var text = RenderedText(wrap);
+
+            AssertThat(text).Contains("floor 2");
+            AssertThat(text).Contains("floor 3");
+            AssertThat(RenderedText(Find<Control>(ui.Ledger, "CampReceiptAction"))).Contains("runner");
+            var factText = RenderedText(Find<Control>(ui.Ledger, $"CampReceiptFact_{CampSurvivorId.Value}"));
+            AssertThat(factText).Contains("9 HP");
+            AssertThat(factText).Contains("1 heal left");
+            AssertThat(RenderedText(Find<Control>(ui.Ledger, $"CampReceiptAttribution_{CampSurvivorId.Value}")))
+                .Contains("runner");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void NoCampReport_RendersNoCampReceipt()
+    {
+        var ui = MountMainUi(new SimAdapter(DrivenDay()));
+        try
+        {
+            ui.Ledger.ShowFor(1);
+
+            AssertThat(ui.Ledger.FindChild("CampReceiptAction", recursive: true, owned: false)).IsNull();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
     // ── P2-PEOPLE-31 ("a hold for the dead is released at the wake") ──
 
     private static readonly ItemId ChainVestId = new(50);
