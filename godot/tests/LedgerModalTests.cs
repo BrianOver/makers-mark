@@ -580,6 +580,85 @@ public class LedgerModalTests
         }
     }
 
+    /// <summary>
+    /// P2-LONG-35 (decision 5, "buy the ore or buy the goodwill"): the row must name where the
+    /// player stands with the supplying faction RIGHT NOW — the standing value plus its threshold
+    /// band (favored/neutral, read off <see cref="FactionStandingThresholds.FavoredEnter"/>) — and
+    /// what THIS buy moves it to (the same Min-clamp rise <c>OreMarketHandlers.Apply</c> applies).
+    /// Phrased as a property over a neutral-band and a favored-band standing rather than one
+    /// instance, per this row's own P2-HONEST-25 precedent for the family this row belongs to.
+    /// </summary>
+    [TestCase]
+    public void OreOfferLine_NamesStandingAndBand_AndTheRiseThisBuyEarns()
+    {
+        var faction = FactionRegistry.ByOreKey(MaterialRegistry.Copper)!;
+
+        foreach (var standing in new[] { 0, faction.StandingCap - 1 })
+        {
+            var ui = MountMainUi(new SimAdapter(OreOfferDay(standing, quantity: 2, unitPrice: 5)));
+            try
+            {
+                ui.Ledger.ShowFor(1);
+                var line = OreLineFor(RenderedText(ui.Ledger), MaterialRegistry.Copper);
+
+                var expectedBand = standing >= FactionStandingThresholds.FavoredEnter(faction) ? "favored" : "neutral";
+                var expectedRaised = Math.Min(standing + faction.RiseStep, faction.StandingCap);
+
+                AssertThat(line)
+                    .OverrideFailureMessage($"standing {standing}: row must name the '{expectedBand}' band: \"{line}\"")
+                    .Contains($"{expectedBand} {standing}");
+                AssertThat(line)
+                    .OverrideFailureMessage($"standing {standing}: row must name the post-buy standing {expectedRaised}: \"{line}\"")
+                    .Contains($"rising to {expectedRaised}");
+            }
+            finally
+            {
+                Unmount(ui);
+            }
+        }
+    }
+
+    /// <summary>
+    /// P2-LONG-35: "a crossing case says it crosses" — swept over every standing the faction can
+    /// carry, using <see cref="FactionStandingThresholds.Crossing"/> itself (never a re-derived
+    /// arithmetic copy) as the oracle for whether THIS buy's rise crosses the favored boundary, so
+    /// the test tracks the sim's own crossing rule rather than a hand-picked pair of standings.
+    /// </summary>
+    [TestCase]
+    public void OreOfferLine_SaysCrossesIntoFavored_ExactlyWhenTheRiseCrossesTheBoundary()
+    {
+        var faction = FactionRegistry.ByOreKey(MaterialRegistry.Copper)!;
+        var offenders = new List<string>();
+
+        for (var standing = 0; standing < faction.StandingCap; standing++)
+        {
+            var raised = Math.Min(standing + faction.RiseStep, faction.StandingCap);
+            var expectCrossing = FactionStandingThresholds.Crossing(faction, standing, raised) == StandingShiftDirection.Favored;
+
+            var ui = MountMainUi(new SimAdapter(OreOfferDay(standing, quantity: 2, unitPrice: 5)));
+            try
+            {
+                ui.Ledger.ShowFor(1);
+                var line = OreLineFor(RenderedText(ui.Ledger), MaterialRegistry.Copper);
+                var sawCrossing = line.Contains("crosses into favored", StringComparison.Ordinal);
+
+                if (sawCrossing != expectCrossing)
+                {
+                    offenders.Add($"standing {standing} -> {raised}: expected crossing={expectCrossing}, row said {sawCrossing}: \"{line}\"");
+                }
+            }
+            finally
+            {
+                Unmount(ui);
+            }
+        }
+
+        AssertThat(offenders.Count)
+            .OverrideFailureMessage("The row's crossing note must track FactionStandingThresholds.Crossing exactly:\n  "
+                + string.Join("\n  ", offenders))
+            .IsEqual(0);
+    }
+
     [TestCase]
     public void OreOffer_PerUnitRoundingWouldDiffer_ShownTotalStillMatchesLineCharge()
     {
