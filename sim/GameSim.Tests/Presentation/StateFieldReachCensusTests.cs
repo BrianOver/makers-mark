@@ -432,6 +432,7 @@ public class StateFieldReachCensusTests
             + "the player only learns a raid's gold at the Evening reveal "
             + "(ExpeditionResult.GoldEarnedByHero, LedgerModal's earned chips). No doc comment claims "
             + "this is a deliberate suspense withhold (booked docs/design/MAKERS-MARK.md)."),
+        ["InFlightExpedition.Hp"] = new(FieldKind.Rendered, "godot/scripts/panels/CampPanel.cs (per-hero HP on the camp card); P2-HONEST-39 gave it a third sim reader in ForgeCounterPlayer's vigil arm, which is what pulled it over this census's bar"),
         ["InFlightExpedition.Packs"] = new(FieldKind.Rendered, "godot/scripts/panels/CampPanel.cs:324,333 (heals-left computed off the working pack)"),
         ["InFlightExpedition.Party"] = new(FieldKind.Rendered, "godot/scripts/panels/CampPanel.cs (per-party card roster)"),
         ["InFlightExpedition.Recalled"] = new(FieldKind.Rendered, "godot/scripts/panels/CampPanel.cs (CampRecall_{lead} button state)"),
@@ -554,7 +555,7 @@ public class StateFieldReachCensusTests
     // MaxHp AS THEY STOOD AT DEPARTURE, never live GameState.Heroes). Already RENDERED via
     // TellingPanel long before this unit; the census catching up to a surface that was already
     // there, not a new one.
-    private const int ExpectedRenderedCount = 134; // +2: Memorial.MarkerItem/Remembrance rendered on the fallen's page (P2-PEOPLE-06) // +1 2026-09-18: CounterState.InterestPermille (P2-HONEST-30 gave it a third sim reader)
+    private const int ExpectedRenderedCount = 135; // +1 2026-09-20: InFlightExpedition.Hp crossed the 3-reader bar when P2-HONEST-39's vigil arm read it; CampPanel already drew it // +2: Memorial.MarkerItem/Remembrance rendered on the fallen's page (P2-PEOPLE-06) // +1 2026-09-18: CounterState.InterestPermille (P2-HONEST-30 gave it a third sim reader)
     private const int ExpectedRoutedCount = 9;
     private const int ExpectedInternalCount = 6;
     // 12 -> 8: the same join, mirrored — the four fields that left GAP for RENDERED above.
