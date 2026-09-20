@@ -34,7 +34,7 @@ public static class BatchRunner
 {
     public const string Usage =
         "usage: batch --seeds <count> [--seed <startSeed>] [--days <days>] [--out <dir>] "
-        + "[--policy baseline|counter|apprentice|handforge|latemastery|alchemy|tanning|engineering|forgecounter] "
+        + "[--policy baseline|counter|apprentice|handforge|latemastery|alchemy|tanning|engineering|forgecounter|masterwork] "
         + "[--hand indifferent|average|skilled]";
 
     /// <summary>
@@ -65,6 +65,11 @@ public static class BatchRunner
     /// first measured occurrence: neither <see cref="Policy.Baseline"/> (never opens the counter)
     /// nor <see cref="Policy.Counter"/> (never crafts or stocks, so it closes zero sales) ever fires
     /// the counter's pin/fleece mood swing.
+    /// P2-HONEST-40 adds <see cref="Policy.Masterwork"/> (<see cref="MasterworkSeekingPlayer"/>) —
+    /// the only policy in <c>Harness/</c> that constructs <see cref="MasterworkAttemptAction"/>,
+    /// <see cref="BuyForgeSupplyAction"/> or <see cref="UpgradeForgeAction"/>, and until now the only
+    /// one unreachable from this axis, so the §11.15 census read zero Masterwork crafts across every
+    /// campaign it swept and could not tell "the grade is unreachable" from "nothing ever tried".
     /// </summary>
     public enum Policy
     {
@@ -77,6 +82,7 @@ public static class BatchRunner
         TanningPuzzle,
         EngineeringPuzzle,
         ForgeCounter,
+        Masterwork,
     }
 
     /// <summary>Parsed batch parameters. Defaults: 20 seeds starting at 1, 100 days, runs/, baseline
@@ -186,7 +192,7 @@ public static class BatchRunner
     /// string, shared by every sweep that offers the axis, so a new policy is spelled out in one
     /// place instead of in each command's own error message.</summary>
     internal const string PolicyNames =
-        "expected 'baseline', 'counter', 'apprentice', 'handforge', 'latemastery', 'alchemy', 'tanning', 'engineering', or 'forgecounter'";
+        "expected 'baseline', 'counter', 'apprentice', 'handforge', 'latemastery', 'alchemy', 'tanning', 'engineering', 'forgecounter', or 'masterwork'";
 
     /// <summary>Map a <c>--policy</c> argument onto its <see cref="Policy"/>, or null when the
     /// argument names no policy. Shared by <see cref="Parse"/> and every other sweep that offers the
@@ -202,6 +208,7 @@ public static class BatchRunner
         "tanning" => Policy.TanningPuzzle,
         "engineering" => Policy.EngineeringPuzzle,
         "forgecounter" => Policy.ForgeCounter,
+        "masterwork" => Policy.Masterwork,
         _ => null,
     };
 
@@ -232,6 +239,7 @@ public static class BatchRunner
         Policy.TanningPuzzle => "tanning",
         Policy.EngineeringPuzzle => "engineering",
         Policy.ForgeCounter => "forgecounter",
+        Policy.Masterwork => "masterwork",
         _ => "baseline",
     };
 
@@ -247,6 +255,7 @@ public static class BatchRunner
         Policy.TanningPuzzle => state => TanningPuzzlePlayer.ActionsFor(state, hand),
         Policy.EngineeringPuzzle => state => EngineeringPuzzlePlayer.ActionsFor(state, hand),
         Policy.ForgeCounter => ForgeCounterPlayer.ActionsFor,
+        Policy.Masterwork => MasterworkSeekingPlayer.SweepActionsFor,
         _ => BaselinePlayer.ActionsFor,
     };
 

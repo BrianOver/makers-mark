@@ -38,6 +38,32 @@ public static class MasterworkSeekingPlayer
 
     private const int SupplyRestockBatch = 12;
 
+    /// <summary>
+    /// P2-HONEST-40: the entry point a <b>whole-campaign sweep</b> drives (<c>--policy masterwork</c>),
+    /// as against <see cref="ActionsFor"/>, which <c>MasterworkDominanceBalanceTests</c> drives from a
+    /// hand-built late-game fixture (Forge Tier II, 5,000 gold, a thousand of each base material).
+    ///
+    /// <para><b>Why the split, measured.</b> <see cref="ActionsFor"/> spends: it upgrades, restocks
+    /// coal and flux, and forges. It has no acquisition half at all — no Evening ore purchase, no
+    /// shelf stocking, so no revenue — which is invisible against a fixture that starts rich and
+    /// stays rich. Pointed at <see cref="GameComposition.NewCampaign(ulong)"/> it made <b>zero crafts
+    /// of any grade across 8 seeds x 30 days</b>, because the first hand-craft never had materials:
+    /// the sweep would have read the same zero the census already read, for a new reason. This
+    /// method supplies exactly the missing half by delegating every phase the masterwork loop does
+    /// not own to <see cref="BaselinePlayer"/> — the campaign that funds the forge — and keeps the
+    /// Expedition window, where the greedy attempt-over-hand-craft preference IS the measurement.
+    /// <see cref="ActionsFor"/> is left byte-for-byte alone so the recorded dominance numbers in
+    /// <c>MasterworkDominanceBalanceTests</c> still mean what they say.</para>
+    /// </summary>
+    public static ImmutableList<PlayerAction> SweepActionsFor(GameState state) =>
+        state.Phase == DayPhase.Expedition
+            ? ActionsFor(state)
+            // Morning: baseline stocks and prices the shelf first (the income), then this policy's
+            // own upgrade and coal/flux restock spend it. Every other phase is baseline's alone —
+            // ActionsFor contributes nothing outside Morning and Expedition, so the AddRange is a
+            // no-op there rather than a special case that could drift out of sync with the switch.
+            : BaselinePlayer.ActionsFor(state).AddRange(ActionsFor(state));
+
     public static ImmutableList<PlayerAction> ActionsFor(GameState state)
     {
         var actions = ImmutableList.CreateBuilder<PlayerAction>();

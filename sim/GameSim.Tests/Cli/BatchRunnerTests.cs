@@ -183,6 +183,59 @@ public class BatchRunnerTests : IDisposable
     }
 
     [Fact]
+    public void Policy_Masterwork_IsSelectableAndTagsItsOwnFilename()
+    {
+        // P2-HONEST-40: MasterworkSeekingPlayer — the only policy that constructs
+        // MasterworkAttemptAction/BuyForgeSupplyAction/UpgradeForgeAction — was unreachable from the
+        // batch farm, so every swept campaign read zero Masterwork crafts. Selecting it must
+        // (a) actually run its upgrade-stock-and-attempt loop and (b) tag its own filename.
+        var args = BatchRunner.Parse(["--seeds", "1", "--days", "3", "--out", _dir, "--policy", "masterwork"], TextWriter.Null);
+        Assert.NotNull(args);
+        Assert.Equal(BatchRunner.Policy.Masterwork, args!.PlayerPolicy);
+
+        Assert.Equal(0, BatchRunner.Run(args, TextWriter.Null, TextWriter.Null));
+
+        var file = Assert.Single(Directory.GetFiles(_dir, "batch-seed*-days3-masterwork.json"));
+        var chronicle = ChronicleCodec.Deserialize(File.ReadAllText(file));
+        Assert.Equal(4, chronicle.Day); // ran through the END of day 3, same as the baseline path
+    }
+
+    [Fact]
+    public void EveryPolicy_IsSelectable_TagsADistinctCorpus_AndIsNamedInTheHelp()
+    {
+        // The rule the per-policy tests above are each ONE instance of. A policy reaches the sweep
+        // through four places that must agree (the enum, ParsePolicy, PolicyFileTag, and the two
+        // help strings); P2-HONEST-40 exists because MasterworkSeekingPlayer was written, tested,
+        // and then left off exactly this list, which no test noticed for a whole measurement pass.
+        // Driven off Enum.GetValues, so the NEXT policy added is covered the day it is declared.
+        var tags = new Dictionary<string, BatchRunner.Policy>(StringComparer.Ordinal);
+
+        foreach (var policy in Enum.GetValues<BatchRunner.Policy>())
+        {
+            var tag = BatchRunner.PolicyFileTag(policy);
+
+            Assert.False(
+                tags.ContainsKey(tag),
+                $"{policy} and {(tags.TryGetValue(tag, out var other) ? other : policy)} share the file tag '{tag}' — their corpora would collide");
+            tags[tag] = policy;
+
+            // The tag IS the --policy value: a filename always names the flag that made it.
+            Assert.Equal(policy, BatchRunner.ParsePolicy(tag));
+
+            // Both operator-facing strings name it, or a real policy is unfindable from the CLI.
+            Assert.Contains(tag, BatchRunner.Usage, StringComparison.Ordinal);
+            Assert.Contains($"'{tag}'", BatchRunner.PolicyNames, StringComparison.Ordinal);
+
+            // And it resolves to a real driver rather than silently falling through to baseline.
+            Assert.NotNull(BatchRunner.PolicyFn(policy, CraftHand.Average));
+        }
+
+        // The fall-through in PolicyFileTag/PolicyFn maps the default to baseline, so a policy that
+        // was never given a case of its own would otherwise pass every check above as "baseline".
+        Assert.Equal(Enum.GetValues<BatchRunner.Policy>().Length, tags.Count);
+    }
+
+    [Fact]
     public void SweepCleansStaleBatchFiles_ButSingleSeedRepro_DoesNot()
     {
         // A sweep owns the dir's batch-*.json namespace (stale params would skew corpus baselines);
