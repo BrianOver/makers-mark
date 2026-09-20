@@ -134,15 +134,28 @@ public class UnsilencedEventTests
             Incident("goblin_probe", IncidentCategory.Skirmish, IncidentMagnitude.Minor),
             Incident("spider_brood_swells", IncidentCategory.Infestation, IncidentMagnitude.Notable),
             Incident("ghoul_warren_breaks", IncidentCategory.Breakout, IncidentMagnitude.Notable),
-            Incident("the_forgeworm_stirs", IncidentCategory.Cataclysm, IncidentMagnitude.Severe));
+            Incident("the_forgeworm_stirs", IncidentCategory.Cataclysm, IncidentMagnitude.Severe),
+            Incident("lanterns_in_the_gloomwood", IncidentCategory.Rumor, IncidentMagnitude.Minor),
+            Incident("bramble_chokes_the_paths", IncidentCategory.Infestation, IncidentMagnitude.Notable),
+            Incident("the_causeway_sings", IncidentCategory.Rumor, IncidentMagnitude.Minor),
+            Incident("wights_walk_the_causeway", IncidentCategory.Breakout, IncidentMagnitude.Notable),
+            Incident("smoke_over_emberfall", IncidentCategory.Rumor, IncidentMagnitude.Minor),
+            Incident("slag_hounds_at_the_gate", IncidentCategory.Skirmish, IncidentMagnitude.Notable));
 
-        AssertThat(lines.Count).IsEqual(5);
+        AssertThat(lines.Count).IsEqual(11);
         var text = Joined(lines);
         AssertThat(text).Contains("Whispers out of the dark");
         AssertThat(text).Contains("probed the mine mouth");
         AssertThat(text).Contains("spider brood is swelling");
         AssertThat(text).Contains("ghoul warren has broken open");
         AssertThat(text).Contains("forgeworm stirs");
+        // P2-MEMORY-27: the graduated venues' incidents name their own dungeon, never the Mine.
+        AssertThat(text).Contains("Gloomwood road");
+        AssertThat(text).Contains("Gloomwood paths");
+        AssertThat(text).Contains("causeway into the Sunken Crypt");
+        AssertThat(text).Contains("waterline at the Sunken Crypt");
+        AssertThat(text).Contains("smoke over Emberfall");
+        AssertThat(text).Contains("Emberfall gate");
 
         // No raw snake_case id ever reaches the player for a catalogued incident.
         AssertThat(text).NotContains("_");
