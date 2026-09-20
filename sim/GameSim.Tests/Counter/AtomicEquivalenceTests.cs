@@ -477,8 +477,17 @@ public class AtomicEquivalenceTests
     // owner ruling §11.7.13): every shelf entry the probe stocks now serializes one more field. Same
     // seed, same rolls, same deaths, same floors, same prices — only the shape of a shelf entry.
     // Previous pin ABD7AF21FE7054D250EDDD3903228FC585260CD6E01530438AB861C14522B643.
+    //
+    // Re-baselined 2026-09-20 for P2-MEMORY-27 (owner ruling §11.7.13): DirectorSystem.Catalog grew from
+    // five Mine-only incidents to eleven, the graduated venues' six gated on a recorded muster for that
+    // venue. Still exactly one draw per Morning on the same stream (no new draw site; the sibling
+    // PhaseBNoDrawGateTests RngState pin is untouched), but the eligible set's total weight — the roll's
+    // range — changes from the first day a party musters for the Crypt, so the picked incident, the
+    // den it surges and the tension trace all move. Gated two-sided by VenueIncidentTests and the
+    // 20-seed venue-incident sweep quoted in the PR.
+    // Previous pin 490387BF2AC294A8CF9062B45D445AECE9C059A4508EF76617C3E4D3DF25336F.
     private const string ExpectedPreCounterSha256 =
-        "490387BF2AC294A8CF9062B45D445AECE9C059A4508EF76617C3E4D3DF25336F";
+        "3C4F2400AF1FC12DF6887CB8D20E42A18AA06464B43FA4369F071BAE48100DCC";
 
     [Fact]
     public void ThirtyDayRun_NoCounterActions_IsByteIdenticalToPrePa3Kernel()
