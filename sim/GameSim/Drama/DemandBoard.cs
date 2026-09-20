@@ -209,7 +209,12 @@ public static class DemandBoard
                 continue;
             }
 
-            var missing = RaidForecast.MissingItemSlots(hero.Gear);
+            // P2-HONEST-37: the hero overload, not the gear one — a class that cannot hold a shield
+            // leaves that slot empty for life, and the class-blind scan made 666 of 693
+            // Shield-blocking stalls (96%, 20 baseline seeds) name gear the hero can never wear.
+            // With the shield out of the way, a hero whose real slots are all filled falls through
+            // to the quality branch below and gets the gate that is actually holding them.
+            var missing = RaidForecast.MissingItemSlots(hero);
             if (missing.Count > 0)
             {
                 stalls.Add(new DepthStallEntry(

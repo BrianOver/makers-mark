@@ -282,7 +282,7 @@ public static class ObjectiveAdvisor
             var craft = new CraftAction(recipe.RecipeId, recipe.MaterialKey);
             return ActionLegality.IsLegal(state, craft, phase)
                 ? new Suggestion(craft,
-                    $"{stall.HeroName}, stalled at {DepthCopy.Deepest(stall.DeepestFloorReached)}, needs {slot} for floor {stall.TargetFloor} " +
+                    $"{stall.HeroName}, {DepthCopy.Standing(stall.DeepestFloorReached)}, needs {slot} for floor {stall.TargetFloor} " +
                     $"— '{recipe.Name}' is ready: enough {MaterialRegistry.Require(recipe.MaterialKey).DisplayName.ToLowerInvariant()} in stock.")
                 : null;
         }
@@ -294,7 +294,7 @@ public static class ObjectiveAdvisor
             {
                 var cost = MaterialVendorHandlers.QuoteCost(recipe.MaterialKey, recipe.MaterialQuantity);
                 return new Suggestion(buy,
-                    $"{stall.HeroName}, stalled at {DepthCopy.Deepest(stall.DeepestFloorReached)}, needs {slot} for floor {stall.TargetFloor} " +
+                    $"{stall.HeroName}, {DepthCopy.Standing(stall.DeepestFloorReached)}, needs {slot} for floor {stall.TargetFloor} " +
                     $"— {recipe.MaterialQuantity} {MaterialRegistry.Require(recipe.MaterialKey).DisplayName.ToLowerInvariant()} ({cost}g) completes '{recipe.Name}'.");
             }
         }
