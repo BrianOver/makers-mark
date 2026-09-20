@@ -167,4 +167,60 @@ public class EarmarkQueryTests
 
         Assert.Empty(EarmarkQuery.WaitingTonight(state, day: 5));
     }
+
+    // ---- ReleasedForDead (P2-PEOPLE-31, "a hold for the dead is released at the wake") ----
+
+    [Fact]
+    public void HoldClearedTheSameNightItsHolderDied_IsAReleasedHold()
+    {
+        var earmark = new ShelfEarmarked(new ItemId(1), new HeroId(9)) { Id = new EventId(1), Day = 3 };
+        var died = new HeroDied(new HeroId(9), Floor: 4, Cause: "lost to the Mine", WornGear: new GearSet(null, null, null))
+        {
+            Id = new EventId(2),
+            Day = 5,
+        };
+        var cleared = new ShelfEarmarked(new ItemId(1), null) { Id = new EventId(3), Day = 5 };
+        var state = BaseState(day: 5, earmark, died, cleared);
+
+        var released = Assert.Single(EarmarkQuery.ReleasedForDead(state, day: 5));
+        Assert.Equal(new ItemId(1), released.Item);
+        Assert.Equal(new HeroId(9), released.Hero);
+    }
+
+    [Fact]
+    public void ClearedHoldWhoseHolderIsAlive_IsNotAReleasedHold()
+    {
+        // An ordinary player-initiated release (EarmarkAction with a null hero) also emits a
+        // null-Hero ShelfEarmarked -- only a same-night HeroDied for the PRIOR holder makes it one.
+        var earmark = new ShelfEarmarked(new ItemId(1), new HeroId(9)) { Id = new EventId(1), Day = 3 };
+        var cleared = new ShelfEarmarked(new ItemId(1), null) { Id = new EventId(2), Day = 5 };
+        var state = BaseState(day: 5, earmark, cleared);
+
+        Assert.Empty(EarmarkQuery.ReleasedForDead(state, day: 5));
+    }
+
+    [Fact]
+    public void ReleaseOnADifferentDayThanTheDeath_IsExcluded()
+    {
+        var earmark = new ShelfEarmarked(new ItemId(1), new HeroId(9)) { Id = new EventId(1), Day = 3 };
+        var died = new HeroDied(new HeroId(9), Floor: 4, Cause: "lost to the Mine", WornGear: new GearSet(null, null, null))
+        {
+            Id = new EventId(2),
+            Day = 5,
+        };
+        var cleared = new ShelfEarmarked(new ItemId(1), null) { Id = new EventId(3), Day = 6 };
+        var state = BaseState(day: 6, earmark, died, cleared);
+
+        Assert.Empty(EarmarkQuery.ReleasedForDead(state, day: 5));
+    }
+
+    [Fact]
+    public void NoDeathsTonight_YieldsNothingEvenWithAnUnrelatedClear()
+    {
+        var earmark = new ShelfEarmarked(new ItemId(1), new HeroId(9)) { Id = new EventId(1), Day = 3 };
+        var cleared = new ShelfEarmarked(new ItemId(1), null) { Id = new EventId(2), Day = 5 };
+        var state = BaseState(day: 5, earmark, cleared);
+
+        Assert.Empty(EarmarkQuery.ReleasedForDead(state, day: 5));
+    }
 }

@@ -210,6 +210,73 @@ public class ExpeditionRevealSystemTests
         Assert.Equal("slain by The Forgeworm", Assert.Single(tick.Events.OfType<HeroDied>()).Cause);
     }
 
+    // ---- Earmark release on death (P2-PEOPLE-31, §11.14: "a hold for the dead is released at
+    // the wake") ----
+
+    [Fact]
+    public void Death_ReleasesHoldOnDeadHero_ClearsShelfAndEmitsShelfEarmarkedNull()
+    {
+        var state = WithItem(NewWorld(), PlayerItem(30, "Chain Vest", ItemSlot.Armor, attack: 0, defense: 4));
+        state = state with
+        {
+            Player = state.Player with
+            {
+                Shelf = ImmutableList.Create(
+                    new ShelfEntry(new ItemId(30), Price: 40, StockedDay: 1, EarmarkedFor: new HeroId(1))),
+            },
+        };
+        var result = Result(party: [1], survivors: [], deaths: [1], targetFloor: 1, deepestCleared: 0);
+
+        var tick = TickEvening(AtEvening(state, result));
+
+        var cleared = Assert.Single(tick.Events.OfType<ShelfEarmarked>());
+        Assert.Equal(new ItemId(30), cleared.Item);
+        Assert.Null(cleared.Hero);
+        Assert.Null(tick.NewState.Player.Shelf.Single(e => e.Item == new ItemId(30)).EarmarkedFor);
+    }
+
+    [Fact]
+    public void Death_LeavesHoldsForOtherHeroesAndUnearmarkedEntriesUntouched()
+    {
+        var state = WithItem(NewWorld(), PlayerItem(30, "Chain Vest", ItemSlot.Armor, attack: 0, defense: 4));
+        state = WithItem(state, PlayerItem(31, "Iron Pauldrons", ItemSlot.Armor, attack: 0, defense: 3));
+        state = WithItem(state, PlayerItem(32, "Steel Cap", ItemSlot.Armor, attack: 0, defense: 2));
+        state = state with
+        {
+            Player = state.Player with
+            {
+                Shelf = ImmutableList.Create(
+                    new ShelfEntry(new ItemId(30), Price: 40, StockedDay: 1, EarmarkedFor: new HeroId(1)),
+                    new ShelfEntry(new ItemId(31), Price: 30, StockedDay: 1, EarmarkedFor: new HeroId(2)), // hero 2 survives
+                    new ShelfEntry(new ItemId(32), Price: 20, StockedDay: 1)), // never earmarked
+            },
+        };
+        var result = Result(party: [1, 2], survivors: [2], deaths: [1], targetFloor: 1, deepestCleared: 0);
+
+        var tick = TickEvening(AtEvening(state, result));
+
+        var events = tick.Events.OfType<ShelfEarmarked>().ToList();
+        Assert.Single(events); // only the dead hero's hold clears
+        Assert.Equal(new ItemId(30), events[0].Item);
+
+        Assert.Null(tick.NewState.Player.Shelf.Single(e => e.Item == new ItemId(30)).EarmarkedFor);
+        Assert.Equal(new HeroId(2), tick.NewState.Player.Shelf.Single(e => e.Item == new ItemId(31)).EarmarkedFor);
+        Assert.Null(tick.NewState.Player.Shelf.Single(e => e.Item == new ItemId(32)).EarmarkedFor);
+    }
+
+    [Fact]
+    public void Death_WithNoHoldOnTheShelf_EmitsNoShelfEarmarked()
+    {
+        // BaselinePlayer never earmarks (the unit's own idle-trace guarantee) — a death against an
+        // empty shelf must not fabricate a release.
+        var state = NewWorld();
+        var result = Result(party: [1], survivors: [], deaths: [1], targetFloor: 1, deepestCleared: 0);
+
+        var tick = TickEvening(AtEvening(state, result));
+
+        Assert.Empty(tick.Events.OfType<ShelfEarmarked>());
+    }
+
     // ---- Gold (R17) ----
 
     [Fact]
