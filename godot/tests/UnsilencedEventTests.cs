@@ -4,6 +4,7 @@ using System.Collections.Immutable;
 using System.Linq;
 using System.Text.RegularExpressions;
 using GameSim.Chronicle;
+using GameSim.Classes;
 using GameSim.Contracts;
 using GameSim.Factions;
 using GameSim.Factions.Wardens;
@@ -165,6 +166,76 @@ public class UnsilencedEventTests
         AssertThat(text).Contains("R1 has come to town for V1's seat — one day cold. V1 fell wearing Dagger.");
         AssertThat(text).Contains("R2 has come to town for S1's seat — one day cold.");
         AssertThat(text).NotContains("Item #77");
+    }
+
+    /// <summary>P2-SCREEN-41: the arrival card names the purse beside the vacancy — what the newcomer
+    /// carries, and the cheapest shelf piece they could both afford and wear. Wearability and
+    /// affordability are ShoppingAi's rules, so a piece too heavy for the class or over their purse is
+    /// not offered as one they could carry.</summary>
+    [TestCase]
+    public void NewcomersPurse_NamesTheirGold_AndTheShelfPieceTheyCouldAffordAndWear()
+    {
+        var state = StagedWorld();
+        var pauper = Delver(3, "R1", ClassRegistry.MysticId) with { Gold = 40 };
+        var heroes = state.Heroes.Add(3, pauper);
+        var light = new Item(
+            new ItemId(2), "wand", "Willow Wand", ItemSlot.Weapon, QualityGrade.Common,
+            new ItemStats(3, 0, 1), new MakersMark("You", 1), ImmutableList<ItemHistoryEntry>.Empty);
+        var heavy = new Item(
+            new ItemId(3), "greatsword", "Greatsword", ItemSlot.Weapon, QualityGrade.Fine,
+            new ItemStats(20, 0, 12), new MakersMark("You", 1), ImmutableList<ItemHistoryEntry>.Empty);
+        var priced = new Item(
+            new ItemId(4), "ringmail", "Ring Mail", ItemSlot.Armor, QualityGrade.Fine,
+            new ItemStats(0, 8, 2), new MakersMark("You", 1), ImmutableList<ItemHistoryEntry>.Empty);
+
+        var world = state with
+        {
+            Heroes = heroes,
+            Items = state.Items.Add(2, light).Add(3, heavy).Add(4, priced),
+            Player = state.Player with
+            {
+                Shelf = ImmutableList.Create(
+                    new ShelfEntry(new ItemId(3), 10),    // cheapest, but too heavy for a mystic
+                    new ShelfEntry(new ItemId(4), 300),   // wearable, but far over the purse
+                    new ShelfEntry(new ItemId(2), 25)),   // the one they could actually walk out with
+            },
+            EventLog = ImmutableList.Create<GameEvent>(
+                new RecruitArrived(new HeroId(3)) { Id = new EventId(9001), Day = 4 }),
+        };
+
+        var text = Joined(LegendsWall.DayLines(world, 4));
+
+        AssertThat(text).Contains("They carry 40g.");
+        AssertThat(text).Contains("Willow Wand at 25g");
+        AssertThat(text).NotContains("Greatsword");
+        AssertThat(text).NotContains("Ring Mail");
+    }
+
+    /// <summary>The honest empty case: a shelf holding only what the newcomer cannot carry or cannot
+    /// afford says so, and never names a piece they could not walk out with.</summary>
+    [TestCase]
+    public void NewcomersPurse_WithNothingTheyCouldCarry_SaysSo()
+    {
+        var state = StagedWorld();
+        var pauper = Delver(3, "R1", ClassRegistry.MysticId) with { Gold = 5 };
+        var heavy = new Item(
+            new ItemId(3), "greatsword", "Greatsword", ItemSlot.Weapon, QualityGrade.Fine,
+            new ItemStats(20, 0, 12), new MakersMark("You", 1), ImmutableList<ItemHistoryEntry>.Empty);
+
+        var world = state with
+        {
+            Heroes = state.Heroes.Add(3, pauper),
+            Items = state.Items.Add(3, heavy),
+            Player = state.Player with { Shelf = ImmutableList.Create(new ShelfEntry(new ItemId(3), 10)) },
+            EventLog = ImmutableList.Create<GameEvent>(
+                new RecruitArrived(new HeroId(3)) { Id = new EventId(9001), Day = 4 }),
+        };
+
+        var text = Joined(LegendsWall.DayLines(world, 4));
+
+        AssertThat(text).Contains("They carry 5g.");
+        AssertThat(text).Contains("Nothing on your shelf tonight is both within it and theirs to carry.");
+        AssertThat(text).NotContains("Greatsword");
     }
 
     /// <summary>

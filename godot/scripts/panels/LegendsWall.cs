@@ -4,6 +4,7 @@ using System.Collections.Immutable;
 using System.Linq;
 using GameSim.Advisor;
 using GameSim.Chronicle;
+using GameSim.Classes;
 using GameSim.Contracts;
 using GameSim.Crafting;
 using GameSim.Drama;
@@ -1451,9 +1452,11 @@ public partial class LegendsWall : Control
         // "looking for work". Every fact is recorded (HeroDied.WornGear, the two events' days); the
         // pairing is VacatedBy's log-order walk. The founding roster, arriving over no death, keeps
         // the old line.
-        RecruitArrived e when VacatedBy(state, e) is { } died => VacancyLine(state, e, died),
+        // P2-SCREEN-41: beside the vacancy, the purse. Both arrival arms carry it — the founding
+        // roster shops the same morning the refills do.
+        RecruitArrived e when VacatedBy(state, e) is { } died => VacancyLine(state, e, died) + PurseClause(state, e),
 
-        RecruitArrived e => $"{HeroName(state, e.Hero)} has come to town looking for work.",
+        RecruitArrived e => $"{HeroName(state, e.Hero)} has come to town looking for work." + PurseClause(state, e),
 
         CommissionPosted e =>
             $"{HeroName(state, e.Hero)} wants {ItemVocab.Display(e.Slot)} work, {ItemVocab.Display(e.MinQuality)} or better, by day {e.DeadlineDay} " +
@@ -1632,6 +1635,51 @@ public partial class LegendsWall : Control
 
     private static string ItemName(GameState state, ItemId id) =>
         state.Items.TryGetValue(id.Value, out var item) ? item.Name : $"Item #{id.Value}";
+
+    /// <summary>
+    /// P2-SCREEN-41 ("the newcomer's purse"): what the arrival carries, and which piece on your
+    /// shelf they could both afford and wear. §11.15 measured 116 of 195 deaths as recruits with a
+    /// median of one day in town, a median purse of 22g against a median shelf price of 58g, and a
+    /// shelf that held something they could afford AND wear on 57 of 180 such mornings (32%).
+    ///
+    /// <para>Wearability and affordability are <see cref="ShoppingAi"/>'s own rules, asked rather
+    /// than re-derived here: a verdict whose <see cref="PassReasonKind"/> is RoleMismatch, TooHeavy
+    /// or CannotAfford is out, and everything else is a piece they could walk out with. The gear
+    /// score, the veteran bar and the sentimental gate are deliberately NOT filters — those decide
+    /// whether the hero WANTS it, and this clause is about what your shelf can physically put on
+    /// them. The cheapest qualifying piece is named, ties by lowest item id, because the purse is
+    /// the constraint the sentence is about.</para>
+    ///
+    /// <para>States the facts and stops. It does not tell the player to price down or to craft
+    /// (law 1), and the empty case says the shelf held nothing they could carry rather than
+    /// implying it should have.</para>
+    /// </summary>
+    private static string PurseClause(GameState state, RecruitArrived arrival)
+    {
+        if (!state.Heroes.TryGetValue(arrival.Hero.Value, out var hero))
+        {
+            return string.Empty;
+        }
+
+        var affordable = state.Player.Shelf
+            .Select(entry => state.Items.TryGetValue(entry.Item.Value, out var item)
+                ? (Entry: entry, Item: item)
+                : (Entry: entry, Item: (Item?)null))
+            .Where(pair => pair.Item is not null)
+            .Where(pair =>
+            {
+                var verdict = ShoppingAi.EvaluateItem(hero, pair.Item!, pair.Entry.Price, state.Items);
+                return verdict.PassReason is not (PassReasonKind.RoleMismatch or PassReasonKind.TooHeavy or PassReasonKind.CannotAfford);
+            })
+            .OrderBy(pair => pair.Entry.Price)
+            .ThenBy(pair => pair.Entry.Item.Value)
+            .ToList();
+
+        var purse = $" They carry {hero.Gold}g.";
+        return affordable.Count == 0
+            ? purse + " Nothing on your shelf tonight is both within it and theirs to carry."
+            : purse + $" Your {affordable[0].Item!.Name} at {affordable[0].Entry.Price}g is within it, and theirs to carry.";
+    }
 
     /// <summary>P2-PEOPLE-30: the seat <paramref name="arrival"/> fills. Deaths and arrivals are
     /// paired in log order, oldest unclaimed death first — RecruitSystem refills toward RosterCap,
