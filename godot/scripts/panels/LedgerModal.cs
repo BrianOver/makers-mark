@@ -1288,8 +1288,9 @@ public partial class LedgerModal : SimPanel
 
         if (!card.Survived)
         {
-            // P2-MEMORY-02 / P2-PROOF-11: the death card's three pure reads (FallenQuery). All three
-            // are facts the sim already recorded and nothing on any screen had ever said out loud —
+            // P2-MEMORY-02 / P2-PROOF-11 / P2-PEOPLE-32: the death card's four pure reads
+            // (FallenQuery). All four are facts the sim already recorded and nothing on any screen
+            // had ever said out loud —
             // how close the fatal blow actually was, what of the player's work went down and came
             // back unopened, and whose blade landed the last blow this hero ever struck. Same
             // honest-empty-state contract as the beat rows' channel clause above: FallenQuery returns
@@ -1299,12 +1300,18 @@ public partial class LedgerModal : SimPanel
             // Ordering is the grief, not an accident: the margin line is the direct continuation of
             // the fate line just above it ("Slain by a Deep Ghoul." / "The blow read 15...") so it
             // leads; the pack line (what you sent, unused) sits under that; and the last-blow line —
-            // the one that takes no credit — sits under that, ABOVE the beat rows that do.
+            // the one that takes no credit — sits under that, ABOVE the beat rows that do. The
+            // absence line (P2-PEOPLE-32) is last because it is the one the OTHER three cannot
+            // reach: it speaks only for a fallen who wore nothing of yours, carried nothing of
+            // yours and earned no beat in their whole life — 45% of this game's dead, whose card
+            // until now went silent precisely where it had the most to say (law 7: the cost of
+            // skipping is named in copy, never engineered). It states the fact and stops.
             foreach (var (line, nodeName) in new[]
             {
                 (FallenQuery.MarginLine(state, card.Hero), "FallenMarginLine"),
                 (FallenQuery.PackLine(state, card.Hero), "FallenPackLine"),
                 (FallenQuery.LastBlowLine(state, card.Hero), "FallenLastBlowLine"),
+                (FallenQuery.AbsenceLine(state, card.Hero), "FallenAbsenceLine"),
             })
             {
                 if (line.Length == 0)

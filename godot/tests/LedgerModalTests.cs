@@ -1206,6 +1206,61 @@ public class LedgerModalTests
         }
     }
 
+    // ── P2-PEOPLE-32: the wake names the absence ───────────────────────────────────────────
+
+    /// <summary><see cref="DrivenDay"/>'s own death night, rewritten so the recorded
+    /// <see cref="HeroDied.WornGear"/> snapshot names the player-marked dagger — the SAME night in
+    /// every other respect, so the only thing that can change what renders is whether the player's
+    /// work was on the hero when they went down.</summary>
+    private static GameState DeathNightWhereYourGearWentDown()
+    {
+        var state = DrivenDay();
+        var deathIndex = state.EventLog.FindIndex(e => e is HeroDied);
+        var death = (HeroDied)state.EventLog[deathIndex];
+
+        return state with
+        {
+            EventLog = state.EventLog.SetItem(
+                deathIndex,
+                death with { WornGear = GearSet.Empty.WithSlot(ItemSlot.Weapon, BeatItemId) }),
+        };
+    }
+
+    /// <summary>P2-PEOPLE-32: the fallen who wore and carried nothing of yours and earned no beat
+    /// get a line instead of a silent card — and the moment the record shows your work on them, that
+    /// line is gone. Both halves in one case, because the pair IS the property: the copy is
+    /// conditioned on the record, not printed on every wake.</summary>
+    [TestCase]
+    public void AbsenceLine_RendersOnAWakeWithNothingOfYours_AndNotOnOneWhereYourGearWentDown()
+    {
+        var bare = MountMainUi(new SimAdapter(DrivenDay())); // Borin: empty gear, empty pack, no beats
+        try
+        {
+            bare.Ledger.ShowFor(1);
+
+            var absence = Find<Label>(bare.Ledger, "FallenAbsenceLine");
+            AssertThat(absence.Text).Contains("Borin");
+        }
+        finally
+        {
+            Unmount(bare);
+        }
+
+        var held = MountMainUi(new SimAdapter(DeathNightWhereYourGearWentDown()));
+        try
+        {
+            held.Ledger.ShowFor(1);
+
+            AssertThat(held.Ledger.FindChild("FallenAbsenceLine", recursive: true, owned: false))
+                .OverrideFailureMessage("the absence line rendered over a hero who died wearing your work")
+                .IsNull();
+        }
+        finally
+        {
+            Unmount(held);
+        }
+    }
+
     // ── P2-PROOF-17: the XP-split and rank-up render assertions this shipped without (#880) ──────
 
     private static readonly HeroId XpHeroId = new(9);
