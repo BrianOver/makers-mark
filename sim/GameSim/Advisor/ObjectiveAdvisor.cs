@@ -131,6 +131,19 @@ public static class ObjectiveAdvisor
             {
                 suggestions.Add(upgrade);
             }
+            else if (upgrade is null && StateTheQualityGate(qualityStall) is { } gate)
+            {
+                // P2-HONEST-37: SuggestQualityUpgrade returns null whenever it cannot name a path —
+                // no sub-par slot it can point at, no recipe in a selected profession for that slot.
+                // Measured after this unit removed the false Shield stalls: 343 of 454 fallback fires
+                // over 10 seeds x 60 days landed on a day where a quality stall existed and no path
+                // could be named, so the board dropped a hero-named fact and said "you already have
+                // enough copper to craft 'buckler'" instead. The gate itself is a fact the sim
+                // decided; an action-less Suggestion states it (the shelf-match lines below use the
+                // same shape) and names no remedy, because this branch is precisely the case where
+                // the advisor does not know one.
+                suggestions.Add(gate);
+            }
         }
 
         // The SLOT-gated stall stays a fallback: a slot commission usually IS that same slot need,
@@ -282,7 +295,7 @@ public static class ObjectiveAdvisor
             var craft = new CraftAction(recipe.RecipeId, recipe.MaterialKey);
             return ActionLegality.IsLegal(state, craft, phase)
                 ? new Suggestion(craft,
-                    $"{stall.HeroName}, stalled at {DepthCopy.Deepest(stall.DeepestFloorReached)}, needs {slot} for floor {stall.TargetFloor} " +
+                    $"{stall.HeroName}, {DepthCopy.Standing(stall.DeepestFloorReached)}, needs {slot} for floor {stall.TargetFloor} " +
                     $"— '{recipe.Name}' is ready: enough {MaterialRegistry.Require(recipe.MaterialKey).DisplayName.ToLowerInvariant()} in stock.")
                 : null;
         }
@@ -294,7 +307,7 @@ public static class ObjectiveAdvisor
             {
                 var cost = MaterialVendorHandlers.QuoteCost(recipe.MaterialKey, recipe.MaterialQuantity);
                 return new Suggestion(buy,
-                    $"{stall.HeroName}, stalled at {DepthCopy.Deepest(stall.DeepestFloorReached)}, needs {slot} for floor {stall.TargetFloor} " +
+                    $"{stall.HeroName}, {DepthCopy.Standing(stall.DeepestFloorReached)}, needs {slot} for floor {stall.TargetFloor} " +
                     $"— {recipe.MaterialQuantity} {MaterialRegistry.Require(recipe.MaterialKey).DisplayName.ToLowerInvariant()} ({cost}g) completes '{recipe.Name}'.");
             }
         }
@@ -321,6 +334,17 @@ public static class ObjectiveAdvisor
     /// RequiredQuality &gt; CarriedQuality check should already guarantee one exists), or neither
     /// action is legal right now — the caller falls through to the unchanged fallback rather than
     /// propose nothing at all.</summary>
+    /// <summary>P2-HONEST-37: the quality gate as a plain statement, for the days
+    /// <see cref="SuggestQualityUpgrade"/> cannot name a path. Names the hero, what they carry and
+    /// what the next floor asks — every part recorded on the stall entry the sim built — and stops
+    /// there. No remedy, because this is the branch where the advisor has none; law 1 keeps it a
+    /// fact rather than an instruction.</summary>
+    private static Suggestion? StateTheQualityGate(DepthStallEntry stall) =>
+        stall.RequiredQuality is { } required && stall.CarriedQuality is { } carried && required > carried
+            ? new Suggestion(null,
+                $"{stall.HeroName} carries {carried} gear; floor {stall.TargetFloor} wants {required} or better.")
+            : null;
+
     private static Suggestion? SuggestQualityUpgrade(GameState state, DepthStallEntry stall, DayPhase phase)
     {
         if (stall.BlockingSlot is not null

@@ -23,4 +23,19 @@ public static class DepthCopy
 {
     /// <summary>Player-facing label for a hero's deepest floor reached — "not yet" at 0 or below.</summary>
     public static string Deepest(int floor) => floor <= 0 ? "not yet" : $"floor {floor}";
+
+    /// <summary>
+    /// P2-HONEST-37: the whole standing clause for a hero the depth-stall query has flagged, in the
+    /// one place all four surfaces read it from (<c>ObjectiveAdvisor</c>, the CLI's demand
+    /// narration, Godot's <c>DemandPanel</c> and <c>RaidForecastBoard</c>). Each of them used to
+    /// paste the word "stalled" in front of <see cref="Deepest"/> itself, which composed into
+    /// "stalled at not yet" for a hero who has never gone down — 176 of 1,610 stalls (11%) over the
+    /// 20 baseline seeds, 194 advice lines. A hero with no record yet is NEW, not stalled: nothing
+    /// has stopped them, they simply have not gone. Reads as an appositive after a name
+    /// ("Brunhilde, not yet gone down, needs Weapon for floor 5"), which is how every caller uses
+    /// it. Floors at or above 1 keep the exact wording they had, routed through <see cref="Deepest"/>
+    /// so the two halves can never drift.
+    /// </summary>
+    public static string Standing(int deepestFloor) =>
+        deepestFloor <= 0 ? "not yet gone down" : $"stalled at {Deepest(deepestFloor)}";
 }

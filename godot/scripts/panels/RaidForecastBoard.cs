@@ -583,7 +583,7 @@ public static class TodoSectionBuilder
             wanted.Add((
                 stall.HeroName,
                 slot,
-                $"stalled at {DepthCopy.Deepest(stall.DeepestFloorReached)}, aiming for {stall.TargetFloor}"));
+                $"{DepthCopy.Standing(stall.DeepestFloorReached)}, aiming for {stall.TargetFloor}"));
         }
 
         foreach (var ask in CounterForecast.Queue(state))

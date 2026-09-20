@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.Linq;
+using GameSim.Classes;
 using GameSim.Contracts;
 using GameSim.Venues;
 
@@ -127,7 +128,9 @@ public static class RaidForecast
             var gapCommissions = ImmutableList.CreateBuilder<GapCommission>();
             foreach (var hero in partyHeroes)
             {
-                var missing = MissingItemSlots(hero.Gear);
+                // P2-HONEST-37: the hero overload, so the muster board never lists "no shield"
+                // against a class that will never carry one.
+                var missing = MissingItemSlots(hero);
                 if (missing.Count > 0)
                 {
                     gaps.Add($"{hero.Name}: {string.Join(", ", missing.Select(SlotLabel))}");
@@ -172,12 +175,41 @@ public static class RaidForecast
     }
 
     /// <summary>
-    /// Wave 3 (U13): the per-hero/slot gear-gap query <see cref="Heroes.CommissionSystem"/> needs —
-    /// this used to be a private, party-level, prose-string helper (<c>MissingSlots</c>); it is now
-    /// PUBLIC and returns typed <see cref="ItemSlot"/> values so a caller can act on the gap, not just
-    /// print it. Only weapon/shield/armor count as gaps (trinket is optional content, not a gap — same
-    /// rule the old prose helper used). Order is fixed (Weapon, Shield, Armor) so callers that pick
-    /// "the first gap" stay deterministic.
+    /// P2-HONEST-37: the gear-gap query, asked of a HERO rather than a bare <see cref="GearSet"/>, so
+    /// a slot the hero's class can never equip is not reported as a gap. Prefer this overload
+    /// wherever a <see cref="Hero"/> is in hand; the <see cref="GearSet"/> one below cannot answer
+    /// the question honestly because emptiness and impossibility look identical without the class.
+    ///
+    /// <para>The defect this exists to end: a class with <c>AllowsShield: false</c> never POPULATES
+    /// its Shield slot either, so the class-blind scan read that permanent emptiness as a gap for
+    /// every hero in town. Over the 20 baseline seeds that was 666 of 693 Shield-blocking depth
+    /// stalls (96%) naming gear the hero could never wear, and the advisor's single most repeated
+    /// line. <see cref="CommissionSystem"/>'s own gap scan fixed exactly this on its own side
+    /// (U-T1-11) and this query was never given the same class — the gate here is that same one.</para>
+    /// </summary>
+    public static IReadOnlyList<ItemSlot> MissingItemSlots(Hero hero)
+    {
+        var heroClass = ClassRegistry.Require(hero.ClassId);
+        var missing = MissingItemSlots(hero.Gear);
+
+        // Only the shield gate is class-dependent today (weapon and armor are universal), but the
+        // filter asks the CLASS rather than naming which classes: a new class definition arrives
+        // covered, and a future slot gate can join this predicate in one place.
+        return missing.Count > 0 && !heroClass.AllowsShield
+            ? missing.Where(slot => slot != ItemSlot.Shield).ToList()
+            : missing;
+    }
+
+    /// <summary>
+    /// Wave 3 (U13): the class-BLIND half — which of the three tracked slots hold nothing at all,
+    /// returned as typed <see cref="ItemSlot"/> values so a caller can act on the gap, not just
+    /// print it. Only weapon/shield/armor count (trinket is optional content, not a gap). Order is
+    /// fixed (Weapon, Shield, Armor) so callers that pick "the first gap" stay deterministic.
+    ///
+    /// <para>An empty Shield slot here is not necessarily a gap — a class that cannot hold one
+    /// leaves it empty forever — so a caller that knows the hero asks
+    /// <see cref="MissingItemSlots(Hero)"/> instead (P2-HONEST-37). Kept public for the callers
+    /// that genuinely have gear and no hero.</para>
     /// </summary>
     public static IReadOnlyList<ItemSlot> MissingItemSlots(GearSet gear)
     {

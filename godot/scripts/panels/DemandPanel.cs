@@ -112,7 +112,7 @@ public partial class DemandPanel : SimPanel
                     : "gear's full — something else is holding them back";
             AddLabel(
                 section.Body,
-                $"  {stall.HeroName} stalled at {DepthCopy.Deepest(stall.DeepestFloorReached)}, aiming for floor {stall.TargetFloor} — {gap}");
+                $"  {stall.HeroName}, {DepthCopy.Standing(stall.DeepestFloorReached)}, aiming for floor {stall.TargetFloor} — {gap}");
         }
     }
 
