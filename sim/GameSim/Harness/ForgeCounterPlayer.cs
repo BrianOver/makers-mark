@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using GameSim.Advisor;
 using GameSim.Classes;
 using GameSim.Contracts;
+using GameSim.Expedition;
 using GameSim.Counter;
 using GameSim.Drama;
 using GameSim.Heroes;
@@ -59,7 +60,8 @@ public static class ForgeCounterPlayer
     {
         DayPhase.Morning => MorningActions(state),
         DayPhase.Evening => EveningActions(state),
-        // Craft/buy loops outside Morning/Evening are IDENTICAL to BaselinePlayer's — composed, not copied.
+        DayPhase.Camp => CampActions(state),
+        // Craft/buy loops outside Morning/Evening/Camp are IDENTICAL to BaselinePlayer's — composed, not copied.
         _ => BaselinePlayer.ActionsFor(state),
     };
 
@@ -70,6 +72,102 @@ public static class ForgeCounterPlayer
         var actions = BaselinePlayer.ActionsFor(state).ToBuilder();
         AddWakeActions(state, actions);
         return actions.ToImmutable();
+    }
+
+    /// <summary>
+    /// P2-HONEST-39 (docs/design/MAKERS-MARK.md §11.15, "The harness sends the runner"): decision 6 —
+    /// send the runner or trust their judgment — had never been taken by any policy. §11.15 measured
+    /// <c>SendSupply</c> legal at 1,858 decision points and chosen 0, <c>SupplyDelivered</c> fired 0
+    /// times across 40 campaigns, 522 of 732 baseline camps (71%) and 1,301 of 1,319 forgecounter
+    /// camps (98.6%) carrying no heal at all, and only 5 <c>Provisioned</c> and 1
+    /// <c>PotionLifesave</c> beats out of 5,750.
+    ///
+    /// <para><b>The rule, deterministic off recorded state — no RNG, no clock.</b> Parties in
+    /// <see cref="GameState.InFlight"/> order. For each, the neediest living camper: lowest HP as a
+    /// share of MaxHp, ties by hero id. Send only when that hero sits in
+    /// <see cref="CampHandlers.RunnerBandPct"/> — the 40% band P2-LONG-25's own ruling set this verb
+    /// aside for. Measured while building this arm: the 30% halt line
+    /// (<see cref="CombatMath.IsTooHurtToContinue"/>) is never met at the Camp phase at all — 0 of 289
+    /// camped parties — because a hero that hurt has already fled or fallen, which is exactly why the
+    /// ruling gave the runner its own wider band. The salve sent is the lowest-id unshelved player-crafted heal the legality
+    /// rule will accept; <c>claimed</c> stops a second party being sent an item the first already took,
+    /// since <paramref name="state"/> predates this tick.</para>
+    ///
+    /// <para><b>One delivery per party per day</b> is the Camp rule and <see cref="ActionLegality"/>
+    /// enforces it (<c>InFlightExpedition.SupplySent</c>), so every candidate is asked before it is
+    /// submitted and the arm never spends a tick on a doomed action — the same contract the counter and
+    /// wake arms hold. The fee is gold, not an action slot, so unlike the heirloom this buys nothing
+    /// away from the Evening's ore.</para>
+    /// </summary>
+    private static ImmutableList<PlayerAction> CampActions(GameState state)
+    {
+        var actions = BaselinePlayer.ActionsFor(state).ToBuilder();
+        var claimed = new HashSet<int>();
+
+        foreach (var party in state.InFlight)
+        {
+            if (NeediestCamper(state, party) is not { } hero)
+            {
+                continue;
+            }
+
+            foreach (var salve in SendableSalves(state, claimed))
+            {
+                var send = new SendSupplyAction(hero, salve);
+                if (ActionLegality.IsLegal(state, send, state.Phase))
+                {
+                    actions.Add(send);
+                    claimed.Add(salve.Value);
+                    break;
+                }
+            }
+        }
+
+        return actions.ToImmutable();
+    }
+
+    /// <summary>The camper the runner is for: the living party member under the sim's own too-hurt
+    /// bar with the lowest HP share, ties by hero id. Null when nobody in the party is hurt enough —
+    /// the arm trusts their judgment, which is the other half of decision 6.</summary>
+    private static HeroId? NeediestCamper(GameState state, InFlightExpedition party)
+    {
+        HeroId? neediest = null;
+        var bestShare = int.MaxValue;
+
+        foreach (var member in party.Party)
+        {
+            if (party.Dead.Contains(member.Value)
+                || !party.Hp.TryGetValue(member.Value, out var hp)
+                || !state.Heroes.TryGetValue(member.Value, out var hero)
+                || hero.MaxHp <= 0
+                || !CampHandlers.IsInRunnerBand(hp, hero.MaxHp))
+            {
+                continue;
+            }
+
+            var share = hp * 100 / hero.MaxHp;
+            if (share < bestShare || (share == bestShare && neediest is { } current && member.Value < current.Value))
+            {
+                bestShare = share;
+                neediest = member;
+            }
+        }
+
+        return neediest;
+    }
+
+    /// <summary>Player-crafted heals the smith still holds — not shelved, not in a pack, not already
+    /// claimed by another party this tick — in item-id order so the choice is a property of the
+    /// forge's history rather than of dictionary iteration.</summary>
+    private static IEnumerable<ItemId> SendableSalves(GameState state, HashSet<int> claimed)
+    {
+        foreach (var item in state.Items.Values)
+        {
+            if (item.PlayerCrafted && item.Effect is not null && !claimed.Contains(item.Id.Value))
+            {
+                yield return item.Id;
+            }
+        }
     }
 
     private static ImmutableList<PlayerAction> MorningActions(GameState state)

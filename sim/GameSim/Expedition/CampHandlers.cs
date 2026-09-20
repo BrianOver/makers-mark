@@ -32,6 +32,21 @@ public sealed class CampHandlers : IActionHandler
     // precedent for "the handler exposes the formula, the caller calls it." Before this the two
     // consts and the formula were `internal` and GodotClient held its own hand-typed copy; changing
     // SupplyFeePerFloor moved what the sim charged without moving what the slate said out loud.
+    /// <summary>
+    /// P2-HONEST-39: the band the runner is for — a camped hero at or under 40% of MaxHp. This is the
+    /// number <see cref="CombatMath.IsTooHurtToContinue"/>'s own rationale already names ("strictly
+    /// below the send verb's 40% band, so a party CAN camp genuinely hurt and the player's sixth
+    /// decision has two live arms again", owner ruling 2026-09-03, P2-LONG-25); it lived only in that
+    /// prose, so the one policy that tried to answer the vigil reached for the 30% halt line instead
+    /// and delivered nothing — measured 0 sends against 289 camped parties, of which 31 sat in this
+    /// band. Declared here beside the fee because this file owns the camp's rules.
+    /// </summary>
+    public const int RunnerBandPct = 40;
+
+    /// <summary>Whether a camped hero sits in the runner's band (at or under
+    /// <see cref="RunnerBandPct"/> of their MaxHp). Integer-only, no RNG, no clock.</summary>
+    public static bool IsInRunnerBand(int hp, int maxHp) => maxHp > 0 && hp * 100 <= RunnerBandPct * maxHp;
+
     public const int SupplyFeeBase = 6;
     public const int SupplyFeePerFloor = 3;
 
