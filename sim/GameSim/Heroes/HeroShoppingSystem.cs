@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Immutable;
 using GameSim.Contracts;
 
@@ -337,12 +338,61 @@ public sealed class HeroShoppingSystem : IPhaseSystem
             return; // neither side of the decision touched the player's own shelf — not player-relevant
         }
 
-        var runnerUpName = runnerUp?.Item.Name ?? "nothing else affordable";
+        var runnerUpName = runnerUp is null
+            ? "nothing else affordable"
+            : DisambiguatedRunnerUpName(best, runnerUp, boycotting);
         var reason = runnerUp is not null && LostToBoycott(runnerUp, best, boycotting)
             ? BoycottReason(best.Item)
             : best.Verdict!.Reason;
         events.Emit(new HeroDecisionExplained(
             hero.Id, best.Item.Name, runnerUpName, reason, GearDecisionGapPermille(best, runnerUp, boycotting)));
+    }
+
+    /// <summary>
+    /// P2-HONEST-41 ("Scale Mail over Scale Mail"): when the winner and the runner-up share a name,
+    /// the card names what actually split them. Measured over the horizon, 46 of 395 decision cards
+    /// (12%; 2 per campaign, 0–5) read as one item beating itself — two Scale Mails at different
+    /// grades or prices, one of them yours — so the decision was real and the sentence was not.
+    ///
+    /// <para>Only the runner-up half is qualified, because the card already carries the winner's own
+    /// name, reason and margin; adding a grade to both sides would restate what the reason line says.
+    /// The qualifier is whichever recorded fact differs — grade first, since that is the word a player
+    /// reads as quality, then the price the ranking actually used
+    /// (<see cref="BoycottEffectivePrice"/>, not the shelf sticker, so the number matches the margin
+    /// beside it). Two pieces identical in both keep the bare name: nothing true distinguishes them,
+    /// and inventing a distinction would be worse than the ambiguity.</para>
+    /// </summary>
+    private static string DisambiguatedRunnerUpName(Candidate best, Candidate runnerUp, bool boycotting)
+    {
+        if (!string.Equals(best.Item.Name, runnerUp.Item.Name, StringComparison.Ordinal))
+        {
+            return runnerUp.Item.Name;
+        }
+
+        if (best.Item.Quality != runnerUp.Item.Quality)
+        {
+            return $"the {runnerUp.Item.Quality.ToString().ToLowerInvariant()} {runnerUp.Item.Name}";
+        }
+
+        var bestPrice = BoycottEffectivePrice(best, boycotting);
+        var runnerUpPrice = BoycottEffectivePrice(runnerUp, boycotting);
+        if (bestPrice != runnerUpPrice)
+        {
+            return $"the {runnerUpPrice}g {runnerUp.Item.Name}";
+        }
+
+        // Same name, same grade, same ranked price: the fact that still splits them is whose shelf it
+        // sat on, which is the one the player actually cares about.
+        if (best.FromPlayerShelf != runnerUp.FromPlayerShelf)
+        {
+            return runnerUp.FromPlayerShelf ? $"your {runnerUp.Item.Name}" : $"the rival's {runnerUp.Item.Name}";
+        }
+
+        // Same name, grade, ranked price AND shelf — measured, 72 of 621 cards over 12 seeds. Nothing
+        // the player can see distinguishes these two, and the item id is not a fact anyone reads. So
+        // the card stops pretending there was a comparison to describe and says the true thing
+        // instead: the runner-up was another one exactly like it.
+        return $"an identical {runnerUp.Item.Name}";
     }
 
     /// <summary>Value-per-gold gap between the chosen item and its runner-up, in per-mille —
