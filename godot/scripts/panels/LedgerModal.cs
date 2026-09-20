@@ -1847,6 +1847,8 @@ public partial class LedgerModal : SimPanel
             return line;
         }
 
+        var standingNote = StandingNote(state, faction);
+
         // P2-HONEST-29: adjPerMille <= 0 renders the neutral line, never a surcharge. Standing only
         // ever rises (OreMarketHandlers.Apply Min-clamps a raise; daily drift pulls it back toward
         // zero) so adjPerMille < 0 cannot happen from real play — but this row must never describe a
@@ -1854,13 +1856,36 @@ public partial class LedgerModal : SimPanel
         // rather than inventing copy for it.
         if (adjPerMille <= 0)
         {
-            return $"{line} ({faction.DisplayName} ore)";
+            return $"{line} ({faction.DisplayName} ore — {standingNote})";
         }
 
         // Round-to-nearest per-mille -> percent for the flavor note only; the charged gold above
         // never goes through this rounding (it comes straight off PricedOffer's Cost).
         var percent = (adjPerMille + 5) / 10;
-        return $"{line} ({faction.DisplayName} favor −{percent}%)";
+        return $"{line} ({faction.DisplayName} favor −{percent}% — {standingNote})";
+    }
+
+    /// <summary>
+    /// P2-LONG-35 ("the ore line names the standing it moves", decision 5 — buy the ore or buy the
+    /// goodwill). Names where the player stands with <paramref name="faction"/> RIGHT NOW (the
+    /// standing value plus its threshold band — favored/neutral, read off
+    /// <see cref="FactionStandingThresholds.FavoredEnter"/>, never a third invented band) and what
+    /// THIS load moves it to: the same Min-clamp rise <c>OreMarketHandlers.Apply</c> applies on a
+    /// successful buy (mirrors it byte-for-byte, same precedent as <see cref="PricedOffer"/>'s cost
+    /// mirror), plus whether that rise crosses the favored boundary — decided by
+    /// <see cref="FactionStandingThresholds.Crossing"/> itself, the sim's one crossing authority,
+    /// never re-derived here. A buy only ever RAISES standing (discount-only core, KTD8), so the
+    /// only crossing this preview can ever report is <see cref="StandingShiftDirection.Favored"/>.
+    /// A fact, never a recommendation (link 2, law 1) — no advice about whether the load is worth it.
+    /// </summary>
+    private static string StandingNote(GameState state, FactionDefinition faction)
+    {
+        var standing = state.Player.StandingFor(faction.Id);
+        var band = standing >= FactionStandingThresholds.FavoredEnter(faction) ? "favored" : "neutral";
+        var raised = Math.Min(standing + faction.RiseStep, faction.StandingCap);
+        var crossesFavored = FactionStandingThresholds.Crossing(faction, standing, raised) == StandingShiftDirection.Favored;
+        var crossSuffix = crossesFavored ? ": crosses into favored" : string.Empty;
+        return $"{band} {standing}, rising to {raised}{crossSuffix}";
     }
 
     /// <summary>
