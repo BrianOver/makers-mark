@@ -1446,6 +1446,13 @@ public partial class LegendsWall : Control
         // Everything below was computed by the sim and then dropped by this switch's `_ => null`.
         // Chosen on one test: would a townsperson hear about it? A daily gauge movement would not.
 
+        // P2-PEOPLE-30: when the newcomer is filling a dead hero's seat, the line names the vacancy —
+        // whose seat, how many days it sat cold, and what the fallen wore — instead of the bare
+        // "looking for work". Every fact is recorded (HeroDied.WornGear, the two events' days); the
+        // pairing is VacatedBy's log-order walk. The founding roster, arriving over no death, keeps
+        // the old line.
+        RecruitArrived e when VacatedBy(state, e) is { } died => VacancyLine(state, e, died),
+
         RecruitArrived e => $"{HeroName(state, e.Hero)} has come to town looking for work.",
 
         CommissionPosted e =>
@@ -1625,6 +1632,70 @@ public partial class LegendsWall : Control
 
     private static string ItemName(GameState state, ItemId id) =>
         state.Items.TryGetValue(id.Value, out var item) ? item.Name : $"Item #{id.Value}";
+
+    /// <summary>P2-PEOPLE-30: the seat <paramref name="arrival"/> fills. Deaths and arrivals are
+    /// paired in log order, oldest unclaimed death first — RecruitSystem refills toward RosterCap,
+    /// so the k-th arrival after the k-th death is that seat (two recruits after two deaths each
+    /// name their own fallen, never the same one). Null when no unclaimed death precedes this
+    /// arrival: the founding six, or a recruit over a roster nobody left.</summary>
+    private static HeroDied? VacatedBy(GameState state, RecruitArrived arrival)
+    {
+        var open = new Queue<HeroDied>();
+        foreach (var evt in state.EventLog)
+        {
+            switch (evt)
+            {
+                case HeroDied died:
+                    open.Enqueue(died);
+                    break;
+                case RecruitArrived recruit:
+                    var seat = open.Count > 0 ? open.Dequeue() : null;
+                    if (recruit.Id == arrival.Id)
+                    {
+                        return seat;
+                    }
+
+                    break;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>The vacancy line: whose seat, how many days it sat cold (arrival day minus death
+    /// day, both recorded), and what the fallen wore — <see cref="HeroDied.WornGear"/>'s snapshot,
+    /// only the pieces the item table still resolves. Nothing here is derived or invented; a death
+    /// with no resolvable gear gets no "fell wearing" clause at all.</summary>
+    private static string VacancyLine(GameState state, RecruitArrived arrival, HeroDied died)
+    {
+        var recruit = HeroName(state, arrival.Hero);
+        var fallen = HeroName(state, died.Hero);
+        var daysCold = Math.Max(0, arrival.Day - died.Day);
+        var cold = daysCold switch
+        {
+            0 => "not a day cold",
+            1 => "one day cold",
+            _ => $"{daysCold} days cold",
+        };
+
+        var worn = new List<string>();
+        foreach (var slot in new[] { died.WornGear.Weapon, died.WornGear.Shield, died.WornGear.Armor, died.WornGear.Trinket })
+        {
+            if (slot is { } id && state.Items.TryGetValue(id.Value, out var item))
+            {
+                worn.Add(item.Name);
+            }
+        }
+
+        var wore = worn.Count switch
+        {
+            0 => string.Empty,
+            1 => $" {fallen} fell wearing {worn[0]}.",
+            _ => $" {fallen} fell wearing {string.Join(", ", worn.Take(worn.Count - 1))} and {worn[^1]}.",
+        };
+
+        return $"{recruit} has come to town for {fallen}'s seat — {cold}.{wore}";
+    }
 
     /// <summary>Forward-ladder plan (L5): the full VenueGraduated day-page line, correctly
     /// conjugated for a solo graduate versus a whole party — names the first graduate

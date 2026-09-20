@@ -120,6 +120,53 @@ public class UnsilencedEventTests
         AssertThat(text).Contains("V1 has come to town looking for work.");
     }
 
+    /// <summary>P2-PEOPLE-30: a recruit arriving over a death names the vacancy — whose seat, how many
+    /// days it sat cold, and what the fallen wore (all three recorded: the two events' days and
+    /// <see cref="HeroDied.WornGear"/>). The founding-roster arrival with no death before it keeps the
+    /// plain "looking for work" line (asserted in <see cref="ConfidenceSpiral_EdgeTriggeredWarnings_Render"/>
+    /// above, where no HeroDied precedes the RecruitArrived).</summary>
+    [TestCase]
+    public void RecruitAfterADeath_NamesTheSeat_TheDaysCold_AndWhatTheFallenWore()
+    {
+        var state = StagedWorld();
+        var log = ImmutableList.Create<GameEvent>(
+            new HeroDied(new HeroId(2), Floor: 3, Cause: "a Deep Ghoul", GearSet.Empty.WithSlot(ItemSlot.Weapon, new ItemId(1)))
+                { Id = new EventId(9001), Day = 5 },
+            new RecruitArrived(new HeroId(1)) { Id = new EventId(9002), Day = 7 });
+
+        var text = Joined(LegendsWall.DayLines(state with { EventLog = log }, 7));
+
+        AssertThat(text).Contains("V1 has come to town for S1's seat");
+        AssertThat(text).Contains("2 days cold");
+        AssertThat(text).Contains("S1 fell wearing Dagger.");
+        AssertThat(text).NotContains("looking for work");
+    }
+
+    /// <summary>Two deaths, two arrivals: each recruit names their OWN seat, oldest death first — the
+    /// second newcomer never re-announces the first vacancy. A death whose gear the item table no longer
+    /// resolves gets no "fell wearing" clause rather than an invented one.</summary>
+    [TestCase]
+    public void TwoRecruitsAfterTwoDeaths_EachNameTheirOwnSeat_InOrder()
+    {
+        var state = StagedWorld();
+        var heroes = state.Heroes
+            .Add(3, Delver(3, "R1", "vanguard"))
+            .Add(4, Delver(4, "R2", "striker"));
+        var log = ImmutableList.Create<GameEvent>(
+            new HeroDied(new HeroId(1), Floor: 2, Cause: "a Cave Rat", GearSet.Empty.WithSlot(ItemSlot.Weapon, new ItemId(1)))
+                { Id = new EventId(9001), Day = 3 },
+            new HeroDied(new HeroId(2), Floor: 4, Cause: "an Ore Golem", GearSet.Empty.WithSlot(ItemSlot.Armor, new ItemId(77)))
+                { Id = new EventId(9002), Day = 3 },
+            new RecruitArrived(new HeroId(3)) { Id = new EventId(9003), Day = 4 },
+            new RecruitArrived(new HeroId(4)) { Id = new EventId(9004), Day = 4 });
+
+        var text = Joined(LegendsWall.DayLines(state with { Heroes = heroes, EventLog = log }, 4));
+
+        AssertThat(text).Contains("R1 has come to town for V1's seat — one day cold. V1 fell wearing Dagger.");
+        AssertThat(text).Contains("R2 has come to town for S1's seat — one day cold.");
+        AssertThat(text).NotContains("Item #77");
+    }
+
     /// <summary>
     /// Every id in <c>DirectorSystem.Catalog</c> must have authored prose. The unknown-id arm exists
     /// so a future catalog entry degrades to something true rather than vanishing — that fallback is
