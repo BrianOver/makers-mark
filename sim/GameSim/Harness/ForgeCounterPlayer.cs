@@ -36,6 +36,18 @@ namespace GameSim.Harness;
 /// so the price this policy names always agrees with the resolver that actually closes the sale —
 /// never a doomed, would-be-rejected Counter.</para>
 ///
+/// <para><b>P2-HONEST-35 (§11.14, "The harness fleeces"): decision 2's second arm.</b> §11.14
+/// measured this policy closing 551 counter sales — 270 pinned, ZERO fleeced — because this method
+/// only ever Accepted or pinned at the ceiling, so <see cref="WillingnessModel.FleeceMoodPenalty"/>,
+/// the <see cref="GameSim.Flavor.Packs.TavernPack.CounterSaleFleeced"/> gossip line, and
+/// <see cref="GameSim.Heroes.NeedsSystem"/>'s boycott bias had never once been reached by any
+/// harness since <see cref="HaggleResolver.CloseSale"/>'s fleece branch landed. <see cref="IsFleeceArm"/>
+/// now takes roughly half of the Regular-or-better closes above the round's ceiling instead of
+/// pinning at it — deterministic off the hero id and the calendar day (no RNG, no clock: both are
+/// already-recorded state), so the same campaign always fleeces the same customer on the same day
+/// and a re-run is byte-identical. <see cref="BaselinePlayer"/> never reaches this method at all
+/// (it never opens the counter), so the idle/golden trace is untouched.</para>
+///
 /// <para>Same purity contract as every policy in this namespace: a pure function of
 /// <see cref="GameState"/>, no IO, no RNG of its own, no wall clock.</para>
 /// </summary>
@@ -113,9 +125,10 @@ public static class ForgeCounterPlayer
     }
 
     /// <summary>Decision 2 ("price for the sale or the relationship"), deterministic off the
-    /// hero's recorded <see cref="RelationshipBand"/>: pin the price for a Regular-or-better hero
-    /// (this smith reads them), take their own offer otherwise. See this type's class doc for why
-    /// the pin is guaranteed at the only round this policy ever reaches.</summary>
+    /// hero's recorded <see cref="RelationshipBand"/>: fleece or pin the price for a
+    /// Regular-or-better hero (this smith reads them — <see cref="IsFleeceArm"/> picks which),
+    /// take their own offer otherwise. See this type's class doc for why the pin is guaranteed at
+    /// the only round this policy ever reaches.</summary>
     private static HaggleResponseAction RespondToOffer(GameState state, CounterState counter, Hero hero, int standingOffer)
     {
         if (RelationshipBands.For(hero.Id, state) < RelationshipBand.Regular)
@@ -125,8 +138,8 @@ public static class ForgeCounterPlayer
             return new HaggleResponseAction(HaggleResponseKind.Accept);
         }
 
-        // Regular-or-better: pin the price. Mirrors HaggleResolver.ResolveCounter's OWN inputs
-        // exactly so the ceiling computed here agrees with the one the resolver actually checks.
+        // Regular-or-better: mirrors HaggleResolver.ResolveCounter's OWN inputs exactly so the
+        // ceiling computed here agrees with the one the resolver actually checks.
         var listPrice = state.Player.Shelf.FirstOrDefault(e => e.Item == counter.Presented)?.Price ?? standingOffer;
         var presentedQuality = state.Items.TryGetValue(counter.Presented!.Value.Value, out var presentedItem)
             ? presentedItem.Quality
@@ -136,6 +149,19 @@ public static class ForgeCounterPlayer
             TraitEffects.PriceSensitivityPermille(hero));
         var (_, ceiling) = WillingnessModel.Band(trueWillingness, counter.Round);
 
+        // P2-HONEST-35: this Regular-or-better close's arm — fleece above the ceiling instead of
+        // pinning at it. FleecePrice already caps at hero.Gold and the 1.06x markup over true
+        // willingness clears the round-1 ceiling (0.98x) with room, so this only ever falls through
+        // to the pin arm below on a degenerate near-zero willingness.
+        if (IsFleeceArm(hero.Id, state.Day))
+        {
+            var fleecePrice = FleecePrice(trueWillingness, hero.Gold);
+            if (fleecePrice > ceiling && fleecePrice > 0 && fleecePrice <= hero.Gold)
+            {
+                return new HaggleResponseAction(HaggleResponseKind.Counter, fleecePrice);
+            }
+        }
+
         // Guard the edges ActionLegality.HaggleResponseLegal would reject (a positive price the
         // hero can afford) — a near-zero true willingness or a round past the first (this policy
         // never HoldFirms, so that never actually happens, but the read stays honest either way)
@@ -144,6 +170,28 @@ public static class ForgeCounterPlayer
             ? new HaggleResponseAction(HaggleResponseKind.Counter, ceiling)
             : new HaggleResponseAction(HaggleResponseKind.Accept);
     }
+
+    /// <summary>P2-HONEST-35: whether THIS Regular-or-better close takes the fleece arm instead of
+    /// the pin arm — a pure function of the hero id and the campaign day (both already-recorded
+    /// state, never RNG, never a clock read), so the same campaign always fleeces the same customer
+    /// on the same day and two calls on an identical state agree. (hero id + day) divisible by 3
+    /// takes the arm — a genuine minority of Regular-or-better closes (this policy still pins most
+    /// of the time, matching what a smith who mostly reads people fairly would do), enough to give
+    /// the fleece mood/gossip/boycott surfaces their first measured occurrence without erasing the
+    /// pin arm this policy already proves (see <see cref="ForgeCounterPlayerTests"/>'s pin-rule
+    /// test, hero 1 on day 1, sum 2 — NOT divisible by 3 — specifically so this arm never touches
+    /// it, and its own fleece-arm test, hero 2 on day 1, sum 3 — divisible by 3).</summary>
+    private static bool IsFleeceArm(HeroId hero, int day) => (hero.Value + day) % 3 == 0;
+
+    /// <summary>P2-HONEST-35: a fleece price — comfortably past the round's ceiling (round 1's
+    /// 980 permille of true willingness) so <see cref="HaggleResolver.ResolveCounter"/>'s fleece
+    /// branch always fires and reaches a real <see cref="WillingnessModel.FleeceMoodDelta"/>, capped
+    /// at what the hero can actually pay so this never risks the illegal-Counter guard above. Reuses
+    /// <see cref="WillingnessModel.FleeceMoodScaleWindowPermille"/> as the markup — the same
+    /// permille the resolver's own fleece mood math already treats as "clearly off," rather than
+    /// inventing a second scale.</summary>
+    private static int FleecePrice(int trueWillingness, int heroGold) =>
+        Math.Min(heroGold, trueWillingness + (int)((long)trueWillingness * WillingnessModel.FleeceMoodScaleWindowPermille / 1000));
 
     /// <summary>
     /// P2-PEOPLE-28 ("hold it for Torvald"): decision 1's first measured occurrence. A piece
