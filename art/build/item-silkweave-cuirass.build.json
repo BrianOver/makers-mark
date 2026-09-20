@@ -1,0 +1,22 @@
+{
+  "Seed": 1219642798,
+  "Model": "sd_xl_base_1.0.safetensors",
+  "Lora": null,
+  "Steps": 28,
+  "CfgMilli": 6500,
+  "SamplerResolved": "dpmpp_2m",
+  "SchedulerResolved": "karras",
+  "PaletteSha256": null,
+  "DiffuseSha256": "beabffaf1b3b466dc1fc1bfb0c8ba5507bd07d555afb3d8241d4fd55148ffecf",
+  "NormalSha256": null,
+  "Uid": "uid://vgha6x1p8bpw",
+  "HandFinished": false,
+  "Status": "draft",
+  "Provenance": {
+    "drafts": "4 rounds (22 candidates) generated locally via ComfyUI MCP; curated per art/pipeline/README.md",
+    "paintoverNote": "round2 c1 of 6; came back with a spider motif across the chest, which suits the Crypt but is a choice a human should confirm",
+    "renderSize": "rendered at 1024x1024 rather than the spec's 512 (SDXL base 1.0 returns abstract shapes and contact sheets at 512); BiRefNet cutout, squared on transparency, LANCZOS to the 112x112 RGBA draw size every committed item icon ships at",
+    "promptSubject": "a slender silkweave cuirass, fine steel threads woven through pale spider-silk, close-fitting and light",
+    "aiDisclosure": "AI-generated (SDXL base 1.0) diffuse, background-removed via BiRefNet; no normal map (flat menu icon per AssetSpec.NormalMap=false). Status draft: awaiting the owner's visual pass."
+  }
+}
