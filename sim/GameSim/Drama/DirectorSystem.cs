@@ -1,6 +1,10 @@
+using System;
 using System.Collections.Immutable;
 using GameSim.Contracts;
 using GameSim.Venues;
+using GameSim.Venues.Emberfall;
+using GameSim.Venues.Gloomwood;
+using GameSim.Venues.SunkenCrypt;
 
 namespace GameSim.Drama;
 
@@ -63,10 +67,13 @@ public sealed class DirectorSystem : IPhaseSystem
 
         // 3. ELIGIBLE SET → integer cumulative-weight table. The tier-0/survived-0 baseline incident is
         //    always eligible, so the table is never empty and the single draw below is always in range.
+        //    P2-MEMORY-27: a venue's incidents join the table only once a party has actually mustered
+        //    for that venue (RaidedVenues) — the town hears about the Crypt when someone has gone there.
+        var raided = RaidedVenues(state);
         var totalWeight = 0;
         foreach (var inc in Catalog)
         {
-            if (inc.MinProgressionTier <= progressionTier && inc.MinSurvived <= survivedCount)
+            if (IsEligible(inc, progressionTier, survivedCount, raided))
             {
                 totalWeight += inc.Weight;
             }
@@ -76,7 +83,7 @@ public sealed class DirectorSystem : IPhaseSystem
         //    unconditionally so the per-day draw count is exactly one; the pacing gate below decides
         //    whether the picked incident actually surfaces.
         var roll = rng.NextInt(0, totalWeight);
-        var picked = PickByCumulativeWeight(progressionTier, survivedCount, roll);
+        var picked = PickByCumulativeWeight(progressionTier, survivedCount, raided, roll);
 
         // 5. PACING GATE: fire only at Peak past the refire guard, OR when the drought pity forces it
         //    (pity overrides both the phase and the refire guard — it is the anti-drought floor).
@@ -179,12 +186,47 @@ public sealed class DirectorSystem : IPhaseSystem
     {
         var tier = ProgressionTier(state);
         var survived = SurvivedCount(state);
+        var raided = RaidedVenues(state);
         var builder = ImmutableArray.CreateBuilder<string>();
         foreach (var inc in Catalog)
         {
-            if (inc.MinProgressionTier <= tier && inc.MinSurvived <= survived)
+            if (IsEligible(inc, tier, survived, raided))
             {
                 builder.Add(inc.Id);
+            }
+        }
+
+        return builder.ToImmutable();
+    }
+
+    /// <summary>The three gates an incident must clear to enter the day's weight table: its category's
+    /// progression tier, its magnitude's survived-count, and (P2-MEMORY-27) its venue having been raided.
+    /// The Mine is the baseline and never venue-gated, so the tier-0/survived-0 entry keeps the table
+    /// non-empty on day 1 before any party has formed.</summary>
+    public static bool IsEligible(IncidentDef inc, int progressionTier, int survivedCount, ImmutableHashSet<string> raided) =>
+        inc.MinProgressionTier <= progressionTier
+        && inc.MinSurvived <= survivedCount
+        && (inc.VenueId == VenueRegistry.MineId || raided.Contains(inc.VenueId));
+
+    /// <summary>
+    /// P2-MEMORY-27: every venue a party has ever mustered for — read off the recorded
+    /// <see cref="PartiesFormed"/> plans (each <see cref="PartyPlan.VenueId"/>), the one durable
+    /// per-expedition venue fact the log carries (<c>ExpeditionResult.VenueId</c> lives one night in
+    /// <c>LastNightExpeditions</c>). Pure read of the event log; no RNG, no clock. The Mine is always
+    /// present so the baseline incident is eligible before the first muster.
+    /// </summary>
+    public static ImmutableHashSet<string> RaidedVenues(GameState state)
+    {
+        var builder = ImmutableHashSet.CreateBuilder<string>(StringComparer.Ordinal);
+        builder.Add(VenueRegistry.MineId);
+        foreach (var gameEvent in state.EventLog)
+        {
+            if (gameEvent is PartiesFormed formed)
+            {
+                foreach (var plan in formed.Parties)
+                {
+                    builder.Add(plan.VenueId);
+                }
             }
         }
 
@@ -231,27 +273,38 @@ public sealed class DirectorSystem : IPhaseSystem
         int Weight,
         string VenueId);
 
-    /// <summary>The incident table (fixed order). The first entry (tier 0 / survived 0) is ALWAYS
-    /// eligible, guaranteeing a non-empty weight table for the daily draw. Higher categories unlock as
-    /// the town delves deeper, higher magnitudes as survivors accumulate — never on wealth.</summary>
+    /// <summary>The incident table (fixed order). The first entry (tier 0 / survived 0 / the Mine) is
+    /// ALWAYS eligible, guaranteeing a non-empty weight table for the daily draw. Higher categories
+    /// unlock as the town delves deeper, higher magnitudes as survivors accumulate — never on wealth.
+    /// <para>P2-MEMORY-27: the three graduated venues each carry a rumor (tier 0, survived 0) and a
+    /// notable (tier 1, survived 2), gated on the venue having been raided (<see cref="RaidedVenues"/>)
+    /// — for the last third of a campaign the veterans are in Gloomwood, the Crypt and the Foundry,
+    /// and the town's happenings should be about the dungeon they are actually in. Weights sit under
+    /// the Mine's so the Mine stays the loudest den while it is the only one raided.</para></summary>
     public static readonly ImmutableArray<IncidentDef> Catalog = ImmutableArray.Create(
         new IncidentDef("whispers_in_the_dark", IncidentCategory.Rumor, IncidentMagnitude.Minor, 0, 0, 40, VenueRegistry.MineId),
         new IncidentDef("goblin_probe", IncidentCategory.Skirmish, IncidentMagnitude.Minor, 0, 1, 30, VenueRegistry.MineId),
         new IncidentDef("spider_brood_swells", IncidentCategory.Infestation, IncidentMagnitude.Notable, 1, 2, 20, VenueRegistry.MineId),
         new IncidentDef("ghoul_warren_breaks", IncidentCategory.Breakout, IncidentMagnitude.Notable, 2, 3, 12, VenueRegistry.MineId),
-        new IncidentDef("the_forgeworm_stirs", IncidentCategory.Cataclysm, IncidentMagnitude.Severe, 3, 4, 6, VenueRegistry.MineId));
+        new IncidentDef("the_forgeworm_stirs", IncidentCategory.Cataclysm, IncidentMagnitude.Severe, 3, 4, 6, VenueRegistry.MineId),
+        new IncidentDef("lanterns_in_the_gloomwood", IncidentCategory.Rumor, IncidentMagnitude.Minor, 0, 0, 20, GloomwoodVenue.Id),
+        new IncidentDef("bramble_chokes_the_paths", IncidentCategory.Infestation, IncidentMagnitude.Notable, 1, 2, 10, GloomwoodVenue.Id),
+        new IncidentDef("the_causeway_sings", IncidentCategory.Rumor, IncidentMagnitude.Minor, 0, 0, 20, SunkenCryptVenue.Id),
+        new IncidentDef("wights_walk_the_causeway", IncidentCategory.Breakout, IncidentMagnitude.Notable, 1, 2, 10, SunkenCryptVenue.Id),
+        new IncidentDef("smoke_over_emberfall", IncidentCategory.Rumor, IncidentMagnitude.Minor, 0, 0, 20, EmberfallFoundryVenue.Id),
+        new IncidentDef("slag_hounds_at_the_gate", IncidentCategory.Skirmish, IncidentMagnitude.Notable, 1, 2, 10, EmberfallFoundryVenue.Id));
 
     /// <summary>Pick the incident whose cumulative-weight band contains <paramref name="roll"/>, over
     /// the eligible subset (declaration order). Pure integer selection — the caller drew
     /// <paramref name="roll"/> in [0, totalWeight); this method makes NO RNG draw. Falls back to the
     /// last eligible incident defensively (unreachable given a correct total).</summary>
-    public static IncidentDef PickByCumulativeWeight(int progressionTier, int survivedCount, int roll)
+    public static IncidentDef PickByCumulativeWeight(int progressionTier, int survivedCount, ImmutableHashSet<string> raided, int roll)
     {
         var cumulative = 0;
         var last = Catalog[0];
         foreach (var inc in Catalog)
         {
-            if (inc.MinProgressionTier > progressionTier || inc.MinSurvived > survivedCount)
+            if (!IsEligible(inc, progressionTier, survivedCount, raided))
             {
                 continue;
             }
