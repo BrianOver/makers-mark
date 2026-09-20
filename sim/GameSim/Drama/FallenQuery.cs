@@ -6,8 +6,8 @@ using GameSim.Venues;
 namespace GameSim.Drama;
 
 /// <summary>
-/// P2-MEMORY-02 (§11.15) / P2-PROOF-11: the death card's three pure reads — the pack line, the
-/// last-blow line, and the margin line.
+/// P2-MEMORY-02 (§11.15) / P2-PROOF-11 / P2-PEOPLE-32: the death card's four pure reads — the pack
+/// line, the last-blow line, the margin line, and the absence line.
 ///
 /// <para>Both facts were already recorded and neither had a reader. <see cref="Hero.Pack"/> is
 /// depleted at the reveal for the fallen exactly as it is for survivors (<see
@@ -226,6 +226,83 @@ public static class FallenQuery
 
         var gearClause = gearAbsorbed > 0 ? $"{fallen.Name}'s gear drank {gearAbsorbed} of it. " : string.Empty;
         return $"The blow read {rawBlow}. {gearClause}{fallen.Name} stood at {hpStoodAt}.";
+    }
+
+    /// <summary>
+    /// The absence line (P2-PEOPLE-32): the fallen wore nothing of the player's make, carried
+    /// nothing of it, and never earned a single beat. The card says so out loud instead of saying
+    /// nothing at all.
+    ///
+    /// <para><b>Why this line exists.</b> The measurement behind §11.15 counted 88 of 195 dead
+    /// heroes wearing nothing of the player's and 86 earning zero attribution beats ever. Every
+    /// other read on this card is conditioned on the player's work being present, so for those
+    /// heroes the whole card went quiet — the one shape where the game has the most to say and said
+    /// the least. Law 7 requires the cost of skipping to be NAMED in copy rather than engineered,
+    /// and this is the copy: a plain past-tense statement of what the record holds.</para>
+    ///
+    /// <para><b>It states the fact and stops (law 1, influence never orders).</b> No "you should
+    /// have", no suggestion, no count of what it would have taken — the sentence carries no verb
+    /// aimed at the player at all. Whether that absence was a choice, a sale that went elsewhere or
+    /// a hero who never walked in is the player's own to read; the wake only reports.</para>
+    ///
+    /// <para><b>Three gates, all off the record, all required.</b> The worn gear comes from the
+    /// recorded <see cref="HeroDied.WornGear"/> snapshot via
+    /// <see cref="RivalAbsenceQuery.DiedInUnmarkedGear"/> — the same derivation the rival smith's
+    /// own spoken absence uses, reused rather than copied so the two can never disagree about what
+    /// "nothing of yours" means. The pack is <see cref="Hero.Pack"/>, undepleted-at-death exactly as
+    /// <see cref="PackLine"/> reads it. And a beat is any <see cref="AttributionBeatEvent"/> naming
+    /// this hero: only player-crafted items ever earn one (law 4, no participation credit), so a
+    /// single beat anywhere in the hero's life is proof the player's hand reached them and this line
+    /// must stay silent. ANY of the three saying otherwise renders nothing.</para>
+    ///
+    /// <para><b>No recorded death, no line.</b> A fallen hero with no <see cref="HeroDied"/> event in
+    /// the log has no recorded gear snapshot, so there is nothing to claim absence over and this
+    /// returns <see cref="string.Empty"/> — the same first-class silence every other method here
+    /// keeps. Unlike the rest of the card this reads the whole <see cref="GameState.EventLog"/>
+    /// rather than the retained night, so it still speaks when the card is re-opened forty days
+    /// later: permadeath (R7) makes both the death and the empty beat-count permanent facts.</para>
+    /// </summary>
+    public static string AbsenceLine(GameState state, HeroId hero)
+    {
+        if (!state.Heroes.TryGetValue(hero.Value, out var fallen) || fallen.Alive)
+        {
+            return string.Empty;
+        }
+
+        HeroDied? death = null;
+        foreach (var logged in state.EventLog)
+        {
+            // Permadeath: at most one HeroDied per hero, so the first match is the only match.
+            if (logged is HeroDied died && died.Hero == hero)
+            {
+                death = died;
+                break;
+            }
+        }
+
+        if (death is null || !RivalAbsenceQuery.DiedInUnmarkedGear(state, death))
+        {
+            return string.Empty;
+        }
+
+        foreach (var itemId in fallen.Pack)
+        {
+            if (state.Items.TryGetValue(itemId.Value, out var item) && item.Mark is not null)
+            {
+                return string.Empty;
+            }
+        }
+
+        foreach (var logged in state.EventLog)
+        {
+            if (logged is AttributionBeatEvent beat && beat.Hero == hero)
+            {
+                return string.Empty;
+            }
+        }
+
+        return $"{fallen.Name} wore nothing of yours and carried nothing of yours. "
+            + "Your mark is not on this one.";
     }
 
     /// <summary>The retained night this hero died on, or null once it has rolled out (or if this

@@ -472,6 +472,147 @@ public class FallenQueryTests
         Assert.Equal(string.Empty, FallenQuery.MarginLine(state, new HeroId(Fallen)));
     }
 
+    // ── P2-PEOPLE-32: the absence line ─────────────────────────────────────────────────
+
+    /// <summary>What counts as the player's hand having reached this hero at all. Not three
+    /// unrelated fixtures — three members of ONE family, and the rule the line is built on is that
+    /// ANY member silences it. A new channel that can put the player's work on a hero belongs in
+    /// this enum, which is what makes <see cref="AbsenceLine_AnySingleProofOfYourHand_RendersNothing"/>
+    /// keep covering the family as the family grows.</summary>
+    public enum ProofOfYourHand
+    {
+        /// <summary>A marked piece in the recorded <see cref="HeroDied.WornGear"/> snapshot.</summary>
+        WornGear,
+
+        /// <summary>A marked item still in the undepleted pack they carried down.</summary>
+        Pack,
+
+        /// <summary>Any <see cref="AttributionBeatEvent"/> naming this hero, ever.</summary>
+        Beat,
+    }
+
+    /// <summary>A real death through the production path (<c>ExpeditionRevealSystem</c>), so the
+    /// <see cref="HeroDied"/> event and its <c>WornGear</c> snapshot are the sim's own output rather
+    /// than a hand-built stand-in — the same idiom <see cref="RivalAbsenceQueryTests"/> uses, because
+    /// this line reads that same recorded snapshot.</summary>
+    private static GameState DiedInTheMine(GameState world) => TickEvening(AtEvening(
+        world,
+        Result(
+            party: [Fallen], survivors: [], deaths: [Fallen],
+            floors: [Floor(Combat(1, Fallen, "Cave Rat", taken: 30))]))).NewState;
+
+    private static Item MarkedPiece() => PlayerItem(70, "Oathkeeper Plate", ItemSlot.Armor, 0, 6);
+
+    /// <summary>The same bare death, with exactly ONE member of <see cref="ProofOfYourHand"/>
+    /// present — every other gate left untouched, so a silence here can only be that one proof.</summary>
+    private static GameState DiedWith(ProofOfYourHand proof)
+    {
+        var marked = MarkedPiece();
+        var world = proof == ProofOfYourHand.WornGear ? Equip(NewWorld(), Fallen, marked) : NewWorld();
+        var state = DiedInTheMine(world);
+
+        return proof switch
+        {
+            ProofOfYourHand.WornGear => state,
+            ProofOfYourHand.Pack => WithPack(WithItem(state, marked), marked.Id.Value),
+            ProofOfYourHand.Beat => state with
+            {
+                EventLog = state.EventLog.Add(new AttributionBeatEvent(
+                    BeatType.KillingBlow, marked.Id, new HeroId(Fallen), Floor: 1, "held the line")
+                {
+                    Id = new EventId(9001),
+                    Day = state.Day,
+                }),
+            },
+            _ => state,
+        };
+    }
+
+    /// <summary>The 45% the §11.15 measurement counted: wore nothing of yours, carried nothing of
+    /// yours, never earned a beat. Before this unit their card said nothing at all.</summary>
+    [Fact]
+    public void AbsenceLine_NoWornGearNoPackNoBeatEver_NamesTheAbsence()
+    {
+        var state = DiedInTheMine(NewWorld());
+
+        var line = FallenQuery.AbsenceLine(state, new HeroId(Fallen));
+
+        Assert.NotEqual(string.Empty, line);
+        Assert.Contains(NameOf(state), line);
+    }
+
+    /// <summary>The rule, not three instances of it: one proof that the player's hand reached this
+    /// hero — through ANY channel — is enough, and the line must not claim an absence over it.</summary>
+    [Theory]
+    [InlineData(ProofOfYourHand.WornGear)]
+    [InlineData(ProofOfYourHand.Pack)]
+    [InlineData(ProofOfYourHand.Beat)]
+    public void AbsenceLine_AnySingleProofOfYourHand_RendersNothing(ProofOfYourHand proof)
+    {
+        var state = DiedWith(proof);
+
+        Assert.Equal(string.Empty, FallenQuery.AbsenceLine(state, new HeroId(Fallen)));
+    }
+
+    /// <summary>Pins the theory above to the WHOLE family rather than to the three rows someone
+    /// remembered to write: a member added to <see cref="ProofOfYourHand"/> without its own
+    /// <c>InlineData</c> row goes red here, which is the only reason the guard keeps covering the
+    /// family as new channels for the player's work appear.</summary>
+    [Fact]
+    public void AbsenceLine_EverySilencingProof_IsCoveredByTheTheory()
+    {
+        var rows = typeof(FallenQueryTests)
+            .GetMethod(nameof(AbsenceLine_AnySingleProofOfYourHand_RendersNothing))!
+            .GetCustomAttributes(typeof(InlineDataAttribute), inherit: false)
+            .Cast<InlineDataAttribute>()
+            .Select(row => (ProofOfYourHand)row.GetData(null!).Single()[0]!)
+            .Order();
+
+        Assert.Equal(Enum.GetValues<ProofOfYourHand>().Order(), rows);
+    }
+
+    [Fact]
+    public void AbsenceLine_LivingHero_RendersNothing()
+    {
+        var state = DiedInTheMine(NewWorld());
+        state = state with
+        {
+            Heroes = state.Heroes.SetItem(Fallen, state.Heroes[Fallen] with { Alive = true, DiedOnDay = null }),
+        };
+
+        Assert.Equal(string.Empty, FallenQuery.AbsenceLine(state, new HeroId(Fallen)));
+    }
+
+    /// <summary>No recorded <see cref="HeroDied"/> means no recorded gear snapshot, and an absence
+    /// the record cannot prove is not softened into a vaguer sentence — it is not printed.</summary>
+    [Fact]
+    public void AbsenceLine_DeadButNoRecordedDeathEvent_RendersNothing()
+    {
+        var state = DiedInTheMine(NewWorld());
+        state = state with { EventLog = state.EventLog.RemoveAll(e => e is HeroDied) };
+
+        Assert.Equal(string.Empty, FallenQuery.AbsenceLine(state, new HeroId(Fallen)));
+    }
+
+    /// <summary>Law 1 (influence never orders) and law 7 (the cost of skipping is NAMED, never
+    /// engineered): the copy reports what the record holds and stops. The guard is the family of
+    /// words that turn a report into a verdict or an instruction — blame, advice, or a
+    /// counterfactual the record cannot back.</summary>
+    [Fact]
+    public void AbsenceLine_ReportsTheFact_NeverScoldsOrAdvises()
+    {
+        var line = FallenQuery.AbsenceLine(DiedInTheMine(NewWorld()), new HeroId(Fallen));
+
+        foreach (var verdict in new[]
+                 {
+                     "should", "could have", "would have", "might have", "ought", "must ",
+                     "next time", "if only", "failed", "fault", "too late", "instead",
+                 })
+        {
+            Assert.DoesNotContain(verdict, line, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
     private static FloorOutcome Floor(params CombatEvent[] combats) =>
         new(combats[0].Floor, Cleared: false, combats.ToImmutableList());
 }
