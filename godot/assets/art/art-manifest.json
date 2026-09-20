@@ -32,6 +32,8 @@
   "item-buckler": { "diffuse": true, "normal": false },
   "item-bulwark": { "diffuse": true, "normal": false },
   "item-chain-vest": { "diffuse": true, "normal": false },
+  "item-quilted-jack": { "diffuse": true, "normal": false },
+  "item-silkweave-cuirass": { "diffuse": true, "normal": false },
   "item-cinderforge-blade": { "diffuse": true, "normal": false },
   "item-dagger": { "diffuse": true, "normal": false },
   "item-emberglass-draught": { "diffuse": true, "normal": false },
