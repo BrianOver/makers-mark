@@ -3306,5 +3306,82 @@ public class LedgerModalTests
             Unmount(ui);
         }
     }
+
+    // ── P2-PEOPLE-31 ("a hold for the dead is released at the wake") ──
+
+    private static readonly ItemId ChainVestId = new(50);
+
+    /// <summary>The same death night as <see cref="WakeNight"/>, plus a hold placed on the fallen
+    /// hero before tonight and released tonight (mirrors what <see cref="ExpeditionRevealSystem"/>
+    /// itself now emits on the death night) — the shelf entry already carries no hold, exactly as
+    /// it sits right after the reveal.</summary>
+    private static GameState WakeNightWithReleasedHold()
+    {
+        var fallen = new Hero(
+            WakeHeroId, "Torvald", ClassRegistry.VanguardId, Level: 4, MaxHp: 32, Gold: 0,
+            Gear: GearSet.Empty, Memories: ImmutableList<ItemMemory>.Empty, Alive: false,
+            DeepestFloorReached: 3, DiedOnDay: 1);
+        var heroes = ImmutableSortedDictionary<int, Hero>.Empty.Add(WakeHeroId.Value, fallen);
+
+        var chainVest = new Item(
+            ChainVestId, "chain-vest", "Chain Vest", ItemSlot.Armor, QualityGrade.Common,
+            new ItemStats(0, 4, 3), new MakersMark("You", CraftedOnDay: 1), ImmutableList<ItemHistoryEntry>.Empty);
+
+        var events = ImmutableList.Create<GameEvent>(
+            new ShelfEarmarked(ChainVestId, WakeHeroId) { Id = new EventId(1), Day = 0 },
+            new HeroDied(WakeHeroId, 3, "a Cave Rat", GearSet.Empty) { Id = new EventId(2), Day = 1 },
+            new ShelfEarmarked(ChainVestId, null) { Id = new EventId(3), Day = 1 });
+
+        var baseState = GameFactory.NewGame(9101, heroes);
+        return baseState with
+        {
+            Items = baseState.Items.Add(ChainVestId.Value, chainVest),
+            EventLog = events,
+            Drama = baseState.Drama with
+            {
+                Memorials = ImmutableList.Create(new Memorial(WakeHeroId, "Torvald", 1, "Emberbite (your make)")),
+            },
+            Player = baseState.Player with
+            {
+                Shelf = ImmutableList.Create(new ShelfEntry(ChainVestId, 40, StockedDay: 0)),
+            },
+        };
+    }
+
+    [TestCase]
+    public void DeathNight_HoldReleasedForTheFallen_RendersYoursToSellAgain()
+    {
+        var ui = MountMainUi(new SimAdapter(WakeNightWithReleasedHold()));
+        try
+        {
+            ui.Ledger.ShowFor(1);
+
+            var line = RenderedText(Find<Control>(ui.Ledger, $"EarmarkReleasedLine_{ChainVestId.Value}_{WakeHeroId.Value}"));
+            AssertThat(line).Contains("Chain Vest");
+            AssertThat(line).Contains("Torvald");
+            AssertThat(line).Contains("yours to sell again");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    [TestCase]
+    public void NoDeathNight_RendersNoReleasedHoldLine()
+    {
+        var ui = MountMainUi(new SimAdapter(ThreeHeroDay(anyBeats: false)));
+        try
+        {
+            ui.Ledger.ShowFor(1);
+
+            AssertThat(ui.Ledger.FindChild($"EarmarkReleasedLine_{ChainVestId.Value}_{WakeHeroId.Value}", recursive: true, owned: false))
+                .IsNull();
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
 }
 #endif

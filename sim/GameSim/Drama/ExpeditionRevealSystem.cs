@@ -132,6 +132,31 @@ public sealed class ExpeditionRevealSystem : IPhaseSystem
                 },
             };
             events.Emit(new HeroDied(heroId, floor, cause, hero.Gear));
+
+            // P2-PEOPLE-31 (§11.14, "a hold for the dead is released at the wake"): a piece held
+            // for this hero has no one left to wait for. Cleared HERE, on the death night, rather
+            // than left for EarmarkQuery.WaitingTonight to keep reporting — that query reads
+            // Shelf and never Hero.Alive (the gap the unit closes), so the fix is at the source,
+            // not in the read model. Reuses the EXISTING ShelfEarmarked(Item, null) shape
+            // ApplyEarmark already emits for an ordinary release — no new event type, and a shelf
+            // with no hold on this hero (BaselinePlayer never earmarks) touches nothing.
+            for (var shelfIndex = 0; shelfIndex < state.Player.Shelf.Count; shelfIndex++)
+            {
+                var shelfEntry = state.Player.Shelf[shelfIndex];
+                if (shelfEntry.EarmarkedFor != heroId)
+                {
+                    continue;
+                }
+
+                state = state with
+                {
+                    Player = state.Player with
+                    {
+                        Shelf = state.Player.Shelf.SetItem(shelfIndex, shelfEntry with { EarmarkedFor = null }),
+                    },
+                };
+                events.Emit(new ShelfEarmarked(shelfEntry.Item, null));
+            }
         }
 
         // 2. Loot gold (R17) — survivors only; gold dies with the fallen.
