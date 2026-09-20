@@ -1,0 +1,22 @@
+{
+  "Seed": 635344290,
+  "Model": "sd_xl_base_1.0.safetensors",
+  "Lora": null,
+  "Steps": 28,
+  "CfgMilli": 6500,
+  "SamplerResolved": "dpmpp_2m",
+  "SchedulerResolved": "karras",
+  "PaletteSha256": null,
+  "DiffuseSha256": "ee90a689650e6118fa894e963ca43146dfb3fb293971d30ed98bea54e8947441",
+  "NormalSha256": null,
+  "Uid": "uid://b5ih0785bkt6",
+  "HandFinished": false,
+  "Status": "draft",
+  "Provenance": {
+    "drafts": "4 rounds (22 candidates) generated locally via ComfyUI MCP; curated per art/pipeline/README.md",
+    "paintoverNote": "round4 c5 of 6; earlier rounds at the spec's 512x512 returned abstract shapes and contact sheets (SDXL base is out of distribution at 512), and at 1024 the recurring miss was framing, not subject",
+    "renderSize": "rendered at 1024x1024 rather than the spec's 512 (SDXL base 1.0 returns abstract shapes and contact sheets at 512); BiRefNet cutout, squared on transparency, LANCZOS to the 112x112 RGBA draw size every committed item icon ships at",
+    "promptSubject": "a quilted padded jack with small iron studs, soft stitched torso panels, sleeveless and light",
+    "aiDisclosure": "AI-generated (SDXL base 1.0) diffuse, background-removed via BiRefNet; no normal map (flat menu icon per AssetSpec.NormalMap=false). Status draft: awaiting the owner's visual pass."
+  }
+}

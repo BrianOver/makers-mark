@@ -16,14 +16,16 @@ public class RecipeTableTests
         // 15 gear + 1 consumable. P2-END-01 (owner ruling 2026-09-06) adds the ONE rung-0 row the
         // ladder was missing — mithril-warblade, Tier 4 — so 23 total, 20 stat-carriers, 3
         // consumables, weapons at 8, armor at 7, shield untouched at 5 (no rung shield was scoped on
-        // any rung).
-        Assert.Equal(23, RecipeTable.All.Count);
-        Assert.Equal(20, RecipeTable.All.Values.Count(r => r.Effect is null));
+        // any rung). P2-LONG-36 adds the light armory — quilted-jack (Tier 2) and silkweave-cuirass
+        // (Tier 3), both weight 4 — so armor goes 7 -> 9 and the table 23 -> 25. They carry stats, so
+        // the stat-carrier count moves with them; no new tier and no new consumable.
+        Assert.Equal(25, RecipeTable.All.Count);
+        Assert.Equal(22, RecipeTable.All.Values.Count(r => r.Effect is null));
         Assert.Equal(3, RecipeTable.All.Values.Count(r => r.Slot == ItemSlot.Consumable));
 
         Assert.Equal(8, RecipeTable.All.Values.Count(r => r.Slot == ItemSlot.Weapon));
         Assert.Equal(5, RecipeTable.All.Values.Count(r => r.Slot == ItemSlot.Shield));
-        Assert.Equal(7, RecipeTable.All.Values.Count(r => r.Slot == ItemSlot.Armor));
+        Assert.Equal(9, RecipeTable.All.Values.Count(r => r.Slot == ItemSlot.Armor));
 
         Assert.Equal(new[] { 1, 2, 3, 4, 8, 9, 12, 13, 14 }, RecipeTable.All.Values.Select(r => r.Tier).Distinct().OrderBy(t => t));
     }
