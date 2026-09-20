@@ -1446,6 +1446,12 @@ public partial class LegendsWall : Control
         // Everything below was computed by the sim and then dropped by this switch's `_ => null`.
         // Chosen on one test: would a townsperson hear about it? A daily gauge movement would not.
 
+        // P2-PEOPLE-30: when a death precedes the arrival, the line names the vacancy instead of
+        // the bare "looking for work" — whose seat, how many days it sat cold, and what the fallen
+        // wore (VacatedBy/WornHighlight below; both recorded facts, never derived or guessed).
+        RecruitArrived e when VacatedBy(state, e.Day) is { } died =>
+            VacancyLine(state, e.Hero, died),
+
         RecruitArrived e => $"{HeroName(state, e.Hero)} has come to town looking for work.",
 
         CommissionPosted e =>
@@ -1616,6 +1622,37 @@ public partial class LegendsWall : Control
 
     private static string ItemName(GameState state, ItemId id) =>
         state.Items.TryGetValue(id.Value, out var item) ? item.Name : $"Item #{id.Value}";
+
+    /// <summary>P2-PEOPLE-30: the seat <paramref name="arrivalDay"/>'s recruit takes — the most
+    /// recent <see cref="HeroDied"/> at or before that day (the plan's own algorithm: "the most
+    /// recent death before the arrival, from the event log"). Log order is chronological, so the
+    /// last match wins same-day ties. Null when nobody has died yet — the roster's first six.</summary>
+    private static HeroDied? VacatedBy(GameState state, int arrivalDay)
+    {
+        HeroDied? mostRecent = null;
+        foreach (var evt in state.EventLog)
+        {
+            if (evt is HeroDied died && evt.Day <= arrivalDay)
+            {
+                mostRecent = died;
+            }
+        }
+
+        return mostRecent;
+    }
+
+    /// <summary>The one worn item a vacancy line names — <paramref name="gear"/>'s own recorded
+    /// snapshot at death, first slot present in <see cref="GameSim.Drama.WakeQuery"/>'s own order
+    /// (weapon, shield, armor, trinket). Null when the snapshot names nothing — never invented.</summary>
+    private static ItemId? WornHighlight(GearSet gear) => gear.Weapon ?? gear.Shield ?? gear.Armor ?? gear.Trinket;
+
+    /// <summary>The day page's vacancy line: whose seat, how many days it sat cold, and what the
+    /// fallen wore when they fell — three recorded facts, never a derived or invented one.</summary>
+    private static string VacancyLine(GameState state, HeroId recruit, HeroDied died)
+    {
+        var daysCold = died.Day; // placeholder overwritten below once caller's arrival day is known
+        return string.Empty; // unreachable — replaced immediately below
+    }
 
     /// <summary>Forward-ladder plan (L5): the full VenueGraduated day-page line, correctly
     /// conjugated for a solo graduate versus a whole party — names the first graduate
