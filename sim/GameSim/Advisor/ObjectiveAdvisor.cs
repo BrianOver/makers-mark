@@ -148,14 +148,29 @@ public static class ObjectiveAdvisor
             }
         }
 
-        // 2. Fallback (unchanged from pre-U8): the cheapest-productive-path loop — still the
-        //    tightest loop when no sharper demand signal exists (fresh saves, no live commission or
-        //    stall yet).
+        // 2. Fallback (unchanged from pre-U8 except for P2-HONEST-36's news gate below): the
+        //    cheapest-productive-path loop — still the tightest loop when no sharper demand signal
+        //    exists (fresh saves, no live commission or stall yet).
+        //
+        //    P2-HONEST-36: measured at 5,147 of 13,745 advice lines (37%) — "You already have
+        //    enough copper to craft 'buckler'" repeated night after night while the player simply
+        //    never acted on it, the same shape P2-MEMORY-04 fixed for the memorial rite (a
+        //    permanent fact told again as if it were news). This class holds no standing state
+        //    (see class doc, U8), so "changed since last said" can't be a remembered flag — it is
+        //    read off <see cref="IsFallbackNews"/>, which is a pure fact already recorded in
+        //    <see cref="GameState.ActionLog"/> (no Contracts change). Not news: the block adds
+        //    nothing, `suggestions` stays whatever it already was, and every caller's existing
+        //    empty-list copy (CLI's "(none right now)", <c>ObjectiveTracker.NoObjectiveText</c>)
+        //    says the board is quiet — no new copy needed.
         if (suggestions.Count == 0)
         {
             var (materialKey, quantity, cost) = CheapestProductivePath(state.Player);
 
-            if (materialKey is not null && cost == 0)
+            if (materialKey is not null && !IsFallbackNews(state, materialKey))
+            {
+                // Same fact as last time it was told (or never touched at all) — quiet.
+            }
+            else if (materialKey is not null && cost == 0)
             {
                 // Craft is reachable RIGHT NOW (already enough of the cheapest-path material).
                 var recipe = CheapestTier1Recipe(state.Player, materialKey);
@@ -632,4 +647,62 @@ public static class ObjectiveAdvisor
             .Where(r => r.Tier == 1 && player.IsSelected(r.Profession) && r.MaterialKey == materialKey)
             .OrderBy(r => r.MaterialQuantity)
             .FirstOrDefault();
+
+    /// <summary>
+    /// P2-HONEST-36: is the cheapest-productive-path fallback fact NEWS? <see cref="Suggest"/> is
+    /// memoryless (class doc, U8) — it never remembers what it said yesterday — so "changed since
+    /// last said" has to be read off a fact <see cref="GameState"/> already records, never a new
+    /// flag. <paramref name="materialKey"/>'s held quantity (and therefore whether the fallback
+    /// reads "already have enough" vs "buying N is cheapest" vs the destitution dead-end) only
+    /// moves when the player submits an action that spends or acquires it — buying it, crafting
+    /// with it, trading ore for it, or spending it on a heirloom/masterwork/legendary attempt — and
+    /// every submitted action is already in <see cref="GameState.ActionLog"/>. Reselecting
+    /// professions also rewrites the whole cheapest-path calculation (a different tier-1 recipe's
+    /// quantity), so it counts as news for every material, not just the one it happens to name.
+    ///
+    /// Day 1 has no earlier day to have already said anything — always news, the
+    /// <c>GossipSystem</c> "day 1 has no yesterday" precedent. Every day after that where nothing
+    /// touched the fact, it is the same permanent fact already told: quiet, the same shape
+    /// P2-MEMORY-04 fixed for the memorial rite.
+    /// </summary>
+    private static bool IsFallbackNews(GameState state, string materialKey)
+    {
+        if (state.Day <= 1)
+        {
+            return true;
+        }
+
+        foreach (var batch in state.ActionLog)
+        {
+            if (batch.Day != state.Day)
+            {
+                continue;
+            }
+
+            foreach (var action in batch.Actions)
+            {
+                if (TouchesMaterial(action, materialKey))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>Every <see cref="PlayerAction"/> shape that can move <paramref name="materialKey"/>'s
+    /// held quantity or rewrite which recipe is cheapest. Anything else (selling, shelving,
+    /// haggling, bounties, memorials...) never touches the fallback's own arithmetic.</summary>
+    private static bool TouchesMaterial(PlayerAction action, string materialKey) => action switch
+    {
+        BuyMaterialAction buy => buy.MaterialKey == materialKey,
+        BuyOreAction ore => ore.MaterialKey == materialKey,
+        CraftAction craft => craft.MaterialKey == materialKey,
+        ReforgeHeirloomAction reforge => reforge.MaterialKey == materialKey,
+        MasterworkAttemptAction masterwork => masterwork.MaterialKey == materialKey,
+        CommissionLegendaryWorkAction legendary => legendary.MaterialKey == materialKey,
+        SetProfessionsAction => true, // rewrites CheapestTier1RecipeQuantity for every material
+        _ => false,
+    };
 }
