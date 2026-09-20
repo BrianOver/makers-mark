@@ -15,6 +15,7 @@ namespace GameSim.Tests.Hygiene;
 /// <c>BuyMaterialAction</c>, <c>SendSupplyAction</c>, <c>RecallPartyAction</c>,
 /// <c>SetProfessionsAction</c>, <c>SetPriceAction</c>, <c>UnstockAction</c>,
 /// <c>DeclineCommissionAction</c>, <c>HonorMemorialAction</c>, <c>ReforgeHeirloomAction</c>,
+/// — the last two of which P2-HONEST-38 has since closed via ForgeCounterPlayer's wake arm —
 /// <c>MasterworkAttemptAction</c>, <c>BuyForgeSupplyAction</c>, <c>CommissionLegendaryWorkAction</c>,
 /// <c>ConcludeApprenticeshipAction</c>. Any plan claiming baseline coverage of bounties, the
 /// counter, the vigil, or the Morning vendor is wrong" (<c>docs/reference/rules-census.md:1236-1241</c>).
@@ -150,25 +151,21 @@ public class BalanceCorpusCoverageCensusTests
             + "rules-census.md:1236-1241. P2-HONEST-12.",
         ["DeclineCommissionAction"] = "BaselinePlayer accepts every eligible gear commission and no "
             + "sweep policy ever declines one — rules-census.md:1236-1241. P2-HONEST-12.",
-        ["HonorMemorialAction"] = "No corpus sweep policy performs the farewell rite — "
-            + "rules-census.md:1236-1241. P2-HONEST-12.",
-        ["ReforgeHeirloomAction"] = "No corpus sweep policy reforges a fallen hero's worn gear — "
-            + "rules-census.md:1236-1241. P2-HONEST-12.",
         ["ConcludeApprenticeshipAction"] = "No corpus sweep policy ever walks out of the "
             + "apprenticeship warrant early — rules-census.md:1236-1241. P2-HONEST-12.",
         ["PledgeDuesAction"] = "No corpus sweep policy ever hands the guild a piece instead of coin — "
             + "BaselinePlayer (and every other Balance-tagged sweep policy) always pays dues in gold "
             + "when the till covers it, same shape as SetPriceAction/UnstockAction just above: a "
             + "verb offered every cycle that no scripted policy ever chooses. P2-LONG-18.",
-        ["PlaceGraveMarkerAction"] = "No corpus sweep policy performs the wake — the grave-marker verb landed "
-            + "with its sim half only (P2-PEOPLE-05, wake contracts); the fallen's page and the death-night "
-            + "staging are P2-PEOPLE-06. P2-PEOPLE-05.",
-        ["ChooseRemembranceAction"] = "No corpus sweep policy performs the wake — the remembrance verb landed "
-            + "with its sim half only (P2-PEOPLE-05, wake contracts); the fallen's page and the death-night "
-            + "staging are P2-PEOPLE-06. P2-PEOPLE-05.",
     };
 
-    private const int ExpectedNeverSubmittedCount = 13; // 18 -> 13: P2-PEOPLE-26's Balance test drives ForgeCounterPlayer, which submits the four counter verbs and (via its P2-PEOPLE-28 hand) EarmarkAction
+    // 18 -> 13: P2-PEOPLE-26's Balance test drives ForgeCounterPlayer, which submits the four counter
+    // verbs and (via its P2-PEOPLE-28 hand) EarmarkAction.
+    // 13 -> 9: P2-HONEST-38 gave ForgeCounterPlayer the wake arm, so link 5's four verbs —
+    // HonorMemorial, PlaceGraveMarker, ChooseRemembrance, ReforgeHeirloom — are submitted by a
+    // policy the Balance corpus drives. Their entries are deleted rather than annotated: a closed
+    // gap left on record is a stale instruction (CLAUDE.md rule 8).
+    private const int ExpectedNeverSubmittedCount = 9;
 
     [Fact]
     public void PlayerActionHierarchyHasTheMemberCountThisCensusExpects()
