@@ -1239,7 +1239,7 @@ public class LedgerModalTests
             bare.Ledger.ShowFor(1);
 
             var absence = Find<Label>(bare.Ledger, "FallenAbsenceLine");
-            AssertThat(absence.Text).contains("Borin");
+            AssertThat(absence.Text).Contains("Borin");
         }
         finally
         {
