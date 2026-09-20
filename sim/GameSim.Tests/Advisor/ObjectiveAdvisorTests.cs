@@ -364,11 +364,19 @@ public class ObjectiveAdvisorTests
         // path within the search window (seed 1's stall stopped doing so once U-C4's second-venue
         // routing shifted its trajectory — the advisor logic is unchanged, only which baseline
         // surfaces the dual-half scenario). The loop below is trajectory-robust regardless.
-        var state = GameComposition.NewCampaign(9);
+        // P2-HONEST-37 correction: this loop used to run seed 9 for 20 days and broke at tick 16 on
+        // a suggestion that was NOT the quality path at all — SuggestQualityUpgrade returned null
+        // there and the generic cheapest-path FALLBACK supplied the CraftAction the break condition
+        // accepted, so the test's own claim ("the same real stall falls through to craft/buy") was
+        // green for the wrong reason. Once the advisor states the gate instead of falling through,
+        // that tick stops matching and the miscalibration is visible. Seed 3 reaches a GENUINE
+        // stall-driven path on day ~25 ("Bertha's Weapon is under floor 4's Fine+ bar (Poor now) —
+        // 'Cinderforge Blade' is ready"), so the window is the trajectory's, not the assertion's.
+        var state = GameComposition.NewCampaign(3);
         ImmutableList<Suggestion> locked = ImmutableList<Suggestion>.Empty;
 
         var unlocked = state;
-        for (var tick = 0; tick < 20 * 5; tick++)
+        for (var tick = 0; tick < 40 * 5; tick++)
         {
             var demand = DemandBoard.Snapshot(state);
             var top = demand.DepthStalls.FirstOrDefault();
@@ -763,14 +771,12 @@ public class ObjectiveAdvisorTests
         Assert.True(totalAdvice > 0, "The sweep produced no advice lines at all — the census is vacuous.");
         var share = (double)fallbackFires / totalAdvice;
         _output.WriteLine($"P2-HONEST-36 census (10 seeds x 60 days): {fallbackFires} of {totalAdvice} advice lines ({share:P1}) were the craft-reachable fallback (before: 5,147 of 13,745, 37%).");
-        // P2-HONEST-37 re-pin (measured, not softened): the bar was 0.10 when P2-HONEST-36 landed at
-        // 109 of 3,751 (2.9%). P2-HONEST-37 then deleted 666 false "needs Shield" suggestions for
-        // classes that can never hold one, so the advisor has fewer hero-named things to say and the
-        // news-gated fallback — unchanged, still only firing when the cheapest-path fact moved —
-        // takes a larger share of a smaller board: 449 of 3,177 (14.1%) on this same sweep. The
-        // guard's job is to catch a regression toward the 37% the plan measured, and 0.20 still does
-        // that with room. Lower it again if a later unit gives the board more to say.
-        Assert.True(share < 0.20,
+        // P2-HONEST-37 kept this bar at 0.10 rather than moving it. Deleting 666 false "needs
+        // Shield" lines briefly pushed the share to 14.1% (449 of 3,177) because 343 of those
+        // fallback fires landed on days where a quality stall existed and SuggestQualityUpgrade
+        // could name no path. Stating the gate on those days put a hero-named fact back on the
+        // board and the share fell to 3.7% (153 of 4,097). The bar is the guard it always was.
+        Assert.True(share < 0.10,
             $"P2-HONEST-36 census: {fallbackFires} of {totalAdvice} advice lines ({share:P1}) were the craft-reachable fallback — expected well under the measured 37% baseline (5,147 of 13,745).");
     }
 }
