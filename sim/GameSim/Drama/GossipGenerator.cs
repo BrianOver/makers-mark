@@ -258,6 +258,7 @@ public static class GossipGenerator
             var line = gameEvent switch
             {
                 FactionStandingShifted shift => RenderFaction(shift, campaignId),
+                HeirloomReforged reforge => RenderHeirloom(reforge, items, campaignId),
                 _ => RenderHero(gameEvent, heroes, items, campaignId),
             };
             if (line is null)
@@ -314,6 +315,30 @@ public static class GossipGenerator
             eventId: unchecked((ulong)shift.Id.Value));
     }
 
+    /// <summary>
+    /// Render a hero-LESS heirloom reforge through <see cref="TavernPack"/> (P2-MEMORY-29). The
+    /// event names no <c>HeroId</c> — the fallen hero reaches the line through <c>{lineage}</c>,
+    /// which already names them — so the voice is subject-derived off that same lineage sentence,
+    /// exactly as <see cref="RenderFaction"/> derives one off a faction id. One fallen hero's line
+    /// therefore speaks with one stable voice for a campaign's whole life.
+    /// </summary>
+    private static string RenderHeirloom(
+        HeirloomReforged reforge,
+        ImmutableSortedDictionary<int, Item> items,
+        ulong campaignId)
+    {
+        var voice = VoiceProfile.VoiceForSubject(campaignId, HeirloomSubjectPrefix + reforge.Lineage);
+        var slots = FlavorEngine.Slots(
+            ("item", ItemName(reforge.NewItem, items)),
+            ("lineage", reforge.Lineage));
+        return FlavorEngine.Render(
+            TavernPack.Pack,
+            TavernPack.HeirloomReforged + FlavorEngine.KeySeparator + voice,
+            slots,
+            campaignId,
+            eventId: unchecked((ulong)reforge.Id.Value));
+    }
+
     /// <summary>The <see cref="FactionPack"/> base key for a shift direction.</summary>
     private static string DirectionBaseKey(StandingShiftDirection direction) => direction switch
     {
@@ -359,6 +384,16 @@ public static class GossipGenerator
             ("hero", HeroName(sale.Hero, heroes)),
             ("item", ItemName(sale.Item, items)),
             ("price", PriceText(sale.Price)))),
+        // P2-MEMORY-29: the smith's word kept, and the smith's word broken. Both name a hero, so
+        // both go through the ordinary hero-voiced path; only the third kind of this unit
+        // (HeirloomReforged) is hero-less and renders out of RenderHeirloom instead.
+        CommissionFulfilled fulfilled => (TavernPack.CommissionFulfilled, fulfilled.Hero, FlavorEngine.Slots(
+            ("hero", HeroName(fulfilled.Hero, heroes)),
+            ("item", ItemName(fulfilled.Item, items)),
+            ("premium", PremiumText(fulfilled.Premium)))),
+        CommissionExpired expired => (TavernPack.CommissionExpired, expired.Hero, FlavorEngine.Slots(
+            ("hero", HeroName(expired.Hero, heroes)),
+            ("slot", SlotText(expired.Slot)))),
         _ => null,
     };
 
@@ -403,6 +438,15 @@ public static class GossipGenerator
     /// <summary>P2-MEMORY-25: gold amount as it appears in the "{price}g" slot — integer, no
     /// culture-sensitive grouping (matches <see cref="FloorText"/>'s invariant convention).</summary>
     private static string PriceText(int price) => price.ToString(CultureInfo.InvariantCulture);
+
+    /// <summary>P2-MEMORY-29: the gold OVER list a commission's premium came to, as the
+    /// "{premium}g" slot renders it — invariant integer, same convention as <see cref="PriceText"/>.</summary>
+    private static string PremiumText(int premium) => premium.ToString(CultureInfo.InvariantCulture);
+
+    /// <summary>P2-MEMORY-29: a gear slot as the tavern says it — lowercased, so the templates read
+    /// "their shield" mid-sentence rather than shouting an enum name. Invariant lowering, since the
+    /// sim must render byte-identically under every culture (KTD2).</summary>
+    private static string SlotText(ItemSlot slot) => slot.ToString().ToLowerInvariant();
 
     private static string HeroName(HeroId id, ImmutableSortedDictionary<int, Hero> heroes) =>
         heroes.TryGetValue(id.Value, out var hero) ? hero.Name : id.ToString();
