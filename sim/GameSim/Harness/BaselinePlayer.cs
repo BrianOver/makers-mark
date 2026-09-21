@@ -319,8 +319,12 @@ public static class BaselinePlayer
     /// Consumables: true when some alive hero's <see cref="Hero.Pack"/> is below their stocking
     /// target AND the shelf doesn't already carry an unsold Heal item (a consumable that's ever
     /// sold never restocks — ShopHandlers 3b — so this is the only staleness check consumables need).
+    ///
+    /// Internal (P2-HONEST-44): <see cref="MasterworkSeekingPlayer"/> shares this same "does any
+    /// real hero want this" question for its own Expedition craft/attempt loop, rather than
+    /// re-deriving it — behaviour here is otherwise byte-for-byte unchanged.
     /// </summary>
-    private static bool HasBuyer(GameState state, Recipe recipe)
+    internal static bool HasBuyer(GameState state, Recipe recipe)
     {
         if (recipe.Effect is { Kind: ConsumableKind.Heal })
         {
