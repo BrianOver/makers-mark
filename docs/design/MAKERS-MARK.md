@@ -2411,6 +2411,95 @@ proposals stand as written.
 `sim/`, `godot/`, `tools/` and `docs/` and against `git log --all --oneline`, and all seven missed in
 both.
 
+### 11.17 What §11.16 moved, and the instrument that nearly hid it — measured 2026-09-21
+
+All seven §11.16 rows are on `main`. This section is the read-back, on `e53d0f1a`, with the same
+corpus (`batch --seeds 20 --days 100`, seeds 1–20, under `BaselinePlayer`, `--policy forgecounter`
+and `--policy masterwork`) and two units booked from what the read-back found. The owner's standing
+direction is still §11.7.13's.
+
+**The pre-registered gates, before and after.**
+
+| gate (pre-registered in §11.16) | d6115a20 | e53d0f1a |
+| --- | --- | --- |
+| `forgecounter` campaigns reaching the Ending | 14 of 20 | **20 of 20** |
+| `forgecounter` median ending day | 42 (36–60) | **31 (24–41)** |
+| `forgecounter` counter closes, pre-Ending | 495 | **578** |
+| `forgecounter` counter walks, pre-Ending | 5,655 | **2,543** |
+| walks reading "no gear-score improvement" | 1,773 (31%) | **293 (11%)** |
+| `--policy masterwork` Masterwork crafts | 7 of 548 (1.3%) | **296 of 1,040 (28%)** |
+| gossip lines for `CommissionFulfilled` / `CommissionExpired` / `HeirloomReforged` | 0 / 0 / 0 | **14 / 537 / 32** |
+| `BaselinePlayer` pre-Ending beats, deaths, crafts, party-nights, fulfilments | 5,750 / 195 / 510 / 1,152 / 416 | **5,750 / 195 / 510 / 1,152 / 416** |
+
+The last row is the one that matters most and is the easiest to skip past: five independent counts,
+byte-identical across seven merged units. P2-HONEST-42's gate said `BaselinePlayer` must not move,
+and it did not.
+
+**1. The instrument, before anything else: most of a 100-day sweep is played after the Ending.**
+`campaignEnded` fires at a median day 27 (baseline) and 31 (`forgecounter`), and the farm keeps
+simulating to day 100 regardless. Split at that event, **84% of `forgecounter` attribution beats,
+73% of its counter walks, 70% of its party-nights and 64% of its closes land after the campaign has
+already ended.** §11.16's own "in horizon" totals were pre-Ending — this read reproduces all five
+baseline counts exactly, which is what proves the split is the right one — but nothing in `batch`,
+in the chronicle JSON, or in `tools/Analytics` records or enforces it. The first read of this
+session did forget it, concluded from a whole-file count that P2-HONEST-45 had made walk reasons
+*worse* (90% "current X is better" against a booked 38%), and was wrong: pre-Ending, that bucket is
+1,941 of 2,543 against 2,142 of 5,655 — fewer walks and fewer refusals, with the row's own target
+bucket down 83%. A number that can flip a shipped unit's verdict from "worked" to "regressed"
+depending on an unwritten convention is not a convention, it is a trap.
+**P2-HONEST-46** stamps the ending day into each chronicle and makes the Ending the default horizon
+for every derived count: `batch` records `EndedOnDay` (null when a seed never ends), and
+`tools/Analytics` reports pre-Ending and post-Ending totals as two columns rather than one sum,
+`[S]`. Substrate: no sim rule changes, no `Contracts` change beyond the recorded field, idle trace
+untouched. Gate: the analytics run over this corpus reproduces 5,750 / 195 / 510 / 1,152 / 416 for
+baseline pre-Ending without a hand-written filter, and a seed that never ends is reported as such
+rather than silently counted whole.
+
+**2. The town repeats the smith's broken word and swallows the kept one.** With P2-MEMORY-29's
+hooks live, the three new subjects are told at wildly different rates. Pre-Ending under
+`BaselinePlayer`: `CommissionExpired` **30 of 116 told (25.9%)**, `CommissionFulfilled` **33 of 416
+(7.9%)**. Over the whole `forgecounter` corpus the gap is starker: **expired 537 of 1,245 (43.1%),
+fulfilled 14 of 1,104 (1.3%)** — a kept promise is told one thirty-third as often as a broken one,
+and `HeirloomReforged` (32 of 477, 6.7%) and `CounterSaleClosed` (140 of 1,647, 8.5%) sit with it at
+the bottom. The cause is in the code, not inferred: `GossipGenerator.Rank` gives
+`CommissionFulfilled` rank **4**, the same rank as an incidental killing blow — and incidental
+killing blows are 46,682 events a sweep, so the quiet rank is not quiet, it is silent. The comment
+that set it says a busy day of fulfilments must never crowd out a death or a save; deaths are told
+98.5% of the time and would stay so at rank 3, which is where the broken promise already sits.
+Decision 2 is *price for the sale or the relationship*, and the town currently only notices the
+relationship when the smith fails it. **P2-MEMORY-30** ranks the smith's kept word, the handed-on
+heirloom and the closed counter sale as the news they are, `[S]`: `CommissionFulfilled` to rank 3
+beside `CommissionExpired`, with the kill dedupe and the death rank untouched. Gate, pre-registered:
+`CommissionFulfilled` told-rate pre-Ending under `BaselinePlayer` (7.9%) and over the `forgecounter`
+corpus (1.3%) both rise; `CommissionExpired` (25.9% / 43.1%) does not collapse; `HeroDied` stays at
+or above 98.5%; total gossip volume per campaign is unchanged (the cap is what it always was — this
+re-ranks what fills it, it does not add lines). Not `[GOLD]`: the no-action trace accepts no
+commission, so no line of it can appear there.
+
+**Re-measured and not booked.** `--policy masterwork` no longer builds a shortsword pile, but its
+296 Masterworks are now 28% of its crafts — a reference corpus, not a balance claim, and nothing
+reads it as one yet. `forgecounter` expiries still outnumber fulfilments (1,245 to 1,104): the
+reference smith accepts more than he delivers, and *why* is not visible in the chronicle, so it is
+a question and not a row. The pre-Ending "can't afford" walk bucket is 268 of 2,543 (10%), still
+the newcomer's 22g that §11.16 already put to the owner.
+
+**Two things the measurements argue for, as prose, for the owner to grant.** First, **the light
+classes die wearing the armor**. P2-LONG-36 built them a tier-2 and tier-3 piece and P2-LONG-37 put
+the reference smith's hand on it, and the death share did not move: light classes are **168 of 257
+`forgecounter` deaths (65%) and 154 of 257 baseline (60%)**, and **135 of those 168 (80%) died with
+a filled armor slot**. The armory is being crafted and worn; it is not keeping anyone alive. Raising
+light armor's contribution, or giving those classes a survival path that is not armor at all, is
+`[BAL]` across every combat gate and is a design choice, not a tuning one. Second, **the ladder
+still tops out before the ending** — §11.16's first proposal, unchanged and now with a second face:
+the commonest counter refusal is "current Cinderforge Blade is better" and "current Ashguild Plate
+is better", and both are the smith's own tier-12 and tier-13 recipes. A veteran wearing the top of
+your ladder is a customer you can never serve again, and the counter becomes theatre for the rest of
+that campaign. §11.14's, §11.15's and §11.16's proposals stand as written.
+
+**Ids checked both ways before booking**, per §11.11's lesson: `P2-HONEST-46` and `P2-MEMORY-30`
+were grepped across `sim/`, `godot/`, `tools/` and `docs/` and against `git log --all --oneline`,
+and both missed in both.
+
 ## 12. The external reviews — what came from outside, and what we did with it
 
 On 2026-08-06 the owner collected design reviews from three other AI models and asked for
