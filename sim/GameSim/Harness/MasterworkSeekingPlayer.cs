@@ -110,10 +110,26 @@ public static class MasterworkSeekingPlayer
                 // stat-sum desc) — best recipe first, one action per window. For THAT recipe: a
                 // masterwork attempt whenever legal, else an ordinary hand-craft, else fall through
                 // to the next-best recipe.
+                //
+                // P2-HONEST-44: gated on the same HasBuyer question BaselinePlayer's own Expedition
+                // loop already asks (shared, not re-derived — see BaselinePlayer.HasBuyer). Without
+                // it this loop kept BaselinePlayer's recipe ORDER but dropped its BUYER gate, so it
+                // spent every window on whatever copper-tier recipe sorted first regardless of
+                // whether any alive hero's gear or the shelf's unsold stock still had a real gap for
+                // it — measured (§11.16 measurement 6, sweep of 20 campaigns): 66% of all crafts were
+                // Shortswords, 42% of crafts sat unsold at the ending, no armor or shield was ever
+                // made, and LethalSave fired 0 times against a baseline median of 8. A masterwork
+                // attempt that certainly succeeds on a recipe nobody wants is still a recipe nobody
+                // wants — the gate applies to both the attempt and the hand-craft fallback.
                 foreach (var recipe in RecipeTable.All.Values
                              .OrderByDescending(r => r.Tier)
                              .ThenByDescending(r => r.BaseStats.Attack + r.BaseStats.Defense))
                 {
+                    if (!BaselinePlayer.HasBuyer(state, recipe))
+                    {
+                        continue;
+                    }
+
                     var masterwork = new MasterworkAttemptAction(recipe.RecipeId, recipe.MaterialKey);
                     if (ActionLegality.IsLegal(state, masterwork, state.Phase))
                     {
