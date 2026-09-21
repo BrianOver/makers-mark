@@ -45,7 +45,19 @@ public sealed record SurfaceContract(
         TavernPack.Pack,
         TavernPack.SlotNames,
         VoiceProfile.Voices,
-        Sample(("hero", "Torvald"), ("item", "Fine Iron Blade"), ("floor", "7"), ("cause", "slain by a Tunnel Spider"), ("price", "42")),
+        // Every slot TavernPack.SlotNames declares must appear here — a missing one is a
+        // KeyNotFoundException in the aux lane, not a soft skip (P2-MEMORY-25 went red this way).
+        // {lineage} comes from its single producer rather than a hand-typed second copy, so the
+        // tool validates the sentence the sim actually mints.
+        Sample(
+            ("hero", "Torvald"),
+            ("item", "Fine Iron Blade"),
+            ("floor", "7"),
+            ("cause", "slain by a Tunnel Spider"),
+            ("price", "42"),
+            ("premium", "30"),
+            ("slot", "shield"),
+            ("lineage", GameSim.Crafting.HeirloomHandlers.LineageOf("Notched Longsword", "Torvald"))),
         "sim/GameSim/Flavor/Packs/TavernPack.cs");
 
     public static readonly SurfaceContract Faction = new(

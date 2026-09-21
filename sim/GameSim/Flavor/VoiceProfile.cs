@@ -47,5 +47,16 @@ public static class VoiceProfile
     /// mechanism (KTD7).
     /// </summary>
     public static string VoiceForFaction(ulong campaignId, string factionId) =>
-        VoiceFor(campaignId, unchecked((int)StableHash.HashString(factionId)));
+        VoiceForSubject(campaignId, factionId);
+
+    /// <summary>
+    /// The voice a hero-LESS beat keyed by a stable STRING is told in — the generalization
+    /// <see cref="VoiceForFaction(ulong,string)"/> always was (it now delegates here, byte-identically:
+    /// a faction id is just one such subject key). P2-MEMORY-29's <c>HeirloomReforged</c> is the second
+    /// caller: it names no hero, so its subject key is the stamped lineage sentence, which means one
+    /// fallen hero's line speaks with one stable voice for a campaign's whole life. Deterministic
+    /// (StableHash + integer modulo, no RNG, no <c>GetHashCode</c>).
+    /// </summary>
+    public static string VoiceForSubject(ulong campaignId, string subjectKey) =>
+        VoiceFor(campaignId, unchecked((int)StableHash.HashString(subjectKey)));
 }

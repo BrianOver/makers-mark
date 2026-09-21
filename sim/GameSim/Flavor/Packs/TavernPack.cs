@@ -47,6 +47,21 @@ namespace GameSim.Flavor.Packs;
 /// honest in-band close, neither). No predicate wiring needed — unlike the killing-blow
 /// decisive split, the two bools already live on the stamped event.</para>
 ///
+/// <para><b>The smith's word (P2-MEMORY-29).</b> Three keys for the promises the player keeps or
+/// breaks, and for the dead handed forward. <see cref="CommissionFulfilled"/> (the word kept, at a
+/// named premium) and <see cref="CommissionExpired"/> (the word broken, the slot still empty) are
+/// the two halves of decisions 1 and 2; <see cref="HeirloomReforged"/> is link 5's warmest line —
+/// a fallen hero's gear carried forward under a new name. The expiry line NAMES THE COST and never
+/// scolds (law 1: influence never orders; law 7: a skip's cost is named in copy, never engineered)
+/// — "the slot is still empty when they walk down" is a fact the player can act on, "you let them
+/// down" is the tavern taking the player's side of a decision that is theirs.</para>
+///
+/// <para><b>The <c>{lineage}</c> grammar contract (P2-MEMORY-29).</b> <c>HeirloomHandlers.LineageOf</c>
+/// mints <c>{lineage}</c> as a lowercase participial phrase completing the frame "[the new item],
+/// …" (e.g. "forged from the Notched Longsword of Torvald"). Like <c>{cause}</c> it may only sit
+/// mid-clause — never as the word that opens a sentence, since a bare participle cannot stand as
+/// its own sentence-opener. <c>TavernPackTests</c> sweeps every heirloomReforged variant for it.</para>
+///
 /// <para><b>The <c>{cause}</c> grammar contract (P2-MEMORY-08).</b> <c>ExpeditionRevealSystem</c>
 /// mints <c>{cause}</c> as a lowercase predicate completing the sentence frame "[hero] was …" (e.g.
 /// "slain by a Tunnel Spider", "lost to the Mine"). Every <see cref="HeroDied"/> variant may place it
@@ -104,6 +119,26 @@ public static class TavernPack
     /// closed counter sale is still a real link-2 delivery worth naming.</summary>
     public const string CounterSaleFairDeal = "counterSaleFairDeal";
 
+    /// <summary>Base key for <c>CommissionFulfilled</c> (P2-MEMORY-29): the smith's word kept —
+    /// an accepted commission delivered by its deadline, at list plus the named premium. The
+    /// <c>premium</c> slot is the gold OVER list the hero agreed to pay for the promise, which is
+    /// the fact that makes the line about a kept word rather than about any other sale.</summary>
+    public const string CommissionFulfilled = "commissionFulfilled";
+
+    /// <summary>Base key for <c>CommissionExpired</c> (P2-MEMORY-29): the smith's word broken — an
+    /// accepted commission past its deadline, unfilled. <c>Events.cs</c> has described this event as
+    /// "a mood hit + gossip hook" since Wave 3; this is the hook. The event carries no item (none was
+    /// made), so the slots are the hero and the <c>slot</c> that is still empty — which is the COST,
+    /// named plainly and without reproach (see the class doc's "smith's word" paragraph).</summary>
+    public const string CommissionExpired = "commissionExpired";
+
+    /// <summary>Base key for <c>HeirloomReforged</c> (P2-MEMORY-29): a fallen hero's worn gear
+    /// reforged into a new item carrying their line forward. The ONLY hero-less kind this pack
+    /// renders — the event names no <c>HeroId</c>, so the fallen reaches the line through
+    /// <c>{lineage}</c> (which already names them) and the voice is subject-derived rather than
+    /// hero-derived, exactly as <c>FactionPack</c>'s standing shifts are.</summary>
+    public const string HeirloomReforged = "heirloomReforged";
+
     /// <summary>
     /// The slot names each base key's event provides — the single source of truth shared by
     /// the generator (which fills them) and the conformance tests (which sweep them).
@@ -123,6 +158,9 @@ public static class TavernPack
             [CounterSalePinned] = ["hero", "item", "price"],
             [CounterSaleFleeced] = ["hero", "item", "price"],
             [CounterSaleFairDeal] = ["hero", "item", "price"],
+            [CommissionFulfilled] = ["hero", "item", "premium"],
+            [CommissionExpired] = ["hero", "slot"],
+            [HeirloomReforged] = ["item", "lineage"],
         }.ToImmutableSortedDictionary(StringComparer.Ordinal);
 
     /// <summary>The pack itself. Static readonly: built once, immutable forever.</summary>
@@ -728,6 +766,74 @@ public static class TavernPack
                 "{item}, {price}g, {hero} — the numbers agreed with each other. No omen needed here.",
                 "A quiet exchange: {hero} paid {price}g for {item}. Even the dregs had nothing to add.",
                 "The coin met the want at a fair {price}g. {hero} and {item}, no debt either way."),
+
+            // ------------------------------------------------------------- commissionFulfilled (P2-MEMORY-29)
+            [$"{CommissionFulfilled}/gruff"] = ImmutableList.Create(
+                "{hero} wanted {item} by the day. Got it. Paid {premium}g over list and said nothing more.",
+                "Word kept: {item} into {hero}'s hands, on time, {premium}g premium. That's the job.",
+                "{item}'s with {hero}, deadline and all. {premium}g over list — earned, not asked for.",
+                "{hero} put in for {item} and it was there when promised. {premium}g extra. Smith doesn't miss those."),
+            [$"{CommissionFulfilled}/dramatic"] = ImmutableList.Create(
+                "The deadline loomed — and {item} reached {hero} in time! {premium}g over list, gladly paid!",
+                "A promise kept! {hero} commissioned {item} and the forge DELIVERED — {premium}g premium, not one coin grudged!",
+                "{hero} named the day, and on that day {item} was waiting! {premium}g over list for a word held true!",
+                "Sound it out: {item}, finished, into {hero}'s hands before the deadline — and {premium}g over list besides!"),
+            [$"{CommissionFulfilled}/wry"] = ImmutableList.Create(
+                "{hero} ordered {item} and it actually arrived on time. {premium}g over list. Nobody fainted.",
+                "Commissioned work, delivered by the deadline: {item} to {hero}, {premium}g premium. Novel concept.",
+                "{item} reached {hero} exactly when promised. {premium}g over list. I'd call it a miracle, but it's just competence.",
+                "{hero} paid {premium}g over list for {item} and got it on the agreed day. Reliability. Very avant-garde."),
+            [$"{CommissionFulfilled}/omen"] = ImmutableList.Create(
+                "{hero} named a day and the day held — {item}, {premium}g over list, the bargain sealed clean.",
+                "The forge answered {hero}'s asking on time: {item}, {premium}g above list. Such debts settle well.",
+                "{item} went to {hero} as promised, {premium}g over list. A word kept binds tighter than iron.",
+                "A deadline came and went with {item} already in {hero}'s hands — {premium}g over list, and no ill omen in it."),
+
+            // ------------------------------------------------------------- commissionExpired (P2-MEMORY-29)
+            // The cost, named plainly; never a reproach (law 1, law 7 — see the class doc).
+            [$"{CommissionExpired}/gruff"] = ImmutableList.Create(
+                "{hero}'s {slot} order ran out of days. They go down with that {slot} empty.",
+                "Deadline passed on {hero}'s {slot} work. Nothing came of it; the {slot} is still bare.",
+                "{hero} asked for a {slot} by a date. The date's gone and the {slot} is still nothing.",
+                "No {slot} for {hero} — the commission aged out. They'll make do, same as everyone."),
+            [$"{CommissionExpired}/dramatic"] = ImmutableList.Create(
+                "The deadline fell, and {hero}'s {slot} was never forged! They walk down with that {slot} empty!",
+                "A commission expired in the night — {hero} wanted a {slot}, and a {slot} there is not!",
+                "{hero}'s order for a {slot} has run out of days! The Mine will not wait for a second asking!",
+                "Gone, the day {hero} set for a {slot}! They go to the dark with the {slot} unfilled!"),
+            [$"{CommissionExpired}/wry"] = ImmutableList.Create(
+                "{hero}'s {slot} commission expired. They're going down with the {slot} empty, which is a kind of answer.",
+                "Someone asked for a {slot}. That someone was {hero}. There is no {slot}. The story ends there.",
+                "{hero}'s {slot} order timed out. The {slot} stays theoretical, and so does the premium.",
+                "The {slot} {hero} wanted didn't happen. The deadline was very clear about it. So is the empty slot."),
+            [$"{CommissionExpired}/omen"] = ImmutableList.Create(
+                "{hero}'s asking for a {slot} outlived its day. Empty slots have a way of being noticed down there.",
+                "The date for {hero}'s {slot} passed unanswered. The dark counts what a hero carries, and what they don't.",
+                "No {slot} came for {hero} before the day turned. What goes unfilled stays unfilled a while.",
+                "{hero} wanted a {slot} by a certain day; the day came alone. The Mine reads gaps well enough."),
+
+            // ------------------------------------------------------------- heirloomReforged (P2-MEMORY-29)
+            // {lineage} is a lowercase participial phrase — mid-clause only, never opening a sentence.
+            [$"{HeirloomReforged}/gruff"] = ImmutableList.Create(
+                "{item} came off the anvil today, {lineage}. Steel outlasts the hand that held it.",
+                "New name on old steel: {item}, {lineage}. Nothing good gets buried in this town.",
+                "{item}, {lineage} — same metal, second life. That's how it ought to go.",
+                "They beat grief into {item}, {lineage}. Works better than mourning does."),
+            [$"{HeirloomReforged}/dramatic"] = ImmutableList.Create(
+                "Behold {item}, {lineage} — the dead do not stay buried here, they are REFORGED!",
+                "{item} rises, {lineage}! What the Mine took, the forge has handed back under a new name!",
+                "A second life hammered out of a first! {item}, {lineage}, and the line unbroken!",
+                "Look upon {item}, {lineage} — grief, beaten into something with an edge!"),
+            [$"{HeirloomReforged}/wry"] = ImmutableList.Create(
+                "{item} exists now, {lineage}. Recycling, but with feelings.",
+                "{item}, {lineage}. The dead don't get to rest around here; they get repurposed. Touching.",
+                "Somebody reforged {item}, {lineage}. Sentiment with a blade on it. Efficient.",
+                "{item} turned up on the rack, {lineage}. Inheritance, the hard way."),
+            [$"{HeirloomReforged}/omen"] = ImmutableList.Create(
+                "{item} carries more than metal, {lineage}. Such things remember their first hand.",
+                "{item}, {lineage} — the old owner isn't gone from it, whatever the grave says.",
+                "There's a name inside {item}, {lineage}. Names like that walk back down eventually.",
+                "The forge gave up {item}, {lineage}. The dead lend their luck to steel, sometimes."),
         },
         new Dictionary<string, string>(StringComparer.Ordinal)
         {
@@ -747,5 +853,9 @@ public static class TavernPack
             [CounterSalePinned] = "{hero} named {price}g for {item} and paid it straight — a good read.",
             [CounterSaleFleeced] = "{hero} paid {price}g for {item}, well past a fair price, and didn't argue.",
             [CounterSaleFairDeal] = "{hero} paid {price}g for {item}. An honest sale, plain as that.",
+            // P2-MEMORY-29 — no prior line, authored fresh.
+            [CommissionFulfilled] = "{hero} got {item} on the day they asked for it — {premium}g over list, and the word kept.",
+            [CommissionExpired] = "{hero}'s commission for a {slot} ran out of days; the {slot} is still empty.",
+            [HeirloomReforged] = "{item} came off the anvil, {lineage} — the dead still hold an edge.",
         });
 }

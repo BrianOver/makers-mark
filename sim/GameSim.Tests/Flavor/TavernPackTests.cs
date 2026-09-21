@@ -30,7 +30,31 @@ public class TavernPackTests
             ["floor"] = "7",
             ["cause"] = "slain by a Tunnel Spider",
             ["price"] = "42",
+            // P2-MEMORY-29. {lineage} comes from its single producer, HeirloomHandlers.LineageOf,
+            // so the sweeps validate the sentence the sim actually mints rather than a second copy
+            // of it that could drift.
+            ["premium"] = "30",
+            ["slot"] = "shield",
+            ["lineage"] = GameSim.Crafting.HeirloomHandlers.LineageOf("Notched Longsword", "Torvald"),
         }.ToImmutableSortedDictionary(StringComparer.Ordinal);
+
+    /// <summary>
+    /// The conformance sweeps fill every declared slot from <see cref="SampleValues"/>, so a slot
+    /// added to <see cref="TavernPack.SlotNames"/> without a sample here is a KeyNotFoundException
+    /// inside an unrelated test — which reads as that test's failure, not as this omission.
+    /// P2-MEMORY-25 shipped exactly that gap into CI's aux lane. Named as the rule rather than as
+    /// today's three slots, so it keeps covering the family as the pack grows.
+    /// </summary>
+    [Fact]
+    public void SampleValues_CoversEveryDeclaredSlot()
+    {
+        var declared = TavernPack.SlotNames.Values
+            .SelectMany(names => names)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(n => n, StringComparer.Ordinal);
+
+        Assert.Empty(declared.Where(name => !SampleValues.ContainsKey(name)));
+    }
 
     private static IReadOnlyDictionary<string, string> SlotsFor(string baseKey)
     {
@@ -105,6 +129,42 @@ public class TavernPackTests
                         sentence.StartsWith("{cause}", StringComparison.Ordinal),
                         $"'{key}' variant starts a sentence with {{cause}}: \"{variant}\"");
                 }
+            }
+        }
+    }
+
+    /// <summary>
+    /// P2-MEMORY-29 grammar contract, the twin of the <c>{cause}</c> rule above.
+    /// <c>HeirloomHandlers.LineageOf</c> mints <c>{lineage}</c> as a lowercase participial phrase
+    /// ("forged from the … of …") that completes the frame "[the new item], [lineage]", so a
+    /// template may only place it mid-clause. Scope is every variant AND the fallback of every base
+    /// key that declares a <c>lineage</c> slot — not today's one key — so the rule keeps covering
+    /// the family as more lineage-bearing beats are authored.
+    /// </summary>
+    [Fact]
+    public void Lineage_NeverOpensASentence_InAnyVariantOrFallback()
+    {
+        var lineageKeys = TavernPack.SlotNames
+            .Where(entry => entry.Value.Contains("lineage"))
+            .Select(entry => entry.Key)
+            .ToImmutableHashSet(StringComparer.Ordinal);
+
+        Assert.NotEmpty(lineageKeys);
+
+        var templates = TavernPack.Pack.Variants
+            .Where(entry => lineageKeys.Contains(FlavorEngine.BaseKey(entry.Key)))
+            .SelectMany(entry => entry.Value.Select(variant => (entry.Key, Template: variant)))
+            .Concat(TavernPack.Pack.Fallbacks
+                .Where(entry => lineageKeys.Contains(entry.Key))
+                .Select(entry => (entry.Key, Template: entry.Value)));
+
+        foreach (var (key, template) in templates)
+        {
+            foreach (var sentence in SplitSentences(template))
+            {
+                Assert.False(
+                    sentence.StartsWith("{lineage}", StringComparison.Ordinal),
+                    $"'{key}' starts a sentence with {{lineage}}: \"{template}\"");
             }
         }
     }
