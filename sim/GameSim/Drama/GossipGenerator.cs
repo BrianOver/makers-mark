@@ -67,6 +67,11 @@ public static class GossipGenerator
     /// matches, so faction subjects fall out of the affinity pass automatically.</summary>
     private const string HeroSubjectPrefix = "hero:";
 
+    /// <summary>P2-MEMORY-29: subject prefix for a hero-LESS <see cref="HeirloomReforged"/>, whose
+    /// subject is the stamped lineage sentence. Like "faction:" it never matches
+    /// <see cref="HeroSubjectPrefix"/>, so heirloom subjects fall out of the affinity pass.</summary>
+    private const string HeirloomSubjectPrefix = "heirloom:";
+
     private static int ParseHeroSubjectId(string subjectKey) =>
         int.Parse(subjectKey.AsSpan(HeroSubjectPrefix.Length), CultureInfo.InvariantCulture);
 
@@ -97,6 +102,13 @@ public static class GossipGenerator
             // Both bools live on the stamped event — no predicate wiring needed, unlike the kill split.
             CounterSaleClosed { Fleeced: true } => 3,
             CounterSaleClosed => 4,
+            // P2-MEMORY-29: the smith's word. A BROKEN promise is the town's talking point —
+            // ranked with a fleece and a decisive kill; the fallen's gear handed forward is the
+            // rarer, warmer news and sits with them. A promise KEPT is good service, told at the
+            // quieter rank so a busy day of fulfilments can never crowd out a death or a save.
+            CommissionExpired => 3,
+            HeirloomReforged => 3,
+            CommissionFulfilled => 4,
             _ => 3,
         };
 
@@ -168,6 +180,13 @@ public static class GossipGenerator
             if (gameEvent is FactionStandingShifted shift)
             {
                 tellable.Add((gameEvent, "faction:" + shift.FactionId));
+            }
+            else if (gameEvent is HeirloomReforged reforge)
+            {
+                // P2-MEMORY-29: hero-less, like a faction shift — the event names no HeroId. The
+                // subject is the LINEAGE, so two reforges off one fallen hero's gear count as the
+                // same subject for involvement (the town is talking about them, not about metal).
+                tellable.Add((gameEvent, HeirloomSubjectPrefix + reforge.Lineage));
             }
             else if (Describe(gameEvent, heroes, items) is { } described)
             {
