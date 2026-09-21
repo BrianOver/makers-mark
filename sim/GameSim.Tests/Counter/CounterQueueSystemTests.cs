@@ -176,8 +176,49 @@ public class CounterQueueSystemTests
         Assert.Contains("striker", walked.Reason);
         Assert.Equal(100, result.NewState.Heroes[1].Gold); // nothing spent
         Assert.Single(result.NewState.Player.Shelf);       // item stays shelved — nobody bought it
-        Assert.Contains(1, result.NewState.Counter!.Served);
+        // P2-HONEST-42: a customer who WALKED is not "served". Served exists to stop a hero browsing
+        // twice, and this hero has not browsed at all — they were shown one shield they cannot carry.
+        // Leaving them in Served barred them from the whole morning, the rival's shelf included.
+        Assert.DoesNotContain(1, result.NewState.Counter!.Served);
         Assert.Equal(new HeroId(2), result.NewState.Counter.Active);
+    }
+
+    [Fact]
+    public void CustomerWalks_QueueExhausts_SameHeroStillBuysFromRivalShelfThatMorning()
+    {
+        // P2-HONEST-42: the actual property is not "Served excludes walkers" (the test above) —
+        // it's what that exclusion is FOR. A customer who walked has browsed nothing yet, so once
+        // the session closes and HeroShoppingSystem's fallback pass runs THIS SAME TICK, that hero
+        // must still be able to buy from the rival's shelf like anyone who never sat at the counter.
+        var hero1 = MakeHero(1, "vanguard", gold: 5); // can't afford the counter item
+        var counterSword = MakeItem(1, ItemSlot.Weapon, attack: 6, defense: 0, weight: 3, name: "Iron Sword");
+        var rivalDagger = MakeItem(2, ItemSlot.Weapon, attack: 2, defense: 0, weight: 1, name: "Rusty Dagger");
+        var state = BaseState(Roster(hero1), counterSword, rivalDagger) with
+        {
+            Player = PlayerState.NewGame(0) with { Shelf = ImmutableList.Create(new ShelfEntry(counterSword.Id, 25)) },
+            RivalShelf = ImmutableList.Create(new ShelfEntry(rivalDagger.Id, 3)),
+        };
+        var kernel = Kernel();
+
+        state = kernel.Tick(state, ImmutableList.Create<PlayerAction>(new OpenCounterAction())).NewState;
+        // Single hero in the roster: presenting resolves hero1's walk, the queue immediately runs
+        // dry, the session closes, and the phase leaves Morning — all in this one tick.
+        var result = kernel.Tick(state, ImmutableList.Create<PlayerAction>(new PresentItemAction(counterSword.Id)));
+
+        var walked = Assert.Single(result.Events.OfType<CustomerWalked>());
+        Assert.Equal(hero1.Id, walked.Hero);
+        Assert.Equal(counterSword.Id, walked.Item);
+
+        var sold = Assert.Single(result.Events.OfType<ItemSold>());
+        Assert.Equal(hero1.Id, sold.Buyer);
+        Assert.Equal(rivalDagger.Id, sold.Item);
+        Assert.False(sold.FromPlayerShop);
+
+        Assert.Equal(rivalDagger.Id, result.NewState.Heroes[1].Gear.Weapon);
+        Assert.Equal(2, result.NewState.Heroes[1].Gold); // 5 - 3
+        Assert.Empty(result.NewState.RivalShelf);        // bought, so it leaves the rival shelf
+        Assert.Single(result.NewState.Player.Shelf);      // the counter item was never bought — still shelved
+        Assert.Null(result.NewState.Counter);             // session torn down, queue ran dry
     }
 
     [Fact]

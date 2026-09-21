@@ -115,7 +115,7 @@ internal static class HaggleResolver
         if (patience <= 0)
         {
             events.Emit(new CustomerWalked(hero.Id, item.Id, "the customer's patience ran out"));
-            return CounterQueueSystem.Advance(state, counter with { PatienceRounds = 0 }, hero.Id, events);
+            return CounterQueueSystem.Advance(state, counter with { PatienceRounds = 0 }, hero.Id, events, bought: false);
         }
 
         var nextRound = Math.Min(counter.Round + 1, WillingnessModel.MaxRounds);
@@ -225,6 +225,6 @@ internal static class HaggleResolver
 
         events.Emit(new CounterSaleClosed(hero.Id, item.Id, price, pinned, fleeced));
 
-        return CounterQueueSystem.Advance(newState, counter, hero.Id, events);
+        return CounterQueueSystem.Advance(newState, counter, hero.Id, events, bought: true);
     }
 }
