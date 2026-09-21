@@ -102,13 +102,14 @@ public static class GossipGenerator
             // Both bools live on the stamped event — no predicate wiring needed, unlike the kill split.
             CounterSaleClosed { Fleeced: true } => 3,
             CounterSaleClosed => 4,
-            // P2-MEMORY-29: the smith's word. A BROKEN promise is the town's talking point —
-            // ranked with a fleece and a decisive kill; the fallen's gear handed forward is the
-            // rarer, warmer news and sits with them. A promise KEPT is good service, told at the
-            // quieter rank so a busy day of fulfilments can never crowd out a death or a save.
+            // P2-MEMORY-29/30: the smith's word, kept or broken, is the same rank of news. A
+            // BROKEN promise is the town's talking point; a KEPT one is proof the smith is good
+            // for it — both outrank an incidental kill, because a fulfilled commission at rank 4
+            // was losing to 46,682-events-a-sweep incidental kills and going untold 1.3% of the
+            // time (§11.17 measurement 2). The fallen's gear handed forward sits with them too.
             CommissionExpired => 3,
             HeirloomReforged => 3,
-            CommissionFulfilled => 4,
+            CommissionFulfilled => 3,
             _ => 3,
         };
 

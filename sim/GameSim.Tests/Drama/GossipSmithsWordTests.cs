@@ -7,7 +7,7 @@ namespace GameSim.Tests.Drama;
 using static DramaFixtures;
 
 /// <summary>
-/// P2-MEMORY-29: the smith's word — kept, broken, and the dead hero's gear given a second life.
+/// P2-MEMORY-29/30: the smith's word — kept, broken, and the dead hero's gear given a second life.
 ///
 /// §11.16 measurement 5 counted 1,521 baseline gossip lines across five subjects and found these
 /// three at zero: 416 fulfilled commissions, 116 expiries and (under <c>forgecounter</c>) 413
@@ -18,6 +18,13 @@ using static DramaFixtures;
 /// These guards are phrased against the rule the arms were added to satisfy — a stamped event of a
 /// kind the tavern has a pack key for is TOLD, and its line carries that event's own facts verbatim
 /// (R4) — rather than against one fixture's prose, which the pack is free to rewrite.
+///
+/// P2-MEMORY-30 (§11.17 measurement 2): the arm existed but was ranked with an incidental kill,
+/// so a kept promise lost its slot to one of 46,682-events-a-sweep incidental kills and was told
+/// 1.3% of the time over the <c>forgecounter</c> corpus. <see cref="CommissionFulfilled_OutranksAnIncidentalKillingBlow"/>
+/// and <see cref="CommissionFulfilled_AndCommissionExpired_TieAtTheSameRank_RecencyBreaksTheTie"/>
+/// pin the new rank; <see cref="CommissionFulfilled_CompetingForACappedDay_NeverAddsALineBeyondTheCap"/>
+/// pins the pre-registered claim that this re-ranks what fills the cap rather than growing it.
 /// </summary>
 public class GossipSmithsWordTests
 {
@@ -138,5 +145,70 @@ public class GossipSmithsWordTests
 
         Assert.Equal(3, first.Count);
         Assert.Equal(first.Select(l => l.Line), second.Select(l => l.Line));
+    }
+
+    // ---------------------------------------------------------------- P2-MEMORY-30: kept-word rank
+
+    /// <summary>The whole point of the re-rank: a kept promise now beats an incidental kill for a
+    /// slot, where it used to tie it and lose on recency. No <c>isDecisiveKillingBlow</c> predicate
+    /// is supplied, so the kill defaults to incidental (rank 4) — the honest default per the
+    /// <see cref="GossipGenerator.Rank"/> doc comment.</summary>
+    [Fact]
+    public void CommissionFulfilled_OutranksAnIncidentalKillingBlow()
+    {
+        var blade = PlayerItem(10, "Fine Iron Blade", ItemSlot.Weapon, 8, 0);
+        var state = WithItem(NewWorld(), blade);
+        GameEvent[] events =
+        [
+            new AttributionBeatEvent(BeatType.KillingBlow, blade.Id, new HeroId(1), 2, "detail") { Id = new EventId(1), Day = 1 },
+            new CommissionFulfilled(new HeroId(2), blade.Id, Premium: 30) { Id = new EventId(2), Day = 1 },
+        ];
+
+        var lines = GossipGenerator.Generate(events, state.Heroes, state.Items, Campaign, maxLines: 1);
+
+        var line = Assert.Single(lines);
+        Assert.Equal(2, line.Source.Value); // the kept promise, not the incidental kill
+    }
+
+    /// <summary>A kept and a broken promise now share rank 3 — neither the "town's scandal" framing
+    /// nor the "good service" framing that used to split them decides who fills a shared slot; the
+    /// existing involvement/affinity/recency tie-break does, same as any other same-rank pair.</summary>
+    [Fact]
+    public void CommissionFulfilled_AndCommissionExpired_TieAtTheSameRank_RecencyBreaksTheTie()
+    {
+        var blade = PlayerItem(10, "Fine Iron Blade", ItemSlot.Weapon, 8, 0);
+        var state = WithItem(NewWorld(), blade);
+        var expired = new CommissionExpired(new HeroId(1), ItemSlot.Shield) { Id = new EventId(1), Day = 1 };
+        var fulfilled = new CommissionFulfilled(new HeroId(2), blade.Id, Premium: 30) { Id = new EventId(2), Day = 1 };
+
+        var lines = GossipGenerator.Generate([expired, fulfilled], state.Heroes, state.Items, Campaign, maxLines: 1);
+
+        var line = Assert.Single(lines);
+        Assert.Equal(2, line.Source.Value); // distinct subjects, so it's the fresher stamp that wins
+    }
+
+    /// <summary>Pre-registered volume gate (§11.17 measurement 2): re-ranking changes WHICH lines
+    /// fill the cap, never HOW MANY. Four tellable events, cap 3 (<see cref="GossipGenerator.MaxLinesPerDay"/>):
+    /// the death always leads, the kept promise now wins a slot the incidental kill used to hold, and
+    /// the day still tops out at exactly the cap — never four, and never fewer than three.</summary>
+    [Fact]
+    public void CommissionFulfilled_CompetingForACappedDay_NeverAddsALineBeyondTheCap()
+    {
+        var blade = PlayerItem(10, "Fine Iron Blade", ItemSlot.Weapon, 8, 0);
+        var state = WithItem(NewWorld(), blade);
+        GameEvent[] events =
+        [
+            new HeroDied(new HeroId(1), 2, "slain by a Tunnel Spider", GearSet.Empty) { Id = new EventId(1), Day = 1 },
+            new CommissionExpired(new HeroId(2), ItemSlot.Shield) { Id = new EventId(2), Day = 1 },
+            new CommissionFulfilled(new HeroId(3), blade.Id, Premium: 30) { Id = new EventId(3), Day = 1 },
+            new AttributionBeatEvent(BeatType.KillingBlow, blade.Id, new HeroId(4), 2, "detail") { Id = new EventId(4), Day = 1 },
+        ];
+
+        var lines = GossipGenerator.Generate(events, state.Heroes, state.Items, Campaign, GossipGenerator.MaxLinesPerDay);
+
+        Assert.Equal(GossipGenerator.MaxLinesPerDay, lines.Count);
+        Assert.Equal(1, lines[0].Source.Value); // the death always leads
+        Assert.Contains(lines, l => l.Source.Value == 3); // the kept promise wins its slot now
+        Assert.DoesNotContain(lines, l => l.Source.Value == 4); // ...at the incidental kill's expense
     }
 }
