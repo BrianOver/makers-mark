@@ -126,8 +126,12 @@ public class CounterPlayerTests
         Assert.Empty(CounterPlayer.ActionsFor(state));
     }
 
+    /// <summary>P2-HONEST-45: the opener is whichever shelf piece is the LARGEST gain this customer
+    /// can wear and afford — here the shield, because +8 defense beats +6 attack, not because it is
+    /// a shield. <c>Counter/CounterOpenerTests</c> pins that rule in both directions and across every
+    /// registered class; this case only keeps the stepped-morning fixture honest.</summary>
     [Fact]
-    public void ActionsFor_PresentsTheBestRoleFitItem_ShieldToAShieldAllowedAnchorOverAPlainWeapon()
+    public void ActionsFor_PresentsTheLargestWearableAffordableGain_ShieldWinsOnGainNotOnSlot()
     {
         var vanguard = MakeHero(1, ClassRegistry.VanguardId, gold: 500);
         var shield = MakeItem(1, ItemSlot.Shield, attack: 0, defense: 8, weight: 4, name: "Buckler");
