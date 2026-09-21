@@ -443,7 +443,10 @@ public class StateFieldReachCensusTests
         // ---- Item: ProvenanceCard/ForgePanel/ShopPanel, plus the routed HeirloomLineage fixture ----
         ["Item.CraftSubScores"] = new(FieldKind.Rendered, "godot/scripts/panels/ProvenanceCard.cs:129-135 (Smelt/Forge/Quench stat chips)"),
         ["Item.Effect"] = new(FieldKind.Rendered, "godot/scripts/panels/CampPanel.cs:325,335,346,367 / ShopPanel.cs:496 (Effect.Kind checks)"),
-        ["Item.HeirloomLineage"] = new(FieldKind.Routed, "ProvenanceQuery.cs -> ProvenanceCard.cs (item history sentence, opened from Shop/Heroes/Tavern/Mirror/LegendsWall History buttons)"),
+        // P2-MEMORY-28 added two readers, and both go through the SAME ProvenanceQuery sentence
+        // rather than the raw field, so the entry stays Routed: LedgerModal's beat rows
+        // (BeatProvenanceTail, lead row included) and TellingPanel's TellingHeirloomLine.
+        ["Item.HeirloomLineage"] = new(FieldKind.Routed, "ProvenanceQuery.cs -> ProvenanceCard.cs (item history sentence, opened from Shop/Heroes/Tavern/Mirror/LegendsWall History buttons); same query also read by LedgerModal.cs (beat-row provenance tail) and TellingPanel.cs (TellingHeirloomLine)"),
         ["Item.History"] = new(FieldKind.Rendered, "godot/scripts/panels/ProvenanceCard.cs (the item's own History prose)"),
         // P2-SCREEN-18: crossed the N=3 sim-reader bar once RaidForecast.cs became a third
         // sim/GameSim/**/*.cs file matching ".Mark" (FallenQuery.cs and RivalAbsenceQuery.cs were

@@ -4,6 +4,7 @@ using System.Collections.Immutable;
 using System.Globalization;
 using System.Linq;
 using GameSim.Contracts;
+using GameSim.Drama;
 using GameSim.Expedition;
 using GameSim.Flavor;
 using GameSim.Flavor.Packs;
@@ -527,6 +528,23 @@ public sealed partial class TellingPanel : SimPanel
         var detailLabel = AddLabel(_content!, detail);
         detailLabel.Name = "TellingVerdictDetail";
         detailLabel.AddThemeColorOverride("font_color", GameTheme.TextDim);
+
+        // P2-MEMORY-28: the dead hand this steel came from (link 5) — on the ONE screen that
+        // exists to prove the item mattered, the reforged blade stops reading as any other
+        // Longsword. Deliberately its own label rather than a clause appended inside
+        // <see cref="VerdictLinesFor"/>: that static is shared with LedgerModal's lead-row
+        // headline (P2-PROOF-21), and the Ledger already appends the same clause through its own
+        // BeatProvenanceTail, so wording it there would double it on one surface and silently
+        // reword a third. ProvenanceQuery owns the sentence, so the Telling, the Ledger and the
+        // ProvenanceCard can never word the same dead hero's blade differently. Honest empty
+        // state: ordinary stock, or an item this state no longer holds, draws nothing at all.
+        if (_state!.Items.TryGetValue(_beat!.Item.Value, out var beatItem)
+            && ProvenanceQuery.HeirloomClause(beatItem) is { } heirloomClause)
+        {
+            var heirloomLabel = AddLabel(_content!, heirloomClause);
+            heirloomLabel.Name = "TellingHeirloomLine";
+            heirloomLabel.AddThemeColorOverride("font_color", GameTheme.TextDim);
+        }
 
         // P2-MEMORY-17-adjacent composite (brief: "beat earned, bearer died deeper") -- a pure read
         // over already-recorded facts (Deaths, the hero's own deepest fought floor this night),

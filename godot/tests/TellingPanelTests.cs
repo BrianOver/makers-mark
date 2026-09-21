@@ -947,6 +947,77 @@ public class TellingPanelTests
         AssertThat(panelSource).NotContains("new Tween");
     }
 
+    // ── P2-MEMORY-28: the dead hand the steel came from, on the screen that proves it mattered ──
+
+    /// <summary>
+    /// §11.16 measurement 4: <c>ProvenanceQuery.HeirloomClause</c> rendered in exactly one place —
+    /// the ProvenanceCard, a click below the ledger — while 205 beats a horizon were earned by
+    /// heirloom items. So the night Torvald's reforged blade turns the killing blow for Sable, the
+    /// one screen built to prove it mattered read the piece as any other Longsword.
+    ///
+    /// <para>The expected sentence is asked of the query that owns it, never typed here: the
+    /// Telling, the Ledger and the ProvenanceCard must word one dead hero's blade alike.</para>
+    /// </summary>
+    [TestCase]
+    public void Verdict_ForAnHeirloom_NamesTheDeadHandTheSteelCameFrom()
+    {
+        var (plainState, result, beatEvent) = LethalSaveNight();
+        var heirloom = plainState.Items[ArmorId.Value] with
+        {
+            HeirloomLineage = GameSim.Crafting.HeirloomHandlers.LineageOf("Rusty Dagger", "Sera"),
+        };
+        var state = plainState with { Items = plainState.Items.SetItem(ArmorId.Value, heirloom) };
+
+        var panel = new TellingPanel();
+        try
+        {
+            panel.ShowFor(state, result, beatEvent);
+            panel.Dev_Advance(6);
+
+            var label = panel.FindChild("TellingHeirloomLine", recursive: true, owned: false) as Label;
+            AssertThat(label)
+                .OverrideFailureMessage("the Telling's verdict never named the heirloom's dead hand")
+                .IsNotNull();
+            AssertThat(label!.Text).IsEqual(GameSim.Drama.ProvenanceQuery.HeirloomClause(heirloom));
+
+            // It RIDES the verdict; it never replaces the proof the stage exists for.
+            AssertThat(Find<Label>(panel, "TellingVerdictHeadline").Text).IsNotEmpty();
+        }
+        finally
+        {
+            panel.Free();
+            MainUi.DrainDetachedPanelsForTests();
+        }
+    }
+
+    /// <summary>Ordinary stock has no dead hand to name, so the verdict draws no line at all —
+    /// honest empty state, the same contract the Ledger's provenance tail keeps. Stated as the
+    /// rule (no lineage, no label) rather than against one fixture's prose.</summary>
+    [TestCase]
+    public void Verdict_ForOrdinaryStock_DrawsNoHeirloomLine()
+    {
+        var (state, result, beatEvent) = LethalSaveNight();
+        AssertThat(state.Items[ArmorId.Value].IsHeirloom)
+            .OverrideFailureMessage("the plain fixture grew a lineage -- this test proves nothing")
+            .IsFalse();
+
+        var panel = new TellingPanel();
+        try
+        {
+            panel.ShowFor(state, result, beatEvent);
+            panel.Dev_Advance(6);
+
+            AssertThat(panel.FindChild("TellingHeirloomLine", recursive: true, owned: false))
+                .OverrideFailureMessage("ordinary stock drew an heirloom line anyway")
+                .IsNull();
+        }
+        finally
+        {
+            panel.Free();
+            MainUi.DrainDetachedPanelsForTests();
+        }
+    }
+
     private static int CountOccurrences(string haystack, string needle)
     {
         var count = 0;

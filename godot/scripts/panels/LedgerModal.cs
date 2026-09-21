@@ -715,8 +715,38 @@ public partial class LedgerModal : SimPanel
     private static string BeatLine(GameState state, AttributionBeatEvent beat)
     {
         var line = $"{beat.Detail} (floor {beat.Floor})";
-        return ForgeMomentClause(state, beat.Item) is { } clause ? $"{line} — {clause}" : line;
+        var tail = BeatProvenanceTail(state, beat.Item);
+        return tail.Length > 0 ? $"{line} — {tail}" : line;
     }
+
+    /// <summary>
+    /// P2-MEMORY-28: everything the beat row says about where this steel came from, in the order
+    /// the hands touched it — what YOUR hands did at the anvil (link 1, <see
+    /// cref="ForgeMomentClause"/>), then the dead hand the steel itself came from (link 5, <see
+    /// cref="ProvenanceQuery.HeirloomClause"/>). Both are already-recorded facts the sim stamped
+    /// onto the item; nothing here derives, re-scores or invents either one.
+    ///
+    /// <para>The heirloom half is why a reforged blade stops reading as any other Longsword: the
+    /// night Torvald's steel turns the killing blow for Sable, the row that proves it says whose
+    /// blade it was. Both clauses are whole sentences (each ends in its own period), so they join
+    /// with a space, and an empty result draws nothing at all — the same honest-empty-state
+    /// contract the channel clause below keeps, never a filler line.</para>
+    /// </summary>
+    private static string BeatProvenanceTail(GameState state, ItemId itemId) =>
+        string.Join(
+            ' ',
+            new[] { ForgeMomentClause(state, itemId), HeirloomClause(state, itemId) }
+                .Where(clause => !string.IsNullOrEmpty(clause)));
+
+    /// <summary>
+    /// The dead hand this steel came from ("Forged from the Iron Blade of Torvald."), or null for
+    /// ordinary stock and for an item this state no longer holds. <see
+    /// cref="ProvenanceQuery.HeirloomClause"/> owns the sentence — the Ledger, the Telling and the
+    /// <see cref="ProvenanceCard"/> all read the SAME lineage string the reforge stamped, so no two
+    /// surfaces can ever word the same dead hero's blade differently.
+    /// </summary>
+    private static string? HeirloomClause(GameState state, ItemId itemId) =>
+        state.Items.TryGetValue(itemId.Value, out var item) ? ProvenanceQuery.HeirloomClause(item) : null;
 
     /// <summary>
     /// The opening words the forge wrote onto this item, or null when there are none to tell.
@@ -1443,11 +1473,14 @@ public partial class LedgerModal : SimPanel
                 // same secondary-line styling as the channel/presence line just below. The forge
                 // moment clause (link 1 — "quenched clean and true; your anvil, day 3") used to ride
                 // the single combined line; it rides this one now, so it is never dropped, only
-                // demoted alongside the arithmetic it was always secondary to.
+                // demoted alongside the arithmetic it was always secondary to. P2-MEMORY-28's
+                // heirloom clause rides the same tail (BeatProvenanceTail), so the LEAD row names
+                // the dead hand exactly as every other beat row does — the lead is the one row a
+                // player always reads, and it was the one row that took the non-BeatLine path.
                 var detailText = withDetail.Detail;
-                if (ForgeMomentClause(state, beat.Item) is { } forgeClause)
+                if (BeatProvenanceTail(state, beat.Item) is { Length: > 0 } provenanceTail)
                 {
-                    detailText = detailText.Length > 0 ? $"{detailText} — {forgeClause}" : forgeClause;
+                    detailText = detailText.Length > 0 ? $"{detailText} — {provenanceTail}" : provenanceTail;
                 }
 
                 if (detailText.Length > 0)
