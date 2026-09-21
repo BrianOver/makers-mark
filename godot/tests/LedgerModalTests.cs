@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using GameSim.Advisor;
 using GameSim.Classes;
 using GameSim.Contracts;
+using GameSim.Crafting;
 using GameSim.Drama;
 using GameSim.Expedition;
 using GameSim.Factions;
@@ -2172,8 +2173,13 @@ public class LedgerModalTests
             // form, with no moment clause to tell.
             .Add(PlainAxeId.Value, Crafted(PlainAxeId, "Notched Axe", ItemSlot.Weapon, "Forged at the anvil.", 2))
             // The real thing the sim writes when a moment IS earned (CraftingHandlers' ForgeMomentLine).
+            // P2-MEMORY-28 also makes this piece an heirloom: it is the one item on the night that
+            // carries BOTH halves of the provenance tail, so the two clauses' order and joining are
+            // exercised on a real row rather than asserted in isolation.
             .Add(EmberbiteId.Value, Crafted(
-                EmberbiteId, "Emberbite", ItemSlot.Armor, "Forged at the anvil — quenched clean and true.", 3))
+                EmberbiteId, "Emberbite", ItemSlot.Armor, "Forged at the anvil — quenched clean and true.", 3)
+                with
+            { HeirloomLineage = HeirloomHandlers.LineageOf("Rusty Dagger", "Sera") })
             // No Mark: a rival's goods, carrying a forge line it has no business carrying.
             .Add(RivalBucklerId.Value, new Item(
                 RivalBucklerId, "buckler", "Tin Buckler", ItemSlot.Shield, QualityGrade.Common,
@@ -2452,6 +2458,90 @@ public class LedgerModalTests
             AssertThat(detailLabel.Text)
                 .OverrideFailureMessage($"a momentless craft grew a forge clause anyway: \"{detailLabel.Text}\"")
                 .NotContains("your anvil");
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>
+    /// P2-MEMORY-28: the dead hand the steel came from, named where the steel earns its line.
+    /// §11.16 measurement 4 counted 205 beats earned by heirloom items in one horizon while
+    /// <c>ProvenanceQuery.HeirloomClause</c> rendered in exactly one place — the ProvenanceCard, a
+    /// click below the ledger — so the night a reforged blade turned the killing blow read as any
+    /// other Longsword. The lead row is the one row a player always reads.
+    /// </summary>
+    [TestCase]
+    public void BeatRow_ForAnHeirloom_NamesTheDeadHandTheSteelCameFrom()
+    {
+        var ui = MountMainUi(new SimAdapter(ProofNight()));
+        try
+        {
+            ui.Ledger.ShowFor(1);
+
+            var lead = BeatLinesOf(Find<Control>(ui.Ledger, "LedgerCard_0"))[0].Text;
+
+            // The sentence comes from the query that owns it, never a second copy typed here: the
+            // Ledger, the Telling and the ProvenanceCard must word one dead hero's blade alike.
+            var state = ui.Adapter.CurrentState;
+            var expected = ProvenanceQuery.HeirloomClause(state.Items[EmberbiteId.Value]);
+            AssertThat(expected)
+                .OverrideFailureMessage("the fixture's heirloom lost its lineage -- this test proves nothing")
+                .IsNotNull();
+            AssertThat(lead)
+                .OverrideFailureMessage($"the beat never named the dead hand: \"{lead}\"")
+                .Contains(expected!);
+
+            // Both halves of the tail ride the row, in the order the hands touched it: your anvil
+            // first (link 1), then the hand the steel itself came from (link 5). Neither replaces
+            // the proof, and neither replaces the other.
+            AssertThat(lead).Contains("Emberbite turned a lethal Deep Ghoul blow.");
+            AssertThat(lead).Contains("quenched clean and true; your anvil, day 3.");
+            AssertThat(lead.IndexOf("your anvil", System.StringComparison.Ordinal))
+                .OverrideFailureMessage($"the tail told the dead hand before your own: \"{lead}\"")
+                .IsLess(lead.IndexOf(expected!, System.StringComparison.Ordinal));
+        }
+        finally
+        {
+            Unmount(ui);
+        }
+    }
+
+    /// <summary>Ordinary stock has no dead hand to name — honest empty state, never a filler
+    /// clause. Phrased against the rule rather than one item: every beat row on the night whose
+    /// item carries no lineage must be free of the clause, so a later fixture that grows a third
+    /// heirloom cannot quietly stop being covered.</summary>
+    [TestCase]
+    public void BeatRows_ForOrdinaryStock_NameNoDeadHand()
+    {
+        var ui = MountMainUi(new SimAdapter(ProofNight()));
+        try
+        {
+            ui.Ledger.ShowFor(1);
+
+            var state = ui.Adapter.CurrentState;
+            foreach (var card in LedgerQuery.ReturnCards(state, 1))
+            {
+                var plainBeats = card.Beats
+                    .Where(b => !state.Items.TryGetValue(b.Item.Value, out var item) || !item.IsHeirloom)
+                    .ToList();
+                if (plainBeats.Count == 0)
+                {
+                    continue;
+                }
+
+                var index = LedgerQuery.ReturnCards(state, 1).ToList().FindIndex(c => c.Hero == card.Hero);
+                foreach (var label in BeatLinesOf(Find<Control>(ui.Ledger, $"LedgerCard_{index}")))
+                {
+                    if (plainBeats.Any(b => label.Text.Contains(b.Detail, System.StringComparison.Ordinal)))
+                    {
+                        AssertThat(label.Text)
+                            .OverrideFailureMessage($"ordinary stock grew a lineage anyway: \"{label.Text}\"")
+                            .NotContains("Forged from the");
+                    }
+                }
+            }
         }
         finally
         {
