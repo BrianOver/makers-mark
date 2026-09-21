@@ -2228,6 +2228,189 @@ as written.
 `sim/`, `godot/`, `tools/` and `docs/` and against `git log --all --oneline`, and all eight missed in
 both.
 
+### 11.16 The walk-away wave — measured 2026-09-20
+
+Seven units booked from a read of the running game on `main @ d6115a20`, the day after §11.15 and
+in its form: every number below was measured on that SHA and quoted with its n and spread, after all
+eight §11.15 rows had landed (the newcomer's purse, the wake's absence line, the light armory, the
+class-aware advisor, the harness's wake and runner arms, the masterwork policy and the disambiguated
+decision card). P2-HONEST-34 and P2-PEOPLE-11 sit parked as drafts awaiting rulings and are not
+re-booked; §11.14's and §11.15's proposals stay proposals. The owner's standing direction is still
+§11.7.13's, and this read asked the question the last wave's own gate left open: **the light armory
+shipped and the number that was meant to move did not — so where else does the reference smith's
+own hand, or the town around it, quietly refuse the work?** The instruments were the standard corpus
+(`batch --seeds 20 --days 100` under `BaselinePlayer`, seeds 1–20, campaigns ending day 28 (23–34);
+in horizon 5,750 beats, 195 deaths, 183 recruits, 1,152 party-nights, 510 crafts, 796 player sales),
+the same sweep under `--policy forgecounter` (**14 of 20 campaigns end, median day 42 (36–60)**; 253
+deaths, 6,250 counter approaches, 495 closes, 5,655 walks), the same sweep under `--policy masterwork`
+(its first read since P2-HONEST-40 wired it: ending day 28 (22–38), 548 crafts, 7 Masterwork),
+`felt-wall --seeds 20 --days 100` (half-life day 12.0, n=20, 7–47, the fourth identical read),
+`den-sweep` (40 of 40 seed-runs reach tier 1, 3 reach tier 3, all three under `forgecounter`),
+`decisions --seeds 20 --days 100` (10,000 decision points), `tools/Analytics` over the baseline corpus
+(five anomalies: one gold-mint spike, four tariff saturations — the same five shapes three reads
+running), a reader census over `godot/scripts/` for all 57 `[JsonDerivedType]` event subtypes
+(three with zero client readers: `LootIncomeReceived`, `ShelfEarmarked`, `DuesPledged`), and one
+throwaway xunit probe over seeds 1–20 under all three policies (crafts, sales, dead stock, beats by
+channel and by recipe, deaths by class, venue and monster, earmark outcomes, heirloom fates, counter
+walks, gossip sources), kept in the session and deleted before this commit. Six measurements chose the
+units.
+
+**1. The counter starves the town.** `CounterQueueSystem.Advance` adds every resolved customer to
+`CounterState.Served` — the one who bought and the one who walked alike — and
+`HeroShoppingSystem.MorningShoppingOrder` skips every served hero ("counter-served heroes don't shop
+twice"; the class doc adds "nobody browses twice, nobody starves"). A customer who walks has browsed
+nothing, and is then barred from the rival's shelf and the smith's for the rest of the morning. Under
+`forgecounter`, which opens the counter every dawn, **5,655 customers walked and 5,449 of them (96%)
+bought nothing from anyone that day**; the policy's heroes made 246 shelf purchases and 494 rival
+purchases in horizon against 796 and 876 under `BaselinePlayer`, which never opens the counter.
+The consequence reaches the arc: **6 of 20 `forgecounter` campaigns never reach the Ending in 100
+days, and five of the six (seeds 2, 3, 6, 12, 18) never graduated a single hero from the Mine**; the
+fourteen that end do so on day 42 (36–60) against 28 (23–34). `GateHeld` ends **1,058 of 2,372
+`forgecounter` halts (45%) against 274 of 1,152 (24%)**. Seed 2 is the shape in one campaign: 164 of
+its 200 marches target floor 4, 161 halt at the gate, the deepest floor reached in a hundred days is 3,
+and at day 100 six heroes stand alive at Level 6 with 3,000g each in gear whose item ids are below 35 —
+the pieces they arrived with. The same defect explains the buckler pile (measurement 6): a served
+roster never buys, so the smith's `HasBuyer` gate stays open forever and the shelf fills with work
+nobody will be allowed to look at. **P2-HONEST-42** lets a customer who walks browse the morning like
+anyone else — the rival's shelf and the smith's — and keeps "nobody browses twice" for the customer
+who bought, `[S][BAL]`. Its gate is pre-registered here: `forgecounter` campaigns reaching the Ending
+(14 of 20), the `GateHeld` share of its halts (45%), its shelf sales (246) and rival sales (494) in
+horizon, and `BaselinePlayer` byte-identical (it never submits `OpenCounterAction`, so every baseline
+gate must read exactly as it does today). It is not `[GOLD]`: the 30-day no-action trace opens no
+counter, so no served set ever exists in it. Whether the walk should still cost the SMITH the morning's
+sale — skipping the player's shelf but not the rival's — is the third proposal below and the owner's;
+the row as booked lets them browse both, because the town's gear is what the measurement shows
+starving. P2-HONEST-33 (#923) already opened one door in this wall for the accepted commission; this
+is the wall.
+
+**2. The most-asked commission has never been filled.** Consumable commissions were **posted 145
+times under `BaselinePlayer` and 519 under `forgecounter` — 53% of everything the `forgecounter`
+board posts — and fulfilled 0 times in 60 campaigns.** They never expire either: `BaselinePlayer`
+accepts `c.Slot != ItemSlot.Consumable` and `ForgeCounterPlayer` composes that filter, so the ask
+sits unaccepted until its deadline and is dropped silently (the U14 rule for a posted-but-never-accepted
+commission), while `CommissionHandlers.TryFulfillFromShelf`'s consumable branch — the one that
+adds the salve to `Hero.Pack` instead of `Gear` — has never once run in a sweep. Meanwhile the advisor
+says *"You have a Superior Field Salve shelved — Dain's Consumable commission wants it"* and
+*"Sable's commission: Consumable at Common+, 35g by day 7"* **523 times in 10,000 decision points**,
+asking the player to do the one thing no reference smith does. **P2-HONEST-43** is the harness arm,
+`[S]`: `forgecounter` accepts a consumable commission when a heal recipe is legal for it, crafts and
+shelves the salve (it already makes 63 a sweep and sells 47), and the coverage census pins
+`CommissionFulfilled` on a consumable above zero. No baseline change, no Contracts change, idle trace
+untouched.
+
+**3. The light armory is on the page and never on the anvil.** P2-LONG-36 gave the mystic a tier-2
+and a tier-3 armor; across 60 campaigns on seeds 1–20, **Quilted Jack was crafted 0 times under
+`BaselinePlayer`, once under `forgecounter` and 0 under `masterwork`; Silkweave Cuirass 0, 0 and 0.**
+`BaselinePlayer`'s Expedition craft walks recipes by tier then stat sum and breaks at the first legal
+one with a buyer — Quilted Jack (14) is last of its tier behind Greataxe (26), Half Plate (24),
+Tower Shield (22), Longsword (20), Hauberk (18) and Kite Shield (16); Silkweave (26) sits behind
+Greatsword (40), Full Plate (38) and Bulwark (34) — so a light piece is made only on a morning when
+no heavier recipe has any buyer at all, which on these seeds is never. The gate P2-LONG-36 pre-registered
+read 25 of 125 light-class deaths in player armor before the recipes and 24 of 125 after (20.0% →
+19.2%); the light classes are still **116 of 195 deaths (59%: mystic 65, occultist 28, skirmisher
+23)** and light-class heroes marched past the shop in nothing of the smith's 476 times in horizon.
+Retuning `BaselinePlayer` would re-baseline every gate in `Balance/`; §11.15 left that with the
+owner and this read does not take it back. **P2-LONG-37** puts the arm on the reference smith who
+serves the counter instead, `[S][BAL]`: before its inherited heaviest-first pick, `forgecounter`
+crafts the best armor a marching light-class hero can wear when that hero's armor slot holds nothing
+of the smith's and the recipe is legal. Gate: light-class deaths in player armor under `forgecounter`
+and `BaselinePlayer` (the second must not move — the arm is `forgecounter`'s alone), Quilted Jack and
+Silkweave crafted (1 and 0), and the `forgecounter` ending count P2-HONEST-42 leaves. It depends on
+P2-HONEST-42: dressing a roster the counter forbids from browsing measures nothing.
+
+**4. The dead hand the steel came from is never named where the steel earns its line.** With the
+wake arm live, `forgecounter` reforged **382 heirlooms in horizon; 205 beats were earned by heirloom
+items, 37 heirlooms were on a hero who died wearing them, and 29 sold off the shelf.** The item
+carries the fact — `Item.HeirloomLineage`, "forged from the {item} of {fallen hero}" — and
+`ProvenanceQuery.HeirloomClause` renders it in exactly one place: the `ProvenanceCard`, one click
+below the ledger. `LedgerModal.BeatLine` is `Detail (floor N) — forge-moment clause`; `TellingPanel`
+and the gossip line (`GossipGenerator` names the item by `Item.Name`) say nothing of the lineage. So
+the night *Torvald's reforged blade turns the killing blow for Sable* — link 5 handing link 4 its
+sentence — reads as any other Longsword. **P2-MEMORY-28** appends the heirloom clause to the beat
+row and the Telling's item line, `[G]`: client-only, over a string the sim already stamped.
+
+**5. The town gossips about five things.** Of 1,521 gossip lines under `BaselinePlayer`, **754
+(50%) retell a beat, 456 (30%) a floor record, 192 a death, 60 an arrival and 59 a graduation** —
+and that is the whole list, because `GossipGenerator.Subject`'s switch has six arms (those five and
+`CounterSaleClosed`). Nothing else the smith does is talked about: **416 fulfilled commissions, 116
+expiries, 0 lines; under `forgecounter`, 413 heirloom reforges, 251 honoured memorials, 207
+fulfilments, 132 expiries and 61 runner deliveries, 0 lines.** `Events.cs` still describes
+`CommissionExpired` as "a mood hit + gossip hook"; the hook was never hung. The smith's word — kept,
+broken, and the dead hero's gear given a second life — is decisions 1 and 2 and link 5 in one
+subject, and the tavern is silent on it. **P2-MEMORY-29** hangs three hooks, `[S]`: `TavernPack` keys
+and `GossipGenerator` arms for `CommissionFulfilled`, `CommissionExpired` and `HeirloomReforged`,
+ranked alongside the counter's own lines, with copy authored through the existing FlavorForge
+pipeline (§11.7.13 grant 3). It is not `[GOLD]`: none of the three events can fire in the no-action
+trace (each needs an accepted commission or a reforge), so the trace records no new line.
+
+**6. Two harness habits that make the reference corpora lie.** First, the masterwork policy is a
+shortsword factory: under `--policy masterwork`, **363 of 548 crafts (66%) are Shortswords, 231
+crafts (42%) are unsold at the ending (197 of them Shortswords), 7 crafts are Masterwork (1.3%), no
+armor or shield is made at all, and `LethalSave` fires 0 times in 20 campaigns** against a median of
+8 (2–15) under baseline — its Expedition loop keeps `BaselinePlayer`'s recipe order and drops its
+`HasBuyer` gate, so it spends every window on the cheapest thing copper will make. **P2-HONEST-44**
+gives `MasterworkSeekingPlayer` the same buyer gate (`HasBuyer` made internal, behaviour unchanged for
+baseline), `[S][BAL]`, gated on `MasterworkDominanceBalanceTests` staying above zero Masterworks and
+the sweep's Masterwork count (7) not falling while its dead stock (231) does. Second, the counter's
+opener shows the customer the shield they already hold: `CounterPlayer.RoleFitScore` adds 1,000 to
+any shield for a shield-capable class regardless of gain, so **2,142 of 5,655 walks (38%) read
+"current Buckler is better" or "current Kite Shield is better", 1,773 more (31%) "no gear-score
+improvement"**, and the shelf that feeds it holds **382 bucklers crafted, 29 sold, 294 unsold at the
+ending.** Every counter measurement on record — P2-HONEST-35's 83 fleeces in 554 closes, the pin
+rate, the walk reasons — is read through this opener. **P2-HONEST-45** presents the shelf piece with
+the largest gear-score gain the customer can wear and afford, and a consumable when their pack is
+under its target, `[S]`, harness-only.
+
+**Re-measured and not booked.** The felt wall is day 12.0 for the fourth read running. Dead
+recruits' median day in town is still 1 (0–10; 116 of 195 deaths). The same sword still sells
+twice: 324 of 796 baseline sales re-sell a piece a hero had bought — P2-HONEST-34 (draft #940) is
+parked, not forgotten. Trinket commissions: 25 posted, 11 expired, 0 fulfilled — §11.15's third
+proposal stands. The Crypt takes **102 of 195 baseline deaths (52%) from 386 of 1,152 marches
+(34%)**, the Bog-Wight 64 of them; that is a venue tuning the owner has not asked for. Beats by
+channel under `forgecounter`: counter 5,551, commission 4,578, runner 38, shelf 37 — the runner's 44
+deliveries earned 38 beats, the best return of any channel per item handed over. Earmarks under
+`forgecounter`: 300 placed, 127 bought by the hero held for (42%), 65 released at that hero's wake
+(22%), 90 still held at the ending (30%), 0 taken by anyone else — decision 1 has both arms and
+`EarmarkQuery` already renders all three outcomes. `GossipHighlightCount`, `HonoredMemorialCount`
+and the wake's four verbs now read non-zero under `forgecounter` (251 memorials honoured of 253
+deaths); P2-HONEST-38 did what it said. Decisions 4 and 5 stand as §11.14 read them; the tariff
+saturates in the same four seeds.
+
+**Which of these an unattended session may take.** `P2-HONEST-43`, `P2-HONEST-45`, `P2-MEMORY-29`
+(sim, no Contracts change, idle trace untouched) and `P2-MEMORY-28` (client, over a string the sim
+already stamps) carry no ceremony. `P2-HONEST-42`, `P2-HONEST-44` and `P2-LONG-37` re-baseline with
+their gates named above — under §11.7.13 all three are takeable with the ceremony performed, and
+`P2-LONG-37` waits for `P2-HONEST-42` to land first. **No row here is `[GOLD]`**, and that is a
+correction, not an omission: §11.15 tagged three rows `[GOLD]` and all three were wrong, because the
+30-day no-action trace crafts nothing, sells nothing, opens no counter and accepts no commission, so
+a row can only move it by changing what an idle day records. None of these seven does; each row's
+prose says which action in the trace it would have had to change. Nothing here waits on P4.
+
+**Three things the measurements argue for, as prose, for the owner to grant.** First, **the ladder
+tops out before the ending**: `HeroXp` ranks at 50/150/300/500/800 XP, a hero carrying the smith's
+work earns about 100 a night, and at day 100 **120 of 120 living heroes under `BaselinePlayer` (117
+of 120 under `forgecounter`) stand at Level 6, the cap; 75 heroes became "Legend" in 20 baseline
+campaigns, about four a town.** Level feeds `CombatMath` (Attack +2 a level), so the middle of every
+campaign is fought by a roster whose growth has stopped, and a title that most survivors hold names
+nobody. Extending the ladder is `[BAL]` across every combat gate; making the title scarce (the town's
+top few, not a threshold) is a law-4 rendering question. Either is the owner's. Second, **the heroes
+are rich and the smith is poor**: **119 of 120 living heroes hold at least 1,000g at day 100 (median
+5,130g, 201–13,444), the smith ends the campaign with 30g (1–79); hero loot income in horizon is
+97,809g against 55,713g of shelf revenue**, and "can't afford" is 1,192 of 6,724 passes, every one a
+newcomer's 22g. Decision 2 — price for the sale or the relationship — has no bite against a veteran
+who could buy the shelf ten times over; `WillingnessModel` reads mood and quality, and gold only as a
+floor. Whether willingness should read the purse (a rule about what the hero pays, law 1's ground) or
+the smith should have a channel to that gold (the 3,000g legendary commission exists and has never
+been legal at any of 10,000 decision points) is the owner's call. Third, **what a walk should cost**:
+P2-HONEST-42 lets a walked customer browse both shelves. If the owner would rather the walk cost the
+smith that customer's morning — they go to the rival, not to you — the row narrows to skipping the
+player's shelf only, and the copy on `CounterPanel`'s walk reply says so. §11.14's and §11.15's
+proposals stand as written.
+
+**Ids checked both ways before booking**, per §11.11's lesson: every id below was grepped across
+`sim/`, `godot/`, `tools/` and `docs/` and against `git log --all --oneline`, and all seven missed in
+both.
+
 ## 12. The external reviews — what came from outside, and what we did with it
 
 On 2026-08-06 the owner collected design reviews from three other AI models and asked for
@@ -5506,6 +5689,13 @@ name (§11.6 rule 4).
 | P2-HONEST-39 | The harness sends the runner — `forgecounter` crafts a heal and sends it to a camper under the too-hurt bar, so `SupplyDelivered` and the two consumable beats get measured | `sim/GameSim/Harness/ForgeCounterPlayer.cs`, `sim/GameSim.Tests/Hygiene/BalanceCorpusCoverageCensusTests.cs`, `sim/GameSim.Tests/` `evidence:sim/GameSim/Expedition/CampHandlers.cs:RunnerBandPct` | P2-LONG-25 | [S] |
 | P2-HONEST-40 | The masterwork policy joins the sweep — `--policy masterwork` wires `MasterworkSeekingPlayer` into `BatchRunner`, and the sweep reports why `BuyForgeSupply` never opens under `BaselinePlayer` | `sim/GameSim.Cli/BatchRunner.cs`, `sim/GameSim/Harness/MasterworkSeekingPlayer.cs`, `sim/GameSim.Tests/` `evidence:sim/GameSim.Cli/BatchRunner.cs:Masterwork` | — | [S] |
 | P2-HONEST-41 | "Scale Mail over Scale Mail" — when the chosen piece and its runner-up share a name, the decision card names the grade and price that split them | `sim/GameSim/Heroes/HeroShoppingSystem.cs`, `godot/scripts/panels/HeroPanel.cs` (read-only), `sim/GameSim.Tests/` `evidence:sim/GameSim/Heroes/HeroShoppingSystem.cs:DisambiguatedRunnerUpName` | — | [S][GOLD] |
+| P2-HONEST-42 | The counter stops starving the town — a customer who walks browses the morning like anyone else (the rival's shelf and yours); only the customer who bought is "served" | `sim/GameSim/Counter/CounterQueueSystem.cs`, `sim/GameSim/Heroes/HeroShoppingSystem.cs`, `sim/GameSim.Tests/Counter/`, `sim/GameSim.Tests/Balance/` `evidence:sim/GameSim/Counter/CounterQueueSystem.cs:AdvanceAfterWalk` | — | [S][BAL] |
+| P2-HONEST-43 | The reference smith fills the consumable ask — `forgecounter` accepts a consumable commission when a heal recipe is legal, shelves the salve, and the coverage census pins a consumable `CommissionFulfilled` above zero | `sim/GameSim/Harness/ForgeCounterPlayer.cs`, `sim/GameSim.Tests/Hygiene/BalanceCorpusCoverageCensusTests.cs`, `sim/GameSim.Tests/` `evidence:sim/GameSim/Harness/ForgeCounterPlayer.cs:AcceptConsumableCommissions` | — | [S] |
+| P2-LONG-37 | The smith's hand reaches the light armory — before its heaviest-first pick, `forgecounter` crafts the best armor a marching light-class hero can wear when that hero's armor slot holds nothing of yours | `sim/GameSim/Harness/ForgeCounterPlayer.cs`, `sim/GameSim/Harness/BaselinePlayer.cs` (read-only), `sim/GameSim.Tests/Balance/LightArmoryBalanceTests.cs` `evidence:sim/GameSim/Harness/ForgeCounterPlayer.cs:DressTheLightMarcher` | P2-HONEST-42 | [S][BAL] |
+| P2-MEMORY-28 | The beat row names the dead hand the steel came from — the ledger's beat line and the Telling's item line carry `ProvenanceQuery.HeirloomClause` when the item is an heirloom | `godot/scripts/panels/LedgerModal.cs`, `godot/scripts/panels/TellingPanel.cs`, `sim/GameSim/Drama/ProvenanceQuery.cs` (read-only), `godot/tests/` `evidence:godot/scripts/panels/LedgerModal.cs:HeirloomClause` | — | [G] |
+| P2-MEMORY-29 | The town talks about the smith's word — gossip arms and `TavernPack` keys for `CommissionFulfilled`, `CommissionExpired` and `HeirloomReforged`, copy through the FlavorForge pipeline | `sim/GameSim/Flavor/Packs/TavernPack.cs`, `sim/GameSim/Drama/GossipGenerator.cs`, `tools/FlavorForge/`, `sim/GameSim.Tests/` `evidence:sim/GameSim/Flavor/Packs/TavernPack.cs:CommissionExpired` | — | [S] |
+| P2-HONEST-44 | The masterwork policy stops being a shortsword factory — `MasterworkSeekingPlayer` takes `BaselinePlayer`'s buyer gate, so the masterwork corpus measures the masterwork chain | `sim/GameSim/Harness/MasterworkSeekingPlayer.cs`, `sim/GameSim/Harness/BaselinePlayer.cs` (`HasBuyer` made internal, behaviour unchanged), `sim/GameSim.Tests/Cli/MasterworkPolicySweepCensusTests.cs`, `sim/GameSim.Tests/Balance/MasterworkDominanceBalanceTests.cs` `evidence:sim/GameSim/Harness/MasterworkSeekingPlayer.cs:HasBuyer` | — | [S][BAL] |
+| P2-HONEST-45 | The counter's opener shows an upgrade, not a role token — the harness presents the shelf piece with the largest gear-score gain the customer can wear and afford, or a consumable when their pack is under target | `sim/GameSim/Harness/CounterPlayer.cs`, `sim/GameSim/Harness/ForgeCounterPlayer.cs` (read-only), `sim/GameSim.Tests/Counter/` `evidence:sim/GameSim/Harness/CounterPlayer.cs:UpgradeFitScore` | — | [S] |
 
 **P2-HONEST-33** is booked from P2-PEOPLE-28's own measurement: `HeroShoppingSystem.ShoppingOrder` skips
 every hero the counter served that day ("counter-served heroes don't shop twice", PKD5), and
