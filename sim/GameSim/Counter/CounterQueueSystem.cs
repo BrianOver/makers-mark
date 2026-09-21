@@ -85,7 +85,7 @@ public sealed class CounterQueueSystem : IPhaseSystem
         if (verdict.Kind != ShoppingVerdictKind.Buy)
         {
             var walkedState = Walk(state, hero, item, verdict, events);
-            return Advance(walkedState, counter, activeId, events);
+            return Advance(walkedState, counter, activeId, events, bought: false);
         }
 
         var openedCounter = HaggleResolver.OpenRound(counter, hero, heroClass, item, shelfEntry.Price, events);
@@ -101,7 +101,15 @@ public sealed class CounterQueueSystem : IPhaseSystem
     /// <see cref="CounterHandlers"/>'s <c>OpenCounterAction</c> handling.
     /// Internal (not private): <see cref="HaggleResolver"/> calls this to advance the queue after
     /// a haggle response resolves a sale or a walk — the same dequeue logic either path takes.</summary>
-    internal static GameState Advance(GameState state, CounterState counter, HeroId resolvedHero, IEventSink events)
+    /// <param name="bought">P2-HONEST-42: did this customer leave with something? Only a BUYER joins
+    /// <see cref="CounterState.Served"/>, because that set's only job is "nobody browses twice" and a
+    /// customer who walked has not browsed at all. Marking walkers served made the counter starve the
+    /// town: measured over 20 forgecounter campaigns, 5,449 of 5,655 walks (96%) bought nothing that
+    /// day and were then barred from the morning — the rival's shelf as well as the smith's — so six
+    /// campaigns never reached an ending, five of those with no graduation, and the held-gate share of
+    /// halts ran 45% against the baseline's 24%. The walk costs the sale it walked away from; it must
+    /// not cost the hero the whole town's gear.</param>
+    internal static GameState Advance(GameState state, CounterState counter, HeroId resolvedHero, IEventSink events, bool bought)
     {
         var nextQueue = counter.Queue.Count > 0 && counter.Queue[0] == resolvedHero
             ? counter.Queue.RemoveAt(0)
@@ -120,7 +128,7 @@ public sealed class CounterQueueSystem : IPhaseSystem
         {
             Counter = promoted with
             {
-                Served = counter.Served.Add(resolvedHero.Value),
+                Served = bought ? counter.Served.Add(resolvedHero.Value) : counter.Served,
                 Closed = closed,
             },
         };

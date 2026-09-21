@@ -125,7 +125,15 @@ public class HaggleEconomicsTests
         // down (null), not left open with hero1 recorded in Served.
         Assert.Null(result.NewState.Counter);
         Assert.Equal(DayPhase.Expedition, result.NewState.Phase);
-        Assert.Equal(1000, result.NewState.Heroes[1].Gold); // never bought anything
+        // P2-HONEST-42: walking away from the HAGGLE doesn't take the sword off the shelf, and
+        // walking no longer bars this hero from the browse pass that runs the same tick — so the
+        // hero, still shopping, buys the very sword it just wouldn't haggle over, at the plain
+        // listed price (100), through the ordinary (non-haggle) shelf evaluation.
+        var sold = Assert.Single(result.Events.OfType<ItemSold>());
+        Assert.Equal(hero.Id, sold.Buyer);
+        Assert.Equal(sword.Id, sold.Item);
+        Assert.Equal(100, sold.Price);
+        Assert.Equal(900, result.NewState.Heroes[1].Gold); // 1000 - 100: bought at listed price, not haggled
     }
 
     [Fact]
