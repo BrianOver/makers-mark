@@ -78,19 +78,25 @@ public class ForgeCounterPlayerEarmarkTests
     [Fact]
     public void UnacceptedCommission_NotAcceptedThisTickEither_NeverEarmarks()
     {
-        // Consumable commissions are the one case BaselinePlayer never auto-accepts (its own
-        // Slot != Consumable guard) -- exactly the "not accepted, not accepting now" shape this
-        // hand must stay silent on.
+        // An ask no arm of this policy answers: a consumable commission at a bar the smith cannot
+        // meet -- P2-HONEST-43's arm answers a consumable ask only off a salve on hand that
+        // CommissionHandlers.Satisfies accepts, or (below the Common bar a fresh craft is sure to
+        // clear) off a legal heal recipe, and a Superior ask against a Common salve is neither.
+        // The fixture states the RULE it is an instance of, because the instance moved once
+        // already: this test used to read "any consumable ask", which stopped being an unanswered
+        // ask the moment that arm shipped.
         var hero = MakeHero(1, "striker", gold: 200);
         var item = new Item(
             new ItemId(1), "test-recipe", "Salve", ItemSlot.Consumable, QualityGrade.Common,
             new ItemStats(0, 0, 0), new MakersMark("You", CraftedOnDay: 1),
             ImmutableList<ItemHistoryEntry>.Empty, Effect: new ConsumableEffect(ConsumableKind.Heal, Magnitude: 10));
-        var commission = new Commission(hero.Id, ItemSlot.Consumable, QualityGrade.Common, DeadlineDay: 10, PremiumGold: 20, Accepted: false);
+        var commission = new Commission(hero.Id, ItemSlot.Consumable, QualityGrade.Superior, DeadlineDay: 10, PremiumGold: 20, Accepted: false);
         var state = BaseState(Roster(hero), ImmutableList.Create(commission), item);
 
         var actions = ForgeCounterPlayer.ActionsFor(state);
 
+        // The premise, proven rather than assumed: nothing accepts this ask this tick either.
+        Assert.DoesNotContain(actions, a => a is AcceptCommissionAction accept && accept.Hero == hero.Id);
         Assert.Empty(actions.OfType<EarmarkAction>());
     }
 
