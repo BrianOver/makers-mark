@@ -62,9 +62,116 @@ public static class ForgeCounterPlayer
         DayPhase.Morning => MorningActions(state),
         DayPhase.Evening => EveningActions(state),
         DayPhase.Camp => CampActions(state),
-        // Craft/buy loops outside Morning/Evening/Camp are IDENTICAL to BaselinePlayer's — composed, not copied.
+        DayPhase.Expedition => ExpeditionActions(state),
+        // Craft/buy loops outside Morning/Evening/Camp/Expedition are IDENTICAL to BaselinePlayer's — composed, not copied.
         _ => BaselinePlayer.ActionsFor(state),
     };
+
+    /// <summary>
+    /// P2-LONG-37 (docs/design/MAKERS-MARK.md §11.16 measurement 3, "the reference smith who
+    /// serves the counter dresses the light classes"): decision 3's honest floor for the light
+    /// classes. P2-LONG-36 gave the mystic a tier-2 and a tier-3 armor recipe, but
+    /// <see cref="BaselinePlayer"/>'s Expedition craft loop walks every recipe heaviest-tier-then-
+    /// stat-sum first and breaks at the first legal one with a buyer — across 60 campaigns on
+    /// seeds 1-20 the light pieces were crafted 0/1/0 and 0/0/0 times (Baseline/forgecounter/
+    /// masterwork) while light-class heroes (<see cref="ClassDefinition.MaxItemWeight"/> not null:
+    /// mystic, occultist, skirmisher) were 59% of deaths and marched past the shop wearing nothing
+    /// of the smith's 476 times in horizon.
+    ///
+    /// <para><b>The rule, deterministic off recorded state — no RNG, no clock.</b> Before
+    /// <see cref="BaselinePlayer"/>'s heaviest-first pick runs, ask a narrower question first: is
+    /// some marching (<see cref="GameState.InFlight"/>) light-class hero's armor slot NOT already
+    /// filled by a piece this smith made? If so, craft the best armor recipe that hero's own class
+    /// weight cap lets them wear — read from the class registry via <see cref="ClassRegistry"/>,
+    /// never re-derived — among the recipes <see cref="ActionLegality"/> actually accepts right
+    /// now. <see cref="BaselinePlayer"/> is untouched: this arm is <c>forgecounter</c>'s alone.</para>
+    /// </summary>
+    private static ImmutableList<PlayerAction> ExpeditionActions(GameState state)
+    {
+        if (state.ActionSlotsRemaining > 0 && BestLightArmorCraft(state) is { } craft)
+        {
+            return ImmutableList.Create<PlayerAction>(craft);
+        }
+
+        return BaselinePlayer.ActionsFor(state);
+    }
+
+    /// <summary>P2-LONG-37: the best armor recipe for the first marching light-class hero (id
+    /// order, party-formation order within a party) whose armor slot holds nothing of the smith's.
+    /// "Best" is the highest Attack+Defense among the recipes that hero's class can legally wear
+    /// and the forge can legally craft right now, ties broken by <see cref="RecipeTable.All"/>'s
+    /// own sorted order (lowest recipe id first) so the pick never depends on dictionary
+    /// iteration. Null when no marching light-class hero needs armor, or none is craftable yet.</summary>
+    private static CraftAction? BestLightArmorCraft(GameState state)
+    {
+        foreach (var hero in MarchingLightClassHeroesNeedingSmithArmor(state))
+        {
+            var heroClass = ClassRegistry.Require(hero.ClassId);
+            CraftAction? best = null;
+            var bestStats = -1;
+
+            foreach (var recipe in RecipeTable.All.Values)
+            {
+                if (recipe.Slot != ItemSlot.Armor
+                    || heroClass.MaxItemWeight is not { } cap
+                    || recipe.BaseStats.Weight > cap)
+                {
+                    continue;
+                }
+
+                var candidate = new CraftAction(recipe.RecipeId, recipe.MaterialKey);
+                if (!ActionLegality.IsLegal(state, candidate, state.Phase))
+                {
+                    continue;
+                }
+
+                var stats = recipe.BaseStats.Attack + recipe.BaseStats.Defense;
+                if (stats > bestStats)
+                {
+                    best = candidate;
+                    bestStats = stats;
+                }
+            }
+
+            if (best is { } chosen)
+            {
+                return chosen;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>P2-LONG-37: marching (<see cref="GameState.InFlight"/>) light-class heroes whose
+    /// armor slot is not already filled by a player-crafted (<see cref="Item.PlayerCrafted"/>)
+    /// piece — party order (already id-sorted, see <see cref="InFlightExpedition.Party"/>), dead
+    /// members skipped.</summary>
+    private static IEnumerable<Hero> MarchingLightClassHeroesNeedingSmithArmor(GameState state)
+    {
+        foreach (var party in state.InFlight)
+        {
+            foreach (var member in party.Party)
+            {
+                if (party.Dead.Contains(member.Value)
+                    || !state.Heroes.TryGetValue(member.Value, out var hero)
+                    || !hero.Alive
+                    || ClassRegistry.Require(hero.ClassId).MaxItemWeight is null
+                    || !NeedsSmithArmor(state, hero))
+                {
+                    continue;
+                }
+
+                yield return hero;
+            }
+        }
+    }
+
+    /// <summary>P2-LONG-37: true when <paramref name="hero"/>'s armor slot is empty or holds a
+    /// piece this smith did not craft (no <see cref="MakersMark"/>).</summary>
+    private static bool NeedsSmithArmor(GameState state, Hero hero) =>
+        hero.Gear.Slot(ItemSlot.Armor) is not { } wornId
+        || !state.Items.TryGetValue(wornId.Value, out var worn)
+        || !worn.PlayerCrafted;
 
     /// <summary>P2-HONEST-38: BaselinePlayer's own Evening routine (ore-buying), plus the wake —
     /// see <see cref="AddWakeActions"/>.</summary>
