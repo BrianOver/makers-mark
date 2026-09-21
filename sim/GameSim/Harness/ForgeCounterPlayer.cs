@@ -4,6 +4,7 @@ using GameSim.Classes;
 using GameSim.Contracts;
 using GameSim.Expedition;
 using GameSim.Counter;
+using GameSim.Crafting;
 using GameSim.Drama;
 using GameSim.Heroes;
 using GameSim.Professions;
@@ -183,6 +184,7 @@ public static class ForgeCounterPlayer
             // the routine above is order-independent — mirrors ApprenticePlayer's day-2 opening
             // tick, done every morning here instead of once on a fixed calendar day.
             var actions = BaselinePlayer.ActionsFor(state).ToBuilder();
+            AcceptConsumableCommissions(state, actions);
             AddCommissionEarmarks(state, actions);
             var open = new OpenCounterAction();
             if (ActionLegality.IsLegal(state, open, state.Phase))
@@ -459,6 +461,134 @@ public static class ForgeCounterPlayer
     /// inventing a second scale.</summary>
     private static int FleecePrice(int trueWillingness, int heroGold) =>
         Math.Min(heroGold, trueWillingness + (int)((long)trueWillingness * WillingnessModel.FleeceMoodScaleWindowPermille / 1000));
+
+    /// <summary>The quality bar a craft this smith has not rolled yet is SURE to clear —
+    /// <see cref="Crafting.ItemForge"/> only scales up from Common and auto-craft's own grade never
+    /// reaches the Poor band, the same conservative floor <c>BaselinePlayer.HasBuyer</c> already
+    /// estimates a not-yet-crafted recipe against. An ask above this bar is only answered off a
+    /// salve the forge can already see (<see cref="SalveOnHandFor"/>), never off a promise.</summary>
+    private const QualityGrade CraftableQualityFloor = QualityGrade.Common;
+
+    /// <summary>
+    /// P2-HONEST-43 (docs/design/MAKERS-MARK.md §11.16, "The reference smith fills the consumable
+    /// ask"): link 2's commission channel, for the slot it asks for most and had never once filled.
+    /// §11.16 measured consumable commissions posted 145 times under <see cref="BaselinePlayer"/>
+    /// and 519 under this policy — 53% of everything this board posts — and fulfilled 0 across 60
+    /// campaigns, EXPIRED 0 as well: <see cref="BaselinePlayer"/>'s accept loop filters
+    /// <c>c.Slot != ItemSlot.Consumable</c> and this policy composes that loop, so the ask was never
+    /// accepted and U14 drops a posted-but-unaccepted commission in silence at its deadline. So
+    /// <see cref="CommissionHandlers.TryFulfillFromShelf"/>'s consumable branch — the one that adds
+    /// the salve to <see cref="Hero.Pack"/> instead of <see cref="Hero.Gear"/> — had never run in a
+    /// sweep, while the advisor named the ask 523 times per 10,000 decision points.
+    ///
+    /// <para><b>The rule, deterministic off recorded state — no RNG, no clock.</b> Open consumable
+    /// commissions in hero-id order (sorting makes the answer a property of the roster rather than
+    /// of posting order). Answer one only when this smith can actually fill it: either a salve they
+    /// already hold satisfies it — a shelf piece not held for someone else, or one of THIS tick's own
+    /// <see cref="StockAction"/> entries, which is where a salve crafted during yesterday's
+    /// Expedition sits at this moment — or, holding none, a heal recipe is legal to craft and the
+    /// ask's bar is one a craft is sure to clear. <see cref="CommissionHandlers.Satisfies"/> is the
+    /// match rule the commission channel itself checks at delivery, asked here rather than
+    /// re-derived, so an ask this arm answers can never disagree with what the channel would accept;
+    /// the accept verb itself is asked of <see cref="ActionLegality"/> before submission, the same
+    /// contract the counter, wake and vigil arms hold.</para>
+    ///
+    /// <para><b>One salve answers one ask, and the unrolled craft answers at most one.</b>
+    /// <paramref name="state"/> predates this tick, so two asks can both see the same salve;
+    /// <c>claimed</c> is what stops the second one being promised a piece the first will take, and
+    /// <c>promisedCraft</c> holds the craft fallback to a single ask because
+    /// <see cref="BaselinePlayer"/>'s Expedition loop makes at most one item per window. Over-
+    /// promising is the one failure mode this arm can introduce: an accepted ask that misses its
+    /// deadline is a mood penalty the silently-dropped open ask never charged.</para>
+    ///
+    /// <para><b>Runs before <see cref="AddCommissionEarmarks"/></b> so a salve this tick shelves is
+    /// held for the hero who asked for it (that method reads this tick's own accepts as
+    /// <c>acceptingNow</c>) rather than being sold out from under them by an earlier shopper.
+    /// <see cref="BaselinePlayer"/> is untouched: its Consumable exclusion is a scope choice about
+    /// PROVISIONING — pushing a salve at a hero whose stocking trait says they never restock — and a
+    /// commission is the hero's own posted request, which is the other question.</para>
+    /// </summary>
+    private static void AcceptConsumableCommissions(GameState state, ImmutableList<PlayerAction>.Builder actions)
+    {
+        var claimed = new HashSet<int>();
+        var promisedCraft = false;
+
+        foreach (var commission in state.Commissions
+                     .Where(c => !c.Accepted && c.Slot == ItemSlot.Consumable)
+                     .OrderBy(c => c.Hero.Value))
+        {
+            if (!state.Heroes.TryGetValue(commission.Hero.Value, out var hero) || !hero.Alive)
+            {
+                continue;
+            }
+
+            var onHand = SalveOnHandFor(state, actions, commission, hero, claimed);
+            if (onHand is null && (promisedCraft || commission.MinQuality > CraftableQualityFloor || !HealCraftLegal(state)))
+            {
+                continue;
+            }
+
+            var accept = new AcceptCommissionAction(commission.Hero);
+            if (!ActionLegality.IsLegal(state, accept, state.Phase))
+            {
+                continue;
+            }
+
+            actions.Add(accept);
+            if (onHand is { } salve)
+            {
+                claimed.Add(salve.Value);
+            }
+            else
+            {
+                promisedCraft = true;
+            }
+        }
+    }
+
+    /// <summary>P2-HONEST-43: the piece already in this forge's hands that would fill
+    /// <paramref name="commission"/> — the shelf (minus anything earmarked for another hero, which
+    /// is not this one's to promise) plus this tick's own stocking, in item-id order so the choice is
+    /// a property of the forge's history rather than of dictionary iteration. Null when the smith
+    /// holds nothing that satisfies the ask.</summary>
+    private static ItemId? SalveOnHandFor(
+        GameState state,
+        ImmutableList<PlayerAction>.Builder actions,
+        Commission commission,
+        Hero hero,
+        HashSet<int> claimed)
+    {
+        var heroClass = ClassRegistry.Require(hero.ClassId);
+        var candidates = state.Player.Shelf
+            .Where(entry => !HeroShoppingSystem.IsHeldForSomeoneElse(entry, hero))
+            .Select(entry => entry.Item)
+            .Concat(actions.OfType<StockAction>().Select(stock => stock.Item))
+            .Where(item => !claimed.Contains(item.Value))
+            .Distinct()
+            .OrderBy(item => item.Value);
+
+        foreach (var candidate in candidates)
+        {
+            if (state.Items.TryGetValue(candidate.Value, out var item)
+                && CommissionHandlers.Satisfies(commission, item, heroClass))
+            {
+                return candidate;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>P2-HONEST-43: can this smith make a salve at all right now? Asked of
+    /// <see cref="ActionLegality"/>'s own craft rule (profession, tier gate, materials net of the
+    /// efficiency talent, budget) against every heal recipe rather than re-derived — the same
+    /// "never re-derive a legality rule" contract the rest of this policy holds. The craft itself is
+    /// never submitted here: <see cref="BaselinePlayer"/>'s Expedition loop owns that, and this is
+    /// only the question of whether the promise is one the forge could keep.</summary>
+    private static bool HealCraftLegal(GameState state) =>
+        RecipeTable.All.Values.Any(recipe =>
+            recipe.Effect is { Kind: ConsumableKind.Heal }
+            && ActionLegality.IsLegal(state, new CraftAction(recipe.RecipeId, recipe.MaterialKey), state.Phase));
 
     /// <summary>
     /// P2-PEOPLE-28 ("hold it for Torvald"): decision 1's first measured occurrence. A piece
