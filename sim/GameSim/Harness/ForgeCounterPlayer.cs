@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using GameSim.Advisor;
+using GameSim.Bounties;
 using GameSim.Classes;
 using GameSim.Contracts;
 using GameSim.Expedition;
@@ -8,6 +9,7 @@ using GameSim.Crafting;
 using GameSim.Drama;
 using GameSim.Heroes;
 using GameSim.Professions;
+using GameSim.Venues;
 
 namespace GameSim.Harness;
 
@@ -293,6 +295,7 @@ public static class ForgeCounterPlayer
             var actions = BaselinePlayer.ActionsFor(state).ToBuilder();
             AcceptConsumableCommissions(state, actions);
             AddCommissionEarmarks(state, actions);
+            AddBountyPost(state, actions);
             var open = new OpenCounterAction();
             if (ActionLegality.IsLegal(state, open, state.Phase))
             {
@@ -742,6 +745,74 @@ public static class ForgeCounterPlayer
                 claimed.Add(commission.Hero);
                 break;
             }
+        }
+    }
+
+    /// <summary>
+    /// P2-HONEST-47 (docs/design/MAKERS-MARK.md §11.18 measurement 1, "the reference smith posts a
+    /// bounty"): the one lever §11.7.1 aimed at where the heroes go (link 3, decision 6's town-facing
+    /// twin) had never been pulled by any policy — every analytics run this plan has ever quoted
+    /// ends with <c>Bounties: 0 accepted / 0 declined</c>, on every seed, under both policies, because
+    /// no policy in this namespace so much as names <see cref="PostBountyAction"/>.
+    ///
+    /// <para><b>The rule, deterministic off recorded state — no RNG, no clock.</b> Read the Mine's
+    /// own halting signal rather than inventing a second one: <see cref="GateHeldStreakQuery"/>
+    /// already counts how many evenings running the venue's structural gate turned a party back with
+    /// no roll (P2-END-01). Once that streak reaches <see cref="DemandBoard.StallThresholdDays"/> —
+    /// the same "at least two days running" bar the depth-stall read already uses — the smith names
+    /// the floor from that same held night's own <see cref="GateReading"/>
+    /// (<see cref="ExpeditionResult.GateHeldAt"/>, still sitting in
+    /// <see cref="GameState.LastNightExpeditions"/> at this Morning tick, one night deep) and posts a
+    /// bounty there, at <see cref="BountyRules.MinimumReward"/> — the same floor-scaled price the
+    /// demand board already shows heroes as the bar a floor has to clear — asked of
+    /// <see cref="ActionLegality"/> before submission, the same contract every other arm in this
+    /// policy holds.</para>
+    ///
+    /// <para><b>The shop only posts what it can cover, and never stacks a second escrow on a floor
+    /// already carrying one.</b> Skipped when the reward would outrun <see cref="Player.Gold"/> (the
+    /// smith never posts a bounty it would have to shortchange — the same "a reward the shop can
+    /// actually cover" bar this unit is named for), and skipped while any bounty already targets that
+    /// floor, accepted or not: an unaccepted one is still being judged
+    /// (<see cref="BountyJudgingSystem"/>, Expedition tick) or lapsing on its own
+    /// (<see cref="BountyRules.ExpiryDays"/>), and an accepted one is already doing this arm's job.
+    /// </para>
+    /// </summary>
+    private static void AddBountyPost(GameState state, ImmutableList<PlayerAction>.Builder actions)
+    {
+        var streak = GateHeldStreakQuery.ConsecutiveNights(state, VenueRegistry.MineId, state.Day - 1);
+        if (streak < DemandBoard.StallThresholdDays)
+        {
+            return;
+        }
+
+        var heldFloor = state.LastNightExpeditions
+            .FirstOrDefault(result => result.VenueId == VenueRegistry.MineId && result.Halt == ExpeditionHalt.GateHeld)
+            ?.GateHeldAt?.Floor;
+        if (heldFloor is not { } floor || state.Bounties.Any(b => b.TargetFloor == floor))
+        {
+            return;
+        }
+
+        var reward = BountyRules.MinimumReward(floor);
+
+        // This same Morning tick's own UpgradeForgeAction — queued by BaselinePlayer.ActionsFor
+        // above, ahead of this arm in the submitted list — spends player gold from the SAME
+        // pre-tick balance before the kernel ever reaches this bounty (GameKernel.Tick applies the
+        // batch in submitted order, threading state through each handler). Checking against the raw
+        // state.Player.Gold snapshot here would post a bounty the escrow can no longer actually
+        // cover once the upgrade lands first — read net of that queued spend instead.
+        var reserved = actions.Any(a => a is UpgradeForgeAction)
+            ? Economy.ForgeTierHandlers.GoldCost[Economy.ForgeTierHandlers.CurrentTierIndex(state.Player)]
+            : 0;
+        if (reward > state.Player.Gold - reserved)
+        {
+            return;
+        }
+
+        var post = new PostBountyAction(floor, reward);
+        if (ActionLegality.IsLegal(state, post, state.Phase))
+        {
+            actions.Add(post);
         }
     }
 }

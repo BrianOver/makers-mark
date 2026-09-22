@@ -128,8 +128,6 @@ public class BalanceCorpusCoverageCensusTests
     /// widen or a silent regression.</summary>
     private static readonly Dictionary<string, string> KnownNeverSubmitted = new()
     {
-        ["PostBountyAction"] = "Bounty posting is never taken by any corpus sweep policy — "
-            + "rules-census.md:1236-1241. P2-HONEST-12.",
         // P2-PEOPLE-26: OpenCounterAction/PresentItemAction/HaggleResponseAction/CloseCounterAction
         // graduated off this table — SavedHeroMoodBalanceTests (sim/GameSim.Tests/Balance/) is the
         // first Balance-tagged test to reference ForgeCounterPlayer.ActionsFor, which genuinely
@@ -165,7 +163,10 @@ public class BalanceCorpusCoverageCensusTests
     // HonorMemorial, PlaceGraveMarker, ChooseRemembrance, ReforgeHeirloom — are submitted by a
     // policy the Balance corpus drives. Their entries are deleted rather than annotated: a closed
     // gap left on record is a stale instruction (CLAUDE.md rule 8).
-    private const int ExpectedNeverSubmittedCount = 9;
+    // 9 -> 8: P2-HONEST-47 gave ForgeCounterPlayer the bounty-posting arm (link 3), so
+    // PostBountyAction is submitted by a policy the Balance corpus drives. Entry deleted rather
+    // than annotated, same rule-8 precedent as the two reductions above.
+    private const int ExpectedNeverSubmittedCount = 8;
 
     [Fact]
     public void PlayerActionHierarchyHasTheMemberCountThisCensusExpects()
@@ -292,8 +293,14 @@ public class BalanceCorpusCoverageCensusTests
     [Fact]
     public void PlantedPolicyThatClosedAPinnedGap_IsReportedByName()
     {
-        const string plantedPolicy = "actions.Add(new PostBountyAction(3, 10));";
-        Assert.Contains("PostBountyAction", KnownNeverSubmitted.Keys);
+        // P2-HONEST-47 closed the PostBountyAction gap this proof used to plant — ForgeCounterPlayer
+        // genuinely submits it now, so KnownNeverSubmitted no longer pins it (rule 8: the real entry
+        // was deleted, not annotated). The replacement is READ OFF the table rather than named here:
+        // this proof is about the census's decision logic, not about one verb, and naming the next
+        // one by hand only moves the staleness along by a unit. Whichever verb the table pins first
+        // plays the part, so the proof keeps covering the family as the table shrinks.
+        var stillPinned = KnownNeverSubmitted.Keys.OrderBy(k => k, StringComparer.Ordinal).First();
+        var plantedPolicy = $"actions.Add(new {stillPinned}(hero, item));";
 
         var split = Classify(
             AllActionTypes.Select(t => t.Name).ToList(),
@@ -301,7 +308,7 @@ public class BalanceCorpusCoverageCensusTests
             ExtractActionTypeNames(plantedPolicy),
             KnownNeverSubmitted);
 
-        Assert.Contains("PostBountyAction", split.Stale);
+        Assert.Contains(stillPinned, split.Stale);
     }
 
     /// <summary>The classification, as a pure function over the three measured sets, so the two
