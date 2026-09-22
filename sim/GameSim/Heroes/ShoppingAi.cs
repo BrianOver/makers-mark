@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using GameSim.Classes;
 using GameSim.Contracts;
+using GameSim.Flavor;
 
 namespace GameSim.Heroes;
 
@@ -119,14 +120,14 @@ public static class ShoppingAi
         {
             return ShoppingVerdict.MakePass(
                 PassReasonKind.RoleMismatch,
-                $"shields don't suit a {heroClass.DisplayName.ToLowerInvariant()}");
+                $"shields don't suit {ArticleText.Indefinite(heroClass.DisplayName.ToLowerInvariant())}");
         }
 
         if (heroClass.MaxItemWeight is { } cap && item.Stats.Weight > cap)
         {
             return ShoppingVerdict.MakePass(
                 PassReasonKind.TooHeavy,
-                $"too heavy for a {heroClass.DisplayName.ToLowerInvariant()} — {item.Stats.Weight} weight, carries at most {cap}");
+                $"too heavy for {ArticleText.Indefinite(heroClass.DisplayName.ToLowerInvariant())} — {item.Stats.Weight} weight, carries at most {cap}");
         }
 
         // 2. Veteran pickiness (U9, KD3 no-softlock: gated on floor depth so a rookie's first

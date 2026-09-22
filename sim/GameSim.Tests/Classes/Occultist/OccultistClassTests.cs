@@ -80,13 +80,16 @@ public class OccultistClassTests
         var shield = MakeItem(2, ItemSlot.Shield, attack: 0, defense: 5, weight: 2, name: "Kite Shield");
         var shieldVerdict = ShoppingAi.EvaluateItem(hero, Def, shield, price: 5, Catalog(shield));
         Assert.Equal(PassReasonKind.RoleMismatch, shieldVerdict.PassReason);
-        Assert.Contains("shields don't suit a occultist", shieldVerdict.Reason);
+        // P2-MEMORY-31: "an occultist". This fixture pinned the wrong article for as long as the
+        // shop has said it — 678 renders in a 40-campaign sweep — which is why the defect was
+        // invisible to the suite until someone read the prose.
+        Assert.Contains("shields don't suit an occultist", shieldVerdict.Reason);
 
         // Over the (Mystic-tight) weight cap: TooHeavy, prose names the cap.
         var greatsword = MakeItem(3, ItemSlot.Weapon, attack: 9, defense: 0, weight: 10, name: "Greatsword");
         var heavyVerdict = ShoppingAi.EvaluateItem(hero, Def, greatsword, price: 5, Catalog(greatsword));
         Assert.Equal(PassReasonKind.TooHeavy, heavyVerdict.PassReason);
-        Assert.Contains("too heavy for a occultist", heavyVerdict.Reason);
+        Assert.Contains("too heavy for an occultist", heavyVerdict.Reason);
         Assert.Contains($"carries at most {Def.MaxItemWeight}", heavyVerdict.Reason);
 
         // Within cap and a real upgrade: Buy.
