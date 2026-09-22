@@ -2573,6 +2573,73 @@ the ladder's ceiling are unchanged and remain §11.17's two questions for the ow
 `P2-MEMORY-31` were grepped across `sim/`, `godot/`, `tools/` and `docs/` and against
 `git log --all --oneline`, and all three missed in both.
 
+### 11.19 The lever fires and nothing moves — measured 2026-09-22
+
+Two units booked from the read-back on `main @ 45229d61`, taken the same day §11.18 landed and
+asking the question §11.18 could not: P2-HONEST-47 gave the reference smith the bounty — **does
+pulling it change anything?** Corpus as always: `batch --seeds 20 --days 100` under
+`BaselinePlayer` and `--policy forgecounter`, seeds 1–20, read through `tools/Analytics`'
+pre-Ending column. `BaselinePlayer` is byte-identical for the fourth read running — 5,750 beats,
+195 deaths, 510 crafts, 1,152 party-nights, 416 fulfilments, 796 player sales, 876 rival sales,
+and `Bounties: 0 accepted / 0 declined`, since it still posts none.
+
+**The answer is no, and that is the finding.** `forgecounter` posted **97 bounties pre-Ending**
+and the town went exactly where it was already going: floor-4 marches moved from 588 of 1,336
+(44%) before the arm to 656 of 1,382 (47%) after, **floor-5 marches FELL, 404 to 386**, every
+campaign still reached floor 5, and the ending median got two days *worse* — day 31 (24–41)
+before, **day 33 (24–47)** after. Law 3 says every verb changes an outcome or reveals the
+player's stake. This one does neither yet, and P2-HONEST-47's own receipt — a non-zero
+`Bounties:` line — was a coverage gate, never an effect gate. Closing a census gap is not the
+same as making a lever work, and this section exists so that distinction stays on the record.
+
+**1. The smith posts a price that, by construction, almost nobody can accept.** Of **407
+judgments, 316 declined (78%)**, and they decline in one voice: *"40g is too thin for floor 4 —
+Torvald's D_q 370 (greed 10 × 40g − rep 120/dist 4) falls short of 400."* The arithmetic is not
+marginal, it is closed-form. `BountyRules.AcceptanceThreshold(floor)` is
+`MinimumReward(floor) * BaseGreed`, and `DesireScore` is `greed × reward − reputation / distance`.
+Post exactly `MinimumReward` and a neutral hero scores **exactly** the threshold before the
+reputation term, then subtracts it — so **a bounty at the documented minimum is unacceptable to
+every hero who has any reputation at all**, which after day one is all of them. The method's own
+doc comment claims a "neutral level-1 hero at floor 1 needs the same reward the pre-D_q flat rule
+required (byte-equivalent floor)"; that hero scores 10 × 10 − 20/1 = **80 against a bar of 100**.
+The claim is false as written and is a rule-8 lie living in a compiled file.
+**P2-HONEST-49** has the reference smith post a price the rule would actually take — read
+`AcceptanceThreshold` and the hero's own `DesireScore` terms rather than `MinimumReward`, which is
+a *board hint*, not an acceptable offer — and corrects that doc comment in the same PR, `[S]`,
+harness-only plus the comment. Gate, pre-registered: the price-decline share falls from 78% of
+judgments; `BountyPaid` and `BountyRefunded` both stay non-zero (an accepted bounty must still be
+able to end both ways); the shop never posts an escrow it cannot cover; and `BaselinePlayer`
+byte-identical on all seven pinned counts. Whether `MinimumReward` itself is misnamed — whether
+the sim's own floor price should be one a hero can take — is a rules question and the owner's, not
+this row's.
+
+**2. The bounty pays for the march the town was already making.** The arm triggers on
+`GateHeldStreakQuery` — the Mine turned the party back at a floor — and then posts *on that same
+floor*. So the sentence it offers is "you keep trying floor 4 and failing; here is 40g to try
+floor 4." **82 of the 97 posted bounties target floor 4**, the floor that already takes 47% of all
+marches. 90 of 91 accepted bounties are followed by a march to the bounty's floor, which reads
+like influence and is not: three quarters of all marches already go to floor 4 or 5, so the
+follow-through is the party's own plan, not the smith's money. **P2-HONEST-50** aims it somewhere
+the party was not already going: the deepest floor within some living hero's reach
+(`Hero.DeepestFloorReached + 1`, the bar `BountyRules.Judge` itself enforces) that is *not* the
+target the party would otherwise pick, `[S]`. Gate, pre-registered and deliberately falsifiable:
+**floor-5 marches must rise above 386 and the `forgecounter` ending median must fall below day
+33** — if the sweep does not move them, the row is `@@LOOP HALTED` and the finding is that the
+bounty cannot move depth at this reward scale, which is itself worth knowing and goes to the
+owner. It depends on P2-HONEST-49: aiming a price nobody accepts measures nothing.
+
+**Re-measured and not booked.** 41 bounties paid and 55 refunded of 96 resolved — an accepted
+bounty ends both ways, as P2-HONEST-47's gate required, and a 57% refund rate is the party
+failing the floor, not a defect. P2-HONEST-48's buckets now read honestly on this corpus: 4,454
+role-mismatch passes against 9,249 "current gear is better", where the old bucketer would have
+filed thousands of the second as the first. P2-MEMORY-31 holds: zero wrong indefinite articles
+pre-Ending. §11.17's two owner questions — light classes dying *wearing* the armor, and the ladder
+topping out before the ending — stand unchanged and unanswered.
+
+**Ids checked both ways before booking**, per §11.11's lesson: `P2-HONEST-49` and `P2-HONEST-50`
+were grepped across `sim/`, `godot/`, `tools/` and `docs/` and against `git log --all --oneline`,
+and both missed in both.
+
 ## 12. The external reviews — what came from outside, and what we did with it
 
 On 2026-08-06 the owner collected design reviews from three other AI models and asked for
