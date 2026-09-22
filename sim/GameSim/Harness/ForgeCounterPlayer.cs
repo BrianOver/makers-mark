@@ -763,14 +763,26 @@ public static class ForgeCounterPlayer
     /// the floor from that same held night's own <see cref="GateReading"/>
     /// (<see cref="ExpeditionResult.GateHeldAt"/>, still sitting in
     /// <see cref="GameState.LastNightExpeditions"/> at this Morning tick, one night deep) and posts a
-    /// bounty there, at <see cref="BountyRules.MinimumReward"/> — the same floor-scaled price the
-    /// demand board already shows heroes as the bar a floor has to clear — asked of
-    /// <see cref="ActionLegality"/> before submission, the same contract every other arm in this
-    /// policy holds.</para>
+    /// bounty there, asked of <see cref="ActionLegality"/> before submission, the same contract every
+    /// other arm in this policy holds.</para>
+    ///
+    /// <para><b>P2-HONEST-49 (§11.19 measurement 1, "a bounty price the rule would actually
+    /// take"): the reward is priced off the acceptance rule, not <see cref="BountyRules.MinimumReward"/>
+    /// alone.</b> §11.19 measured 78% of judgments declining a <see cref="BountyRules.MinimumReward"/>
+    /// post in one voice — "too thin" — because <see cref="BountyRules.AcceptanceThreshold"/> already
+    /// bakes in <see cref="BountyRules.BaseGreed"/>, and a hero's own reputation term only ever
+    /// subtracts from there. <see cref="MinAcceptableReward"/> finds the smallest
+    /// <see cref="Bounty.RewardGold"/> at which SOME living, reach-eligible hero's own
+    /// <see cref="BountyRules.DesireScore"/> clears <see cref="BountyRules.AcceptanceThreshold"/> for
+    /// this floor, by probing those two functions directly (never re-deriving the D_q arithmetic
+    /// here). No hero can take the floor at any price — the roster's dead, or every living hero's
+    /// deepest run falls short of it — this arm posts nothing: a bounty nobody can accept is exactly
+    /// what this unit removes, so it is never replaced with one the shop merely likes the price of.
+    /// </para>
     ///
     /// <para><b>The shop only posts what it can cover, and never stacks a second escrow on a floor
-    /// already carrying one.</b> Skipped when the reward would outrun <see cref="Player.Gold"/> (the
-    /// smith never posts a bounty it would have to shortchange — the same "a reward the shop can
+    /// already carrying one.</b> Skipped when the priced reward would outrun <see cref="Player.Gold"/>
+    /// (the smith never posts a bounty it would have to shortchange — the same "a reward the shop can
     /// actually cover" bar this unit is named for), and skipped while any bounty already targets that
     /// floor, accepted or not: an unaccepted one is still being judged
     /// (<see cref="BountyJudgingSystem"/>, Expedition tick) or lapsing on its own
@@ -793,7 +805,10 @@ public static class ForgeCounterPlayer
             return;
         }
 
-        var reward = BountyRules.MinimumReward(floor);
+        if (MinAcceptableReward(state, floor) is not { } reward)
+        {
+            return;
+        }
 
         // This same Morning tick's own UpgradeForgeAction — queued by BaselinePlayer.ActionsFor
         // above, ahead of this arm in the submitted list — spends player gold from the SAME
@@ -813,6 +828,72 @@ public static class ForgeCounterPlayer
         if (ActionLegality.IsLegal(state, post, state.Phase))
         {
             actions.Add(post);
+        }
+    }
+
+    /// <summary>
+    /// The smallest <see cref="Bounty.RewardGold"/> at which some living, reach-eligible hero would
+    /// actually accept a floor-<paramref name="floor"/> bounty — the cheapest of each such hero's own
+    /// <see cref="MinRewardHeroAccepts"/> price. <see langword="null"/> when no living hero could ever
+    /// take this floor (dead roster, or every survivor's own deepest run falls short of it) — there is
+    /// no price this arm should post in that case, since nobody could accept it at any reward.
+    /// </summary>
+    private static int? MinAcceptableReward(GameState state, int floor)
+    {
+        int? cheapest = null;
+        foreach (var hero in state.Heroes.Values)
+        {
+            if (!hero.Alive || floor > hero.DeepestFloorReached + 1)
+            {
+                continue; // BountyRules.Judge's own reach gate — no price changes a "beyond what X dares" decline.
+            }
+
+            if (MinRewardHeroAccepts(hero, floor) is { } price && (cheapest is null || price < cheapest))
+            {
+                cheapest = price;
+            }
+        }
+
+        return cheapest;
+    }
+
+    /// <summary>
+    /// The smallest <see cref="Bounty.RewardGold"/> at which <paramref name="hero"/>'s own
+    /// <see cref="BountyRules.DesireScore"/> clears <see cref="BountyRules.AcceptanceThreshold"/> for
+    /// <paramref name="floor"/> — found by probing those two functions directly on throwaway
+    /// <see cref="Bounty"/> records (never posted, never re-deriving the D_q formula here). D_q rises
+    /// with reward for any greed <see cref="BountyRules.GreedFor"/> can return (every value is
+    /// positive), so a binary search between 1 and a reward that's provably enough — big enough that
+    /// even <see cref="BountyRules.GreedFor"/>'s minimum multiplier (1, a floor no real trait sets but
+    /// still a safe upper bound) times it alone clears the threshold plus the hero's whole reputation
+    /// term, ignoring the distance division that only shrinks it further — finds the exact price.
+    /// </summary>
+    private static int MinRewardHeroAccepts(Hero hero, int floor)
+    {
+        var threshold = BountyRules.AcceptanceThreshold(floor);
+        var reputation = BountyRules.ReputationFor(hero);
+
+        var lo = 1;
+        var hi = threshold + reputation + 1;
+        while (lo < hi)
+        {
+            var mid = lo + (hi - lo) / 2;
+            if (ClearsThreshold(hero, floor, mid, threshold))
+            {
+                hi = mid;
+            }
+            else
+            {
+                lo = mid + 1;
+            }
+        }
+
+        return lo;
+
+        static bool ClearsThreshold(Hero hero, int floor, int reward, int threshold)
+        {
+            var probe = new Bounty(new BountyId(0), floor, reward, PostedOnDay: 0, AcceptedBy: null, Paid: false);
+            return BountyRules.DesireScore(hero, probe) >= threshold;
         }
     }
 }

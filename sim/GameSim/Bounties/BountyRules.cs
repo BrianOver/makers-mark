@@ -74,9 +74,22 @@ public static class BountyRules
         (GreedFor(hero) * bounty.RewardGold) - (ReputationFor(hero) / DistanceFor(bounty));
 
     /// <summary>The D_q bar a bounty at this floor must clear — <see cref="MinimumReward"/> scaled
-    /// by <see cref="BaseGreed"/>, so a neutral level-1 hero at floor 1 needs the same reward the
-    /// pre-D_q flat rule required (byte-equivalent floor), while trait/fame/depth now shade who
-    /// actually bites at that price.</summary>
+    /// by <see cref="BaseGreed"/>.
+    ///
+    /// <para><b>Corrected (§11.19 measurement 1, P2-HONEST-49):</b> this doc previously claimed a
+    /// neutral level-1 hero at floor 1 posted at exactly <see cref="MinimumReward"/> needs "the same
+    /// reward the pre-D_q flat rule required (byte-equivalent floor)." That was false as written: a
+    /// hero with ANY reputation (<see cref="ReputationFor"/>, which is nonzero for every hero above
+    /// level 0) only ever subtracts from <see cref="DesireScore"/>, never adds, so
+    /// <see cref="MinimumReward"/> alone clears this bar for no hero who has raised a level — a
+    /// level-1 hero at floor 1 scores 10 × 10 − 20/1 = 80 against a threshold of 100, and declines.
+    /// §11.19 measured this in production: 316 of 407 judgments (78%) declined a
+    /// <see cref="MinimumReward"/> post with the same reason, "is too thin." Posting a reward that
+    /// actually clears this bar for a real hero is <see cref="GameSim.Harness.ForgeCounterPlayer"/>'s job
+    /// (<c>MinAcceptableReward</c>), not this method's — whether <see cref="MinimumReward"/> itself
+    /// SHOULD be an acceptable offer is a rules question the plan leaves with the owner
+    /// (§11.19), and this method's own value is unchanged here.</para>
+    /// </summary>
     public static int AcceptanceThreshold(int floor) => MinimumReward(floor) * BaseGreed;
 
     /// <summary>Weigh a bounty for one hero. Accept, or decline with a visible reason (AE7) that
