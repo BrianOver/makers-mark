@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using GameSim.Classes;
 using GameSim.Contracts;
 using GameSim.Bounties;
 using GameSim.Harness;
@@ -13,15 +14,32 @@ namespace GameSim.Tests.Harness;
 /// with <c>Bounties: 0 accepted / 0 declined</c> because no policy in
 /// <c>sim/GameSim/Harness/</c> so much as names <see cref="PostBountyAction"/>.
 ///
+/// <para>P2-HONEST-49 (§11.19 measurement 1) found the arm posting a price nobody would take:
+/// <see cref="BountyRules.MinimumReward"/> alone clears <see cref="BountyRules.AcceptanceThreshold"/>
+/// for no hero who has raised a level, because <see cref="BountyRules.ReputationFor"/> only ever
+/// subtracts. The arm now prices off the acceptance rule itself — the tests below assert that
+/// property (a real hero would take the posted price; nobody would take one gold less; nothing is
+/// posted when no living, reach-eligible hero could ever take the floor) rather than pinning the
+/// number <see cref="BountyRules.MinimumReward"/> happens to return.</para>
+///
 /// <para>These are properties of the arm's rule — post when the Mine's own held-gate streak says
-/// the town is stalling at a floor and the shop can cover the escrow, never when it can't or when
-/// a bounty already targets that floor — not of a named seed or hero, so growing the roster or the
-/// venue table cannot quietly stop them covering it.</para>
+/// the town is stalling at a floor and the shop can cover a price a real hero would take, never
+/// when it can't or when a bounty already targets that floor — not of a named seed or hero, so
+/// growing the roster or the venue table cannot quietly stop them covering it.</para>
 /// </summary>
 public class ForgeCounterPlayerBountyTests
 {
+    private static Hero MakeHero(int id, int level, int deepestFloorReached) => new(
+        new HeroId(id), $"Hero{id}", ClassRegistry.VanguardId, Level: level, MaxHp: 25, Gold: 0,
+        GearSet.Empty, ImmutableList<ItemMemory>.Empty,
+        Alive: true, DeepestFloorReached: deepestFloorReached, DiedOnDay: null);
+
+    private static ImmutableSortedDictionary<int, Hero> Roster(params Hero[] heroes) =>
+        heroes.ToImmutableSortedDictionary(h => h.Id.Value, h => h);
+
     private static GameState BaseState(int day, int gold, ImmutableList<GameEvent> eventLog,
-        ImmutableList<ExpeditionResult> lastNight, ImmutableList<Bounty> bounties) =>
+        ImmutableList<ExpeditionResult> lastNight, ImmutableList<Bounty> bounties,
+        ImmutableSortedDictionary<int, Hero>? heroes = null) =>
         GameFactory.NewGame(seed: 4747) with
         {
             Day = day,
@@ -29,6 +47,7 @@ public class ForgeCounterPlayerBountyTests
             EventLog = eventLog,
             LastNightExpeditions = lastNight,
             Bounties = bounties,
+            Heroes = heroes ?? ImmutableSortedDictionary<int, Hero>.Empty,
         };
 
     private static GameEvent GateHeldOn(int day) =>
@@ -46,20 +65,65 @@ public class ForgeCounterPlayerBountyTests
             VenueId: "mine", Halt: ExpeditionHalt.GateHeld)
         { GateHeldAt = new GateReading(floor, power, required) };
 
+    /// <summary>A throwaway probe bounty for asking <see cref="BountyRules.Judge"/> directly — never
+    /// posted, mirroring how the production arm itself prices (never re-deriving the D_q formula).</summary>
+    private static Bounty ProbeBounty(int floor, int reward) =>
+        new(new BountyId(999), floor, reward, PostedOnDay: 0, AcceptedBy: null, Paid: false);
+
     [Fact]
-    public void TwoNightsHeldAtTheSameFloor_AndTheShopCanCoverIt_PostsThere()
+    public void TwoNightsHeldAtTheSameFloor_AndTheShopCanCoverIt_PostsAPriceARealHeroWouldTake()
     {
-        var reward = BountyRules.MinimumReward(3);
+        var hero = MakeHero(1, level: 3, deepestFloorReached: 3);
         var state = BaseState(
             day: 5,
-            gold: reward + 100,
+            gold: 100_000,
             eventLog: ImmutableList.Create(GateHeldOn(3), GateHeldOn(4)),
             lastNight: ImmutableList.Create(HeldAt(3)),
-            bounties: ImmutableList<Bounty>.Empty);
+            bounties: ImmutableList<Bounty>.Empty,
+            heroes: Roster(hero));
 
         var post = Assert.Single(ForgeCounterPlayer.ActionsFor(state).OfType<PostBountyAction>());
         Assert.Equal(3, post.TargetFloor);
-        Assert.Equal(reward, post.RewardGold);
+
+        // The property, not the number: some reach-eligible living hero actually takes the posted
+        // price, and nobody would have taken one gold less — the cheapest price the rule allows.
+        Assert.True(BountyRules.Judge(hero, ProbeBounty(post.TargetFloor, post.RewardGold)).Accepted,
+            "the posted price must clear the acceptance rule for a real hero");
+        Assert.False(BountyRules.Judge(hero, ProbeBounty(post.TargetFloor, post.RewardGold - 1)).Accepted,
+            "one gold cheaper must NOT clear the acceptance rule — the arm must post the cheapest taken price");
+    }
+
+    [Fact]
+    public void NoLivingHeroCouldEverTakeTheFloor_PostsNothing()
+    {
+        // Every hero's own reach (DeepestFloorReached + 1) falls short of the held floor — no price,
+        // however large, changes BountyRules.Judge's "beyond what X dares" decline. A bounty nobody
+        // could ever accept is exactly what this unit removes, so the arm must post nothing here,
+        // not fall back to MinimumReward.
+        var tooShallow = MakeHero(1, level: 5, deepestFloorReached: 0);
+        var state = BaseState(
+            day: 5,
+            gold: 100_000,
+            eventLog: ImmutableList.Create(GateHeldOn(3), GateHeldOn(4)),
+            lastNight: ImmutableList.Create(HeldAt(3)),
+            bounties: ImmutableList<Bounty>.Empty,
+            heroes: Roster(tooShallow));
+
+        Assert.Empty(ForgeCounterPlayer.ActionsFor(state).OfType<PostBountyAction>());
+    }
+
+    [Fact]
+    public void NoLivingHeroAtAll_PostsNothing()
+    {
+        var state = BaseState(
+            day: 5,
+            gold: 100_000,
+            eventLog: ImmutableList.Create(GateHeldOn(3), GateHeldOn(4)),
+            lastNight: ImmutableList.Create(HeldAt(3)),
+            bounties: ImmutableList<Bounty>.Empty,
+            heroes: ImmutableSortedDictionary<int, Hero>.Empty);
+
+        Assert.Empty(ForgeCounterPlayer.ActionsFor(state).OfType<PostBountyAction>());
     }
 
     [Fact]
@@ -69,39 +133,42 @@ public class ForgeCounterPlayerBountyTests
         // halting," matching DemandBoard.StallThresholdDays' own "at least two days" bar.
         var state = BaseState(
             day: 5,
-            gold: 1000,
+            gold: 100_000,
             eventLog: ImmutableList.Create(GateHeldOn(4)),
             lastNight: ImmutableList.Create(HeldAt(3)),
-            bounties: ImmutableList<Bounty>.Empty);
+            bounties: ImmutableList<Bounty>.Empty,
+            heroes: Roster(MakeHero(1, level: 3, deepestFloorReached: 3)));
 
         Assert.Empty(ForgeCounterPlayer.ActionsFor(state).OfType<PostBountyAction>());
     }
 
     [Fact]
-    public void ShopCannotCoverTheReward_NoPost()
+    public void ShopCannotCoverThePriceTheRuleWouldTake_NoPost()
     {
-        var reward = BountyRules.MinimumReward(3);
-        var state = BaseState(
-            day: 5,
-            gold: reward - 1,
+        var hero = MakeHero(1, level: 3, deepestFloorReached: 3);
+        var probeState = BaseState(
+            day: 5, gold: 100_000,
             eventLog: ImmutableList.Create(GateHeldOn(3), GateHeldOn(4)),
             lastNight: ImmutableList.Create(HeldAt(3)),
-            bounties: ImmutableList<Bounty>.Empty);
+            bounties: ImmutableList<Bounty>.Empty,
+            heroes: Roster(hero));
+        var wouldPost = Assert.Single(ForgeCounterPlayer.ActionsFor(probeState).OfType<PostBountyAction>());
 
-        Assert.Empty(ForgeCounterPlayer.ActionsFor(state).OfType<PostBountyAction>());
+        var poor = probeState with { Player = PlayerState.NewGame(wouldPost.RewardGold - 1) };
+        Assert.Empty(ForgeCounterPlayer.ActionsFor(poor).OfType<PostBountyAction>());
     }
 
     [Fact]
     public void ABountyAlreadyTargetsTheHeldFloor_NeverStacksASecondEscrow()
     {
-        var reward = BountyRules.MinimumReward(3);
         var existing = new Bounty(new BountyId(1), TargetFloor: 3, RewardGold: 30, PostedOnDay: 4, AcceptedBy: null, Paid: false);
         var state = BaseState(
             day: 5,
-            gold: reward + 100,
+            gold: 100_000,
             eventLog: ImmutableList.Create(GateHeldOn(3), GateHeldOn(4)),
             lastNight: ImmutableList.Create(HeldAt(3)),
-            bounties: ImmutableList.Create(existing));
+            bounties: ImmutableList.Create(existing),
+            heroes: Roster(MakeHero(1, level: 3, deepestFloorReached: 3)));
 
         Assert.Empty(ForgeCounterPlayer.ActionsFor(state).OfType<PostBountyAction>());
     }
@@ -109,13 +176,13 @@ public class ForgeCounterPlayerBountyTests
     [Fact]
     public void PostedBounty_IsAlwaysLegal_ThroughTheProductionKernel()
     {
-        var reward = BountyRules.MinimumReward(3);
         var state = BaseState(
             day: 5,
-            gold: reward + 100,
+            gold: 100_000,
             eventLog: ImmutableList.Create(GateHeldOn(3), GateHeldOn(4)),
             lastNight: ImmutableList.Create(HeldAt(3)),
-            bounties: ImmutableList<Bounty>.Empty);
+            bounties: ImmutableList<Bounty>.Empty,
+            heroes: Roster(MakeHero(1, level: 3, deepestFloorReached: 3)));
 
         var kernel = GameComposition.BuildKernel();
         var result = kernel.Tick(state, ForgeCounterPlayer.ActionsFor(state));
