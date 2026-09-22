@@ -128,8 +128,6 @@ public class BalanceCorpusCoverageCensusTests
     /// widen or a silent regression.</summary>
     private static readonly Dictionary<string, string> KnownNeverSubmitted = new()
     {
-        ["PostBountyAction"] = "Bounty posting is never taken by any corpus sweep policy — "
-            + "rules-census.md:1236-1241. P2-HONEST-12.",
         // P2-PEOPLE-26: OpenCounterAction/PresentItemAction/HaggleResponseAction/CloseCounterAction
         // graduated off this table — SavedHeroMoodBalanceTests (sim/GameSim.Tests/Balance/) is the
         // first Balance-tagged test to reference ForgeCounterPlayer.ActionsFor, which genuinely
