@@ -121,6 +121,16 @@ public static class FlavorEngine
                 return false;
             }
 
+            // P2-MEMORY-31: authored copy writes "a {monster}" / "a {slot}" / "a {item}", and the
+            // value decides whether that is right -- "a Cave Rat" but "an Ore Lurker", "a shield"
+            // but "an armor". A sweep counted 774 wrong articles in rendered prose. Fixing it here
+            // means every pack is covered at once and no template has to spell the rule itself,
+            // which is the only version of this fix that a newly authored line cannot miss.
+            if (value.Length > 0 && IsVowelLetter(value[0]) && EndsWithBareArticle(builder))
+            {
+                builder.Insert(builder.Length - 1, 'n'); // "a " -> "an "
+            }
+
             builder.Append(value);
             i = close + 1;
         }
@@ -138,6 +148,21 @@ public static class FlavorEngine
         rendered = line;
         return true;
     }
+
+
+    /// <summary>True when what has been rendered so far ends in a bare indefinite article — the
+    /// literal "a " at a word boundary, so "a " matches and "sea " or "extra " do not.</summary>
+    private static bool EndsWithBareArticle(StringBuilder builder) =>
+        builder.Length >= 2
+        && builder[^1] == ' '
+        && builder[^2] is 'a' or 'A'
+        && (builder.Length == 2 || !char.IsLetterOrDigit(builder[^3]));
+
+    /// <summary>The vowel-LETTER rule, the same one <see cref="ArticleText"/> states for nouns the
+    /// sim composes directly. Letters, not sounds: honest for this game's noun set, and carrying no
+    /// dictionary of exceptions for words the game does not have.</summary>
+    private static bool IsVowelLetter(char c) =>
+        c is 'a' or 'e' or 'i' or 'o' or 'u' or 'A' or 'E' or 'I' or 'O' or 'U';
 
     private static string RenderFallback(FlavorPack pack, string key, IReadOnlyDictionary<string, string> slots)
     {

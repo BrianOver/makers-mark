@@ -194,7 +194,10 @@ public class MonsterNameCensusTests
                 else
                 {
                     Assert.Equal($"the {kind}", definite);
-                    Assert.Equal($"a {kind}", indefinite);
+                    // P2-MEMORY-31: the article follows the kind's own first letter — "a Cave
+                    // Rat", "an Old Mossjaw". Asked of the shared rule rather than re-spelled
+                    // here, so this census cannot drift from the producer it is censusing.
+                    Assert.Equal(GameSim.Flavor.ArticleText.Indefinite(kind), indefinite);
                     Assert.Equal($"{kind} hit", attributive);
                 }
             }

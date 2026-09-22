@@ -5,6 +5,7 @@ using GameSim.Drama;
 using GameSim.Economy;
 using GameSim.Materials;
 using GameSim.Professions;
+using GameSim.Flavor;
 
 namespace GameSim.Advisor;
 
@@ -592,9 +593,9 @@ public static class ObjectiveAdvisor
 
             return hero.Gold < entry.Price
                 ? new Suggestion(null,
-                    $"You have a {item.Quality} {item.Name} shelved — {demandLabel} wants it, but {heroName} " +
+                    $"You have {ArticleText.Indefinite($"{item.Quality} {item.Name}")} shelved — {demandLabel} wants it, but {heroName} " +
                     $"only carries {hero.Gold}g against the {entry.Price}g asking price — the sale can't close as priced.")
-                : new Suggestion(null, $"You have a {item.Quality} {item.Name} shelved — {demandLabel} wants it.");
+                : new Suggestion(null, $"You have {ArticleText.Indefinite($"{item.Quality} {item.Name}")} shelved — {demandLabel} wants it.");
         }
 
         // Held: finished, unshelved, unequipped — propose shelving it (the concrete next step).
@@ -615,7 +616,7 @@ public static class ObjectiveAdvisor
         var price = SuggestedPrice.For(held);
         var stock = new StockAction(held.Id, price);
         return ActionLegality.IsLegal(state, stock, phase)
-            ? new Suggestion(stock, $"You crafted a {held.Quality} {held.Name}, still unshelved — {demandLabel} wants it.")
+            ? new Suggestion(stock, $"You crafted {ArticleText.Indefinite($"{held.Quality} {held.Name}")}, still unshelved — {demandLabel} wants it.")
             : null;
     }
 

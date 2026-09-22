@@ -1,4 +1,5 @@
 using System;
+using GameSim.Flavor;
 
 namespace GameSim.Venues;
 
@@ -42,11 +43,13 @@ public static class MonsterName
     public static string Definite(string kind) => IsProperName(kind) ? kind : $"the {kind}";
 
     /// <summary>
-    /// The indefinite form, for "…slain by <b>{this}</b>": "a Cave Rat", but "The Forgeworm". This
-    /// is <c>ExpeditionRevealSystem.DeathReport</c>'s own original rule, now this method rather
-    /// than a second copy of it.
+    /// The indefinite form, for "…slain by <b>{this}</b>": "a Cave Rat", "an Old Mossjaw", but
+    /// "The Forgeworm". This is <c>ExpeditionRevealSystem.DeathReport</c>'s own original rule, now
+    /// this method rather than a second copy of it — and, since P2-MEMORY-31, the "a"/"an" choice
+    /// itself is <see cref="ArticleText.Indefinite"/>'s (the shared prose rule), not this class's
+    /// own second copy.
     /// </summary>
-    public static string Indefinite(string kind) => IsProperName(kind) ? kind : $"a {kind}";
+    public static string Indefinite(string kind) => IsProperName(kind) ? kind : ArticleText.Indefinite(kind);
 
     /// <summary>
     /// The attributive form, for "…turned a lethal <b>{this}</b>". A proper name cannot sit
