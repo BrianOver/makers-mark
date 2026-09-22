@@ -2500,6 +2500,79 @@ that campaign. §11.14's, §11.15's and §11.16's proposals stand as written.
 were grepped across `sim/`, `godot/`, `tools/` and `docs/` and against `git log --all --oneline`,
 and both missed in both.
 
+### 11.18 The first read through the new horizon — measured 2026-09-22
+
+Three units booked from a read of `main @ 0ef669f3`, the first taken with P2-HONEST-46's pre-Ending
+column doing the splitting instead of a hand-written filter. Corpus: `batch --seeds 20 --days 100`
+under `BaselinePlayer` and `--policy forgecounter`, seeds 1–20, read through
+`dotnet run --project tools/Analytics`. Owner's standing direction is still §11.7.13's.
+
+**Baseline is still where §11.16 left it**, checked first because every other number below is read
+against it: 5,750 beats, 195 deaths, 510 crafts, 1,152 party-nights, 416 fulfilments, 796 player
+sales, 876 rival sales — ten merged units and not one of them moved it. `forgecounter` pre-Ending
+now shows the §11.16 arms working: `LethalSave` 349 against baseline's 154, `Provisioned` 91 against
+5, `PotionLifesave` 13 against 1 — the consumable ask P2-HONEST-43 taught the reference smith to
+fill is reaching heroes and saving them.
+
+**1. An entire player verb has never appeared in any reference corpus.** Every analytics run this
+plan has ever quoted ends with the same line: **`Bounties: 0 accepted / 0 declined`**, under both
+policies, on every read. The cause is not a bug in the bounty system — it is that **no policy in
+`sim/GameSim/Harness/` so much as names `PostBountyAction`**; `grep -rn "Bounty" sim/GameSim/Harness/`
+returns nothing at all, while `BountyPanel`, `TutorialFlow` and `FullPlaytest` all drive it
+client-side. So `BountyHandlers`, `BountyJudged`'s accept-or-decline reasoning, the escrow, the
+refund and the payout are exercised by unit tests and by a human at the keyboard, and by no sweep
+ever. §11.7.1 made the bounty **the one lever aimed at where the heroes go** — the only influence
+the smith has over depth — and the reference smith has never once pulled it, so no measurement in
+§11.11 through §11.17 says whether pulling it moves anything. **P2-HONEST-47** gives
+`ForgeCounterPlayer` the arm, `[S]`: when the town's marches have been halting at the same floor,
+the reference smith posts a bounty on the next one down, at a reward the shop can actually cover,
+asked of `ActionLegality` before submission. Gate, pre-registered: `Bounties: N accepted / M
+declined` is non-zero in the `forgecounter` analytics run; `BountyRefunded` and `BountyPaid` both
+appear at least once across 20 seeds (an accepted bounty must be able to end both ways, or the arm
+is only testing the happy path); `BaselinePlayer` byte-identical — it submits no bounty, so all
+seven of its pinned counts above must read exactly as they do today. Not `[GOLD]`: the no-action
+trace posts nothing.
+
+**2. The pass-reason report has been mis-filing its largest bucket.** `Report.Bucket` tests the
+reason string for `"shield"` **before** it tests for `"better"`, so every refusal that merely names
+a shield item — *"current Banded Kite Shield is better"* — is counted as though the hero's class
+could not hold a shield at all. Measured pre-Ending on this corpus: of the 8,077 `forgecounter`
+passes filed under "role doesn't use shields", **only 4,781 are genuinely that and 3,296 (41%) are
+"current gear is better" wearing the wrong label**; under `BaselinePlayer` it is worse in
+proportion — 614 filed, **180 genuine, 434 misfiled (71%)**. The two say opposite things about the
+shelf: one is *the smith stocked a thing this hero's class cannot use*, the other is *the smith
+stocked the right thing and was outclassed*. This is the same shape of defect §11.17 just paid for —
+a reporting convention that quietly decides what a number means — and it sits in the one surface
+the owner reads for tuning. **P2-HONEST-48** orders the buckets by what the reason actually says
+rather than by which substring matches first, `[S]`, substrate. Gate: the `forgecounter` corpus
+reports 4,781 role-mismatch passes and 3,296 more under "current gear is better"; the bucket totals
+still sum to 14,806, so nothing is dropped on the way.
+
+**3. The town cannot say "an".** `ShoppingAi` composes its refusal as `$"shields don't suit a
+{DisplayName}"`, and one class display name begins with a vowel, so the shop and the Demand panel
+have been saying **"shields don't suit a occultist" 678 times pre-Ending across 40 campaigns**. It
+is not only that string: a census of every rendered string in the corpus finds **774 wrong articles
+pre-Ending**, the rest in death causes and gossip lines — *"a Ore Lurker"* (88), *"a Old..."* (6),
+*"a armor"* (2) — surfacing on the ledger, the memorial and the legends wall.
+`MonsterName.Indefinite` already exists as the one place that decides how to say "a thing", and it
+is the fix's natural home: it just never looked at the first letter. **P2-MEMORY-31** teaches that
+one producer the article rule and routes the other sites through it, `[S]`. Gate: the same census
+over a fresh corpus reports **zero** wrong articles pre-Ending, and `MonsterName.Indefinite` stays
+the only place in `sim/` that composes an indefinite article — a second copy is how this comes back.
+Law 4 is untouched: this changes how a recorded fact is worded, never which fact is recorded.
+
+**Re-measured and not booked.** The shelf is not stocking shields for a town that cannot hold them:
+`BaselinePlayer.HasBuyer` already skips a shield recipe for every class whose `AllowsShield` is
+false, and the 4,781 role-mismatch passes are strikers walking past a shield stocked for somebody
+else — checked in the code before booking, which is the only reason it is not a row. `forgecounter`
+sells 535 off the shelf against baseline's 796, which reads like a collapse until the counter's own
+578 closes are added back: 1,113 against 796, on 82% more crafts. The light-class death share and
+the ladder's ceiling are unchanged and remain §11.17's two questions for the owner.
+
+**Ids checked both ways before booking**, per §11.11's lesson: `P2-HONEST-47`, `P2-HONEST-48` and
+`P2-MEMORY-31` were grepped across `sim/`, `godot/`, `tools/` and `docs/` and against
+`git log --all --oneline`, and all three missed in both.
+
 ## 12. The external reviews — what came from outside, and what we did with it
 
 On 2026-08-06 the owner collected design reviews from three other AI models and asked for
