@@ -239,7 +239,14 @@ public static class Report
             return "too heavy for role";
         }
 
-        if (reason.Contains("shield", StringComparison.OrdinalIgnoreCase))
+        // P2-HONEST-48: match the producer's actual shape (ShoppingAi.EvaluateItem,
+        // PassReasonKind.RoleMismatch: $"shields don't suit a {class}") rather than the bare
+        // word "shield" — a NotAnUpgrade reason naming a shield-slot item the hero already owns
+        // a better one than ("current Banded Kite Shield is better") also contains "shield" and
+        // was landing here first, filed as a role the hero's class cannot use at all when the
+        // shelf actually had the right thing and was outclassed. "shields don't suit" is the
+        // phrase only that reason ever emits.
+        if (reason.Contains("shields don't suit", StringComparison.OrdinalIgnoreCase))
         {
             return "role doesn't use shields";
         }
