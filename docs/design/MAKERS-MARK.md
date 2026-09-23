@@ -2642,6 +2642,67 @@ topping out before the ending — stand unchanged and unanswered.
 were grepped across `sim/`, `godot/`, `tools/` and `docs/` and against `git log --all --oneline`,
 and both missed in both.
 
+### 11.20 Two things the corpus never records — measured 2026-09-23
+
+Read on `main @ 2a9c27ca`, the standard corpus (`batch --seeds 20 --days 100`, seeds 1–20, under
+`BaselinePlayer` and `--policy forgecounter`), through the pre-Ending column. `BaselinePlayer` is
+byte-identical for the fifth read running. §11.19's bounty arc holds on this SHA: 97 posted, 70
+paid, 27 refunded, and floor-5 marches stay above the re-gated bar.
+
+**1. Two of every five asks die with no record at all.** `CommissionSystem.ExpireCommissions`
+emits `CommissionExpired` for an ACCEPTED commission that runs out of days, and drops a merely
+POSTED one "with no event and no mood change (U14 rule)". The comment is deliberate and the
+no-mood-change half is right — law 7 says skipping stays legal. But the accounting is stark:
+**866 commissions posted under `BaselinePlayer`, 416 fulfilled, 116 expired — leaving 334 (38%)
+that vanish with no event of any kind**; under `forgecounter`, 1,094 posted, 547 fulfilled, 249
+expired, **298 (27%) gone silently**. Nothing downstream can read them: not the ledger, not the
+gossip generator that P2-MEMORY-29/30 just taught to talk about the smith's word, not the
+chronicle, not the legends wall. The smith's word kept is now told; the smith's word never given
+is not even recorded. Law 7's actual sentence is that skipping stays legal **and its cost is named
+in copy, never engineered** — and today that cost is neither engineered nor named, it is invisible.
+**P2-MEMORY-32** emits a lapse event for a posted-but-never-accepted commission whose deadline
+passes, `[S]`: **no mood change, no rule change, no new penalty of any kind** — the event exists so
+a surface can say it, and that is the whole unit. Gate: the lapse count is non-zero and equals
+866 − 416 − 116 = **334** under `BaselinePlayer` and **298** under `forgecounter`; every other
+baseline pin unmoved (5,750 beats, 195 deaths, 510 crafts, 1,152 party-nights, 416 fulfilments,
+796 player sales, 876 rival sales); and `CommissionExpired`'s own count does not move, because an
+accepted commission's expiry is a different fact and keeps its own event. Not `[GOLD]`: the
+no-action trace accepts nothing, but it also posts nothing the trace's 30 days outlive — the row's
+own test must say which, and if the idle trace DOES change, that is a finding and the row halts.
+
+**2. The reference smith is too poor to make decision 5.** *Buy the ore or buy the goodwill* is
+one of the six decisions the game is made of, and under the policy that exercises every other one
+it is never made: `BaselinePlayer` accepts **908 ore offers**, `forgecounter` **46** — a 20× gap.
+The town is not the variable: both policies are offered the same ore, day for day (7,486 offers
+against 9,732, and the daily curves are within noise of each other — day 1–15 offers run
+60/120/120/180/237… under both). The difference is entirely on the smith's side of the counter,
+and it is a cliff, not a slope: `BaselinePlayer` starts buying on day 6 and climbs (12, 16, 23,
+15, 26, 13, 26, 31, 42, 52 through day 15), while `forgecounter` buys **nothing at all until day
+15**, when it manages 2. **This section does not claim which constraint does it.** The obvious
+suspect — `ForgeCounterPlayer.TryPaySlot`, which drops the last `BuyOreAction` to free an action
+slot — was checked and has exactly ONE caller (the wake's reforge), so it cannot account for a 20×
+gap on its own; gold is the other candidate and is not visible in the chronicle. Naming a cause
+here without measuring it is how §11.19's stale gate happened.
+**P2-HONEST-51** makes the number a pinned census instead, `[S]`, substrate: a test that pins
+`forgecounter`'s ore-buy count against `BaselinePlayer`'s, so the next arm that moves it is a
+reviewed diff rather than a silent one — the same shape as `BalanceCorpusCoverageCensusTests`, and
+for the same reason. Every unit shipped into `forgecounter` this week competed for that budget, and
+none of them said so. Gate: the census fails when the ratio moves materially in either direction,
+and its failure message names the count both ways, so a future session reads the number rather
+than re-deriving it. **Whether the reference smith SHOULD be able to afford ore — and what it means
+for decision 5 that the richest corpus never makes it — is the owner's, and joins §11.16's
+"the heroes are rich and the smith is poor" proposal rather than replacing it.**
+
+**Re-measured and not booked.** The vigil runner is not a gap: `SendSupplyAction` is exercised
+(25 deliveries under `forgecounter`, 0 under `BaselinePlayer`, which never sends one), so the
+fourth channel has corpus coverage — checked before booking, which is the only reason it is not a
+row. `denThreatShifted` fires 2 and 4 times respectively, which looks thin but is the den tier
+system's own cadence and not a defect this read can evidence.
+
+**Ids checked both ways before booking**, per §11.11's lesson: `P2-MEMORY-32` and `P2-HONEST-51`
+were grepped across `sim/`, `godot/`, `tools/` and `docs/` and against `git log --all --oneline`,
+and both missed in both.
+
 ## 12. The external reviews — what came from outside, and what we did with it
 
 On 2026-08-06 the owner collected design reviews from three other AI models and asked for
