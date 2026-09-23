@@ -41,6 +41,7 @@ namespace GameSim.Contracts;
 [JsonDerivedType(typeof(CommissionPosted), "commissionPosted")]
 [JsonDerivedType(typeof(CommissionFulfilled), "commissionFulfilled")]
 [JsonDerivedType(typeof(CommissionExpired), "commissionExpired")]
+[JsonDerivedType(typeof(CommissionLapsed), "commissionLapsed")]
 [JsonDerivedType(typeof(ItemSigned), "itemSigned")]
 [JsonDerivedType(typeof(MemorialHonored), "memorialHonored")]
 [JsonDerivedType(typeof(HeirloomReforged), "heirloomReforged")]
@@ -277,6 +278,23 @@ public sealed record CommissionFulfilled(HeroId Hero, ItemId Item, int Premium) 
 
 /// <summary>Wave 3: an accepted commission passed its deadline unfilled — a mood hit + gossip hook.</summary>
 public sealed record CommissionExpired(HeroId Hero, ItemSlot Slot) : GameEvent;
+
+/// <summary>P2-MEMORY-32: a commission that was POSTED but never ACCEPTED ran out of days.
+///
+/// <para>A record, and only a record. No mood change, no gold change, no rule change — law 7 says
+/// skipping stays legal and its cost is NAMED in copy rather than engineered, and until this event
+/// existed that cost was neither: 334 of 866 asks a sweep (38% under <c>BaselinePlayer</c>, 27%
+/// under <c>forgecounter</c>) ended with nothing recorded anywhere, so no ledger, gossip line,
+/// chronicle or legends wall could ever say the town asked and went unanswered.</para>
+///
+/// <para>Fires for a LIVING hero's lapsed ask. A dead hero's commission is still voided in silence
+/// before this check is reached (T10 — a dead hero cannot give up waiting), and an ACCEPTED
+/// commission that runs out of days keeps its own <see cref="CommissionExpired"/> and its mood hit:
+/// a promise broken and a promise never made are different facts and stay different events.</para>
+///
+/// <para>Same minimal shape as <see cref="CommissionExpired"/> deliberately — this is a fact for a
+/// later surface to speak, not a surface itself.</para></summary>
+public sealed record CommissionLapsed(HeroId Hero, ItemSlot Slot) : GameEvent;
 
 /// <summary>Wave 4 (named artifacts): a rare craft was signed into a named Work — "your craft
 /// writes the legends" made literal. Carries the earned legend name for narration/UI.</summary>
