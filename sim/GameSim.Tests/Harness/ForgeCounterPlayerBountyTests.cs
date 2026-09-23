@@ -26,6 +26,13 @@ namespace GameSim.Tests.Harness;
 /// the town is stalling at a floor and the shop can cover a price a real hero would take, never
 /// when it can't or when a bounty already targets that floor — not of a named seed or hero, so
 /// growing the roster or the venue table cannot quietly stop them covering it.</para>
+///
+/// <para>P2-HONEST-50 (§11.19 measurement 2) found the posted floor was always the SAME floor the
+/// party had just failed at — pricing the party's own plan, not aiming it anywhere. The arm now
+/// names a floor within some living hero's own reach that is NOT the held floor (the floor
+/// <c>ExpeditionSystem.TargetFloorFor</c>'s own non-bounty formula says the party was already
+/// marching to). The tests below assert that property — the posted floor is never the held floor,
+/// and it always sits within a real hero's own reach — never a fixed floor number.</para>
 /// </summary>
 public class ForgeCounterPlayerBountyTests
 {
@@ -83,7 +90,12 @@ public class ForgeCounterPlayerBountyTests
             heroes: Roster(hero));
 
         var post = Assert.Single(ForgeCounterPlayer.ActionsFor(state).OfType<PostBountyAction>());
-        Assert.Equal(3, post.TargetFloor);
+
+        // P2-HONEST-50: the posted floor is never the held floor (3, the floor the party was
+        // already marching to), and it always sits within the reach BountyRules.Judge enforces.
+        Assert.NotEqual(3, post.TargetFloor);
+        Assert.True(post.TargetFloor <= hero.DeepestFloorReached + 1,
+            "the posted floor must sit within some living hero's own reach");
 
         // The property, not the number: some reach-eligible living hero actually takes the posted
         // price, and nobody would have taken one gold less — the cheapest price the rule allows.
@@ -94,22 +106,43 @@ public class ForgeCounterPlayerBountyTests
     }
 
     [Fact]
-    public void NoLivingHeroCouldEverTakeTheFloor_PostsNothing()
+    public void EveryLivingHeroReachEqualsTheHeldFloor_NoDivertedTargetExists_PostsNothing()
     {
-        // Every hero's own reach (DeepestFloorReached + 1) falls short of the held floor — no price,
-        // however large, changes BountyRules.Judge's "beyond what X dares" decline. A bounty nobody
-        // could ever accept is exactly what this unit removes, so the arm must post nothing here,
-        // not fall back to MinimumReward.
-        var tooShallow = MakeHero(1, level: 5, deepestFloorReached: 0);
+        // P2-HONEST-50: the arm no longer posts at the held floor itself, so a roster whose ENTIRE
+        // reach has converged on that floor gives it nowhere else to aim — not "no hero could ever
+        // take the floor" (MinAcceptableReward's job) but "there is no floor left to name."
+        var converged = MakeHero(1, level: 5, deepestFloorReached: 2); // reach = 3 == held floor
         var state = BaseState(
             day: 5,
             gold: 100_000,
             eventLog: ImmutableList.Create(GateHeldOn(3), GateHeldOn(4)),
             lastNight: ImmutableList.Create(HeldAt(3)),
             bounties: ImmutableList<Bounty>.Empty,
-            heroes: Roster(tooShallow));
+            heroes: Roster(converged));
 
         Assert.Empty(ForgeCounterPlayer.ActionsFor(state).OfType<PostBountyAction>());
+    }
+
+    [Fact]
+    public void PicksTheDeepestReachableFloorThatIsNotTheHeldFloor_NotJustTheRosterMax()
+    {
+        // Held floor is 3. HeroA's own reach (4) equals nothing special; HeroB's reach (6) is the
+        // roster's deepest but coincides with nothing here either — the point is exclusion: a THIRD
+        // hero whose reach equals the held floor must never win even though it's a legal candidate
+        // in isolation, and among what's left the DEEPEST reach wins, not the first one found.
+        var matchesHeldFloor = MakeHero(1, level: 4, deepestFloorReached: 2); // reach 3 == avoid
+        var shallow = MakeHero(2, level: 2, deepestFloorReached: 1);          // reach 2
+        var deepest = MakeHero(3, level: 6, deepestFloorReached: 4);         // reach 5
+        var state = BaseState(
+            day: 5,
+            gold: 100_000,
+            eventLog: ImmutableList.Create(GateHeldOn(3), GateHeldOn(4)),
+            lastNight: ImmutableList.Create(HeldAt(3)),
+            bounties: ImmutableList<Bounty>.Empty,
+            heroes: Roster(matchesHeldFloor, shallow, deepest));
+
+        var post = Assert.Single(ForgeCounterPlayer.ActionsFor(state).OfType<PostBountyAction>());
+        Assert.Equal(5, post.TargetFloor);
     }
 
     [Fact]
@@ -159,9 +192,11 @@ public class ForgeCounterPlayerBountyTests
     }
 
     [Fact]
-    public void ABountyAlreadyTargetsTheHeldFloor_NeverStacksASecondEscrow()
+    public void ABountyAlreadyTargetsTheDivertedFloor_NeverStacksASecondEscrow()
     {
-        var existing = new Bounty(new BountyId(1), TargetFloor: 3, RewardGold: 30, PostedOnDay: 4, AcceptedBy: null, Paid: false);
+        // Held floor is 3; this hero's own reach (4) is the only diverted candidate — an existing
+        // bounty AT THAT DIVERTED FLOOR (not the held floor) must still block a second escrow.
+        var existing = new Bounty(new BountyId(1), TargetFloor: 4, RewardGold: 30, PostedOnDay: 4, AcceptedBy: null, Paid: false);
         var state = BaseState(
             day: 5,
             gold: 100_000,

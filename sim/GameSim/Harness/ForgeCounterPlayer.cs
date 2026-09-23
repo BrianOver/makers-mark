@@ -759,12 +759,28 @@ public static class ForgeCounterPlayer
     /// own halting signal rather than inventing a second one: <see cref="GateHeldStreakQuery"/>
     /// already counts how many evenings running the venue's structural gate turned a party back with
     /// no roll (P2-END-01). Once that streak reaches <see cref="DemandBoard.StallThresholdDays"/> —
-    /// the same "at least two days running" bar the depth-stall read already uses — the smith names
-    /// the floor from that same held night's own <see cref="GateReading"/>
+    /// the same "at least two days running" bar the depth-stall read already uses — the smith reads
+    /// that same held night's own <see cref="GateReading"/>
     /// (<see cref="ExpeditionResult.GateHeldAt"/>, still sitting in
-    /// <see cref="GameState.LastNightExpeditions"/> at this Morning tick, one night deep) and posts a
-    /// bounty there, asked of <see cref="ActionLegality"/> before submission, the same contract every
-    /// other arm in this policy holds.</para>
+    /// <see cref="GameState.LastNightExpeditions"/> at this Morning tick, one night deep) — not to
+    /// post there (see P2-HONEST-50 below) but to find the floor the arm now aims away from.</para>
+    ///
+    /// <para><b>P2-HONEST-50 (§11.19 measurement 2, "the bounty aims somewhere the party was not
+    /// already going"): the posted floor is no longer the held floor.</b> §11.19 measured 82 of 97
+    /// posted bounties naming the same floor the party had just failed — "you keep trying floor 4
+    /// and failing; here is gold to try floor 4 again" — which reads as the smith directing the
+    /// party when it is only pricing the party's own plan. The party's own plan, read from
+    /// <see cref="ExpeditionSystem.TargetFloorFor"/> (never re-derived here — that query is the one
+    /// place this repo computes "the floor a party marches to absent a bounty": the deepest floor
+    /// among the marching party's own members' <see cref="Hero.DeepestFloorReached"/> plus one), is
+    /// exactly what the held floor already names, since a gate only holds a party at the floor it
+    /// was marching to. <see cref="DivertedTargetFloor"/> instead names the deepest floor within
+    /// SOME living hero's own reach (<see cref="Hero.DeepestFloorReached"/> + 1 — the same reach bar
+    /// <see cref="BountyRules.Judge"/> itself enforces, so this never proposes a floor no hero could
+    /// legally accept) that is not that held floor — a hero the party's current push has left behind
+    /// or ahead of, not the floor the party was already grinding. No living hero has a reach other
+    /// than the held floor — a single-hero roster, or a roster whose whole reach has converged — this
+    /// arm posts nothing: there is no "somewhere else" to aim at yet.</para>
     ///
     /// <para><b>P2-HONEST-49 (§11.19 measurement 1, "a bounty price the rule would actually
     /// take"): the reward is priced off the acceptance rule, not <see cref="BountyRules.MinimumReward"/>
@@ -800,7 +816,14 @@ public static class ForgeCounterPlayer
         var heldFloor = state.LastNightExpeditions
             .FirstOrDefault(result => result.VenueId == VenueRegistry.MineId && result.Halt == ExpeditionHalt.GateHeld)
             ?.GateHeldAt?.Floor;
-        if (heldFloor is not { } floor || state.Bounties.Any(b => b.TargetFloor == floor))
+        if (heldFloor is not { } avoid)
+        {
+            return;
+        }
+
+        var venue = VenueRegistry.Require(VenueRegistry.MineId);
+        if (DivertedTargetFloor(state, avoid, venue) is not { } floor
+            || state.Bounties.Any(b => b.TargetFloor == floor))
         {
             return;
         }
@@ -829,6 +852,41 @@ public static class ForgeCounterPlayer
         {
             actions.Add(post);
         }
+    }
+
+    /// <summary>
+    /// P2-HONEST-50: the deepest floor within some living hero's own reach
+    /// (<see cref="Hero.DeepestFloorReached"/> + 1, clamped into the venue — the same bar
+    /// <see cref="BountyRules.Judge"/> itself enforces, read directly rather than re-derived) that is
+    /// not <paramref name="avoid"/> — the floor <see cref="ExpeditionSystem.TargetFloorFor"/> says the
+    /// held party was already marching to. Deepest-first so the arm reaches for the hardest floor it
+    /// can legally aim at rather than the shallowest excuse. <see langword="null"/> when every living
+    /// hero's own reach lands exactly on <paramref name="avoid"/> (a one-hero roster, or a roster
+    /// whose reach has converged) — there is no "somewhere else" this arm can name yet.
+    /// </summary>
+    private static int? DivertedTargetFloor(GameState state, int avoid, VenueDefinition venue)
+    {
+        int? best = null;
+        foreach (var hero in state.Heroes.Values)
+        {
+            if (!hero.Alive)
+            {
+                continue;
+            }
+
+            var reach = Math.Clamp(hero.DeepestFloorReached + 1, 1, venue.FloorCount);
+            if (reach == avoid)
+            {
+                continue;
+            }
+
+            if (best is null || reach > best)
+            {
+                best = reach;
+            }
+        }
+
+        return best;
     }
 
     /// <summary>
