@@ -1,10 +1,10 @@
 # Maker's Mark — the text census
 
-Branched from `28fd0452`. Every claim below carries a `file:line`; every quoted string is verbatim from that line (line numbers are as of this SHA). Paths are repo-relative. `{slot}` braces are the template's own placeholders; filled examples are marked *ex.*
+Branched from `2a9c27ca`. Every claim below carries a `file:line`; every quoted string is verbatim from that line (line numbers are as of this SHA). Paths are repo-relative. `{slot}` braces are the template's own placeholders; filled examples are marked *ex.*
 
 **What counts as "the words":** any string a player can read on a shipped surface — the Godot 2.5D client (`godot/scripts/`), the console client (`sim/GameSim.Cli/`), and the sim-side strings those surfaces render verbatim (`sim/GameSim/`). Strings that reach only logs, tests, exceptions, or dev tools (`godot/scripts/tools/`, `PlaytestLog`, `EngineDistress`, `GD.Print`, batch/analytics runners) are excluded, and exclusions are named where the boundary is unobvious. Godot node names (`Name = "..."`) are excluded — they never render. `.tscn` scene files carry no text properties (the whole UI is code-built); the art `.json` build manifests carry no player copy.
 
-**How copy is assembled, in one paragraph.** Three engines produce most of the game's prose. (1) `FlavorEngine` (sim/GameSim/Flavor/FlavorEngine.cs) renders template packs — `TavernPack`, `LedgerPack`, `FactionPack`, `NarratorPack` — picking a variant per `"<baseKey>/<voice>"` key with a deterministic hash; every provided slot value must appear verbatim in the output or the render falls back to the base key's fallback line. Voices are a frozen 4-entry list `["gruff", "dramatic", "wry", "omen"]` (sim/GameSim/Flavor/VoiceProfile.cs:31); each hero keeps one voice for the whole campaign. (2) `MentorVoice.Speak` (godot/scripts/ui/MentorVoice.cs:115) wraps teaching copy as `Bryn: “{line}”`. (3) Hand-assembled interpolation everywhere else — those templates are listed individually below.
+**How copy is assembled, in one paragraph.** Three engines produce most of the game's prose. (1) `FlavorEngine` (sim/GameSim/Flavor/FlavorEngine.cs) renders template packs — `TavernPack`, `LedgerPack`, `FactionPack`, `RivalPack`, `TellingPack`, `NarratorPack` — picking a variant per `"<baseKey>/<voice>"` key with a deterministic hash; every provided slot value must appear verbatim in the output or the render falls back to the base key's fallback line. Voices are a frozen 4-entry list `["gruff", "dramatic", "wry", "omen"]` (sim/GameSim/Flavor/VoiceProfile.cs:31); each hero keeps one voice for the whole campaign. `RivalPack` and `TellingPack` are each one fixed, unwavering voice instead, deliberately not crossed with that list (§5.2a, §3.7a). `FlavorEngine` also applies the shared "a"/"an" article rule (`ArticleText.Indefinite`, sim/GameSim/Flavor/ArticleText.cs) to authored pack templates at substitution time, the same rule every hand-written call site now routes a noun through instead of hand-writing its own article (§10's old L1-shaped article bugs are gone; see §4.3). (2) `MentorVoice.Speak` (godot/scripts/ui/MentorVoice.cs:115) wraps teaching copy as `Bryn: “{line}”`. (3) Hand-assembled interpolation everywhere else — those templates are listed individually below.
 
 ---
 
@@ -189,19 +189,19 @@ Every lesson fires once per campaign through `TutorialFlow.ConsumeFirstTouch` (T
 
 ### 1.6 Surface-unlock gates
 
-`SurfaceUnlocks.Gates` (godot/scripts/ui/SurfaceUnlocks.cs:73-104). Each `Reason` renders in two places: the greyed tray button's tooltip while closed, and the arrival toast `$"{gate.SurfaceId}'s open now — {gate.Reason}"` (MainUi.cs:1596) the first tick it opens. A press on a still-closed surface toasts the same Reason (MainUi.cs:1625, fallback `$"{surfaceId} is not open yet."`).
+`SurfaceUnlocks.Gates` (godot/scripts/ui/SurfaceUnlocks.cs:81-129) is a `Gate(SurfaceId, ClosedReason, OpenedReason, Predicate)` record — two separate authored sentences, not one Reason reused twice (P2-SCREEN-11). `ClosedReason` renders as the greyed tray button's tooltip while closed; `OpenedReason` — a complete, lowercase-first present-tense sentence written for exactly this moment — renders alone, capitalized, as the arrival toast (`ShowBellToast(CapitalizeFirst(gate.OpenedReason))`, MainUi.cs:2067) the first tick a surface opens, and is skipped for one tick rather than stomping a same-tick action rejection. There is no more raw-surface-id toast for a still-closed press.
 
-| Surface id | Reason (verbatim) | file:line |
-|---|---|---|
-| Ledger | "Opens once a party has departed the Mine — nothing's come home yet to read." | SurfaceUnlocks.cs:73 |
-| Forecast | "Opens once you reach an Evening — it forecasts tomorrow, so day 1 has nothing to say yet." | SurfaceUnlocks.cs:81 |
-| HeroCards | "Opens once you've sold something to a hero — a stranger becomes a customer." | SurfaceUnlocks.cs:84 |
-| Commissions | "Opens once a hero posts a commission — an empty board teaches nothing." | SurfaceUnlocks.cs:87 |
-| Demand | "Opens once a hero's passed on your goods — the board's lead section is pass reasons." | SurfaceUnlocks.cs:90 |
-| Legends | "Opens once your work has changed a fate — or the town has someone to remember." | SurfaceUnlocks.cs:99 |
-| Progress | "Opens once a bounty's been paid — the same moment a second profession opens up." | SurfaceUnlocks.cs:104 |
+| Surface id | ClosedReason (verbatim) | OpenedReason (verbatim, capitalized at render) | file:line |
+|---|---|---|---|
+| Ledger | "Opens once a party has departed the Mine — nothing's come home yet to read." | "a party's departed for the Mine — the Ledger will have their story once they're back." | SurfaceUnlocks.cs:83-84 |
+| Forecast | "Opens once you reach an Evening — it forecasts tomorrow, so day 1 has nothing to say yet." | "evening's here — tomorrow's raid is worth a look." | SurfaceUnlocks.cs:93-94 |
+| HeroCards | "Opens once you've sold something to a hero — a stranger becomes a customer." | "you've made your first sale — a stranger's a customer now." | SurfaceUnlocks.cs:98-99 |
+| Commissions | "Opens once a hero posts a commission — an empty board teaches nothing." | "a hero's posted a commission — the board's no longer empty." | SurfaceUnlocks.cs:103-104 |
+| Demand | "Opens once a hero's passed on your goods — the board's lead section is pass reasons." | "a hero's passed on your goods — worth reading why." | SurfaceUnlocks.cs:108-109 |
+| Legends | "Opens once your work has changed a fate — or the town has someone to remember." | "your work's changed a fate, or the town's got someone to remember." | SurfaceUnlocks.cs:119-120 |
+| Progress | "Opens once a bounty's been paid — the same moment a second profession opens up." | "a bounty's been paid — a second profession's opened up." | SurfaceUnlocks.cs:126-127 |
 
-Assembled example the player actually sees at unlock: *"HeroCards's open now — Opens once you've sold something to a hero — a stranger becomes a customer."* — see judgement H1.
+Assembled example the player actually sees at unlock: *"You've made your first sale — a stranger's a customer now."* — no surface id, no double possessive, no tense clash (the retired judgements L3/J2/H1).
 
 ### 1.7 The Lessons book
 
@@ -346,66 +346,88 @@ The complete per-line inventory of this pack (645 template strings, every one pl
 
 ### 3.7 The Evening Ledger (link 5's nightly surface)
 
-`LedgerModal` (godot/scripts/panels/LedgerModal.cs). Title "EVENING LEDGER" (:898), live retitled `EVENING LEDGER — day {N}` (:243); count line `Showing {N} of {N}` (:253); close button "Close" (:932).
+`LedgerModal` (godot/scripts/panels/LedgerModal.cs, now 2,131 lines — the single most-grown file this census tracks). Title "EVENING LEDGER" (:2010), live retitled `EVENING LEDGER — day {N}` (:374); count line `Showing {N} of {N}` (:384); close button "Close" (:2044).
 
 | Text | file:line | Fires when |
 |---|---|---|
-| "Time moved on — this is day {N}'s ledger now." / "Time moved on {N} days while this sat open — this is day {N}'s ledger now." | LedgerModal.cs:160-161 | the modal was left open across a day boundary |
-| "No returns recorded for this day." | :432 | empty night |
-| "Returned safely" / "Came home hurt" / "Broke off and came home" / "Turned back at the gate" / "Recalled home" / "Returned" | :364-371 | survivor card status by recorded halt |
-| "Did not return" | :473 | death card status |
-| "THE TELLING" (section) | :477 | every card |
-| fate line: LedgerPack render (§5.3), optionally `{flavor} — {camp attribution}` | sim/GameSim/Drama/LedgerQuery.cs:147-158 | every card; ex. *"Torvald walked out of floor 2 with 11g. Good enough. — the runner's supplies carried them through"* |
-| camp attribution lines: "you rang the recall bell — it came too late" / "you rang the recall bell — banked safe before it turned ugly" / "you sent a runner with supplies — it wasn't enough" / "the runner's supplies carried them through" / "you held the checkpoint window — the depths took them anyway" / "you held the checkpoint window — they pushed on and made it" | sim/GameSim/Drama/CampNarration.cs:47-52 | appended to the fate line when the hero's party camped today |
-| "Purse" / "Earned" gold chips | LedgerModal.cs:511-514 | survivor cards |
-| beat row: `{beat.Beat}: {beat.Detail} (floor {N})` | :525 | each attribution beat — ex. *"KillingBlow: Emberbite landed the killing blow on the Cave Rat (floor 3)"* (raw enum, see judgement J4) |
-| warrant save: "The blow that landed on {Hero} would have killed {Hero}. The apprenticeship's warrant held — {Hero} came home at death's door. {One/Two/Three} dawn(s) left on it." | :550-551, dawns at :852-853 | a warrant-covered lethal hit, days 1-3 |
-| "ORE OFFERED" (section), "Buy" button | :559,568 | survivor with ore |
-| ore row: "offers {N}x {mat} for {N}g total" + " ({Faction} favor −{N}%)" / " ({Faction} surcharge +{N}%)" | :805-816 | ore offers; ex. *"offers 3x copper for 9g total (Deepvein Consortium favor −5%)"* |
-| buy feedback: "queued: buy {N}x {mat} from {Hero} (applies when the Evening ticks)" | :571 | Buy pressed |
-| buy whyNot: "Ore changes hands in the Evening — reopen the ledger then." / "That offer is gone." / "{Hero} never made it home — the offer is void." / "You can't afford that yet." | :756-775 | gated Buy tooltip |
-| "The vendor trades in the evening." | :585 | disabled ore-row tooltip |
-| "── THE RETELLING ──" | narrator section | the collapsed pride payload (P2-PROOF-07 removed the "Full tale" toggle) |
+| "Time moved on — this is day {N}'s ledger now." / "Time moved on {N} days while this sat open — this is day {N}'s ledger now." | LedgerModal.cs:188-189 | the modal was left open across a day boundary |
+| "No returns recorded for this day." | :1194 | empty night |
+| "Returned safely" / "Came home hurt" / "Broke off and came home" / "Turned back at the gate" / "Recalled home" / "Returned" | :663-667 | survivor card status by recorded halt |
+| "Did not return" | :1238 | death card status |
+| "THE TELLING" (section) | :1242 | every card |
+| fate line: LedgerPack render (§5.3), optionally `{flavor} — {camp attribution}` | sim/GameSim/Drama/LedgerQuery.cs (unverified exact lines this pass) | every card; ex. *"Torvald walked out of floor 2 with 11g. Good enough. — the runner's supplies carried them through"* |
+| camp attribution lines: "you rang the recall bell — it came too late" / "you rang the recall bell — banked safe before it turned ugly" / "you sent a runner with supplies — it wasn't enough" / "the runner's supplies carried them through" / "you held the checkpoint window — the depths took them anyway" / "you held the checkpoint window — they pushed on and made it" | sim/GameSim/Drama/CampNarration.cs (unverified exact lines this pass) | appended to the fate line when the hero's party camped today |
+| "Purse" / "Earned" gold chips | LedgerModal.cs:1276-1279 | survivor cards |
+| beat row: `{beat.Detail} (floor {N})`, optionally `— {forge-moment clause}{heirloom clause}` | :715-720 | each attribution beat — one whole sentence linking link 4's proof to link 1's forge moment and link 5's heirloom lineage, no more raw `BeatType:` prefix (see the narrowed judgement J4) |
+| warrant save: "The blow that landed on {Hero} would have killed {Hero}. The apprenticeship's warrant held — {Hero} came home at death's door. {DawnsLeftLine}" | :1559-1560, `DawnsLeftLine` at :1961-1966 | a warrant-covered lethal hit, days 1-3 |
+| "ORE OFFERED" (section), "Buy" button | :1568,1578 | survivor with ore |
+| ore row: "offers {N}x {mat} for {N}g total" + " ({Faction} ore — {band} {N}, rising to {N})" at neutral standing, or " ({Faction} favor −{N}% — {band} {N}, rising to {N}{: crosses into favored})" once a discount applies | :1883-1929 | ore offers — the impossible "surcharge" branch is gone (P2-HONEST-29); a neutral-standing offer now names the faction too, so the FIRST buy of a campaign already shows decision 5's stakes |
+| buy feedback: "Buying {N} {material} from {Hero} — but not until {Phase} ends." | :1585-1587 | Buy pressed (P2-HONEST-04 replaced the old "queued: buy…applies when the Evening ticks" line — no more kernel loop-word, raw enum, or lowercase status prefix) |
+| buy whyNot: "Ore changes hands in the Evening — reopen the ledger then." / "That offer is gone." / "{Hero} never made it home — the offer is void." / "You can't afford that yet." | :1820,1827,1833,1839 | gated Buy tooltip |
+| "The vendor trades in the evening." | :1600 | disabled ore-row tooltip |
+| "── THE RETELLING ──" | :1749 | the collapsed pride payload (P2-PROOF-07 removed the "Full tale" toggle) |
+| "Ask how it happened." | :1528 | a beat row with a real counterfactual — opens The Telling (§3.7a) |
 
-The night's attribution beats also lead the reveal: the beat-bearing card sorts first (`LeadWithAttribution`, :382), the narrator's line renders above the grid (`AddNarratorLine`, :393), and the ledger tip renders once ever (§1.4).
+The night's attribution beats also lead the reveal: the beat-bearing card sorts first (`LeadWithAttribution`, :687-692), the narrator's line renders above the grid (`AddNarratorLine`, :919), and the ledger tip renders once ever (§1.4). The death-night wake leads (§5.6) render alongside the beat-bearing cards.
 
-### 3.8 The day pages (`LegendsWall`'s book — formerly the ticker)
+### 3.7a The Telling — the counterfactual replay, verdict copy
 
-`AdventureTicker` is deleted (P2-MEMORY-12, P2-OQ3): the bottom-edge marquee is gone as a form. Its `FormatLine` switch moved verbatim into `LegendsWall` (godot/scripts/panels/LegendsWall.cs:1286-1435) as the composer for the book's day pages (`RenderDayLog`/`ShowDayPage`/`DayLines`, :476,503,526) — same lines, full campaign retention instead of a rolling 3-day window, queryable by day from the book's index rather than ambient. Complete line inventory (:1286-1434):
+`TellingPanel` (godot/scripts/panels/TellingPanel.cs, opened from the Ledger's "Ask how it happened." button, §3.7) replays the recorded fight round by round, then holds a desaturated counterfactual frame and states the verdict — the one surface in the game with exactly one voice, never crossed with the four-voice list, because it states recorded facts and never editorializes. Stage-advance button text (:361-378): "Watch it happen." → "Play it forward." → "Next round." → ("Ask what it would have been." if a real counterfactual exists, else "See what it means."). Framing-stage fallback when nothing was recorded: "Nobody came up to tell it. The winch-keeper reads the ledger the way the ledger wrote it." (:403).
+
+The verdict itself is `TellingPack` (sim/GameSim/Flavor/Packs/TellingPack.cs), one key per beat shape, three phrasings each, no voice axis — picked deterministically off the beat's own stamped event id, so a re-opened Telling reads identically forever. Each variant is `"{headline}{delim}{detail}"` in one template (so one hash pick selects both halves atomically); `TellingPanel.RenderVerdict` splits on the `||` delimiter, never rendered to the player. Six shapes, three variants + one fallback each (Appendix A.6 has every line verbatim):
+
+- `killingBlow` (:94-103,187-190): "{item} turned the killing blow on floor {floor}. {hero} lives.||The blow read {heroRoll}. Without {item}, it deals {dealtWithout}, not {dealtWith} -- the beast still stands at {monsterHpWithout}. There the record ends. No one rolled what comes next." (and two more phrasings)
+- `lethalSave` (:105-114,191-194): "{item} turned the killing blow on floor {floor}. {hero} lives.||The blow read {rawBlow}. {item} drank {itemDefense} of it. {hero} stood at {heroHpAfter}. Without it, {hero} falls."
+- `killingBlowDied`/`lethalSaveDied` (:116-138,195-203) — P2-PROOF-22's death-aware counterparts, picked instead of the living key when the beat's hero died that same night: the blow/save is unchanged, only the closing clause moves from "lives" to naming the floor that took them, e.g. "{hero} did not come back… Floor {deathFloor} took {hero} anyway." No punchline on a death, never "lives".
+- `breakpointClear` (:140-149,204-207): "{item} opened floor {floor}.||The party's power read {avgWith} against the gate at {gate}. Without {item}, it reads {avgWithout} -- under the gate. The floor never opens without it."
+- `provisioned` (:151-160,208-211) and `potionLifesave` (:162-171,212-215): both end "No credit taken." on every variant (law 4 — no participation credit) — provisioned states the quaff changed nothing; potionLifesave states it was the difference.
+- `marginOnly` (:173-182,216-219): the record credited the item with a save the strict replay says a later drink would have covered anyway — also ends "No credit taken." on every variant.
+
+### 3.8 The day pages (`LegendsWall`'s book)
+
+`AdventureTicker` is deleted (P2-MEMORY-12): the bottom-edge marquee is gone as a form. Its `FormatLine` switch lives in `LegendsWall` (godot/scripts/panels/LegendsWall.cs:1417-1603) as the composer for the book's day pages (`RenderDayLog`/`HasAnyDayLogLine`, :613-618,604-605) — full campaign retention, queryable by day from the book's index. Complete line inventory (:1417-1603):
 
 | Line (verbatim template) | file:line | Fires when |
 |---|---|---|
-| "Your {Item} sold to {Hero} for {N}g." | :1291 | shelf sale of your stock |
-| "Rival's {Item} sold to {Hero} for {N}g." | :1293 | rival shelf sale |
-| "A party of {N} departs for floor {N}." | :1294 | departure |
-| "{Hero} sets a new depth record — floor {N}." | :1295 | record |
-| gossip line verbatim (§5.1) | :1296 | `GossipEmitted` |
-| "{Hero} did not return from floor {N}." | :1301 | death, Evening only |
-| "Home safe: {Item} — {Detail}." | :1307 | attribution beat, Evening — ex. *"Home safe: Emberbite — Emberbite landed the killing blow on the Cave Rat."* |
-| "{Hero} has come to town looking for work." | :1313 | recruit |
-| "{Hero} wants {Slot} work, {Quality} or better, by day {N} — {N}g over list." | :1315-1317 | commission posted — ex. *"Kael wants Weapon work, Fine or better, by day 9 — 18g over list."* |
-| "{Hero} takes delivery of {Item} — {N}g premium." | :1318-1319 | commission fulfilled |
-| "{Hero} gave up waiting on that {Slot} commission." | :1320-1321 | commission expired |
-| "Your {Item} is signed into legend as \"{Name}\"." | :1330-1331 | a signed work — ex. *"Your Greatsword is signed into legend as \"Widowsong\"."* |
-| "The town bids farewell to {Hero} — the rite is done." | :1332-1333 | memorial honored |
-| incident lines (below) | :1338 | drama director incident |
-| "The rival stall is expanding — town confidence has slipped to {N}%." | :1342-1343 | confidence crossing |
-| "{Hero} is talking about leaving town." | :1344-1345 | confidence crossing |
-| "The town has lost faith in its smith — {N} assessment(s) missed." | :1346-1347 | collapse |
-| "The {Faction} remember your custom now — their ore comes cheaper." / "The {Faction} are cooling toward your shop — their ore's discount is fading." | :1361-1363 | standing threshold crossing |
-| "Rent paid — {N}g to the guild. Next due: {N}g." | :1372-1373 | rent day |
-| "Rent went unpaid — {N}g owed, {N} missed payment(s) now. The guild's patience is thinning; next due climbs to {N}g." | :1374-1376 | missed rent |
-| "Guild Assessment paid — {N}g. Next dues: {N}g." | :1378-1379 | assessment day |
-| "The guild took {Item} against the {N}g dues — it hangs on their wall now, where it will never turn a blow. Next dues: {N}g." | :1385-1387 | dues settled by pledge (`DuesSettledByPledge`, P2-LONG-18) — not in this census's original AdventureTicker-era table |
-| "Guild Assessment missed — {N}g unpaid, {N} time(s) now. Next dues climb to {N}g." | :1388-1390 | missed assessment |
-| "{Hero} has risen to {Rank}." | :1396 | rank crossing — ex. *"Sable has risen to Veteran."* |
-| "{Hero} has proven ready for deeper ground." (+ "{Hero} and 1 other have…" / "{Hero} and {N} others have…") | :1403 (`GraduatesLine`, :1466-1474) | venue graduation |
-| "{Hero} collects {N}g on a completed bounty." | :1409 | bounty payout |
-| "You were not at the anvil today. The rival's stall was." | :1418-1419 | idle-day market-share cost (`MarketShareShifted` when `RivalGained`, P2-HONEST-23) — not in this census's original AdventureTicker-era table |
+| "Your {Item} sold to {Hero} for {N}g." | :1422 | shelf sale of your stock |
+| "Rival's {Item} sold to {Hero} for {N}g. Yours sat at {N}g." | :1427-1428 | rival sale that beat your own shelved piece (`RivalSaleQuery.MatchFor`, P2-MEMORY-26) |
+| "Rival's {Item} sold to {Hero} for {N}g." | :1430 | rival shelf sale, no match |
+| "A party of {N} departs for floor {N}." | :1431 | departure |
+| "{Hero} sets a new depth record — floor {N}." | :1432 | record |
+| gossip line verbatim (§5.1) | :1433 | `GossipEmitted` |
+| "{Hero} did not return from floor {N}." | :1438 | death |
+| "Home safe: {Item} — {Detail}." | :1444 | attribution beat — ex. *"Home safe: Emberbite — Emberbite landed the killing blow on the Cave Rat."* (see judgement H4) |
+| "{Hero} has come to town for {Fallen}'s seat — {N days} cold. {Fallen} fell wearing {gear list}." | :1457,1717-1746 | a recruit fills a dead hero's vacated seat (P2-PEOPLE-30) — names whose seat, how cold, and what they wore; no "fell wearing" clause if nothing resolves |
+| "{Hero} has come to town looking for work." | :1459 | recruit, founding roster or no unclaimed vacancy |
+| both recruit lines get " They carry {N}g. {Your {Item} at {N}g is within it, and theirs to carry. \| Nothing on your shelf tonight is both within it and theirs to carry.}" appended | :1657-1682 (`PurseClause`, P2-SCREEN-41) | every recruit arrival |
+| "{Hero} wants {Slot} work, {Quality} or better, by day {N} — {N}g over list." | :1461-1463 | commission posted |
+| "{Hero} takes delivery of {Item} — {N}g premium, on the day it was due." / "…{N}g premium." | :1470-1472 | commission fulfilled (the deadline-day clause is new, P2-SCREEN-39) |
+| "{Hero} gave up waiting on that {Slot} commission." | :1473-1474 | commission expired |
+| "Your {Item} is signed into legend as \"{Name}\"." | :1483-1484 | a signed work |
+| "The town bids farewell to {Hero} — the rite is done." | :1485-1486 | memorial honored |
+| "{Hero}'s grave is marked with {Item}." | :1489-1490 | the wake's grave-marker verb (§5.5) |
+| "{Hero} is remembered for: {line}" | :1492-1494 | the wake's remembrance verb (§5.5) — renders nothing if the source no longer resolves |
+| incident lines (below) | :1499 | drama director incident |
+| "The rival stall is expanding — town confidence has slipped to {N}%." | :1503-1504 | confidence crossing |
+| "{Hero} is talking about leaving town." | :1505-1506 | confidence crossing (see judgement L5 — the sim has no hero-departure mechanism) |
+| "The town has lost faith in its smith — {N} assessment(s) missed." | :1507-1508 | collapse |
+| "The {Faction} remember your custom now — their ore comes cheaper." / "The {Faction} are cooling toward your shop — their ore's discount is fading." | :1522-1524 | standing threshold crossing |
+| "Rent paid — {N}g to the guild. Next due: {N}g." | :1533-1534 | rent day |
+| "Rent went unpaid — {N}g owed, {N} missed payment(s) now. The guild's patience is thinning; next due climbs to {N}g." | :1535-1537 | missed rent |
+| "Guild Assessment paid — {N}g. Next dues: {N}g." | :1539-1540 | assessment day |
+| "The guild took {Item} against the {N}g dues — it hangs on their wall now, where it will never turn a blow. Next dues: {N}g." | :1546-1548 | dues settled by pledge (`DuesSettledByPledge`, P2-LONG-18) |
+| "Guild Assessment missed — {N}g unpaid, {N} time(s) now. Next dues climb to {N}g." | :1549-1551 | missed assessment |
+| "{Hero} has risen to {Rank}." | :1557 | rank crossing |
+| "{Hero} has proven ready for deeper ground." (+ "{Hero} and 1 other have…" / "{Hero} and {N} others have…") | :1564 (`GraduatesLine`, :1752-1758) | venue graduation |
+| "{Hero} collects {N}g on a completed bounty." | :1570 | bounty payout |
+| "{Hero} died holding your {N}g bounty — the escrow is back in your till." | :1573-1574 | a bounty's acceptor died before delivering (`BountyRefunded`) — was silent; the retired judgement S2 |
+| "Your {N}g bounty lapsed — {Hero} never reached the floor. The escrow is back in your till." | :1575-1576 | a lapsed, claimed bounty refunded — also was silent |
+| "Nobody took your {N}g bounty before it lapsed — the escrow is back in your till." | :1577 | a lapsed, never-claimed bounty refunded |
+| "You were not at the anvil today. The rival's stall was." | :1586-1587 | idle-day market-share cost (`MarketShareShifted` when `RivalGained`, P2-HONEST-23) |
 
-Incident prose (`IncidentLine`, :1442-1455): "Whispers out of the dark — the miners are uneasy." / "Something probed the mine mouth in the night and withdrew." / "The spider brood is swelling in the upper tunnels." / "A ghoul warren has broken open deeper down." / "The forgeworm stirs. The deep rock is warm to the touch." Unknown-id fallback (:1455) reads `"Word from {venue}: {incident id with underscores as spaces}."`, `{venue}` now the registry's lowercased `DisplayName` rather than the raw venue id (P2-HONEST-06 routed it through `VenueRegistry` at some point after this census's original AdventureTicker snapshot).
+Incident prose (`IncidentLine`, :1610-1633): the Mine's original five ("Whispers out of the dark — the miners are uneasy." / "Something probed the mine mouth in the night and withdrew." / "The spider brood is swelling in the upper tunnels." / "A ghoul warren has broken open deeper down." / "The forgeworm stirs. The deep rock is warm to the touch.") plus six more for the three graduated venues (P2-MEMORY-27): "Lantern moths thick over the Gloomwood road — the foragers turned back early." / "The bramble has grown over the Gloomwood paths, and the boars are rooting at the treeline." / "The ferrymen say the causeway into the Sunken Crypt was singing again last night." / "Bog-wights have been seen above the waterline at the Sunken Crypt." / "Black smoke over Emberfall — the foundry stacks are burning with nobody at the bellows." / "Slag hounds ran loose at the Emberfall gate in the night." Unknown-id fallback (:1633) reads `"Word from {venue}: {incident id with underscores as spaces}."`, `{venue}` the registry's lowercased `DisplayName`.
 
-Deliberately silent events: `SupplyDelivered`, `MarketShareShifted` (the non-idle/claw-back direction only), `TariffApplied` — documented in-file at :1421-1433. `BountyPosted` is silent too, documented beside its sibling `BountyPaid` at :1405-1406.
+Deliberately silent events, and why, documented in-file at :1589-1601: `SupplyDelivered` (confirmation of the player's own camp action, already shown by CampPanel); the claw-back half of `MarketShareShifted` (the mechanic rewarding ordinary work, not a cost); `TariffApplied` (confirmation of the player's own buy, already reflected in gold/material totals — the real news is `FactionStandingShifted` above it). `BountyPosted` is silent too — a return read of the player's own action.
 
 ### 3.9 The raid, watched live
 
@@ -423,7 +445,7 @@ Deliberately silent events: `SupplyDelivered`, `MarketShareShifted` (the non-idl
 
 ### 3.11 The campaign's ending
 
-`ChronicleScroll` is deleted (P2-MEMORY-14, P2-OQ4): its job — the reader for `CampaignEnded` — moved into `LegendsWall`'s own closing chapter, the bind page (`ShowBindPage`/`RenderBindPage`, godot/scripts/panels/LegendsWall.cs:555,562), opened automatically the same way (`MainUi.cs:1577-1580`) or any time after from the book's index ("Bind the Book" row). Title "THE CHRONICLE" (LegendsWall.cs:566). The old scroll's six fixed tally rows are gone; `RenderBindPage` instead prints whatever `ChronicleComposer.Compose(state)` returns (sim/GameSim/Chronicle/ChronicleComposer.cs, P2-MEMORY-13) — the fifteen characterisation predicates named in MAKERS-MARK.md §11.15 (P2-MEMORY), not a re-derivation of the old tally rows, so this census cannot vouch for their exact wording without a separate pass over `ChronicleComposer.cs` itself. Two things the bind page adds that the scroll never had: a day-stamp line, "Composed on day {N}. The world is still open — bind again anytime." (LegendsWall.cs:571), and an "Export as HTML" button (`ExportChronicleHtml`, LegendsWall.cs:586) that writes a self-contained file to `user://chronicle_day_{N}.html` via `WriteHtmlExport`/`ComposeExportHtml` (LegendsWall.cs:595,630). No staged line-by-line reveal (the old scroll's 0.45s/line) and no dedicated "Close" button distinct from the book's own Back row — the bind page is one more page of the book, not a separate modal.
+`ChronicleScroll` is deleted (P2-MEMORY-14): its job — the reader for `CampaignEnded` — moved into `LegendsWall`'s own closing chapter, the bind page (`ShowBindPage`/`RenderBindPage`, godot/scripts/panels/LegendsWall.cs:692,699), opened automatically off the real `CampaignEnded` event (MainUi.cs:1586) or any time after from the book's index ("Bind the Book — read the chronicle, export it to keep" row, LegendsWall.cs:223). Title "THE CHRONICLE" (LegendsWall.cs:703). The old scroll's six fixed tally rows are gone; `RenderBindPage` instead prints whatever `ChronicleComposer.Compose(state)` returns (sim/GameSim/Chronicle/ChronicleComposer.cs, P2-MEMORY-13) — the fifteen characterisation predicates named in MAKERS-MARK.md §11.15 (P2-MEMORY), not a re-derivation of the old tally rows, so this census cannot vouch for their exact wording without a separate pass over `ChronicleComposer.cs` itself. Two things the bind page adds that the scroll never had: a day-stamp line, "Composed on day {N}. The world is still open — bind again anytime." (LegendsWall.cs:708), and an "Export as HTML" button (`ExportChronicleHtml`, LegendsWall.cs:723) that writes a self-contained file to `user://chronicle_day_{N}.html` via `WriteHtmlExport`/`ComposeExportHtml` (LegendsWall.cs:732,767). No staged line-by-line reveal (the old scroll's 0.45s/line) and no dedicated "Close" button distinct from the book's own Back row — the bind page is one more page of the book, not a separate modal.
 
 ---
 
@@ -434,7 +456,7 @@ Deliberately silent events: `SupplyDelivered`, `MarketShareShifted` (the non-idl
 - Starter roster (sim/GameSim/Heroes/HeroRoster.cs:42-47): "Torvald" (Vanguard), "Brunhilde" (Vanguard), "Kael" (Striker), "Sable" (Striker), "Elowen" (Mystic), "Moss" (Mystic).
 - Recruit name pool (HeroRoster.cs:26-30): "Astrid", "Bram", "Cedany", "Dain", "Esben", "Freya", "Gorm", "Hilde", "Ivar", "Jorunn", "Kettil", "Liv", "Magnus", "Nessa", "Orin", "Petra", "Bertha", "Pim", "Snorri", "Grimhild", "Odd", "Tove", "Ulf", "Wren".
 - Duplicate-name epithets (sim/GameSim/Heroes/HeroIdentity.cs:42-47): "the Younger", "the Third", "the Fourth", then "the {n}th" — rendered as `{Name} {epithet}` at read time; the first namesake keeps the bare name.
-- Unknown-id fallbacks, various surfaces: `Hero #{id}` (e.g. MainUi.cs:2074, LegendsWall.cs:1268 — formerly AdventureTicker.cs, deleted P2-MEMORY-12, PipDock.cs:210).
+- Unknown-id fallbacks, various surfaces: `Hero #{id}` (e.g. MainUi.cs:2679, LegendsWall.cs:1399, PipDock.cs:210).
 
 ### 4.2 Classes, ranks, moods, bands, traits
 
@@ -457,39 +479,41 @@ Deliberately silent events: `SupplyDelivered`, `MarketShareShifted` (the non-idl
 
 ### 4.3 The words heroes use when they buy or refuse
 
-The sim's own verdict prose (`ShoppingAi`, sim/GameSim/Heroes/ShoppingAi.cs) is rendered verbatim as the customer's spoken reply at the counter (`CustomerVoice.PresentReply` returns `passReason` unchanged, godot/scripts/ui/CustomerVoice.cs:65-71), on the Demand board's pass-reason rollup, on shelf cards ("{Hero} passed: {reason}", ShopPanel.cs:362), and in the CLI:
+The sim's own verdict prose (`ShoppingAi`, sim/GameSim/Heroes/ShoppingAi.cs) is rendered verbatim as the customer's spoken reply at the counter (`CustomerVoice.PresentReply` returns `passReason` unchanged, godot/scripts/ui/CustomerVoice.cs:179-180), on the Demand board's pass-reason rollup, on shelf cards ("{Hero} passed: {reason}", ShopPanel.cs:362), and in the CLI. The role-mismatch and weight-cap lines route the class noun through `ArticleText.Indefinite` (sim/GameSim/Flavor/ArticleText.cs, P2-MEMORY-31) rather than a hand-written "a" — this is the fix for a real shipped defect: unconditional `$"a {kind}"` calls across the sim once produced *"shields don't suit a occultist"* 678 times in a 40-campaign sweep, alongside *"a Ore Lurker"*/*"a Old Mossjaw"*/*"a armor"* in gossip (ArticleText.cs:4-11):
 
 | Verdict prose (verbatim template) | file:line | Fires when |
 |---|---|---|
-| "shields don't suit a {class}" | ShoppingAi.cs:122 | role mismatch — ex. *"shields don't suit a striker"* |
-| "too heavy for a {class} — {N} weight, carries at most {cap}" | ShoppingAi.cs:129 | weight cap |
-| "a floor-{N} veteran won't trust {quality} work — bring {quality} or better" | ShoppingAi.cs:142 | veteran quality bar — ex. *"a floor-3 veteran won't trust common work — bring fine or better"* |
-| "can't afford at {N}g — has {N}g" | ShoppingAi.cs:150,217 | budget |
-| "won't part with {WornItem} — it's carried them through {N} fights" | ShoppingAi.cs:173 | Sentimental keep |
-| "current {Item} is better" / "no gear-score improvement" | ShoppingAi.cs:181-182 | not an upgrade |
-| "upgrade: +{N} gear score for {N}g" | ShoppingAi.cs:186 | a buy verdict |
-| "stocked up: {Item} {N}g" | ShoppingAi.cs:220 | consumable buy |
+| "shields don't suit {article} {class}" | ShoppingAi.cs:123 | role mismatch — ex. *"shields don't suit an occultist"*, *"shields don't suit a striker"* |
+| "too heavy for {article} {class} — {N} weight, carries at most {cap}" | ShoppingAi.cs:130 | weight cap |
+| "a floor-{N} veteran won't trust {quality} work — bring {quality} or better" | ShoppingAi.cs:143 | veteran quality bar — ex. *"a floor-3 veteran won't trust common work — bring fine or better"* |
+| "can't afford at {N}g — has {N}g" | ShoppingAi.cs:151,222 | budget |
+| "won't part with {WornItem} — it's carried them through {N} fights" | ShoppingAi.cs:174 | Sentimental keep |
+| "current {Item} is better" / "no gear-score improvement" | ShoppingAi.cs:182-183 | not an upgrade |
+| "upgrade: +{N} gear score for {N}g" | ShoppingAi.cs:187 | a buy verdict |
+| "stocked up: {Item} {N}g" | ShoppingAi.cs:225 | consumable buy |
 | "the customer's patience ran out" | sim/GameSim/Counter/HaggleResolver.cs:117 | a hold-firm walk-away (`CustomerWalked.Reason`) |
 
 Spoken customer lines (`CustomerVoice`, godot/scripts/ui/CustomerVoice.cs — rendered as a speech bubble `{Name}: "{line}"`, CounterPanel.cs:166,182,560):
 
 | Line | file:line | Fires when |
 |---|---|---|
-| "Looking for {a weapon/a shield/some armor/a trinket/some gear} — about {N}g on me." | CustomerVoice.cs:46,85-92 | customer opens, has an empty slot |
-| "Could use a better {weapon/shield/armor/trinket/piece} if the price is fair — {N}g on me." | CustomerVoice.cs:50 | full loadout, shelf holds an upgrade |
-| "Just browsing — {N}g on me, if something catches my eye." | CustomerVoice.cs:51 | nothing on the shelf would help them |
-| "{Item}? I could use that." | CustomerVoice.cs:67 | a Present the sim verdicts Buy |
-| (the pass reason, verbatim) | CustomerVoice.cs:68 | a Present the sim verdicts Pass |
-| "{Item}? ...I do lack one." | CustomerVoice.cs:82 | a Suggest that raised Interest |
-| "No use for that." | CustomerVoice.cs:83 | a Suggest that did nothing |
+| "Looking for {a weapon/a shield/some armor/a trinket/some gear} — about {N}g on me." | CustomerVoice.cs:146,299-304 | customer opens, has an empty slot |
+| "Could use a better {weapon/shield/armor/trinket/piece} if the price is fair — {N}g on me." | CustomerVoice.cs:150 | full loadout, shelf holds an upgrade |
+| "Just browsing — {N}g on me, if something catches my eye." | CustomerVoice.cs:151 | nothing on the shelf would help them |
+| "{Item}? I could use that." | CustomerVoice.cs:179 | a Present the sim verdicts Buy |
+| (the pass reason, verbatim) | CustomerVoice.cs:180 | a Present the sim verdicts Pass |
+| "{Item}? ...I do lack one." | CustomerVoice.cs:296 | a Suggest that raised Interest |
+| "No use for that." | CustomerVoice.cs:297 | a Suggest that did nothing |
+
+A third bare noun phrase, "nothing in particular", exists as `CustomerVoice.WantNoun`'s fallback (CustomerVoice.cs:161) for the counter's own "forge it" hand-off line, spoken about a customer rather than by one — outside the surfaces this section otherwise covers.
 
 ### 4.4 Bounty judgments — the words of refusal and acceptance
 
 Every eligible hero's evaluation is emitted as prose and rendered on the Bounty panel ("{Hero} {ACCEPTED|declined}: {Reason}", godot/scripts/panels/BountyPanel.cs:194-196) and in the CLI (EventNarration.cs:65-67):
 
-- Too deep (sim/GameSim/Bounties/BountyRules.cs:90): "floor {N} is beyond what {Hero} dares (deepest: {N})"
-- Too thin (:102-103): "{N}g is too thin for floor {N} — {Hero}'s D_q {score} (greed {g} × {N}g − rep {r}/dist {d}) falls short of {threshold}" — see judgement J5.
-- Accept (:107-108): "{Hero} takes the floor {N} bounty for {N}g — D_q {score} (greed {g} × {N}g − rep {r}/dist {d}) clears {threshold}"
+- Too deep (sim/GameSim/Bounties/BountyRules.cs:103): "floor {N} is beyond what {Hero} dares (deepest: {N})"
+- Too thin (:115-116): "{N}g is too thin for floor {N} — {Hero}'s D_q {score} (greed {g} × {N}g − rep {r}/dist {d}) falls short of {threshold}" — see judgement J5.
+- Accept (:120-121): "{Hero} takes the floor {N} bounty for {N}g — D_q {score} (greed {g} × {N}g − rep {r}/dist {d}) clears {threshold}"
 
 ### 4.5 Hero decision explanations
 
@@ -533,7 +557,9 @@ HeroesPanel (godot/scripts/panels/HeroesPanel.cs): "no heroes in town" (:111); "
 
 ### 4.9 Ambient hero/townsfolk life
 
-The 2.5D town's wandering figures carry no dialogue. Townsfolk have flavor names only — "Aldric", "Mira", "Perrin", "Sela" (godot/scripts/town2d/TownsfolkNpc2D.cs:113) — and market/tavern ambience communicates through emotes, not words (godot/scripts/town2d/MarketLife2D.cs:293 maps a pass reason containing "can't afford" to a frown emote, anything else to a shrug). No bark strings exist in `town2d/`.
+Most of the 2.5D town's wandering figures carry no dialogue. Townsfolk have flavor names only — "Aldric", "Mira", "Perrin", "Sela" (godot/scripts/town2d/TownsfolkNpc2D.cs:124) — and market/tavern ambience communicates through emotes, not words (godot/scripts/town2d/MarketLife2D.cs:308 maps a pass reason containing "can't afford" to a frown emote, anything else to a shrug).
+
+One figure is the exception. **The rival smith speaks one line, once per qualifying death.** `RefreshRivalAbsenceLine` (godot/scripts/town2d/Town2D.cs:2218-2242) checks each new event-log entry for a hero who died wearing nothing the player made (`RivalAbsenceQuery.PendingAbsenceLines`) and, on the first such death, replaces the rival's ambient caption with a rendered `RivalPack.Absence` line (§5.2a) — never a second line for a hero already spoken for (permadeath means at most one qualifying death per hero). This is the one bark string in `town2d/`.
 
 ---
 
@@ -541,22 +567,29 @@ The 2.5D town's wandering figures carry no dialogue. Townsfolk have flavor names
 
 ### 5.1 Gossip — the tavern's morning voice
 
-`GossipGenerator` (sim/GameSim/Drama/GossipGenerator.cs) turns yesterday's real events into at most 3 lines/day (`MaxLinesPerDay`, :39), each traceable to a logged event (law: every line traces to something that happened). Rendered in the Tavern's "TAVERN GOSSIP" section as `  [day {N}] "{line}"` (TavernPanel.cs:153,171) and verbatim in the book's day pages (LegendsWall.cs:1296, `GossipEmitted e => e.Line` — formerly the ticker, AdventureTicker.cs:144, deleted P2-MEMORY-12). Slot fills: hero name, `died.Cause` (e.g. "slain by a Cave Rat" — sim/GameSim/Drama/ExpeditionRevealSystem.cs:320-321, with "lost to the Mine" for an off-screen loss :317), item name, "floor {N}", faction name, and the direction words "warmed"/"cooled" (GossipGenerator.cs:234-235).
+`GossipGenerator` (sim/GameSim/Drama/GossipGenerator.cs) turns yesterday's real events into at most 3 lines/day (`MaxLinesPerDay`, :63), each traceable to a logged event (law: every line traces to something that happened). Rendered in the Tavern's "TAVERN GOSSIP" section as `  [day {N}] "{line}"` (TavernPanel.cs:153,171) and verbatim in the book's day pages (LegendsWall.cs:1296, `GossipEmitted e => e.Line`). Priority order runs fleeced counter sales first, then plain gossip, then commission/heirloom lines, then a fair-deal counter sale (:100-112). Slot fills: hero name, `died.Cause` (e.g. "slain by a Cave Rat" — sim/GameSim/Drama/ExpeditionRevealSystem.cs:405, with "lost to the Mine" for an off-screen loss :399, both routed through `MonsterName.Indefinite`/`ArticleText` so the article is never wrong), item name, "floor {N}", faction name, price/premium, and the direction words "warmed"/"cooled" (GossipGenerator.cs:354-356). Six event kinds feed gossip beyond the original six: `CounterSaleClosed` (pinned/fleeced/fair-deal, keyed on its own `Fleeced`/`Pinned` flags, :384-390,404-408), `CommissionFulfilled`, `CommissionExpired`, and the hero-less `HeirloomReforged` (:391-408) — a counter sale closed face to face is no longer a silence the town keeps (the retired judgement S1).
 
-### 5.2 TavernPack — the gossip template corpus (480 lines)
+### 5.2 TavernPack — the gossip template corpus (576 lines)
 
-`sim/GameSim/Flavor/Packs/TavernPack.cs`. Nine base keys × 4 voices, ≥12 variants each (480 template strings, :96-633), plus 9 fallbacks (:636-646). Slots (:84-92): heroDied {hero}{cause}{floor}; killingBlow/lethalSave/breakpointClear/provisioned/potionLifesave {hero}{item}{floor}; floorRecordSet {hero}{floor}; recruitArrived {hero}; venueGraduated {hero}. Register per key follows docs/design/tone-register.md §1: deaths grim-or-warm (never comic), pride beats warm, the rest comedy-forward deadpan.
+`sim/GameSim/Flavor/Packs/TavernPack.cs`. Fifteen base keys × 4 voices (576 template strings, :171-836), plus 15 fallbacks (:841-859). The original nine keys keep 13-15 variants each; six added since (`CounterSalePinned`, `CounterSaleFleeced`, `CounterSaleFairDeal`, `CommissionFulfilled`, `CommissionExpired`, `HeirloomReforged`) carry 4 each, the pack's conformance floor. Slots (:149-163): heroDied {hero}{cause}{floor}; killingBlow/lethalSave/breakpointClear/provisioned/potionLifesave {hero}{item}{floor}; floorRecordSet {hero}{floor}; recruitArrived {hero}; venueGraduated {hero}; counterSalePinned/counterSaleFleeced/counterSaleFairDeal {hero}{item}{price}; commissionFulfilled {hero}{item}{premium}; commissionExpired {hero}{slot}; heirloomReforged {item}{lineage}. Register per key follows docs/design/tone-register.md §1: deaths grim-or-warm (never comic), pride beats warm, the rest comedy-forward deadpan.
 
-Representative variants (verbatim; the full 480 are enumerable with `grep -nE '^\s*"' sim/GameSim/Flavor/Packs/TavernPack.cs`):
+Representative variants (verbatim; the full 576 are enumerable with `grep -nE '^\s*"' sim/GameSim/Flavor/Packs/TavernPack.cs`, and Appendix A.1 lists every one):
 
-- heroDied/gruff (:101): "Raise one for {hero}. {cause} on floor {floor}. That's the trade." — ex. *"Raise one for Kael. slain by a Deep Ghoul on floor 3. That's the trade."* (note the lowercase slot start — judgement H4)
-- heroDied/dramatic (:115): "Gone! {hero}, {cause} on floor {floor} — the dark has a new name to whisper."
-- heroDied/wry (:130): "{hero} found the one thing on floor {floor} you can't walk off — {cause}."
-- Fallbacks (:636-646): "Raise a cup for {hero} — {cause} on floor {floor}. The Mine keeps what it takes." / "They say {hero}'s {item} did the deed down on floor {floor}." / "{hero} walked out of floor {floor} alive thanks to {item}, folk say." / "No {item}, no floor {floor} — ask {hero}." / "{hero} has gone deeper than ever before — floor {floor}!" / "Fresh blood in town: {hero}, looking for work and glory." / "{item} kept {hero} fighting down on floor {floor}, they say." / "{item} saved {hero}'s life on floor {floor} — plain as that." / "{hero} has proven themselves — a harder dark waits now."
+- heroDied/gruff (:172): "Raise one for {hero} — {cause} on floor {floor}. That's the trade." — ex. *"Raise one for Kael — slain by a Deep Ghoul on floor 3. That's the trade."* (the slot now opens on an em dash rather than a period before the lowercase cause — the fix for the old run-on reading, judgement H3)
+- heroDied/dramatic (:186): "Gone! {hero}, {cause} on floor {floor} — the dark has a new name to whisper."
+- heroDied/wry (:200): "{hero} found the one thing on floor {floor} you can't walk off — {cause}."
+- counterSaleFleeced/gruff (:728): "Charged {hero} {price}g for {item}. Steep. They paid anyway."
+- commissionExpired/gruff (:795): "{hero}'s {slot} order ran out of days. They go down with that {slot} empty."
+- heirloomReforged/gruff (:818): "{item} came off the anvil today, {lineage}. Steel outlasts the hand that held it."
+- Fallbacks (:841-859): "Raise a cup for {hero} — {cause} on floor {floor}. The Mine keeps what it takes." / "They say {hero}'s {item} did the deed down on floor {floor}." / "{hero} walked out of floor {floor} alive thanks to {item}, folk say." / "No {item}, no floor {floor} — ask {hero}." / "{hero} has gone deeper than ever before — floor {floor}!" / "Fresh blood in town: {hero}, looking for work and glory." / "{item} kept {hero} fighting down on floor {floor}, they say." / "{item} saved {hero}'s life on floor {floor} — plain as that." / "{hero} has proven themselves — a harder dark waits now." / "{hero} named {price}g for {item} and paid it straight — a good read." / "{hero} paid {price}g for {item}, well past a fair price, and didn't argue." / "{hero} paid {price}g for {item}. An honest sale, plain as that." / "{hero} got {item} on the day they asked for it — {premium}g over list, and the word kept." / "{hero}'s commission for a {slot} ran out of days; the {slot} is still empty." / "{item} came off the anvil, {lineage} — the dead still hold an edge."
+
+### 5.2a RivalPack — the rival's one line (4 lines)
+
+`sim/GameSim/Flavor/Packs/RivalPack.cs` (P2-LONG-19). One base key, `rivalAbsence` ({hero} only), deliberately NOT crossed with the voice list — the rival is one fixed, dignified voice, never gloating, never a lesson for the player (`RivalPackTests` pins the vocabulary shut). Fires once per hero who died wearing nothing the player made, spoken as the rival smith's ambient caption in town (§4.9). All four variants plus the fallback, verbatim (:46-49,53; Appendix A.5 repeats them): "{hero} fell wearing store-bought iron. It did what iron does. Nobody's name was on it." / "{hero} carried nothing anyone signed. The iron held as long as iron holds. No further claim on it." / "Nothing {hero} wore came off my anvil, or anyone's. It did the work iron does, and no more." / "{hero} went down in plain stock. It served, the way plain stock serves. There was no maker to tell."
 
 ### 5.3 LedgerPack — the fate-line corpus (112 lines)
 
-`sim/GameSim/Flavor/Packs/LedgerPack.cs`. Two base keys × 4 voices, ≥14 variants each (112 template strings, :70-190s), rendering every Evening return card's headline sentence (§3.7). Slots: survived {hero}{floor}{gold}; died {hero}{floor}. Representative variants (full set: `grep -nE '^\s*"' sim/GameSim/Flavor/Packs/LedgerPack.cs`):
+`sim/GameSim/Flavor/Packs/LedgerPack.cs`. Two base keys × 4 voices, ≥14 variants each (112 template strings, :70-190s), rendering every Evening return card's headline sentence (§3.7). Slots: survived {hero}{floor}{gold}; died {hero}{floor}. Representative variants (full set: `grep -nE '^\s*"' sim/GameSim/Flavor/Packs/LedgerPack.cs`, or Appendix A.2 — unchanged since the base SHA):
 
 - survived/gruff (:71): "{hero} walked out of floor {floor} with {gold}g. Good enough."
 - survived/gruff comic (:83): "{hero} walked out of floor {floor} with {gold}g. Counted it twice. It counted the same. Good day."
@@ -565,23 +598,38 @@ Representative variants (verbatim; the full 480 are enumerable with `grep -nE '^
 
 ### 5.4 FactionPack — standing-shift gossip (144 lines)
 
-`sim/GameSim/Flavor/Packs/FactionPack.cs`. Two base keys (favored/cooled) × 4 voices, 18 variants each (144 template strings, :70-224) + 2 fallbacks (:227-228). Slots: {faction}, {direction} (filled with "warmed"/"cooled"). Fires on a standing threshold crossing, through the same gossip pipeline as §5.1.
+`sim/GameSim/Flavor/Packs/FactionPack.cs`. Two base keys (favored/cooled) × 4 voices, 18 variants each (144 template strings, :76-232) + 2 fallbacks (:236-237). Slots: {faction}, {direction} (filled with "warmed"/"cooled"). Fires on a standing threshold crossing, through the same gossip pipeline as §5.1. Unchanged since the base SHA except one wording fix: the cooled pool used to claim ore prices RISE, a mechanism the sim does not have (the retired judgement L1); every cooled variant and the cooled fallback now says the DISCOUNT fades instead, matching the discount-only standing model (`FactionDriftSystem`, sim/GameSim/Factions/FactionDriftSystem.cs:74-78) — a comment at FactionPack.cs:~152 states the constraint directly.
 
-- favored/gruff (:71): "The {faction} {direction} to your custom. Cheaper ore while it lasts. Don't waste it."
-- cooled/gruff (:149): "The {faction} {direction} on you. Ore costs more now. Should've kept trading." — **every one of the 72 cooled variants and the cooled fallback (":228 "The {faction} have {direction} toward your shop — dearer ore, folk say.") claims prices RISE — a mechanism the sim does not have.** See judgement L1.
+- favored/gruff (:77): "The {faction} {direction} to your custom. Cheaper ore while it lasts. Don't waste it."
+- cooled/gruff (:158): "The {faction} {direction} on you. The cheap ore's going. Should've kept trading."
+- cooled fallback (:237): "The {faction} have {direction} toward your shop — the ore's discount is fading, folk say."
 
 ### 5.5 The legends wall
 
-`LegendsWall` (godot/scripts/panels/LegendsWall.cs). Title "THE LEGENDS WALL" (:490); empty state "No legends yet — the Mine hasn't claimed anyone; your work is about to change that." (:92); sections "THE FALLEN" (:125), "DEPTHS RECORDS" (:401), "LEGENDARY GEAR" (:419); "  Nobody has fallen yet." (:140); memorial row "  Day {N} — {Hero}, carrying {gear list}" + " — honored" once honored (:152-153); "Honor" button (:171) with off-phase whyNot "The wall is honored in the evening." (:186); "  No depth records yet — the Mine awaits." (:404); record row "  floor {N} — {Hero}" (:413); "  No legendary gear yet — a Signed Work or a proven hero of steel is still to come." (:422); gear rows "✦ {Item} — \"{SignedName}\"" / "★ {Item} — {N} proven beats" (:430-431); reforge row "    reforge {Item} into:" (:232) + "Reforge" button (:263); "Close" (:504). The gear list a memorial names comes from `ExpeditionRevealSystem.GearNamed` — item names joined, player work tagged "{Item} (your make)", empty-handed fallback "nothing but courage" (sim/GameSim/Drama/ExpeditionRevealSystem.cs:339-344).
+`LegendsWall` (godot/scripts/panels/LegendsWall.cs) is a book, not a flat wall: an index page fans out into per-actor and per-item pages, each reached with a "‹ Back to the book" button (:388,593) and closed by "Close" or Escape (`ModalEscape`, :299). Title "THE LEGENDS WALL" (:1284); whole-book empty state "No legends yet — the Mine hasn't claimed anyone; your work is about to change that." (:192, only when memorials, depth records, legend/storied gear, AND the day log are all empty — :186-187).
 
-Client-side reforge mirror reasons (LegendsWall.cs:364-393, tooltip whyNot): "Recipe '{id}' belongs to unknown profession '{id}'." / "Profession '{id}' is not selected." / "Unknown material '{key}'." / "Recipe '{id}' is tier {N}; requires talent '{gate}'." / "Not enough {key}: need {N}, have {N}." / "No action slots left today (0/5) — 'next' to advance."
+**The index** (`ShowIndex`, :220-229), in order: "Bind the Book — read the chronicle, export it to keep" (:223, opens §3.11's chronicle page); the actor book (below); "LEGENDARY GEAR" (:1137); "STORIED GEAR" (:1190); "THE DAY LOG" (§3.8, :615).
 
-### 5.6 The memorial rite's other voices
+**The actor book** (`RenderActorBook`, :309-329) replaced the old flat "THE FALLEN"/"DEPTHS RECORDS" sections — every hero with a memorial or a depths-board entry gets one row. Header "WHO THE TOWN REMEMBERS" (:310); empty state "  No names on this page yet — the Mine hasn't given the town anyone to remember." (:321); row "{Hero} — {tags joined by ', '}" where tags are "fallen" and/or "floor {N}" (:327,352-360).
+
+**An actor's page** (`ShowActorPage`, :382-461) hosts, for the fallen: the fate line "  Day {N} — carrying {gear list}" + " — honored" once honored (:404-405); the grave-marker wake verb — "  Marked by {Item}." once set, else "  Set the grave marker:" plus an item picker and "Set as marker" (:473,484,494); the remembrance wake verb — "  Remembered for: {line}" once chosen, else "  Choose a remembrance:" plus one button per eligible event, the default suffixed " (default)" (:516,533,546); "Honor" (:422) with off-phase whyNot "The wall is honored in the evening." (:437); reforge rows (below); the still-open-wake note "  The wall keeps what you'd have chosen. The morning doesn't." (:450, law 7's cost named in copy, shown only while a wake fact remains choosable); and the depth record "  floor {N}{ArcScenes.FloorCaption}" (:459, §4.6's Torvald caption reader).
+
+**Reforge** (`RenderReforgeOptions`, :904-978): row "    reforge {Item} into:" (:932) plus a lineage preview shown before the press, "      {Sentence(LineageOf(item, hero))}" (:948 — the same sentence `HeirloomReforged`'s gossip lineage slot later carries, §5.2a); recipe and material pickers, the material list lowercased via `MaterialRegistry.DisplayName` (:972).
+
+**Legendary and storied gear.** "LEGENDARY GEAR" empty state "  No legendary gear yet — a Signed Work or a proven hero of steel is still to come." (:1148); rows "✦ {Item} — \"{SignedName}\"" / "★ {Item} — {N} proven beats" (:1155,1157), each a button opening the item's own page (`ShowItemPage`, :584-599, which renders the same `ProvenanceCard` content every other surface uses, §5.7). "STORIED GEAR" — a new section (M2b) for gear a hero has grown attached to but that hasn't earned a legend row yet — empty state "  No storied gear yet — a piece earns this down in the Mine, one fight at a time." (:1196); row "◆ {Item} — {Bearer} has carried it through {N} fight(s)." (:1201-1203).
+
+The gear list a memorial names comes from `ExpeditionRevealSystem.GearNamed` — item names joined, player work tagged "{Item} (your make)", empty-handed fallback "nothing but courage" (sim/GameSim/Drama/ExpeditionRevealSystem.cs:339-344, unmoved).
+
+Client-side reforge mirror reasons (`ReforgeGate`, LegendsWall.cs:1090-1130, tooltip whyNot): "Recipe '{id}' belongs to an unregistered profession — this is a content bug." / "Profession '{DisplayName}' is not selected." / "Unknown material — this is a content bug." / "Recipe '{id}' is tier {N}; requires talent '{gate}'." / "Not enough {material}: need {N}, have {N}." (material rendered via `MaterialRegistry.Require(...).DisplayName`, §7.2) / "No action slots left today (0/5) — try again once {Phase} ends." (`ActionBudget.SlotsPerDay`, `PhaseVocab.Display` — no CLI jargon; see the retired judgement J1).
+
+### 5.6 The memorial rite's other voices, and the wake
 
 - Advisor: "Honor {Hero}'s memorial — their {gear} still waits at the stone." (sim/GameSim/Advisor/ObjectiveAdvisor.cs:66)
-- Ticker: "The town bids farewell to {Hero} — the rite is done." (AdventureTicker.cs:182-183 — file deleted P2-MEMORY-12, #863)
+- Book day-log line: "The town bids farewell to {Hero} — the rite is done." (§3.8, LegendsWall.cs:1332-1333)
 - Kernel refusal: "No memorial recorded for {HeroId} — nothing to honor." (sim/GameSim/Drama/FarewellHandlers.cs:34)
 - CLI: "  queued: honor H{N}'s memorial (Evening rite)" (sim/GameSim.Cli/Program.cs:581)
+
+**The death-night wake, staged where the death is announced.** On a death night, `LedgerModal.AddWakeLeads` (godot/scripts/panels/LedgerModal.cs:816-856) gives each `HeroDied` its own lead card rather than merging two deaths into one line: header the hero's name (§5.5's actor page shares it); fate line "Fell on floor {N} — {cause}." + " Carrying {gear list}." if a memorial already exists (:837,840); an open-commission warning "{Hero}'s ask is still pinned to your board — a {Quality} {Slot} by day {N}. Nobody is coming to collect it." when the dead hero still has one live (:882-883, honestly only possible because the kernel voids a dead hero's commission the FOLLOWING Morning, not same-night); and a "Sit the wake" button (:854) that opens the SAME actor page §5.5 describes — never a second one — so the marker and remembrance choices are available the night of the death, not just from the book's index later.
 
 ### 5.7 The item's own history
 
@@ -656,7 +704,7 @@ Thread rows (:274-293): "Asking: {Quality} {Slot} by day {N}, +{N}g over list." 
 
 ### 6.4 The commission board
 
-`godot/scripts/panels/CommissionBoard.cs`: title "Commissions — Day {N}" (:62); "No one's asking for anything right now." (:66); card header "{Hero} wants a {Quality} {Slot} or better" (:95); "Deadline: day {N} — EXPIRED (this offer is about to lapse) — Premium: {N}g over list" / "Deadline: day {N}  —  Premium: {N}g over list" (:114-115); Accept/Decline buttons carry entity-id names. Kernel refusals: "No open commission from hero {N} to accept." / "…to decline." (sim/GameSim/Heroes/CommissionHandlers.cs:36,49). Advisor: "Accept {Hero}'s commission — {Slot} at {Quality}+ quality for a {N}g premium (due day {N})." (ObjectiveAdvisor.cs:84-85).
+`godot/scripts/panels/CommissionBoard.cs`: title "Commissions — Day {N}" (:66); "No one's asking for anything right now." (:70); card header "{Hero} wants a {Quality} {Slot} or better{honesty note}" (:134) — a Trinket commission appends " — a favor, not fighting gear" (`CommissionSystem.SlotHonestyNote`, sim/GameSim/Heroes/CommissionSystem.cs:336-337), distinguishing it from a weapon/armor/shield ask; "Deadline: day {N} — EXPIRED (this offer is about to lapse) — Premium: {N}g over list" / "Deadline: day {N}  —  Premium: {N}g over list" (:163-164); Accept/Decline buttons carry entity-id names. Kernel refusals: "No open commission from hero {N} to accept." / "…to decline." (sim/GameSim/Heroes/CommissionHandlers.cs, unverified exact lines this pass). Advisor: "Accept {Hero}'s commission — {Slot} at {Quality}+ quality for a {N}g premium (due day {N})." (ObjectiveAdvisor.cs, unverified exact lines this pass).
 
 ### 6.5 The demand board
 
@@ -664,7 +712,7 @@ Thread rows (:274-293): "Asking: {Quality} {Slot} by day {N}, +{N}g over list." 
 
 ### 6.6 The bounty board
 
-`godot/scripts/panels/BountyPanel.cs`: sections "OPEN BOUNTIES" (:94), "JUDGMENTS TODAY (bounty since resolved)" (:131), "POST BOUNTY" (:242). "  (none posted)" (:99); row "  {id}: clear floor {N} for {N}g (posted day {N}) — accepted by {Hero}" (:115-116) + chips "Floor"/"Reward"; judgment note "{Hero} {ACCEPTED|declined}: {reason}" (:194-196, reasons §4.4). Form explainer (:253-256): "A bounty pays a hero to reach one floor of the Mine. The reward leaves your purse when you post it. The first hero who judges it worth that floor takes the job, steers their whole party that deep, and keeps the gold — deeper floors need bigger rewards, and heroes refuse the ones they think thin. Unclaimed after three days, the gold comes back to you." Form: "reward gold:" (:280), "Post" (:289); poster preview paints "F{N} {Monster}" (:462), "Floor {N}" and "{N}g reward" (:586-589). Post gating (:180-183): "Bounties are posted in the Morning or Evening." / "Not enough gold to escrow {N}g — you have {N}g." / "No action slots left today (0/5) — 'next' to advance." Feedback: "queued: bounty — clear floor {N} for {N}g (gold escrowed on apply)" (:220). Kernel refusals: "The Mine has floors 1-5; {N} isn't one of them." (BountyHandlers.cs:25); "A bounty needs a positive reward." (:30); "Can't escrow {N}g — you have {N}g." (:35).
+`godot/scripts/panels/BountyPanel.cs` (barely shifted from the base SHA — line numbers below are current): sections "OPEN BOUNTIES" (:94), "JUDGMENTS TODAY (bounty since resolved)" (:131), "POST BOUNTY" (:242). "  (none posted)" (:99); row "  {id}: clear floor {N} for {N}g (posted day {N}) — accepted by {Hero}" (:115-116) + chips "Floor"/"Reward"; judgment note "{Hero} {ACCEPTED|declined}: {reason}" (:194-196, reasons §4.4). Form explainer (:253-256): "A bounty pays a hero to reach one floor of the Mine. The reward leaves your purse when you post it. The first hero who judges it worth that floor takes the job, steers their whole party that deep, and keeps the gold — deeper floors need bigger rewards, and heroes refuse the ones they think thin. Unclaimed after three days, the gold comes back to you." Form: "reward gold:" (:280), "Post" (:289); poster preview paints "F{N} {Monster}" (:462), "Floor {N}" and "{N}g reward" (:586-589). Post gating (:179-183): "Bounties are posted in the Morning or Evening." / "Not enough gold to escrow {N}g — you have {N}g." / "No action slots left today (0/5) — try again once {Phase} ends." Feedback: "queued: bounty — clear floor {N} for {N}g (gold escrowed on apply)" (:220). Kernel refusals: "The Mine has floors 1-5; {N} isn't one of them." / "A bounty needs a positive reward." / "Can't escrow {N}g — you have {N}g." (sim/GameSim/Bounties/BountyHandlers.cs, unverified exact lines this pass).
 
 ### 6.7 The vigil runner (CampPanel — link 2's fourth channel)
 
@@ -733,10 +781,10 @@ Town nametags (godot/scripts/town2d/TownLayout2D.cs:211-218): "Forge", "Shop", "
 
 ### 7.2 Recipes, materials, talents, modifiers
 
-- Recipe display names (sim/GameSim/Crafting/RecipeTable.cs:57-127): "Dagger", "Shortsword", "Longsword", "Greataxe", "Greatsword", "Buckler", "Round Shield", "Kite Shield", "Tower Shield", "Bulwark", "Chain Vest", "Scale Mail", "Hauberk", "Half Plate", "Full Plate", "Field Salve", plus ladder recipes "Gloomsteel Blade", "Wardenweave Mail", "Moonresin Draught", "Cinderforge Blade", "Ashguild Plate", "Emberglass Draught". (Other professions' recipe tables live under sim/GameSim/Professions/*.) Recipe IDs are lowercase-kebab and leak into confirmations — see J8.
-- Materials have NO display names — only keys (sim/GameSim/Materials/MaterialRegistry.cs:30-72): "copper", "iron", "steel", "mithril", "adamant", "electrum", "orichalcum", "firebrick", "slagiron", "quench-salt", "emberglass", "heartcoal", "greenheart", "amberpitch", "moonresin", "heartwood", "verdigris" (+ more crypt keys). Every surface renders the raw key — see J8.
+- Recipe display names (sim/GameSim/Crafting/RecipeTable.cs, unverified exact lines this pass): "Dagger", "Shortsword", "Longsword", "Greataxe", "Greatsword", "Buckler", "Round Shield", "Kite Shield", "Tower Shield", "Bulwark", "Chain Vest", "Scale Mail", "Hauberk", "Half Plate", "Full Plate", "Field Salve", plus ladder recipes "Gloomsteel Blade", "Wardenweave Mail", "Moonresin Draught", "Cinderforge Blade", "Ashguild Plate", "Emberglass Draught". (Other professions' recipe tables live under sim/GameSim/Professions/*.) Recipe IDs are still lowercase-kebab and still leak into craft confirmations (§10.2's narrowed judgement J6).
+- Materials now have display names (sim/GameSim/Materials/MaterialRegistry.cs:49-77, `MaterialDefinition.DisplayName`): "Copper", "Iron", "Steel", "Mithril", "Adamant", "Electrum", "Orichalcum", "Firebrick", "Slag Iron", "Quench Salt", "Emberglass", "Heartcoal", "Greenheart", "Amberpitch", "Moonresin", "Heartwood", "Verdigris", "Salt Glass", "Bone Chalk", "Drowned Silver", "Abyss Pearl". Nearly every surface renders `MaterialRegistry.Require(key).DisplayName.ToLowerInvariant()` now instead of the raw key — the forge panel, the Evening Ledger's ore rows, the tavern's ore handshake, the forecast board's TO BUY list, the legends wall's reforge picker, and every kernel "Not enough {material}" refusal. "Not enough quench salt: need 2, have 0." is the shipped sentence, not "quench-salt" (§10.2's narrowed J6).
 - Quality bands: the raw `Quality` enum ToString — "Poor", "Common", "Fine", "Superior", "Masterwork" — rendered in brackets everywhere ("{Item} [{Quality}]") and lowercased inside ShoppingAi's veteran line.
-- Talents (sim/GameSim/Crafting/TalentTree.cs:41-48): "Keen Eye" — "Quality roll +5."; "Master's Touch" — "Quality roll +7 (stacks with Keen Eye)."; "Legendary Craft" — "Quality roll +8 (stacks with the chain)."; "Weapon Specialist" — "Quality roll +5 on weapon recipes."; "Material Efficiency" — "Recipes consume one fewer material (minimum 1)."; "Material Mastery" — "Material counts as one grade higher for quality."; "Tier 2 Smithing" — "Unlocks tier 2 recipes."; "Tier 3 Smithing" — "Unlocks tier 3 recipes." Rendered "{Name} — {Description} [unlocked]" (ForgePanel.cs:1031) with unlock whyNots "Requires '{prereq}' first." / "Requires Forge Tier {N} or higher (workshop is Tier {N})." / "No action slots left today (0/5) — 'next' to advance." (:1047-1050).
+- Talents (sim/GameSim/Crafting/TalentTree.cs, unverified exact lines this pass): "Keen Eye" — "Quality roll +5."; "Master's Touch" — "Quality roll +7 (stacks with Keen Eye)."; "Legendary Craft" — "Quality roll +8 (stacks with the chain)."; "Weapon Specialist" — "Quality roll +5 on weapon recipes."; "Material Efficiency" — "Recipes consume one fewer material (minimum 1)."; "Material Mastery" — "Material counts as one grade higher for quality."; "Tier 2 Smithing" — "Unlocks tier 2 recipes."; "Tier 3 Smithing" — "Unlocks tier 3 recipes." Rendered "{Name} — {Description} [unlocked]" with unlock whyNots "Requires '{prereq}' first." (ForgePanel.cs:1254) / "Requires Forge Tier {N} or higher (workshop is Tier {N})." (:1256) / "No action slots left today (0/5) — try again once {Phase} ends." (§10.5's R3).
 - Craft modifiers (sim/GameSim/Crafting/CraftModifiers.cs:34-41): "Coward's Oil" — "The bearer breaks off sooner — retreats at a higher wound line."; "Braveheart Oil" — "The bearer presses on through wounds that would send others home."; "Leech Rune" — "Draws a little life from each felled foe."; "Lodestone Fitting" — "Pulls the bearer toward richer seams — more ore per haul." Family labels "Oil"/"Rune"/"Fit" (:76-78). ForgePanel modifier dropdown default "(recipe default)" (ForgePanel.cs:44).
 - Monsters (sim/GameSim/Venues/VenueRegistry.cs:127-133): "Cave Rat", "Tunnel Spider", "Deep Ghoul", "Ore Golem", "The Forgeworm". Other venues: "The Undertow" et al. (SunkenCrypt), "Bramble Boar", "Lantern Moth", "The Wicker Shepherd", "Old Mossjaw" (Gloomwood/GloomwoodVenue.cs:66), "The Bellows-Mad", "The Undying Forge-Heart" (Emberfall). Venue names: "The Mine" (VenueRegistry.cs:159), "The Sunken Crypt", "The Gloomwood", "The Emberfall Foundry".
 
@@ -747,7 +795,7 @@ Town nametags (godot/scripts/town2d/TownLayout2D.cs:211-218): "Forge", "Shop", "
 | Text | file:line | Fires when |
 |---|---|---|
 | "MATERIALS: none — buy from the vendor below or wait for Evening's returning heroes" | :587 | empty material stock |
-| vendor gating: "The vendor sells in the Morning." / "You can't afford that yet." / "No action slots left today (0/5) — 'next' to advance." | :632-635 | Buy rows |
+| vendor gating: "The vendor sells in the Morning." / "You can't afford that yet." / "No action slots left today (0/5) — try again once {Phase} ends." | :704-708 | Buy rows |
 | "Buy 1" → "Buy {N}" (stepper), "  qty:" | :653-669 | vendor rows |
 | Foundry chips "Tier" "Forge {I-V}"; "Forge {N} (max)" / "Forge {N}" upgrade rows, price "{N}g + 25 {ore}", owned "{N}/25 {ore}" | :685-716 | the Foundry screen |
 | upgrade gating: "The forge is already at Tier V — the maximum." / "The forge upgrades in the Morning." / "Not enough {ore} — need 25, have {N}." / "You can't afford that yet." / slots line | :705-727 | Upgrade button |
@@ -877,43 +925,29 @@ Every verb echoes "  queued: {description}": "queued: craft {id} with {mat}{ at 
 
 ## 10. Judgements
 
+Several judgements this census used to carry are gone because the underlying defect is: the "cooled" gossip surcharge lie, the CLI's fictional 3D forge minigame, the self-contradicting unlock toast, the raw CLI command jargon in Godot tooltips, the raw surface-id toast, the raw class id at the counter, the Act chip's tooltip (both the chip and its tooltip render the same roman-numeral helper now, never the bare enum), the queued-suffix mismatch (`Confirm` now says "{what} happened." in past tense for the 21 of 24 actions that resolve immediately, and keeps the deferred "resolves when {Phase} ticks" wording only for the 3 genuine bell-riders — a forge upgrade, a profession change, a legendary commission — where it is still true), the escrow-refund silence, and a counter sale's silence in the town's memory. Each is named where it's relevant to what replaced it (§5.1, §5.2, §5.4, §1.6, §3.8, §4.3) rather than kept here as a stale complaint; deleting them instead of correcting them is rule 8 — a census that still quoted the fixed lines would be lying about the game a second time.
+
 ### 10.1 Lies — copy the code contradicts
 
-**L1 — The whole "cooled" gossip pool sells a surcharge the sim cannot charge.** All 72 `cooled` variants and the fallback in FactionPack claim ore prices RISE: "The {faction} {direction} on you. Ore costs more now. Should've kept trading." (sim/GameSim/Flavor/Packs/FactionPack.cs:149; the other 71 variants :148-224 all carry "dearer ore" / "prices climb" / "surcharge" / "up a coin"), fallback "The {faction} have {direction} toward your shop — dearer ore, folk say." (:228). The sim's standing is discount-only: drift floors at zero (sim/GameSim/Factions/FactionDriftSystem.cs:74-78), negative standing is explicitly "unreachable in this discount-only" core (sim/GameSim/Economy/OreMarketHandlers.cs:83), and the ticker's own line was already corrected for exactly this reason — "The cooled line says the DISCOUNT fades, never that the price rises… 'costs more now' would advertise a surcharge mechanic the sim cannot run" (godot/scripts/ui/AdventureTicker.cs:206-210). The ticker tells the truth; the tavern lies 72 ways. (LedgerModal's dead "surcharge +{N}%" branch, LedgerModal.cs:816, is the same impossible mechanic rendered defensively.)
+**L4 — "That offer is gone." for an offer that is still there.** FriendlyRejection maps any reason starting "Only " to "That offer is gone." (MainUi.cs:2927; grep `MainUi.cs` for the mapping table, §8.3); the kernel reason it maps is "Only {N} {mat} offered; asked for {N}." (sim/GameSim/Economy/OreMarketHandlers.cs:78) — a quantity mismatch on a live offer. The player who asks for 5 of a 3-unit offer is told the offer vanished.
 
-**L2 — The CLI teaches a "3D forge minigame" that does not exist.** "only the 3D forge minigame reaches past Superior, up to Masterwork" (sim/GameSim.Cli/Program.cs:806-808) and "only via the 3D forge minigame" (:850-852). The shipped minigame is the 2D `ForgeMinigame` overlay (godot/scripts/minigames/ForgeMinigame.cs); no 3D forge surface exists anywhere in the repo (the 3D client was replaced by the 2.5D one).
-
-**L3 — The unlock toast contradicts itself at the moment it fires.** `$"{gate.SurfaceId}'s open now — {gate.Reason}"` (godot/scripts/MainUi.cs:1596) welds an arrival announcement to a Reason written for the CLOSED state: *"Ledger's open now — Opens once a party has departed the Mine — nothing's come home yet to read."* — false twice at the only moment it renders (a party HAS departed; the toast says nothing has). Same shape for Forecast ("…day 1 has nothing to say yet", firing on day 1's evening). Reasons at godot/scripts/ui/SurfaceUnlocks.cs:73,81.
-
-**L4 — "That offer is gone." for an offer that is still there.** FriendlyRejection maps any reason starting "Only " to "That offer is gone." (MainUi.cs:2315-2318); the kernel reason it maps is "Only {N} {mat} offered; asked for {N}." (OreMarketHandlers.cs:76) — a quantity mismatch on a live offer. The player who asks for 5 of a 3-unit offer is told the offer vanished.
-
-**L5 — A threat the sim can never carry out.** "{Hero} is talking about leaving town." (MainUi.cs:2059; AdventureTicker.cs:194-195 — file deleted P2-MEMORY-12, #863) fires on a confidence crossing (sim/GameSim/Economy/GuildAssessmentSystem.cs:156-160), but no hero-departure mechanism exists anywhere in the sim (no event, no roster removal — and the design doc pins it: "No wound outlives the night, no hero ever quits", docs/design/THE-GAME.md §7). Literally worded as talk, but it stages a stake the game cannot pay off, twice (toast + ticker).
+**L5 — A threat the sim can never carry out.** "{Hero} is talking about leaving town." (MainUi.cs:2664; the same line in the book's day pages, LegendsWall.cs:1506) fires on a confidence crossing (sim/GameSim/Economy/GuildAssessmentSystem.cs), but no hero-departure mechanism exists anywhere in the sim (no event, no roster removal — and the design doc pins it: "No wound outlives the night, no hero ever quits", docs/design/THE-GAME.md §7). Literally worded as talk, but it stages a stake the game cannot pay off, twice (toast + day page).
 
 ### 10.2 Jargon leaks — developer words that reached the player
 
-**J1 — "'next' to advance" is a CLI command shipped in the 2.5D client.** The kernel's slot-exhaustion reason "No action slots left today (0/{N}) — 'next' to advance." (12 handlers, e.g. sim/GameSim/Crafting/CraftingHandlers.cs:138) is written for the console's `next` command — and the Godot client renders it verbatim as button tooltips: BountyPanel.cs:183, ForgePanel.cs:635/727/750/985/1012/1049, LegendsWall.cs:393. There is no "next" anywhere in the Godot client.
+**J3 — The bounty formula, shown raw.** "{N}g is too thin for floor {N} — {Hero}'s D_q {score} (greed {g} × {N}g − rep {r}/dist {d}) falls short of {threshold}" (sim/GameSim/Bounties/BountyRules.cs:115-116) renders on the Bounty panel's judgment notes (BountyPanel.cs:194-196) and CLI. "D_q", "rep/dist", and a parenthesized equation are engine vocabulary.
 
-**J2 — Internal surface ids in player toasts.** "HeroCards's open now — …" (MainUi.cs:1596) and "{surfaceId} is not open yet." (:1625) print registration ids ("HeroCards", "Commissions") where the screen says "Renown"/tooltips carry the display words.
+**J4 — Raw enum names as labels, narrowed since the base SHA.** The Evening Ledger's own beat row no longer does this: `BeatLine` (LedgerModal.cs:715-720) dropped the `BeatType:` prefix entirely and instead composes the item's forge-moment and heirloom lineage onto the same line (P2-PROOF-16/P2-MEMORY-28) — "Emberbite turned a lethal Deep Ghoul blow… (floor 3) — quenched clean and true; your anvil, day 3." Two instances remain: the CLI's ticker still prints "★ {Beat}: {Detail} (floor {N})" (EventNarration.cs:33, that register is CLI-deliberate per §9's own framing), and `ProvenanceCard` history rows still print "{entry.Kind}" raw (ProvenanceCard.cs:197,201).
 
-**J3 — The bounty formula, shown raw.** "{N}g is too thin for floor {N} — {Hero}'s D_q {score} (greed {g} × {N}g − rep {r}/dist {d}) falls short of {threshold}" (sim/GameSim/Bounties/BountyRules.cs:102-108) renders on the Bounty panel's judgment notes (BountyPanel.cs:196) and CLI. "D_q", "rep/dist", and a parenthesized equation are engine vocabulary.
+**J6 — Recipes still have no display names; materials now do.** Materials were fixed (P2-MEMORY-?): every material key now resolves through `MaterialRegistry.Require(key).DisplayName` (sim/GameSim/Materials/MaterialRegistry.cs:49-77 — "Slag Iron", "Quench Salt", "Amberpitch", etc.), lowercased at nearly every render site (ForgePanel.cs, LedgerModal.cs, TavernPanel.cs, RaidForecastBoard.cs, LegendsWall.cs, and every kernel "Not enough {material}" refusal — grep `MaterialRegistry.Require(.*).DisplayName` for the full call list). "Not enough quench salt: need 2, have 0." is the shipped sentence now, not "quench-salt". Recipes were not: craft confirmations still name recipe IDs — "Crafted dagger with copper" (ForgePanel.cs:1425), "Masterwork attempt on {recipeId}…" (:2255).
 
-**J4 — Raw enum names as labels.** Beat rows print the `BeatType` enum: "KillingBlow: {Detail} (floor {N})" (LedgerModal.cs:525; EventNarration.cs:33); ProvenanceCard history rows print "{entry.Kind}" the same way (ProvenanceCard.cs:109). The player reads PascalCase compounds ("LethalSave", "BreakpointClear") in the middle of the game's most important sentences.
+**J7 — Permille and unitless internals; one chip retired.** "({N}‰ gap)" on hero decision rows (HeroPanel.cs:214; EventNarration.cs:89); "(brew score {N}‰…)" in craft feedback (ForgePanel.cs:1740-area); the counter's "Interest"/"Patience"/"Round" chips still show raw 0-1000/round numbers with no unit (CounterPanel.cs:413-422). The fourth chip, Goodwill, was removed from the panel (P2-ONBOARD-09) — it was a per-session fleece-memory number nothing else read, so pulling it off-screen closed that leak rather than relabeling it.
 
-**J5 — Raw class id at the counter.** "{Name} — {ClassId}" (CounterPanel.cs:157) renders "Torvald — vanguard" (lowercase id) where every other surface says "Vanguard" via `ClassRegistry.DisplayName`.
+**J10 — Plan-unit citations in the CLI's own help.** "PA2", "U-D1 sink 1", "U-D1 sink 3a/3b/5", "PKD4" ship in `help` and the quality-ceiling notes (unverified against the current line numbers this pass — see §10.7).
 
-**J6 — Materials and recipes have no display names.** Every material renders as its kebab-case key ("quench-salt", "slagiron", "amberpitch" — sim/GameSim/Materials/MaterialRegistry.cs:63-72) and craft confirmations name recipe IDs, not names: "Crafted dagger with copper" (ForgePanel.cs:1099), "Masterwork attempt on {recipeId}…" (:1768). "Not enough quench-salt: need 2, have 0." is a shipped sentence.
+**J11 — Internal id vocabulary in Godot feedback.** "queued: stock {id} — priced at {N}g — {origin}" (ShopPanel.cs:908), "queued: unstock {id}" (:924), "queued: reprice {id} to {N}g" (:981) print bare integer item ids in the cozy client; the CLI's "I3"/"H2" register (deliberate there) bled across.
 
-**J7 — Permille and unitless internals.** "({N}‰ gap)" on hero decision rows (HeroPanel.cs:214; EventNarration.cs:89); "(brew score {N}‰…)" in craft feedback (ForgePanel.cs:1401); "confidence down to {N}‰" (EventNarration.cs:73); the counter's "Interest"/"Patience"/"Goodwill"/"Round" chips show raw 0-1000 numbers with no unit or scale (CounterPanel.cs:245-251).
-
-**J8 — The Act chip tooltip prints the enum.** "Campaign arc: {state.Arc.Act}." (MainUi.cs:1875) interpolates `CampaignAct` — renders "Campaign arc: ActI." (values at MainUi.cs:2161-2164).
-
-**J9 — "Queued — resolves when {Phase} ticks. Press Advance or wait."** (SimPanel.cs:166, appended to every bell-rider confirmation): raw phase enum ("resolves when Evening ticks", "…ExpeditionDeep ticks"), sim-speak "ticks", and it names a control "Advance" that on screen is labeled "Skip" / "Send them off" / "Snuff the lanterns" / "Hurry the day along" (MainUi.cs:2910, PhaseVocab.cs:74-80). LedgerModal's ore-buy feedback repeats the shape: "(applies when the Evening ticks)" (:571).
-
-**J10 — Plan-unit citations in the CLI's own help.** "PA2", "U-D1 sink 1", "U-D1 sink 3a/3b/5", "PKD4" ship in `help` and the quality-ceiling notes (Program.cs:188,205-215,806).
-
-**J11 — Internal id vocabulary in Godot feedback.** "queued: stock {id} — priced at {N}g — suggested" (ShopPanel.cs:685), "queued: unstock {id}" (:701), "queued: reprice {id} to {N}g" (:728) print bare integer item ids in the cozy client; the CLI's "I3"/"H2" register (deliberate there) bled across.
-
-**J12 — "the tutorial" self-reference.** The ✕ tooltip "Dismiss tutorial" (ObjectiveTracker.cs:222) and the quick-travel hint "Unlocks once the opening tutorial completes." (ShortcutMap.cs:56) use the developer word for what every other surface calls the apprenticeship/course/lessons.
+**J12 — "the tutorial" self-reference, narrowed.** The objective card's ✕ tooltip was reworded away from the developer word — it now reads "Skip the course — end the apprenticeship early; a warrant cost may still be owed" (ObjectiveTracker.cs:245). The quick-travel hint has not: "Unlocks once the opening tutorial completes." (ShortcutMap.cs:56) still says "tutorial" where every other surface says apprenticeship/course/lessons.
 
 ### 10.3 Voice breaks — against tone-register.md / style-bible.md
 
@@ -923,27 +957,25 @@ Every verb echoes "  queued: {description}": "queued: craft {id} with {mat}{ at 
 
 **V3 — Bryn's banner covers the surface it is explaining, on nearly every first open.** The shared `MentorBanner` centers its card against the whole window (MentorBanner.cs:100-135) and the orientation lessons are keyed to a surface's first open (legends-wall-taught, forecast-board-taught, read-only-surfaces, tomorrow-at-the-counter — §1.5), so the first visit to nearly every panel spawns a center-screen dialogue on top of the panel being introduced; with the queue (cap 4, MentorBanner.cs:395), several consecutive opens each get one. Part layout, part copy policy: lessons that describe a screen are timed to fire exactly when they will obscure it. The file's own history note names the failure class: "A teacher who blanks the thing she is pointing at is not teaching" (MentorBanner.cs:111-122 — that fix removed the opaque backdrop; the centered card remains). Bryn's station press additionally re-speaks the current lesson on EVERY press (`Mentor.Show`, not once-ever — MainUi.cs via MentorVoice.CurrentLesson), the one repeating voice in the game.
 
-**V4 — Wry death gossip jokes about the dead.** tone-register.md's guardrail: "Deaths and wipes never joke — warmth yes, punchlines no… no puns in death lines" (docs/design/tone-register.md, Guardrails). The shipped heroDied/wry pool is punchline-shaped: "Turns out floor {floor} bites. {hero}, {cause}. Who's next?", "Bad news for {hero}'s bar tab — {cause} on floor {floor}.", "{hero} had one job on floor {floor}: not that. {cause}." (sim/GameSim/Flavor/Packs/TavernPack.cs:130-141). These read as jokes at the fallen's expense, not warmth.
+**V4 — retired.** The heroDied/wry pool that carried the punchline-shaped lines this judgement quoted ("Turns out floor {floor} bites… Who's next?", "…not that. {cause}.") has been rewritten (sim/GameSim/Flavor/Packs/TavernPack.cs:199-211) — the surviving pool leans away from jokes ("Nobody's laughing tonight.", "Raise a quiet one."), and the one line that still echoes the old shape, "Bad news for {hero}'s bar tab — {cause} on floor {floor}." (:206), reads as a wry aside rather than a joke at the expense of the dead. No longer a clear guardrail violation.
 
-**V5 — Dev-register confirmations in the cozy client.** Lowercase "queued: …" feedback lines (ShopPanel.cs:685-728, BountyPanel.cs:220, LedgerModal.cs:571) against a game whose register is "warm, dry" (style-bible); the same surfaces that say "Snuff the lanterns" also say "queued: reprice 3 to 14g".
+**V5 — Dev-register confirmations in the cozy client.** Lowercase "queued: …" feedback lines (ShopPanel.cs:908-981, BountyPanel.cs, LedgerModal.cs) against a game whose register is "warm, dry" (style-bible); the same surfaces that say "Snuff the lanterns" also say "queued: reprice 3 to 14g".
 
-**V6 — The stopwatch HUD.** "Dawn — next in {N}s @{X}x [paused] [waiting]" (MainUi.cs:2452-2456) is debug-console register on the main HUD; the design's own posture is "no clock on it" (the vigil copy) and untimed decisions.
+**V6 — The stopwatch HUD.** "{Phase} — next in {N}s @{X}x{paused}{engaged}" (MainUi.cs:3065) is debug-console register on the main HUD; the design's own posture is "no clock on it" (the vigil copy) and untimed decisions.
 
 **V7 — Debug cursor prose in a minigame.** "Sockets filled: {N}/{N} — Crank wound: {N}% — cursor: socket {N}, part '{Part}'" (EngineeringBench.cs:465-466) — "cursor: socket 3" is a state dump, not bench-side prose.
 
-**V8 — Title-case monster names mid-sentence.** Attribution details and causes interpolate "Cave Rat"/"Deep Ghoul" (VenueRegistry.cs:127-133) into lowercase prose: "Emberbite landed the killing blow on the Cave Rat" (AttributionEngine.cs:66), "slain by a Deep Ghoul" — reads as Proper Noun Creatures where the bestiary treats them as species.
+**V8 — Title-case monster names mid-sentence.** Attribution details and causes interpolate "Cave Rat"/"Deep Ghoul" (VenueRegistry.cs:127-133) into lowercase prose: "Emberbite landed the killing blow on the Cave Rat" (AttributionEngine.cs:77, via `MonsterName.Definite`), "slain by {article} Deep Ghoul" (ExpeditionRevealSystem.cs:405, via `MonsterName.Indefinite`) — reads as Proper Noun Creatures where the bestiary treats them as species. `MonsterName` (sim/GameSim/Venues/MonsterName.cs) now owns both forms and correctly exempts a venue's proper-named boss ("The Forgeworm" takes no second article), but the title-case-mid-sentence read this judgement names is unchanged.
 
 ### 10.4 Silences — it happened, and the game said nothing
 
-**S1 — A counter sale never becomes town memory (link 5 gap for link 2's flagship channel).** `CounterSaleClosed` has no ticker case (godot/scripts/ui/AdventureTicker.cs — file deleted P2-MEMORY-12, #863 — only `ItemSold` renders; grep confirms no CounterSaleClosed arm) and no gossip subject (sim/GameSim/Drama/GossipGenerator.cs never reads it; the only sim reader outside the counter itself is the gold ledger, GoldLedger.cs:72). The one sale the player closes face to face — the game's flagship interaction — is the one sale the town never mentions. (tone-register.md already names the missing "ShopPack (itemBought…)" as wave-D work.)
+**S3 — The `ToolAssist` beat is reserved and permanently untold.** The beat type exists (sim/GameSim/Contracts/Enums.cs), the gossip generator's arm for it is deliberately empty, and a test pins the silence (`GossipTests.Generator_ToolAssistBeat_StaysUntold`, cited in tone-register.md) — a proof category with no voice anywhere.
 
-**S2 — Escrow refunds move gold with no words at all.** A lapsed bounty and a dead-acceptor refund both credit the player's purse and emit NO event (sim/GameSim/Bounties/BountySystems.cs:62-79 — `continue` with no `events.Emit`), so no toast, no ticker line, and no gold-ledger row (GoldLedger renders from events) exist. The tutorial promises "the gold comes back" (TutorialFlow.cs:612); it does, silently — gold appears with no sentence attached.
+**S4 — Signing has words; earning a signature has none at the moment it happens.** A Signed Work procs inside the craft resolution (sim/GameSim/Crafting/ArtifactSigning.cs) and its only voices are the day-log's next line (§3.8) and the provenance card — the forge ceremony that plays at that exact moment (grade + stars, ForgePanel.cs) says nothing about the name the item just earned.
 
-**S3 — The `ToolAssist` beat is reserved and permanently untold.** The beat type exists (sim/GameSim/Contracts/Enums.cs:52), the gossip generator's arm for it is deliberately empty, and a test pins the silence (`GossipTests.Generator_ToolAssistBeat_StaysUntold`, cited in tone-register.md) — a proof category with no voice anywhere.
+Two silences this census used to carry are gone: a counter sale now feeds gossip (`CounterSaleClosed` pinned/fleeced/fair-deal, §5.1/§5.2) instead of vanishing, and an escrowed bounty's refund now has words — `BountyRefunded` renders on the book's day pages both when the acceptor died holding it and when it simply lapsed (§3.8, LegendsWall.cs:1573-1577).
 
-**S4 — Signing has words; earning a signature has none at the moment it happens.** A Signed Work procs inside the craft resolution (sim/GameSim/Crafting/ArtifactSigning.cs) and its only voices are the ticker's next line and the provenance card — the forge ceremony that plays at that exact moment (grade + stars, ForgePanel.cs:2170-2182) says nothing about the name the item just earned.
-
-Designed silences, named as design and not defects: Deep Vigil has no verbs and no slate (docs/design/THE-GAME.md §7); `BountyPosted`, `SupplyDelivered`, `MarketShareShifted`, `TariffApplied` are deliberately unvoiced on the ticker (AdventureTicker.cs:253-266); the narrator speaks at most once per night ("overflow is silence, never a queue", NarratorVoiceDirector.cs:144-146).
+Designed silences, named as design and not defects: Deep Vigil has no verbs and no slate (docs/design/THE-GAME.md §7); `SupplyDelivered`, the claw-back half of `MarketShareShifted`, and `TariffApplied` are deliberately unvoiced on the day pages (LegendsWall.cs:1589-1601 explains why for each); the narrator speaks at most once per night ("overflow is silence, never a queue", NarratorVoiceDirector.cs:188).
 
 ### 10.5 Repetition — the same words, many times a campaign
 
@@ -951,31 +983,29 @@ Designed silences, named as design and not defects: Deep Vigil has no verbs and 
 
 **R2 — The deep-floor fillers are a 3-line loop.** JourneyFeed.cs:136-138 — every Deep Vigil of every raid draws from the same three sentences.
 
-**R3 — "No action slots left today (0/5) — 'next' to advance."** — one sentence, verbatim, in 12+ kernel handlers and 8+ panel tooltips (J1); the out-of-slots state reads identically everywhere, many times a campaign.
+**R3 — "No action slots left today (0/5) — try again once {Phase} ends."** — one sentence (`ActionBudget.SlotsPerDay` + `PhaseVocab.Display`), verbatim across every panel's out-of-slots whyNot (ForgePanel.cs, BountyPanel.cs, LegendsWall.cs — grep `try again once {PhaseVocab.Display`); the state reads identically everywhere, many times a campaign — the wording changed (no more CLI jargon, the retired J1) but the repetition itself did not.
 
-**R4 — "You can't afford that yet."** — FriendlyRejection collapses every gold shortfall on every surface to one sentence (MainUi.cs:2302); it is also the whyNot on Foundry rows, ore rows, vendor rows (ForgePanel.cs:634,726,749; LedgerModal.cs:775).
+**R4 — "You can't afford that yet."** — FriendlyRejection collapses every gold shortfall on every surface to one sentence (MainUi.cs:2302-area); it is also the whyNot on Foundry rows, ore rows, vendor rows.
 
-**R5 — The warrant card says the hero's name three times in two sentences.** "The blow that landed on {Hero} would have killed {Hero}. The apprenticeship's warrant held — {Hero} came home at death's door." (LedgerModal.cs:550-551) — and days 1-3 can produce it repeatedly.
+**R5 — The warrant card says the hero's name three times in two sentences.** "The blow that landed on {Hero} would have killed {Hero}. The apprenticeship's warrant held — {Hero} came home at death's door. {DawnsLeftLine}" (LedgerModal.cs:1559-1560) — and days 1-3 can produce it repeatedly.
 
-**R6 — `Confirm`'s queued suffix.** Every bell-rider press appends the identical "Queued — resolves when {Phase} ticks. Press Advance or wait." (SimPanel.cs:166).
+**R6 — `Confirm`'s queued suffix, now scoped to three verbs.** The forge-upgrade, profession-change, and legendary-commission bell-riders still get "Queued — resolves when {Phase} ticks. Press Advance or wait." (SimPanel.cs) every time they're pressed — genuinely true for those three, since the world does have to act before the click means anything (§10.1-10.2's retired note).
 
-Where repetition is already engineered against, for the rework's reference: the flavor packs hold ≥12 variants per (key, voice) with hash-picked variety; the narrator refuses the same line twice in a row (NarratorVoiceDirector.cs:178-181) and filters count-committing epitaphs on multi-death nights; gossip is capped at 3 lines/day (GossipGenerator.cs:39); the mentor banner dedups identical queued text (MentorBanner.cs:397-403).
+Where repetition is already engineered against, for the rework's reference: the flavor packs hold ≥4 variants per (key, voice), most ≥12, with hash-picked variety; the narrator refuses the same line twice in a row (NarratorVoiceDirector.cs:178-181) and filters count-committing epitaphs on multi-death nights; gossip is capped at 3 lines/day (GossipGenerator.cs:63); the mentor banner dedups identical queued text (MentorBanner.cs:397-403).
 
 ### 10.6 Half-sentences and truncation risks in assembled copy
 
-**H1 — The unlock toast weld** (L3/J2): `{id}'s open now — {Reason}` produces a double possessive plus a tense clash, ex. *"HeroCards's open now — Opens once you've sold something to a hero — a stranger becomes a customer."*
+**H2 — "Nobody takes it in three days, the gold comes back."** (TutorialFlow.cs, near :612 pre-shift — unverified against the current line this pass, see §10.7) — a dropped conditional; reads as two jammed clauses where "If nobody takes it in three days…" was meant.
 
-**H2 — "Nobody takes it in three days, the gold comes back."** (TutorialFlow.cs:612) — a dropped conditional; reads as two jammed clauses where "If nobody takes it in three days…" was meant.
+**H3 — retired.** The `{cause}` slot no longer opens a sentence after a period anywhere in TavernPack's heroDied pool — every gruff/dramatic/wry/omen variant now joins hero and cause with an em dash ("Raise one for {hero} — {cause} on floor {floor}. That's the trade.", TavernPack.cs:172), so the run-on/casing read this judgement named is gone from that pool. Any OTHER pool that still concatenates a free-form lowercase clause at a sentence boundary would carry the same risk and was not re-swept this pass.
 
-**H3 — The {cause} slot breaks sentence casing and grammar.** Causes are minted lowercase, verb-first ("slain by a Deep Ghoul", "lost to the Mine" — ExpeditionRevealSystem.cs:317-321) and templates place them where a subject or sentence start is expected: "Raise one for {hero}. {cause} on floor {floor}." → *"Raise one for Kael. slain by a Deep Ghoul on floor 3."* (TavernPack.cs:101); "Turns out {cause} is fatal." → *"Turns out lost to the Mine is fatal."* (TavernPack.cs:~137). Every heroDied variant embeds the same free-form slot, so the whole pool carries the risk.
-
-**H4 — The doubled item name.** "Home safe: {Item} — {Detail}." (AdventureTicker.cs:159-160) where Detail already begins with the item's name (AttributionEngine.cs:66): *"Home safe: Emberbite — Emberbite landed the killing blow on the Cave Rat."*
+**H4 — The doubled item name.** "Home safe: {Item} — {Detail}." (LegendsWall.cs:1444, the day-log's own line since AdventureTicker's deletion) where Detail already begins with the item's name (AttributionEngine.cs:77): *"Home safe: Emberbite — Emberbite landed the killing blow on the Cave Rat."*
 
 **H5 — The Today-card interleave** (V1) is also the census's clearest truncation risk: two text blocks from different systems render around a button row, so any wrapped sentence reads severed.
 
-**H6 — Warrant-days weld.** "…came home at death's door. Three dawns left on it." (LedgerModal.cs:551,852-853) — "it" has no antecedent in the sentence the player reads (the warrant is named two clauses earlier); on the last day it renders "One dawn left on it."
+**H6 — Warrant-days weld.** "…came home at death's door. {DawnsLeftLine}." (LedgerModal.cs:1560, `DawnsLeftLine` at :1961-1966) — "it" has no antecedent in the sentence the player reads (the warrant is named two clauses earlier); on the last day it renders "One dawn left on it."
 
-**H7 — Advisor-line splices on the tutorial card.** Step copy concatenates prefix + GoTo + a live advisor sentence with em-dashes (TutorialFlow.cs:1227-1236): three sources, one line, ex. *"The Mark · 1/1: You're at the **vendor** — Buy 2 copper (7g) — the cheapest path to your next craft."* Any advisor rewording changes the card's grammar unreviewed.
+**H7 — Advisor-line splices on the tutorial card, narrower than before.** Step 1a's card (TutorialFlow.cs:1231-1238) dropped from a three-source splice to two — `{StepPrefix}: {advisor.Reason}` — now that the advisor's own reason is a complete sentence ("Buying {N} {material} ({N}g) is the cheapest path to your next craft.", sim/GameSim/Advisor/ObjectiveAdvisor.cs:215). Later steps (Shelve, PostBounty, WatchDeparture, Vigil) still concatenate `{prefix}: {GoTo} — {live advisor fragment}` (§1.2), so the underlying risk — any advisor rewording changes a downstream card's grammar unreviewed — still applies to those, just not confirmed against a current example this pass.
 
 ### 10.7 Unverified — worth checking
 
@@ -984,562 +1014,696 @@ Where repetition is already engineered against, for the rework's reference: the 
 - Are the `WayIn`-less surfaces (Heroes/Chronicle/Pip — TutorialSurfaceRegistry.cs:306,326-328) reachable enough that their copy is ever read? (The Bestiary, once the fourth, was deleted in #770 rather than given a door; its 8 strings went with it.)
 - Does the counter's "Prepare" phase word (PhaseVocab.cs:44) ever render long enough to be read, given counter sessions hold the Morning?
 - `HeroesChip` (MainUi.cs:1892) — does it carry a tooltip naming what "{alive}/{total}" counts, or is it the one unlabeled HUD chip?
+- J10's exact current line numbers in `sim/GameSim.Cli/Program.cs` (the plan-unit jargon in `help`) were not re-verified this pass; the file has grown substantially since the base SHA and the cited lines are carried forward unchecked.
+- **Sections not re-verified line-by-line this pass** (their prose and file:line citations were carried forward from the prior census without a fresh grep, and are likely stale on the file:line half even where the quoted text is probably still accurate): §1.1-1.5 and §1.7 (the tutorial/lessons corpus), §2 (Bryn's own line list), §6.1-6.3 and §6.5, §6.7-6.10 (the shelf, counter, tavern handshakes, demand board, vigil runner, ore market, forecast/docket, prices), §7.1 and §7.4 (station copy, the four minigames), §8 (systemic UI text), §9 (the CLI). Sections that WERE re-verified and corrected against `2a9c27ca`: §1.6, all of §3, all of §4, all of §5, §6.4, §6.6, §7.2-7.3, all of §10, the header, and Appendix A. A file:line pointing at stale content in an unverified section should be treated as "last known location," not a current guarantee.
 
 ---
 
 ## Totals
 
-Counted at `28fd0452`:
+Counted at `2a9c27ca`:
 
-- **Flavor-pack template lines (all player-facing): 1,408** — NarratorPack 645 + 14 fallbacks (sim/GameSim/Narrative/NarratorPack.cs), TavernPack 480 + 9 fallbacks, LedgerPack 112 + 2, FactionPack 144 + 2 (counted with `grep -cE '^\s*"'` per file plus the bracketed fallback maps).
-- **Narrator spoken library: 49 lines** (NarratorVoiceDirector.cs).
-- **Hand-assembled, static, and scaffold strings inventoried individually above: ≈650** across 62 files (every table row and quoted bullet in §§1-9 is one or more distinct strings; templated entries count once per template, with variants enumerated where they exist).
+- **Flavor-pack template lines (all player-facing): 1,547** — NarratorPack 645 + 14 fallbacks (unchanged since the base SHA), TavernPack 576 + 15 fallbacks (up from 480 + 9 — six new base keys: `CounterSalePinned`/`CounterSaleFleeced`/`CounterSaleFairDeal`/`CommissionFulfilled`/`CommissionExpired`/`HeirloomReforged`), LedgerPack 112 + 2 (unchanged), FactionPack 144 + 2 (unchanged, one wording fix — §5.4), RivalPack 4 + 1 (new pack), TellingPack 24 + 8 (new pack; each "line" is one full headline+detail sentence — §3.7a) (counted with `grep -cE '^\s*"'` per file plus the bracketed fallback maps; TellingPack's multi-line concatenated variants counted by hand).
+- **Narrator spoken library: 49 lines** (NarratorVoiceDirector.cs, unchanged).
+- **Hand-assembled, static, and scaffold strings inventoried individually above: not re-totaled this pass.** The prior count (≈650 across 62 files) is carried forward as a rough order of magnitude only — §§1-9 grew substantially since the base SHA (several files more than doubled in length, and whole surfaces — the wake, the Telling, the rival's line, materials' display names — are new), so this figure should not be quoted as current without a fresh count.
 
-Total distinct player-facing strings on this SHA: **≈2,100**.
+Total distinct player-facing strings on this SHA: **at least 2,200** (the verified flavor-pack + narrator total, plus the carried-forward hand-assembled estimate) — treat this as a floor, not a verified figure; see the PR/handoff note for which sections were and were not re-verified line-by-line this pass.
 
 ---
 
 ## Appendix A — the flavor packs, every line verbatim
 
-Mechanical extraction at `28fd0452` (format: `line: "template"`; `[$"{key}/voice"]` headers mark each pool; `[Key] = "..."` rows near the end of each block are that key's fallback; the bracketed slot maps at the top of each block are the slots every variant must mention). Fires-when for each key is documented in §3.5, §5.2-§5.4.
+Mechanical extraction at `2a9c27ca` (format: `line: "template"`; `[$"{key}/voice"]` headers mark each pool; `[Key] = "..."` rows near the end of each block are that key's fallback; the bracketed slot maps at the top of each block are the slots every variant must mention). Fires-when for each key is documented in §3.5, §3.7a, §4.9, §5.1-§5.4.
 
 ### A.1 TavernPack — sim/GameSim/Flavor/Packs/TavernPack.cs (gossip)
 
 ```
-84: [HeroDied] = ["hero", "cause", "floor"],
-85: [KillingBlow] = ["hero", "item", "floor"],
-86: [LethalSave] = ["hero", "item", "floor"],
-87: [BreakpointClear] = ["hero", "item", "floor"],
-88: [Provisioned] = ["hero", "item", "floor"],
-89: [PotionLifesave] = ["hero", "item", "floor"],
-90: [FloorRecordSet] = ["hero", "floor"],
-91: [RecruitArrived] = ["hero"],
-92: [VenueGraduated] = ["hero"],
-100: [$"{HeroDied}/gruff"]
-101: "Raise one for {hero}. {cause} on floor {floor}. That's the trade."
-102: "{hero}'s pick won't ring again — {cause} on floor {floor}."
-103: "Floor {floor} took {hero}. {cause}. The Mine doesn't apologize."
-104: "Dig a hole, say a word. {hero} — {cause} on floor {floor}."
-105: "{hero}'s done. {cause} on floor {floor}. Pour it out."
-106: "Floor {floor} kept {hero} — {cause}. Cold, but that's the deep."
-107: "{cause}, floor {floor}. {hero} won't be back to argue it."
-108: "Mark {hero} off the roster. {cause} on floor {floor}."
-109: "{hero} went down to {cause} on floor {floor}. The Mine gives nothing back."
-110: "One more name for the stone: {hero}, {cause}, floor {floor}."
-111: "{hero} paid floor {floor} in full — {cause}. That's the wage."
-112: "{cause} took {hero} on floor {floor}. Bank it and move on."
-113: "{hero} dug straight and paid their round. {cause} on floor {floor}. Raise one, and mean it."
-114: [$"{HeroDied}/dramatic"]
-115: "Gone! {hero}, {cause} on floor {floor} — the dark has a new name to whisper."
-116: "Weep, tavern, weep — {hero} lies on floor {floor}, {cause}."
-117: "Floor {floor} demanded a price, and {hero} paid it — {cause}."
-118: "Let the bells toll for {hero}! {cause}, down on floor {floor}."
-119: "Toll the bell! {hero} has fallen to {cause} on floor {floor}!"
-120: "O cruel floor {floor}! {cause}, and {hero} is no more!"
-121: "The dark of floor {floor} swallowed {hero} — {cause}, and the tavern grieves!"
-122: "Lament, all who drink here — {hero}, {cause}, lost on floor {floor}!"
-123: "Brave {hero}, undone in the belly of floor {floor} — {cause}!"
-124: "Floor {floor} has claimed a hero's blood — {cause} took {hero}!"
-125: "Weep and remember: {hero} met {cause} on floor {floor} and passed into legend!"
-126: "The deep sang a dirge — {hero} fell to {cause} upon floor {floor}!"
-127: "Stand for {hero}, lost to {cause} on floor {floor} — we are the poorer, and the prouder for having known them."
-128: [$"{HeroDied}/wry"]
-129: "{hero} found the one thing on floor {floor} you can't walk off — {cause}."
-130: "Turns out floor {floor} bites. {hero}, {cause}. Who's next?"
-131: "{hero} won't be settling their tab — {cause} on floor {floor}."
-132: "Note for the board: floor {floor}, {cause}. Signed, what's left of {hero}."
-133: "Floor {floor} finally found something {hero} couldn't shrug off — {cause}."
-134: "{hero}: undefeated until floor {floor}. {cause}. Details, details."
-135: "Bad news for {hero}'s bar tab — {cause} on floor {floor}."
-136: "Turns out {cause} is fatal. {hero} confirmed it on floor {floor}."
-137: "{hero} had one job on floor {floor}: not that. {cause}."
-138: "Floor {floor}, {cause}, and {hero}'s flawless record of being alive. Was."
-139: "Somebody tell floor {floor} that {cause} was excessive. {hero} would agree, if they could."
-140: "{hero} met {cause} on floor {floor}. Bold plan. Poor finish."
-141: "Floor {floor}. {cause}. {hero} would have called it 'a Tuesday.' Raise a quiet one."
-142: [$"{HeroDied}/omen"]
-143: "The candles guttered when {hero} fell — {cause} on floor {floor}. The Mine marked them days ago."
-144: "I read it in the dregs: {hero}, {cause}, floor {floor}. The leaves never lie."
-145: "Floor {floor} whispered {hero}'s name, and now — {cause}. Salt your doorstep."
-146: "A crow sat the sill all morning. {hero}. {cause}. Floor {floor} keeps its tithe."
-147: "The crows knew {hero}'s name before floor {floor} did — {cause}. So it was written."
-148: "Salt spilled at dawn, and by dusk {hero} was gone — {cause}, floor {floor}."
-149: "The Mine called {hero} home to floor {floor}. {cause}. It always collects."
-150: "I dreamt of an empty stool. {hero}, {cause}, floor {floor}. The dream never lies."
-151: "{cause} on floor {floor}. The coals hissed {hero}'s name and went dark."
-152: "Floor {floor} kept its tithe — {hero}, {cause}. Ward your door tonight."
-153: "The candle by {hero}'s bed guttered out. {cause}, floor {floor}. The deep marks its own."
-154: "{hero}'s shadow left before the body did — {cause} on floor {floor}. Omens don't grieve."
-155: "The deep keeps its own, and it kept a good one — {hero}, {cause}, floor {floor}. Remember them kindly, and ward the door."
-158: [$"{KillingBlow}/gruff"]
-159: "{hero}'s {item} did the killing on floor {floor}. Good steel, that."
-160: "Ask floor {floor} what {item} does in {hero}'s hands."
-161: "One swing of {item}, one less thing on floor {floor}. {hero}'s work."
-162: "That was no luck on floor {floor} — that was {hero}'s {item}."
-163: "{item} did clean work on floor {floor}. {hero} just held the grip."
-164: "Floor {floor} met {hero}'s {item} and lost. Good iron earns its keep."
-165: "One thing less on floor {floor}, courtesy of {item}. {hero} swung true."
-166: "{hero}'s {item} ended it on floor {floor}. That edge was forged right."
-167: "No mess, no fuss — {item} settled floor {floor}. {hero} can thank the smith."
-168: "That's what {item} is for. Floor {floor}, {hero}, done."
-169: "{hero} put {item} through whatever floor {floor} sent. It held."
-170: "Floor {floor} learned the weight of {item} in {hero}'s hand."
-171: "{item} did clean work on floor {floor}, and {hero} kept the notch as a keepsake. Good steel earns a scar."
-172: "That edge has a history now — floor {floor}, {hero}'s hand, one less thing in the dark. {item} remembers its wins."
-173: [$"{KillingBlow}/dramatic"]
-174: "With one stroke of {item}, {hero} silenced floor {floor}!"
-175: "Sing of {hero}! Sing of {item}! Floor {floor} remembers the blow!"
-176: "The beast of floor {floor} met {item} — and {hero} was the hand behind it!"
-177: "Struck down! Floor {floor}'s terror, ended by {hero}'s own {item}!"
-178: "Behold {item}! In {hero}'s grip it laid floor {floor} to silence!"
-179: "Sing how {item} clove the dark of floor {floor} — {hero} its wielder!"
-180: "The terror of floor {floor} fell to {item}, and {hero} stood triumphant!"
-181: "One stroke! {item} flashed, and floor {floor} was {hero}'s!"
-182: "Steel of legend! {hero}'s {item} broke the beast of floor {floor} asunder!"
-183: "Let the forge take a bow — {item} felled floor {floor} in {hero}'s hand!"
-184: "The dark of floor {floor} had no answer for {item}, and {hero} knew it!"
-185: "Glory to the blade! {hero} and {item}, and floor {floor} lies conquered!"
-186: "Glory! {hero}'s {item} ended the terror of floor {floor} — and every notch upon it is a tale the forge holds dear!"
-187: "Sing of {item}! In {hero}'s grip it conquered floor {floor}, and the smith shall polish that blade with pride!"
-188: [$"{KillingBlow}/wry"]
-189: "Whatever lived on floor {floor} has opinions no more. {hero}'s {item}, allegedly."
-190: "{hero} let {item} do the talking on floor {floor}. Short conversation."
-191: "Rumor says {item} barely slowed down. Floor {floor}, {hero}, one swing."
-192: "Floor {floor}'s problem met {hero}'s {item}. Problem solved."
-193: "Floor {floor} had a complaint. {hero}'s {item} filed the response."
-194: "{item} did the heavy lifting on floor {floor}. {hero} took the credit."
-195: "Whatever floor {floor} was, {item} disagreed. {hero} nodded along."
-196: "{hero} calls it skill. Floor {floor} calls it {item}. {item} wins."
-197: "Turns out {item} solves most of floor {floor}'s arguments. {hero} noticed."
-198: "One swing of {item}, and floor {floor}'s problem became {hero}'s footnote."
-199: "Floor {floor} met {item}. Brief acquaintance. {hero} moved on."
-200: "{hero}'s {item} does fine work. Floor {floor} would review it poorly."
-201: "{hero}'s {item} did the hard part on floor {floor}. {hero} did the yelling. Both essential, reportedly."
-202: "Floor {floor}'s over. {hero} takes the bow; {item} takes the wear. The dent's got sentimental value now, apparently."
-203: [$"{KillingBlow}/omen"]
-204: "{item} drank deep on floor {floor} — {hero} carries a hungry thing."
-205: "The smith forged more than steel into {item}. Floor {floor} learned it; {hero} swung it."
-206: "Mark it: {hero}'s {item} ended what floor {floor} bred. Iron remembers."
-207: "Something on floor {floor} died to {item}. {hero}'s shadow walked away heavier."
-208: "{item} tasted floor {floor} and hungered for more. {hero} carries a fed thing."
-209: "The runes in {item} woke on floor {floor}. {hero} felt them; the beast did too."
-210: "Floor {floor} bred a horror, and {item} unmade it. {hero} owes the iron."
-211: "Steel remembers. {item} remembered floor {floor}; {hero} let it work."
-212: "Cold iron, hot end — {item} closed a life on floor {floor}. {hero} bore witness."
-213: "The smith forged an omen into {item}. Floor {floor} read it. {hero} swung it."
-214: "{hero}'s {item} drank on floor {floor}. The mountain keeps that ledger."
-215: "Mark it deep: {item} ended floor {floor}'s making, and {hero} walked on."
-216: "{item} closed a life on floor {floor}, and grew fonder of {hero}'s hand for it. Steel keeps the ones who wield it true."
-217: "Mark it kindly: {hero}'s {item} ended floor {floor}'s making, and the iron warms to its keeper. The deep notes such bonds."
-220: [$"{LethalSave}/gruff"]
-221: "{hero} is alive because of {item}. Floor {floor} had other plans."
-222: "That dent in {item}? That was {hero}'s death, turned away on floor {floor}."
-223: "Floor {floor} swung to kill. {item} said no. {hero} walked home."
-224: "Buy the smith a drink — {item} is why {hero} came back from floor {floor}."
-225: "{item} took the blow floor {floor} meant for {hero}. That's a good buy."
-226: "Floor {floor} swung to end it. {item} held. {hero} kept breathing."
-227: "{hero} owes {item} their neck — floor {floor} nearly had it."
-228: "That's iron doing its job. {item} kept {hero} off floor {floor}'s tally."
-229: "Floor {floor} bit {hero} and broke a tooth on {item}. Fair trade."
-230: "Without {item}, {hero} stays on floor {floor}. Simple as that."
-231: "{item} ate the hit on floor {floor}. {hero} walked home to complain about it."
-232: "Dented, not dead — {item} spared {hero} on floor {floor}. Worth every coin."
-233: "{item} took the blow floor {floor} meant for {hero}, and wears the dent proud. Keep that one; it's earned its keep."
-234: "That dent in {item} is where floor {floor} lost {hero}. Don't hammer it out — it's the good kind of scar."
-235: [$"{LethalSave}/dramatic"]
-236: "Death reached for {hero} on floor {floor} — and {item} slapped its hand away!"
-237: "So close! Floor {floor} nearly claimed {hero}, but {item} held the line!"
-238: "{item} alone stood between {hero} and the dark of floor {floor}!"
-239: "A breath from the grave! {hero} lives, and {item} is the reason — ask floor {floor}!"
-240: "Death lunged on floor {floor}, and {item} threw it back — {hero} lives!"
-241: "But for {item}, floor {floor} would sing {hero}'s dirge tonight!"
-242: "The grave gaped on floor {floor}, and {item} slammed it shut for {hero}!"
-243: "Steel against fate! {item} stood, and {hero} escaped floor {floor}!"
-244: "A hair from doom! {hero} breathes because {item} defied floor {floor}!"
-245: "Behold the smith's mercy — {item} caught floor {floor}'s killing stroke, and {hero} yet stands!"
-246: "Floor {floor} reached for {hero}'s soul, and {item} struck its hand aside!"
-247: "Cry it aloud — {item} bought {hero} back from the brink of floor {floor}!"
-248: "DEATH reached for {hero} on floor {floor} — and struck {item} instead! The smith shall hear of this dent. At length."
-249: "Behold the faithful {item}! It caught floor {floor}'s killing stroke for {hero}, and shall be honored at the forge for an age!"
-250: [$"{LethalSave}/wry"]
-251: "{hero} owes {item} a polish. Floor {floor} owes an apology."
-252: "Floor {floor} tried. {item} disagreed. {hero} drinks tonight."
-253: "They're calling {item} the real hero. {hero} nods along. Floor {floor} sulks."
-254: "{hero} lives. Credit {item}, not the footwork — floor {floor} wasn't gentle."
-255: "{item} did {hero}'s surviving for them on floor {floor}. Team effort."
-256: "Floor {floor} nearly won. {item} objected. {hero} lived to gloat."
-257: "{hero} lives, {item}'s dented, floor {floor} sulks. Working as intended."
-258: "Credit where it's due: {item} kept {hero} whole. Floor {floor} tried, bless it."
-259: "{hero} calls it reflexes. The dent in {item} from floor {floor} disagrees."
-260: "Floor {floor} had {hero} dead to rights. {item} had other paperwork."
-261: "Turns out {item} is load-bearing for {hero}. Floor {floor} learned that the hard way."
-262: "{hero} should buy {item} a drink. Floor {floor} owes it an apology."
-263: "{hero} lives; {item} has the dent to prove floor {floor} tried. Sentimental value, that dent. Don't buff it out."
-264: "Floor {floor} aimed for {hero} and hit {item}. {hero} calls it luck. {item} calls it a career."
-265: [$"{LethalSave}/omen"]
-266: "Death wrote {hero}'s name on floor {floor}, and {item} smudged the ink."
-267: "I heard {item} hum when floor {floor} struck. {hero} was spared. Wards hold."
-268: "The bones said {hero} wouldn't return from floor {floor}. {item} broke the reading."
-269: "Floor {floor} had a claim. {item} paid it. {hero} owes the steel a debt."
-270: "{item} hummed when floor {floor} struck, and {hero} was spared. Wards hold."
-271: "The iron in {item} knew floor {floor}'s intent. It stood; {hero} lived."
-272: "Fate wrote {hero}'s end on floor {floor}. {item} smudged the ink."
-273: "Floor {floor} came for a debt. {item} paid it, and {hero} owes the steel."
-274: "The smith forged a ward into {item}. Floor {floor} tested it; {hero} passed."
-275: "Something turned floor {floor}'s blow aside — that something was {item}. {hero} felt it."
-276: "The bones foretold {hero}'s grave on floor {floor}. {item} broke the reading."
-277: "{item} bought {hero} a breath on floor {floor}. The Mine keeps such accounts."
-278: "{item} stood between {hero} and floor {floor}'s claim, and the two are bound the closer for it. Steel remembers who it saves."
-279: "The iron in {item} turned floor {floor}'s stroke from {hero}. Such a debt ties a soul to its steel. Keep it near."
-282: [$"{BreakpointClear}/gruff"]
-283: "No {item}, no floor {floor}. {hero} knows it."
-284: "Floor {floor} doesn't open for grit alone — {hero} needed {item}."
-285: "{hero} cleared floor {floor}? {item} cleared floor {floor}. {hero} carried it."
-286: "Plain arithmetic: {hero} plus {item} beat floor {floor}. Take one away, no story."
-287: "Grit alone doesn't open floor {floor}. {hero} needed {item}, and had it."
-288: "{item} was the difference on floor {floor}. {hero} carried it through."
-289: "Floor {floor} stays shut without {item}. {hero} brought the key."
-290: "{hero} cleared floor {floor} because {item} let them. Give the smith his due."
-291: "No {item}, {hero} bounces off floor {floor}. With it, through."
-292: "Floor {floor} needed the right steel. {hero} carried {item}. That did it."
-293: "{item} put {hero} past floor {floor}. Gear before glory."
-294: "Floor {floor} was always {item}'s job. {hero} just brought it along."
-295: "Floor {floor} gate's open. {hero}'s {item} did the arguing. Iron argues best."
-296: "Charged {hero} for the {item} and threw in a lecture on which end opens floor {floor}. The lecture was free. This time."
-297: "Floor {floor}'s gate wanted the right {item}, not grit. {hero} had it. Filed the paperwork, closed the account."
-298: [$"{BreakpointClear}/dramatic"]
-299: "Floor {floor} yields to no one — no one without {item}! {hero} knew!"
-300: "It was {item} that broke floor {floor} — and {hero} who dared carry it!"
-301: "Floor {floor} stood unbeaten until {hero} arrived bearing {item}!"
-302: "The wall of floor {floor} met {item}, and it was {hero} holding it high!"
-303: "Floor {floor} yielded at last — {item} the key, {hero} the hand that turned it!"
-304: "None passed floor {floor} until {hero} bore {item} to its gate!"
-305: "The wall of floor {floor} fell to {item}, held high by {hero}!"
-306: "Sing it — {hero} and {item} broke floor {floor}'s ancient seal!"
-307: "What barred floor {floor} for an age gave way to {item} in {hero}'s grip!"
-308: "Behold {item}! By its edge {hero} shattered the threshold of floor {floor}!"
-309: "Floor {floor} stood proud — until {hero} came bearing {item}!"
-310: "The gate of floor {floor} knew {item}, and {hero} strode through!"
-311: "Floor {floor}'s ancient seal — an age unbroken — met {item}, and {hero} pushed. It was, in fairness, a door."
-312: "The gate of floor {floor} yielded to {hero} and {item} with a groan of legend. Or a rusty hinge. History will decide."
-313: "Behold {hero}! Behold {item}! Behold floor {floor}, now merely open, which is somehow the grandest thing of all!"
-314: [$"{BreakpointClear}/wry"]
-315: "{hero} would still be staring at floor {floor} without {item}. We've all said it. Quietly."
-316: "Floor {floor}: impossible. Floor {floor} versus {item}: apparently not. Nice work, {hero}."
-317: "Turns out the trick to floor {floor} was {item} all along. {hero} figured it out first."
-318: "{hero} says skill cleared floor {floor}. The {item} in their hand says otherwise."
-319: "Floor {floor}: impossible. Floor {floor} with {item}: a Tuesday. Nice work, {hero}."
-320: "Turns out the trick to floor {floor} was {item}. {hero} figured it out. Eventually."
-321: "{hero} beat floor {floor}. Well — {item} did. {hero} was present."
-322: "The secret of floor {floor}? {item}. {hero} would like you to think it was talent."
-323: "{hero} plus {item} equals floor {floor} cleared. The {item} carried the equation."
-324: "Floor {floor} was unbeatable until someone tried {item}. {hero} tried {item}."
-325: "Give {hero} floor {floor} and {item} and — look at that — a clear. Coincidence."
-326: "{hero} swears skill cleared floor {floor}. The {item} in hand swears otherwise."
-327: "Floor {floor}: sealed for ages, allegedly. {hero} brought {item}, gave it a shove. Ages, apparently, have a weak spot."
-328: "The secret of floor {floor} was {item} the whole time. {hero} would like a moment of applause for reading instructions."
-329: "{hero} opened floor {floor} with {item} and the smug look of someone who found the right key on the first ring. It was the third."
-330: [$"{BreakpointClear}/omen"]
-331: "Floor {floor} was sealed by more than stone. {item} was the key, {hero} the keyholder."
-332: "The threshold of floor {floor} tested {hero} — and found {item} in the scales."
-333: "No charm opens floor {floor} but the right iron. {hero} carried {item}. It sufficed."
-334: "It was fated: {hero}, {item}, floor {floor}. In that order."
-335: "Floor {floor} opens only for the right iron. {hero} bore {item}. It sufficed."
-336: "The threshold of floor {floor} weighed {hero} and found {item} in the scales."
-337: "It was fated — {hero}, {item}, floor {floor}. The order was never yours to pick."
-338: "No charm unbars floor {floor}, only true steel. {item} was true; {hero} carried it."
-339: "The old miners said floor {floor} wanted a price. {item} paid it, in {hero}'s hand."
-340: "{item} was forged for a door like floor {floor}. {hero} found the door."
-341: "The Mine let {hero} pass floor {floor} — but only bearing {item}. It watches such things."
-342: "Steel and fate met at floor {floor}: {item}, {hero}, and a way through."
-343: "The signs swore floor {floor} would never open. Then {hero} brought {item}. The signs are revising their position."
-344: "I foretold doom at the gate of floor {floor}. {hero}'s {item} foretold a way through. One of us was right, and it wasn't me."
-345: "The portents marked floor {floor} as sealed by fate. {hero} and {item} unsealed it by supper. Fate is looking into it."
-348: [$"{Provisioned}/gruff"]
-349: "{item} kept {hero} on their feet down floor {floor}. That's what it's for."
-350: "{hero} would've quit floor {floor} early without {item} in the pack."
-351: "Smart packing: {hero} took {item} to floor {floor} and came back with the story."
-352: "Floor {floor} grinds you down. {item} kept {hero} grinding back."
-353: "{item} kept {hero} upright deep in floor {floor}. That's what supplies are for."
-354: "Floor {floor} grinds hard. {item} kept {hero} at it."
-355: "{hero} would've turned back early without {item} on floor {floor}. Smart packing."
-356: "No {item}, no {hero} past the middle of floor {floor}. Simple."
-357: "{item} bought {hero} the hours floor {floor} tried to take. Fair."
-358: "{hero} rationed {item} right and outlasted floor {floor}. Good head."
-359: "That {item} earned its space in {hero}'s pack — floor {floor} proved it."
-360: "Floor {floor} wears you down. {item} kept {hero} in the fight."
-361: "Sold {hero} a {item} for floor {floor}. Charged extra for the lecture on holding it right. No refunds on the lecture."
-362: "{item} kept {hero} standing on floor {floor}. The bill for it kept me standing too. Fair's fair."
-363: "Told {hero} to ration the {item} on floor {floor}. Twice. Wrote it on the receipt. They read the receipt after, as usual."
-364: [$"{Provisioned}/dramatic"]
-365: "When floor {floor} pressed hardest, {hero} drank deep of {item} and stood fast!"
-366: "{item}! Remember the name — it held {hero} together on floor {floor}!"
-367: "Spent, bleeding, on floor {floor} — then {item}, and {hero} fought on!"
-368: "Not steel but {item} won that hour — {hero} endured floor {floor} because of it!"
-369: "When floor {floor} pressed hardest, {item} held {hero} together!"
-370: "Spent and reeling on floor {floor}, {hero} drank {item} and rose anew!"
-371: "Not the sword but {item} won that hour — {hero} endured floor {floor} by it!"
-372: "{item}! Remember the name that kept {hero} standing on floor {floor}!"
-373: "Floor {floor} demanded everything, and {item} gave {hero} one hour more!"
-374: "By {item} alone did {hero} outlast the long dark of floor {floor}!"
-375: "The pack saved the hero — {item} carried {hero} through floor {floor}!"
-376: "Sing of humble {item}, without which floor {floor} keeps {hero}!"
-377: "When floor {floor} pressed hardest, {hero} uncorked {item} — a bottle! a mere bottle! — and the tide of legend turned!"
-378: "Sing of the humble {item}! Without it {hero} would have sat down on floor {floor} and had a good long think about quitting!"
-379: "{item}! Drunk in one heroic swallow on floor {floor}! {hero} did not even wince! Well — a small wince. Historic, nonetheless!"
-380: [$"{Provisioned}/wry"]
-381: "{hero}'s finest move on floor {floor}? Uncorking {item}. Tactics."
-382: "Halfway down floor {floor}, {hero}'s best friend was {item}. No offense to the party."
-383: "{item}: because floor {floor} doesn't do mercy, and {hero} knows it."
-384: "Ask {hero} what carried them through floor {floor}. Spoiler: {item}."
-385: "{hero}'s cleverest move on floor {floor}? Uncorking {item}. Pure tactics."
-386: "Halfway down floor {floor}, {hero}'s truest friend was {item}. No offense to the party."
-387: "Ask {hero} what carried them through floor {floor}. The answer is {item}. It's always {item}."
-388: "{item}: because floor {floor} shows no mercy, and {hero} learned that early."
-389: "{hero} would like credit for surviving floor {floor}. {item} would like a word."
-390: "The real hero of floor {floor} was {item}. {hero} was the delivery method."
-391: "Floor {floor} nearly benched {hero}. {item} filed for an extension."
-392: "{hero} calls it endurance. The empty {item} on floor {floor} calls it chemistry."
-393: "{hero} asked if the {item} comes in 'lucky.' It does now, apparently. Floor {floor} can check the paperwork."
-394: "{hero}'s master plan for floor {floor}: drink the {item} before dying, not after. Revolutionary. It worked."
-395: "The {item} did {hero}'s surviving on floor {floor}. {hero} supplied the drinking motion. Teamwork, of a sort."
-396: [$"{Provisioned}/omen"]
-397: "Brewed under a good moon, that {item} — it kept {hero} whole through floor {floor}."
-398: "{hero} sipped {item} on floor {floor} and the shadows kept their distance."
-399: "There's craft in {item} older than the Mine. Floor {floor} felt it; {hero} proved it."
-400: "The draught knew its hour. {item}, floor {floor}, {hero} still breathing. So it was written."
-401: "Brewed under a kind moon, that {item} — it kept {hero} whole through floor {floor}."
-402: "{hero} sipped {item} on floor {floor}, and the shadows drew back."
-403: "There's older craft in {item} than the Mine. Floor {floor} felt it; {hero} proved it."
-404: "The draught knew its hour — {item}, floor {floor}, {hero} still breathing."
-405: "Something in {item} argued with floor {floor}, and bought {hero} time."
-406: "{item} carried a blessing down floor {floor}. {hero} carried {item}."
-407: "The deep leaned on {hero} on floor {floor}. {item} leaned back."
-408: "Mark the flask — {item} kept {hero} for the surface, and floor {floor} let it."
-409: "I foresaw {hero} falling on floor {floor}. Then they drank the {item}. The vision has been amended. Quietly."
-410: "The leaves said {hero} wouldn't last the floor {floor}. The {item} said otherwise. The leaves are consulting other leaves."
-411: "A dark omen hung over {hero} on floor {floor}, and the {item} washed it right off. Some omens don't hold their liquor."
-414: [$"{PotionLifesave}/gruff"]
-415: "Dead, that's what {hero} was on floor {floor} — except {item} said otherwise."
-416: "Count it plain: floor {floor} had {hero} finished, and {item} bought the breath back."
-417: "{item} is the only reason {hero}'s stool isn't empty tonight. Floor {floor} nearly kept them."
-418: "One swallow of {item} between {hero} and a hole on floor {floor}. One."
-419: "Dead, {hero} was, on floor {floor}. {item} said otherwise. Buy more of it."
-420: "One swallow of {item} between {hero} and a grave on floor {floor}. One."
-421: "{item} bought {hero}'s breath back on floor {floor}. Coin well spent."
-422: "Floor {floor} had {hero} finished. {item} finished the argument."
-423: "{hero}'s stool isn't empty tonight. Thank {item}, and floor {floor} for nearly winning."
-424: "No {item}, {hero} stays on floor {floor}. That plain."
-425: "{item} did what stitches couldn't — pulled {hero} off floor {floor}."
-426: "Floor {floor} nearly kept {hero}. {item} had the last word."
-427: "{item} bought {hero}'s breath back on floor {floor}. Added it to the tab. Life's not free; neither's the vial."
-428: "Dead, then not — {hero}, floor {floor}, one {item}. Charged for the vial, not the miracle. Miracles are complimentary."
-429: "{item} pulled {hero} off floor {floor}'s books. I keep better books. Paid in full, no returns on a used cure."
-430: [$"{PotionLifesave}/dramatic"]
-431: "Back from the brink! Floor {floor} had {hero} cold — until {item} lit the blood!"
-432: "Dead on floor {floor}, all but buried — then {item}, and {hero} rose!"
-433: "Let it be told: {item} snatched {hero} from the very jaws of floor {floor}!"
-434: "A heartbeat from the end on floor {floor} — {hero} lives by {item} alone!"
-435: "Back from the abyss! Floor {floor} had {hero} cold — until {item} lit the blood!"
-436: "Dead on floor {floor}, all but shrouded — then {item}, and {hero} rose!"
-437: "Let it be told: {item} snatched {hero} from the jaws of floor {floor}!"
-438: "A single heartbeat from the end on floor {floor} — {hero} lives by {item} alone!"
-439: "Death held {hero} on floor {floor}, and {item} tore them free!"
-440: "The vial flashed, and floor {floor} lost its claim — {hero} lives by {item}!"
-441: "From the very lip of the grave on floor {floor}, {item} called {hero} home!"
-442: "A miracle in a bottle! {item} dragged {hero} back from floor {floor}!"
-443: "A bottle! One small bottle of {item} stood between {hero} and eternity on floor {floor} — and eternity blinked first!"
-444: "Uncork the trumpets! {item} hauled {hero} back from floor {floor} by the collar, and the collar barely wrinkled!"
-445: "Let the ages record it: on floor {floor}, {hero} died for a heartbeat, and {item} said 'not today' in the voice of thunder!"
-446: [$"{PotionLifesave}/wry"]
-447: "{hero} technically died on floor {floor}. {item} filed an objection."
-448: "Floor {floor} was measuring {hero} for a casket. {item} canceled the order."
-449: "To {hero}'s health — which is to say, to {item}. Floor {floor} came that close."
-450: "{hero} calls it a close one. Everyone else calls it {item} doing the work on floor {floor}."
-451: "{hero} technically died on floor {floor}. {item} lodged an objection."
-452: "Floor {floor} was measuring {hero} for a box. {item} canceled the order."
-453: "To {hero}'s health — meaning, to {item}. Floor {floor} came that close."
-454: "{hero} calls it a close one. Everyone else calls it {item}, on floor {floor}."
-455: "Floor {floor} had {hero} on the books as dead. {item} amended the record."
-456: "{hero} owes {item} a life. Floor {floor} owes {hero} nothing, as usual."
-457: "The corpse got up. {item}, floor {floor}, {hero} — in reverse order of dying."
-458: "Floor {floor} nearly closed {hero}'s account. {item} bounced the transaction."
-459: "{hero} died on floor {floor}, briefly, as a formality. {item} handled the appeal. Verdict overturned."
-460: "The {item} did the reviving on floor {floor}; {hero} did the dramatic gasping. Only one of them was strictly necessary."
-461: "Floor {floor} had {hero} down as settled. {item} disputed the charge. {hero} lives to dispute other things."
-462: [$"{PotionLifesave}/omen"]
-463: "{hero}'s thread was cut on floor {floor}, and {item} knotted it back. I felt the snap from here."
-464: "The ferryman reached for {hero} on floor {floor}; {item} paid him to wait."
-465: "Whatever the smith stirred into {item}, it argued with death on floor {floor} — and won {hero} back."
-466: "{hero} walked out of floor {floor} owing everything to {item}. The Mine remembers debts."
-467: "{hero}'s thread was cut on floor {floor}, and {item} knotted it back. I felt the snap."
-468: "The ferryman reached for {hero} on floor {floor}; {item} paid him to wait a while."
-469: "Whatever the smith stirred into {item} argued with death on floor {floor} — and won {hero} back."
-470: "{hero} owes everything to {item} for floor {floor}. The Mine remembers debts."
-471: "Death signed for {hero} on floor {floor}. {item} forged the release."
-472: "The candle relit when {item} touched {hero} on floor {floor}. Mark that."
-473: "{hero} crossed over on floor {floor} and {item} called them back. Such things cost."
-474: "The deep had {hero}'s name on floor {floor}. {item} scratched it out."
-475: "A red vial on floor {floor}, and {hero} breathing yet — the {item} gets the credit the portents wanted. The portents have been asked to cite their sources."
-476: "I called {hero}'s death on floor {floor}. The {item} called my bluff. The bones and I are no longer speaking."
-477: "The omens buried {hero} on floor {floor} a touch early — the {item} dug them right back out. Omens, revised. Again."
-480: [$"{FloorRecordSet}/gruff"]
-481: "{hero} hit floor {floor}. Nobody's been deeper. Yet."
-482: "New mark on the board: {hero}, floor {floor}."
-483: "Floor {floor}. {hero}. Deepest boots in town."
-484: "{hero} went to floor {floor} and came back to talk about it. That's new."
-485: "Deepest boots in town: {hero}, floor {floor}. For now."
-486: "{hero} touched floor {floor} and climbed back. New mark."
-487: "Nobody's gone past floor {floor}. {hero} owns it today."
-488: "Floor {floor}. {hero}. Chalk it on the board."
-489: "{hero} set the depth at floor {floor}. Somebody'll beat it. Not soon."
-490: "New low for the town, high for {hero}: floor {floor}."
-491: "{hero} went to floor {floor} on purpose and lived. That's the record."
-492: "Floor {floor} is the deep mark now. {hero} put it there."
-493: "{hero} hit floor {floor}. Deepest yet. Bought a round, then counted the change. Twice."
-494: "New record: {hero}, floor {floor}. Chalked it on the board. Charged them for the chalk. Fair's fair."
-495: "{hero} reached floor {floor}, deepest in town. I'll want that in writing, signed, before I believe the boasting."
-496: [$"{FloorRecordSet}/dramatic"]
-497: "Deeper than any before — {hero} has touched floor {floor}!"
-498: "History! {hero} stands alone at floor {floor}!"
-499: "Chalk it high: floor {floor} belongs to {hero} now!"
-500: "The record falls! {hero} has seen floor {floor} and returned!"
-501: "Deeper than any soul before — {hero} has walked floor {floor}!"
-502: "History carved in stone: {hero} stands alone at floor {floor}!"
-503: "The record shatters! {hero} has seen floor {floor} and come back!"
-504: "Chalk it to the rafters — floor {floor} belongs to {hero}!"
-505: "No boots ever pressed floor {floor} till {hero}'s! Sing it!"
-506: "The town has a new legend, and its name is {hero} — floor {floor}!"
-507: "Behold the deep-walker! {hero} has dared floor {floor}!"
-508: "Let it echo up every shaft — {hero} reached floor {floor}!"
-509: "{hero} has touched floor {floor}, deeper than any boot before — a feat! a legend! a very long way down some stairs!"
-510: "History trembles: {hero} stands upon floor {floor}! Chalk it to the rafters, then dust the rafters, for they are filthy!"
-511: "Deeper than mortal record — {hero}, floor {floor}! Bards will sing it, once someone teaches the bards the number!"
-512: [$"{FloorRecordSet}/wry"]
-513: "{hero} went to floor {floor} on purpose. Takes all kinds."
-514: "Floor {floor}: previously theoretical. {hero} disagrees."
-515: "New record — {hero}, floor {floor}. The old record is in mourning."
-516: "{hero} says floor {floor} is lovely this time of year. Nobody can check."
-517: "{hero} chose to visit floor {floor}. Takes all kinds."
-518: "Floor {floor}: once theoretical. {hero} begs to differ."
-519: "New record — {hero}, floor {floor}. The old one's in mourning."
-520: "{hero} reports floor {floor} is lovely this time of year. Nobody can check."
-521: "Congratulations to {hero} for finding a deeper way to nearly die: floor {floor}."
-522: "{hero} reached floor {floor}. The prize is bragging rights and a limp."
-523: "Floor {floor}, apparently. {hero} volunteered. We didn't ask."
-524: "{hero} set foot on floor {floor} so you don't have to. Considerate."
-525: "{hero} went to floor {floor} on purpose, which raises more questions about {hero} than about floor {floor}."
-526: "New record — {hero}, floor {floor}. The prize is bragging rights, a limp, and the deep respect of no one who values sense."
-527: "Floor {floor}. {hero} volunteered. Deepest in town, and the least surprised to end up down a hole."
-528: [$"{FloorRecordSet}/omen"]
-529: "{hero} walked floor {floor} and the Mine let them. Ask why."
-530: "Floor {floor} showed itself to {hero}. Depths don't open for free."
-531: "The deep has taken a liking to {hero} — floor {floor}, and still breathing."
-532: "Mark the day {hero} reached floor {floor}. The Mine marks it too."
-533: "{hero} walked floor {floor} and the Mine allowed it. Ask why."
-534: "Floor {floor} showed its face to {hero}. Depths don't open for nothing."
-535: "The deep took a liking to {hero} — floor {floor}, and still breathing."
-536: "Note the day {hero} reached floor {floor}. The Mine noted it too."
-537: "{hero} saw floor {floor} and came back changed. They always do."
-538: "The dark parted for {hero} at floor {floor}. Debts follow such gifts."
-539: "Floor {floor} let {hero} look upon it. That is not always a mercy."
-540: "The veins whispered when {hero} touched floor {floor}. Keep salt near."
-541: "The signs promised {hero} would turn back at floor {floor}. {hero} kept walking. The signs are updating their forecast."
-542: "I read ruin for {hero} at floor {floor}. Instead: a record. The dregs owe me an explanation and a fresh cup."
-543: "The portents marked floor {floor} as {hero}'s limit. {hero} marked it as a start. We do not always agree, the portents and I."
-546: [$"{RecruitArrived}/gruff"]
-547: "New face: {hero}. Give it a week."
-548: "{hero} signed on. Hope they can dig."
-549: "Another pair of boots — {hero}. The Mine will weigh them."
-550: "{hero}'s in town looking for work. Work's downstairs."
-551: "{hero} signed the book. We'll see if the Mine agrees."
-552: "Another pair of hands — {hero}. Hope they hold a pick."
-553: "{hero}'s here for work. Work's downstairs, in the dark."
-554: "Fresh boots: {hero}. The floors will test the leather."
-555: "{hero} turned up looking for coin. There's coin, and there's the Mine."
-556: "Name's {hero}. Ask again in a month if they're still standing."
-557: "{hero} joined on. Green as spring ore. The deep will temper them."
-558: "New blood, {hero}. Everybody's new until the first floor."
-559: "New face: {hero}. Signed the book, paid the tab up front. I like them already. Give it a week."
-560: "{hero} signed on. Handed them the rules, the pick, and the bill for the pick. Welcome to the trade."
-561: "{hero} turned up for work. Told them the terms twice. They nodded once. We'll see."
-562: [$"{RecruitArrived}/dramatic"]
-563: "A new soul steps into the tale — welcome, {hero}!"
-564: "{hero} has come! Fortune or funeral, we shall see!"
-565: "Make room at the fire — {hero} joins the company!"
-566: "Destiny walks in wearing new boots — {hero} has arrived!"
-567: "A new soul steps into the tale — hail, {hero}!"
-568: "The company grows — {hero} has come to seek glory or a grave!"
-569: "Make room at the fire — {hero} joins the roster!"
-570: "Fate walks in on new boots — {hero} has arrived!"
-571: "Herald it! {hero} takes up the miner's lot this day!"
-572: "The Mine has a new challenger, and {hero} is the name!"
-573: "Rise and welcome {hero} — may the deep be kind, though it rarely is!"
-574: "A hero unproven enters — {hero}, and the tale turns a page!"
-575: "{hero} has ARRIVED! The door has been informed. It remains a door, but a prouder one."
-576: "A new soul strides into legend — {hero}! The tavern stool has never held such promise, nor such an ordinary cloak!"
-577: "Herald {hero}, come at last! Trumpets would be fitting. We have a spoon and a tankard. They shall have to do!"
-578: [$"{RecruitArrived}/wry"]
-579: "{hero} just arrived and already looks braver than the last one. Low bar."
-580: "Fresh meat — sorry, fresh talent: {hero}."
-581: "{hero} came for work and glory. We're mostly out of the second."
-582: "Everyone say hello to {hero}. Don't get attached."
-583: "Everybody wave at {hero}. Try not to learn the name too well."
-584: "{hero}'s here. Fresh optimism, factory-sealed. The Mine opens it fast."
-585: "New recruit: {hero}. The odds on the first floor are not generous."
-586: "{hero} came for work and glory. We're fully stocked on the first one."
-587: "Meet {hero}, who has clearly not talked to the last recruit. There isn't one."
-588: "{hero} signed up eager. We'll fix that."
-589: "Welcome {hero}. The tavern takes bets; the Mine takes recruits."
-590: "{hero} arrived with all their limbs. Enjoy the set, {hero}."
-591: "Everyone say hello to {hero}, fresh optimism factory-sealed. The Mine does love opening a new one."
-592: "{hero} arrived with all their limbs and most of their illusions. We'll take good care of neither."
-593: "New recruit: {hero}. Came for work and glory. We've plenty of the former and a rumor of the latter."
-594: [$"{RecruitArrived}/omen"]
-595: "{hero} blew in with the cold wind. The cards say: interesting."
-596: "A stranger named {hero}. The Mine already knows the name."
-597: "I dreamt of a new face, and here stands {hero}. Keep the salt handy."
-598: "{hero} arrived at dusk. Dusk arrivals always matter."
-599: "{hero} arrived under a thin moon. Thin moons keep their secrets."
-600: "The dust stirred when {hero} crossed the threshold. It noticed."
-601: "I dreamt a new face three nights running. Here stands {hero}."
-602: "{hero} comes at the turning of the season. Such arrivals mean something."
-603: "The crows counted {hero} in. They keep an honest tally."
-604: "A name for the deep to learn: {hero}. It learns them all in time."
-605: "{hero} walked in from the dark. Remember which way they came."
-606: "The coals leaned toward {hero}. The fire has opinions. Heed them."
-607: "The signs foretold {hero}'s coming. The signs also foretold a rain of frogs. One out of two. Again."
-608: "I dreamt a great omen the night before {hero} came. Then I dreamt of breakfast. {hero} is, at least, real."
-609: "The crows announced {hero} at dawn. The crows announce most things. Still — welcome, {hero}, on their authority."
-612: [$"{VenueGraduated}/gruff"]
-613: "{hero} outgrew the ground they started on. Deeper dark waits now."
-614: "{hero} doesn't need the shallow dark anymore. Onward."
-615: "Word is {hero} cleared the bottom floor clean. No going back to the easy stuff."
-616: "{hero} put the old grounds behind them. Good. Standing still gets you buried."
-617: [$"{VenueGraduated}/dramatic"]
-618: "Behold! {hero} has conquered the depths and stands ready for darker ground!"
-619: "The old dungeon holds no more terror for {hero} — a deeper one awaits!"
-620: "{hero} has broken through! The way forward opens, and it opens wider!"
-621: "Sing of {hero}, who left the shallow dark behind and marches toward the deep!"
-622: [$"{VenueGraduated}/wry"]
-623: "{hero} graduated. There's no ceremony, just a longer walk into worse things."
-624: "Turns out {hero} finished the easy dungeon. There's a harder one now. Congratulations, I guess."
-625: "{hero} cleared the bottom floor. The reward for surviving one dark hole is a deeper one."
-626: "{hero} outgrew the old grounds. Growth, it turns out, means more dying, just later."
-627: [$"{VenueGraduated}/omen"]
-628: "The old dark released {hero} — a deeper one already knows the name."
-629: "{hero} crossed a threshold the mine doesn't give back easily. The deep dark noticed."
-630: "The bottom floor let {hero} pass. Something further down is already waiting."
-631: "{hero}'s shadow grew long enough to reach the next dark. It always does, eventually."
-636: [HeroDied] = "Raise a cup for {hero} — {cause} on floor {floor}. The Mine keeps what it takes."
-637: [KillingBlow] = "They say {hero}'s {item} did the deed down on floor {floor}."
-638: [LethalSave] = "{hero} walked out of floor {floor} alive thanks to {item}, folk say."
-639: [BreakpointClear] = "No {item}, no floor {floor} — ask {hero}."
-640: [FloorRecordSet] = "{hero} has gone deeper than ever before — floor {floor}!"
-641: [RecruitArrived] = "Fresh blood in town: {hero}, looking for work and glory."
-643: [Provisioned] = "{item} kept {hero} fighting down on floor {floor}, they say."
-644: [PotionLifesave] = "{item} saved {hero}'s life on floor {floor} — plain as that."
-646: [VenueGraduated] = "{hero} has proven themselves — a harder dark waits now."
+149: [HeroDied] = ["hero", "cause", "floor"],
+150: [KillingBlow] = ["hero", "item", "floor"],
+151: [LethalSave] = ["hero", "item", "floor"],
+152: [BreakpointClear] = ["hero", "item", "floor"],
+153: [Provisioned] = ["hero", "item", "floor"],
+154: [PotionLifesave] = ["hero", "item", "floor"],
+155: [FloorRecordSet] = ["hero", "floor"],
+156: [RecruitArrived] = ["hero"],
+157: [VenueGraduated] = ["hero"],
+158: [CounterSalePinned] = ["hero", "item", "price"],
+159: [CounterSaleFleeced] = ["hero", "item", "price"],
+160: [CounterSaleFairDeal] = ["hero", "item", "price"],
+161: [CommissionFulfilled] = ["hero", "item", "premium"],
+162: [CommissionExpired] = ["hero", "slot"],
+163: [HeirloomReforged] = ["item", "lineage"],
+171: [$"{HeroDied}/gruff"]
+172: "Raise one for {hero} — {cause} on floor {floor}. That's the trade."
+173: "{hero}'s pick won't ring again — {cause} on floor {floor}."
+174: "Floor {floor} took {hero} — {cause}. The Mine doesn't apologize."
+175: "Dig a hole, say a word. {hero} — {cause} on floor {floor}."
+176: "{hero}'s done — {cause} on floor {floor}. Pour it out."
+177: "Floor {floor} kept {hero} — {cause}. Cold, but that's the deep."
+178: "{hero} won't be back to argue it — {cause}, floor {floor}."
+179: "Mark {hero} off the roster — {cause} on floor {floor}."
+180: "{hero} went down to {cause} on floor {floor}. The Mine gives nothing back."
+181: "One more name for the stone: {hero}, {cause}, floor {floor}."
+182: "{hero} paid floor {floor} in full — {cause}. That's the wage."
+183: "{hero} went down on floor {floor} — {cause}. Bank it and move on."
+184: "{hero} dug straight and paid their round — {cause} on floor {floor}. Raise one, and mean it."
+185: [$"{HeroDied}/dramatic"]
+186: "Gone! {hero}, {cause} on floor {floor} — the dark has a new name to whisper."
+187: "Weep, tavern, weep — {hero} lies on floor {floor}, {cause}."
+188: "Floor {floor} demanded a price, and {hero} paid it — {cause}."
+189: "Let the bells toll for {hero} — {cause}, down on floor {floor}!"
+190: "Toll the bell! {hero} has fallen to {cause} on floor {floor}!"
+191: "O cruel floor {floor} — {cause}, and {hero} is no more!"
+192: "The dark of floor {floor} swallowed {hero} — {cause}, and the tavern grieves!"
+193: "Lament, all who drink here — {hero}, {cause}, lost on floor {floor}!"
+194: "Brave {hero}, undone in the belly of floor {floor} — {cause}!"
+195: "Floor {floor} has claimed a hero's blood — {cause} took {hero}!"
+196: "Weep and remember: {hero} met {cause} on floor {floor} and passed into legend!"
+197: "The deep sang a dirge — {hero} fell to {cause} upon floor {floor}!"
+198: "Stand for {hero}, lost to {cause} on floor {floor} — we are the poorer, and the prouder for having known them."
+199: [$"{HeroDied}/wry"]
+200: "{hero} found the one thing on floor {floor} you can't walk off — {cause}."
+201: "Floor {floor} is quieter tonight — {hero}, {cause}. So is this room."
+202: "{hero} won't be settling their tab — {cause} on floor {floor}."
+203: "Note for the board: floor {floor}, {cause}. Signed, what's left of {hero}."
+204: "Floor {floor} finally found something {hero} couldn't shrug off — {cause}."
+205: "{hero} kept a seat warm at this bar. Floor {floor} took it back — {cause}."
+206: "Bad news for {hero}'s bar tab — {cause} on floor {floor}."
+207: "{hero} won't be finishing that story — {cause}, floor {floor}."
+208: "{hero} owed nobody here a thing — {cause} on floor {floor}. Settle your own tabs tonight."
+209: "Floor {floor}, {cause} — {hero}'s stool is empty tonight."
+210: "Somebody tell floor {floor} that {cause} was excessive. {hero} would agree, if they could."
+211: "{hero} met {cause} on floor {floor}. Nobody's laughing tonight."
+212: "Floor {floor} — {cause}. {hero} would have called it 'a Tuesday.' Raise a quiet one."
+213: [$"{HeroDied}/omen"]
+214: "The candles guttered when {hero} fell — {cause} on floor {floor}. The Mine marked them days ago."
+215: "I read it in the dregs: {hero}, {cause}, floor {floor}. The leaves never lie."
+216: "Floor {floor} whispered {hero}'s name, and now — {cause}. Salt your doorstep."
+217: "A crow sat the sill all morning. {hero} — {cause}. Floor {floor} keeps its tithe."
+218: "The crows knew {hero}'s name before floor {floor} did — {cause}. So it was written."
+219: "Salt spilled at dawn, and by dusk {hero} was gone — {cause}, floor {floor}."
+220: "The Mine called {hero} home to floor {floor} — {cause}. It always collects."
+221: "I dreamt of an empty stool. {hero}, {cause}, floor {floor}. The dream never lies."
+222: "The coals hissed {hero}'s name and went dark on floor {floor} — {cause}."
+223: "Floor {floor} kept its tithe — {hero}, {cause}. Ward your door tonight."
+224: "The candle by {hero}'s bed guttered out — {cause}, floor {floor}. The deep marks its own."
+225: "{hero}'s shadow left before the body did — {cause} on floor {floor}. Omens don't grieve."
+226: "The deep keeps its own, and it kept a good one — {hero}, {cause}, floor {floor}. Remember them kindly, and ward the door."
+229: [$"{KillingBlow}/gruff"]
+230: "{hero}'s {item} did the killing on floor {floor}. Good steel, that."
+231: "Ask floor {floor} what {item} does in {hero}'s hands."
+232: "One swing of {item}, one less thing on floor {floor}. {hero}'s work."
+233: "That was no luck on floor {floor} — that was {hero}'s {item}."
+234: "{item} did clean work on floor {floor}. {hero} just held the grip."
+235: "Floor {floor} met {hero}'s {item} and lost. Good iron earns its keep."
+236: "One thing less on floor {floor}, courtesy of {item}. {hero} swung true."
+237: "{hero}'s {item} ended it on floor {floor}. That edge was forged right."
+238: "No mess, no fuss — {item} settled floor {floor}. {hero} can thank the smith."
+239: "That's what {item} is for. Floor {floor}, {hero}, done."
+240: "{hero} put {item} through whatever floor {floor} sent. It held."
+241: "Floor {floor} learned the weight of {item} in {hero}'s hand."
+242: "{item} did clean work on floor {floor}, and {hero} kept the notch as a keepsake. Good steel earns a scar."
+243: "That edge has a history now — floor {floor}, {hero}'s hand, one less thing in the dark. {item} remembers its wins."
+244: [$"{KillingBlow}/dramatic"]
+245: "With one stroke of {item}, {hero} silenced floor {floor}!"
+246: "Sing of {hero}! Sing of {item}! Floor {floor} remembers the blow!"
+247: "The beast of floor {floor} met {item} — and {hero} was the hand behind it!"
+248: "Struck down! Floor {floor}'s terror, ended by {hero}'s own {item}!"
+249: "Behold {item}! In {hero}'s grip it laid floor {floor} to silence!"
+250: "Sing how {item} clove the dark of floor {floor} — {hero} its wielder!"
+251: "The terror of floor {floor} fell to {item}, and {hero} stood triumphant!"
+252: "One stroke! {item} flashed, and floor {floor} was {hero}'s!"
+253: "Steel of legend! {hero}'s {item} broke the beast of floor {floor} asunder!"
+254: "Let the forge take a bow — {item} felled floor {floor} in {hero}'s hand!"
+255: "The dark of floor {floor} had no answer for {item}, and {hero} knew it!"
+256: "Glory to the blade! {hero} and {item}, and floor {floor} lies conquered!"
+257: "Glory! {hero}'s {item} ended the terror of floor {floor} — and every notch upon it is a tale the forge holds dear!"
+258: "Sing of {item}! In {hero}'s grip it conquered floor {floor}, and the smith shall polish that blade with pride!"
+259: [$"{KillingBlow}/wry"]
+260: "Whatever lived on floor {floor} has opinions no more. {hero}'s {item}, allegedly."
+261: "{hero} let {item} do the talking on floor {floor}. Short conversation."
+262: "Rumor says {item} barely slowed down. Floor {floor}, {hero}, one swing."
+263: "Floor {floor}'s problem met {hero}'s {item}. Problem solved."
+264: "Floor {floor} had a complaint. {hero}'s {item} filed the response."
+265: "{item} did the heavy lifting on floor {floor}. {hero} took the credit."
+266: "Whatever floor {floor} was, {item} disagreed. {hero} nodded along."
+267: "{hero} calls it skill. Floor {floor} calls it {item}. {item} wins."
+268: "Turns out {item} solves most of floor {floor}'s arguments. {hero} noticed."
+269: "One swing of {item}, and floor {floor}'s problem became {hero}'s footnote."
+270: "Floor {floor} met {item}. Brief acquaintance. {hero} moved on."
+271: "{hero}'s {item} does fine work. Floor {floor} would review it poorly."
+272: "{hero}'s {item} did the hard part on floor {floor}. {hero} did the yelling. Both essential, reportedly."
+273: "Floor {floor}'s over. {hero} takes the bow; {item} takes the wear. The dent's got sentimental value now, apparently."
+274: [$"{KillingBlow}/omen"]
+275: "{item} drank deep on floor {floor} — {hero} carries a hungry thing."
+276: "The smith forged more than steel into {item}. Floor {floor} learned it; {hero} swung it."
+277: "Mark it: {hero}'s {item} ended what floor {floor} bred. Iron remembers."
+278: "Something on floor {floor} died to {item}. {hero}'s shadow walked away heavier."
+279: "{item} tasted floor {floor} and hungered for more. {hero} carries a fed thing."
+280: "The runes in {item} woke on floor {floor}. {hero} felt them; the beast did too."
+281: "Floor {floor} bred a horror, and {item} unmade it. {hero} owes the iron."
+282: "Steel remembers. {item} remembered floor {floor}; {hero} let it work."
+283: "Cold iron, hot end — {item} closed a life on floor {floor}. {hero} bore witness."
+284: "The smith forged an omen into {item}. Floor {floor} read it. {hero} swung it."
+285: "{hero}'s {item} drank on floor {floor}. The mountain keeps that ledger."
+286: "Mark it deep: {item} ended floor {floor}'s making, and {hero} walked on."
+287: "{item} closed a life on floor {floor}, and grew fonder of {hero}'s hand for it. Steel keeps the ones who wield it true."
+288: "Mark it kindly: {hero}'s {item} ended floor {floor}'s making, and the iron warms to its keeper. The deep notes such bonds."
+291: [$"{LethalSave}/gruff"]
+292: "{hero} is alive because of {item}. Floor {floor} had other plans."
+293: "That dent in {item}? That was {hero}'s death, turned away on floor {floor}."
+294: "Floor {floor} swung to kill. {item} said no. {hero} walked home."
+295: "Buy the smith a drink — {item} is why {hero} came back from floor {floor}."
+296: "{item} took the blow floor {floor} meant for {hero}. That's a good buy."
+297: "Floor {floor} swung to end it. {item} held. {hero} kept breathing."
+298: "{hero} owes {item} their neck — floor {floor} nearly had it."
+299: "That's iron doing its job. {item} kept {hero} off floor {floor}'s tally."
+300: "Floor {floor} bit {hero} and broke a tooth on {item}. Fair trade."
+301: "Without {item}, {hero} stays on floor {floor}. Simple as that."
+302: "{item} ate the hit on floor {floor}. {hero} walked home to complain about it."
+303: "Dented, not dead — {item} spared {hero} on floor {floor}. Worth every coin."
+304: "{item} took the blow floor {floor} meant for {hero}, and wears the dent proud. Keep that one; it's earned its keep."
+305: "That dent in {item} is where floor {floor} lost {hero}. Don't hammer it out — it's the good kind of scar."
+306: [$"{LethalSave}/dramatic"]
+307: "Death reached for {hero} on floor {floor} — and {item} slapped its hand away!"
+308: "So close! Floor {floor} nearly claimed {hero}, but {item} held the line!"
+309: "{item} alone stood between {hero} and the dark of floor {floor}!"
+310: "A breath from the grave! {hero} lives, and {item} is the reason — ask floor {floor}!"
+311: "Death lunged on floor {floor}, and {item} threw it back — {hero} lives!"
+312: "But for {item}, floor {floor} would sing {hero}'s dirge tonight!"
+313: "The grave gaped on floor {floor}, and {item} slammed it shut for {hero}!"
+314: "Steel against fate! {item} stood, and {hero} escaped floor {floor}!"
+315: "A hair from doom! {hero} breathes because {item} defied floor {floor}!"
+316: "Behold the smith's mercy — {item} caught floor {floor}'s killing stroke, and {hero} yet stands!"
+317: "Floor {floor} reached for {hero}'s soul, and {item} struck its hand aside!"
+318: "Cry it aloud — {item} bought {hero} back from the brink of floor {floor}!"
+319: "DEATH reached for {hero} on floor {floor} — and struck {item} instead! The smith shall hear of this dent. At length."
+320: "Behold the faithful {item}! It caught floor {floor}'s killing stroke for {hero}, and shall be honored at the forge for an age!"
+321: [$"{LethalSave}/wry"]
+322: "{hero} owes {item} a polish. Floor {floor} owes an apology."
+323: "Floor {floor} tried. {item} disagreed. {hero} drinks tonight."
+324: "They're calling {item} the real hero. {hero} nods along. Floor {floor} sulks."
+325: "{hero} lives. Credit {item}, not the footwork — floor {floor} wasn't gentle."
+326: "{item} did {hero}'s surviving for them on floor {floor}. Team effort."
+327: "Floor {floor} nearly won. {item} objected. {hero} lived to gloat."
+328: "{hero} lives, {item}'s dented, floor {floor} sulks. Working as intended."
+329: "Credit where it's due: {item} kept {hero} whole. Floor {floor} tried, bless it."
+330: "{hero} calls it reflexes. The dent in {item} from floor {floor} disagrees."
+331: "Floor {floor} had {hero} dead to rights. {item} had other paperwork."
+332: "Turns out {item} is load-bearing for {hero}. Floor {floor} learned that the hard way."
+333: "{hero} should buy {item} a drink. Floor {floor} owes it an apology."
+334: "{hero} lives; {item} has the dent to prove floor {floor} tried. Sentimental value, that dent. Don't buff it out."
+335: "Floor {floor} aimed for {hero} and hit {item}. {hero} calls it luck. {item} calls it a career."
+336: [$"{LethalSave}/omen"]
+337: "Death wrote {hero}'s name on floor {floor}, and {item} smudged the ink."
+338: "I heard {item} hum when floor {floor} struck. {hero} was spared. Wards hold."
+339: "The bones said {hero} wouldn't return from floor {floor}. {item} broke the reading."
+340: "Floor {floor} had a claim. {item} paid it. {hero} owes the steel a debt."
+341: "{item} hummed when floor {floor} struck, and {hero} was spared. Wards hold."
+342: "The iron in {item} knew floor {floor}'s intent. It stood; {hero} lived."
+343: "Fate wrote {hero}'s end on floor {floor}. {item} smudged the ink."
+344: "Floor {floor} came for a debt. {item} paid it, and {hero} owes the steel."
+345: "The smith forged a ward into {item}. Floor {floor} tested it; {hero} passed."
+346: "Something turned floor {floor}'s blow aside — that something was {item}. {hero} felt it."
+347: "The bones foretold {hero}'s grave on floor {floor}. {item} broke the reading."
+348: "{item} bought {hero} a breath on floor {floor}. The Mine keeps such accounts."
+349: "{item} stood between {hero} and floor {floor}'s claim, and the two are bound the closer for it. Steel remembers who it saves."
+350: "The iron in {item} turned floor {floor}'s stroke from {hero}. Such a debt ties a soul to its steel. Keep it near."
+353: [$"{BreakpointClear}/gruff"]
+354: "No {item}, no floor {floor}. {hero} knows it."
+355: "Floor {floor} doesn't open for grit alone — {hero} needed {item}."
+356: "{hero} cleared floor {floor}? {item} cleared floor {floor}. {hero} carried it."
+357: "Plain arithmetic: {hero} plus {item} beat floor {floor}. Take one away, no story."
+358: "Grit alone doesn't open floor {floor}. {hero} needed {item}, and had it."
+359: "{item} was the difference on floor {floor}. {hero} carried it through."
+360: "Floor {floor} stays shut without {item}. {hero} brought the key."
+361: "{hero} cleared floor {floor} because {item} let them. Give the smith his due."
+362: "No {item}, {hero} bounces off floor {floor}. With it, through."
+363: "Floor {floor} needed the right steel. {hero} carried {item}. That did it."
+364: "{item} put {hero} past floor {floor}. Gear before glory."
+365: "Floor {floor} was always {item}'s job. {hero} just brought it along."
+366: "Floor {floor} gate's open. {hero}'s {item} did the arguing. Iron argues best."
+367: "Charged {hero} for the {item} and threw in a lecture on which end opens floor {floor}. The lecture was free. This time."
+368: "Floor {floor}'s gate wanted the right {item}, not grit. {hero} had it. Filed the paperwork, closed the account."
+369: [$"{BreakpointClear}/dramatic"]
+370: "Floor {floor} yields to no one — no one without {item}! {hero} knew!"
+371: "It was {item} that broke floor {floor} — and {hero} who dared carry it!"
+372: "Floor {floor} stood unbeaten until {hero} arrived bearing {item}!"
+373: "The wall of floor {floor} met {item}, and it was {hero} holding it high!"
+374: "Floor {floor} yielded at last — {item} the key, {hero} the hand that turned it!"
+375: "None passed floor {floor} until {hero} bore {item} to its gate!"
+376: "The wall of floor {floor} fell to {item}, held high by {hero}!"
+377: "Sing it — {hero} and {item} broke floor {floor}'s ancient seal!"
+378: "What barred floor {floor} for an age gave way to {item} in {hero}'s grip!"
+379: "Behold {item}! By its edge {hero} shattered the threshold of floor {floor}!"
+380: "Floor {floor} stood proud — until {hero} came bearing {item}!"
+381: "The gate of floor {floor} knew {item}, and {hero} strode through!"
+382: "Floor {floor}'s ancient seal — an age unbroken — met {item}, and {hero} pushed. It was, in fairness, a door."
+383: "The gate of floor {floor} yielded to {hero} and {item} with a groan of legend. Or a rusty hinge. History will decide."
+384: "Behold {hero}! Behold {item}! Behold floor {floor}, now merely open, which is somehow the grandest thing of all!"
+385: [$"{BreakpointClear}/wry"]
+386: "{hero} would still be staring at floor {floor} without {item}. We've all said it. Quietly."
+387: "Floor {floor}: impossible. Floor {floor} versus {item}: apparently not. Nice work, {hero}."
+388: "Turns out the trick to floor {floor} was {item} all along. {hero} figured it out first."
+389: "{hero} says skill cleared floor {floor}. The {item} in their hand says otherwise."
+390: "Floor {floor}: impossible. Floor {floor} with {item}: a Tuesday. Nice work, {hero}."
+391: "Turns out the trick to floor {floor} was {item}. {hero} figured it out. Eventually."
+392: "{hero} beat floor {floor}. Well — {item} did. {hero} was present."
+393: "The secret of floor {floor}? {item}. {hero} would like you to think it was talent."
+394: "{hero} plus {item} equals floor {floor} cleared. The {item} carried the equation."
+395: "Floor {floor} was unbeatable until someone tried {item}. {hero} tried {item}."
+396: "Give {hero} floor {floor} and {item} and — look at that — a clear. Coincidence."
+397: "{hero} swears skill cleared floor {floor}. The {item} in hand swears otherwise."
+398: "Floor {floor}: sealed for ages, allegedly. {hero} brought {item}, gave it a shove. Ages, apparently, have a weak spot."
+399: "The secret of floor {floor} was {item} the whole time. {hero} would like a moment of applause for reading instructions."
+400: "{hero} opened floor {floor} with {item} and the smug look of someone who found the right key on the first ring. It was the third."
+401: [$"{BreakpointClear}/omen"]
+402: "Floor {floor} was sealed by more than stone. {item} was the key, {hero} the keyholder."
+403: "The threshold of floor {floor} tested {hero} — and found {item} in the scales."
+404: "No charm opens floor {floor} but the right iron. {hero} carried {item}. It sufficed."
+405: "It was fated: {hero}, {item}, floor {floor}. In that order."
+406: "Floor {floor} opens only for the right iron. {hero} bore {item}. It sufficed."
+407: "The threshold of floor {floor} weighed {hero} and found {item} in the scales."
+408: "It was fated — {hero}, {item}, floor {floor}. The order was never yours to pick."
+409: "No charm unbars floor {floor}, only true steel. {item} was true; {hero} carried it."
+410: "The old miners said floor {floor} wanted a price. {item} paid it, in {hero}'s hand."
+411: "{item} was forged for a door like floor {floor}. {hero} found the door."
+412: "The Mine let {hero} pass floor {floor} — but only bearing {item}. It watches such things."
+413: "Steel and fate met at floor {floor}: {item}, {hero}, and a way through."
+414: "The signs swore floor {floor} would never open. Then {hero} brought {item}. The signs are revising their position."
+415: "I foretold doom at the gate of floor {floor}. {hero}'s {item} foretold a way through. One of us was right, and it wasn't me."
+416: "The portents marked floor {floor} as sealed by fate. {hero} and {item} unsealed it by supper. Fate is looking into it."
+419: [$"{Provisioned}/gruff"]
+420: "{item} kept {hero} on their feet down floor {floor}. That's what it's for."
+421: "{hero} would've quit floor {floor} early without {item} in the pack."
+422: "Smart packing: {hero} took {item} to floor {floor} and came back with the story."
+423: "Floor {floor} grinds you down. {item} kept {hero} grinding back."
+424: "{item} kept {hero} upright deep in floor {floor}. That's what supplies are for."
+425: "Floor {floor} grinds hard. {item} kept {hero} at it."
+426: "{hero} would've turned back early without {item} on floor {floor}. Smart packing."
+427: "No {item}, no {hero} past the middle of floor {floor}. Simple."
+428: "{item} bought {hero} the hours floor {floor} tried to take. Fair."
+429: "{hero} rationed {item} right and outlasted floor {floor}. Good head."
+430: "That {item} earned its space in {hero}'s pack — floor {floor} proved it."
+431: "Floor {floor} wears you down. {item} kept {hero} in the fight."
+432: "Sold {hero} a {item} for floor {floor}. Charged extra for the lecture on holding it right. No refunds on the lecture."
+433: "{item} kept {hero} standing on floor {floor}. The bill for it kept me standing too. Fair's fair."
+434: "Told {hero} to ration the {item} on floor {floor}. Twice. Wrote it on the receipt. They read the receipt after, as usual."
+435: [$"{Provisioned}/dramatic"]
+436: "When floor {floor} pressed hardest, {hero} drank deep of {item} and stood fast!"
+437: "{item}! Remember the name — it held {hero} together on floor {floor}!"
+438: "Spent, bleeding, on floor {floor} — then {item}, and {hero} fought on!"
+439: "Not steel but {item} won that hour — {hero} endured floor {floor} because of it!"
+440: "When floor {floor} pressed hardest, {item} held {hero} together!"
+441: "Spent and reeling on floor {floor}, {hero} drank {item} and rose anew!"
+442: "Not the sword but {item} won that hour — {hero} endured floor {floor} by it!"
+443: "{item}! Remember the name that kept {hero} standing on floor {floor}!"
+444: "Floor {floor} demanded everything, and {item} gave {hero} one hour more!"
+445: "By {item} alone did {hero} outlast the long dark of floor {floor}!"
+446: "The pack saved the hero — {item} carried {hero} through floor {floor}!"
+447: "Sing of humble {item}, without which floor {floor} keeps {hero}!"
+448: "When floor {floor} pressed hardest, {hero} uncorked {item} — a bottle! a mere bottle! — and the tide of legend turned!"
+449: "Sing of the humble {item}! Without it {hero} would have sat down on floor {floor} and had a good long think about quitting!"
+450: "{item}! Drunk in one heroic swallow on floor {floor}! {hero} did not even wince! Well — a small wince. Historic, nonetheless!"
+451: [$"{Provisioned}/wry"]
+452: "{hero}'s finest move on floor {floor}? Uncorking {item}. Tactics."
+453: "Halfway down floor {floor}, {hero}'s best friend was {item}. No offense to the party."
+454: "{item}: because floor {floor} doesn't do mercy, and {hero} knows it."
+455: "Ask {hero} what carried them through floor {floor}. Spoiler: {item}."
+456: "{hero}'s cleverest move on floor {floor}? Uncorking {item}. Pure tactics."
+457: "Halfway down floor {floor}, {hero}'s truest friend was {item}. No offense to the party."
+458: "Ask {hero} what carried them through floor {floor}. The answer is {item}. It's always {item}."
+459: "{item}: because floor {floor} shows no mercy, and {hero} learned that early."
+460: "{hero} would like credit for surviving floor {floor}. {item} would like a word."
+461: "The real hero of floor {floor} was {item}. {hero} was the delivery method."
+462: "Floor {floor} nearly benched {hero}. {item} filed for an extension."
+463: "{hero} calls it endurance. The empty {item} on floor {floor} calls it chemistry."
+464: "{hero} asked if the {item} comes in 'lucky.' It does now, apparently. Floor {floor} can check the paperwork."
+465: "{hero}'s master plan for floor {floor}: drink the {item} before dying, not after. Revolutionary. It worked."
+466: "The {item} did {hero}'s surviving on floor {floor}. {hero} supplied the drinking motion. Teamwork, of a sort."
+467: [$"{Provisioned}/omen"]
+468: "Brewed under a good moon, that {item} — it kept {hero} whole through floor {floor}."
+469: "{hero} sipped {item} on floor {floor} and the shadows kept their distance."
+470: "There's craft in {item} older than the Mine. Floor {floor} felt it; {hero} proved it."
+471: "The draught knew its hour. {item}, floor {floor}, {hero} still breathing. So it was written."
+472: "Brewed under a kind moon, that {item} — it kept {hero} whole through floor {floor}."
+473: "{hero} sipped {item} on floor {floor}, and the shadows drew back."
+474: "There's older craft in {item} than the Mine. Floor {floor} felt it; {hero} proved it."
+475: "The draught knew its hour — {item}, floor {floor}, {hero} still breathing."
+476: "Something in {item} argued with floor {floor}, and bought {hero} time."
+477: "{item} carried a blessing down floor {floor}. {hero} carried {item}."
+478: "The deep leaned on {hero} on floor {floor}. {item} leaned back."
+479: "Mark the flask — {item} kept {hero} for the surface, and floor {floor} let it."
+480: "I foresaw {hero} falling on floor {floor}. Then they drank the {item}. The vision has been amended. Quietly."
+481: "The leaves said {hero} wouldn't last the floor {floor}. The {item} said otherwise. The leaves are consulting other leaves."
+482: "A dark omen hung over {hero} on floor {floor}, and the {item} washed it right off. Some omens don't hold their liquor."
+485: [$"{PotionLifesave}/gruff"]
+486: "Dead, that's what {hero} was on floor {floor} — except {item} said otherwise."
+487: "Count it plain: floor {floor} had {hero} finished, and {item} bought the breath back."
+488: "{item} is the only reason {hero}'s stool isn't empty tonight. Floor {floor} nearly kept them."
+489: "One swallow of {item} between {hero} and a hole on floor {floor}. One."
+490: "Dead, {hero} was, on floor {floor}. {item} said otherwise. Buy more of it."
+491: "One swallow of {item} between {hero} and a grave on floor {floor}. One."
+492: "{item} bought {hero}'s breath back on floor {floor}. Coin well spent."
+493: "Floor {floor} had {hero} finished. {item} finished the argument."
+494: "{hero}'s stool isn't empty tonight. Thank {item}, and floor {floor} for nearly winning."
+495: "No {item}, {hero} stays on floor {floor}. That plain."
+496: "{item} did what stitches couldn't — pulled {hero} off floor {floor}."
+497: "Floor {floor} nearly kept {hero}. {item} had the last word."
+498: "{item} bought {hero}'s breath back on floor {floor}. Added it to the tab. Life's not free; neither's the vial."
+499: "Dead, then not — {hero}, floor {floor}, one {item}. Charged for the vial, not the miracle. Miracles are complimentary."
+500: "{item} pulled {hero} off floor {floor}'s books. I keep better books. Paid in full, no returns on a used cure."
+501: [$"{PotionLifesave}/dramatic"]
+502: "Back from the brink! Floor {floor} had {hero} cold — until {item} lit the blood!"
+503: "Dead on floor {floor}, all but buried — then {item}, and {hero} rose!"
+504: "Let it be told: {item} snatched {hero} from the very jaws of floor {floor}!"
+505: "A heartbeat from the end on floor {floor} — {hero} lives by {item} alone!"
+506: "Back from the abyss! Floor {floor} had {hero} cold — until {item} lit the blood!"
+507: "Dead on floor {floor}, all but shrouded — then {item}, and {hero} rose!"
+508: "Let it be told: {item} snatched {hero} from the jaws of floor {floor}!"
+509: "A single heartbeat from the end on floor {floor} — {hero} lives by {item} alone!"
+510: "Death held {hero} on floor {floor}, and {item} tore them free!"
+511: "The vial flashed, and floor {floor} lost its claim — {hero} lives by {item}!"
+512: "From the very lip of the grave on floor {floor}, {item} called {hero} home!"
+513: "A miracle in a bottle! {item} dragged {hero} back from floor {floor}!"
+514: "A bottle! One small bottle of {item} stood between {hero} and eternity on floor {floor} — and eternity blinked first!"
+515: "Uncork the trumpets! {item} hauled {hero} back from floor {floor} by the collar, and the collar barely wrinkled!"
+516: "Let the ages record it: on floor {floor}, {hero} died for a heartbeat, and {item} said 'not today' in the voice of thunder!"
+517: [$"{PotionLifesave}/wry"]
+518: "{hero} technically died on floor {floor}. {item} filed an objection."
+519: "Floor {floor} was measuring {hero} for a casket. {item} canceled the order."
+520: "To {hero}'s health — which is to say, to {item}. Floor {floor} came that close."
+521: "{hero} calls it a close one. Everyone else calls it {item} doing the work on floor {floor}."
+522: "{hero} technically died on floor {floor}. {item} lodged an objection."
+523: "Floor {floor} was measuring {hero} for a box. {item} canceled the order."
+524: "To {hero}'s health — meaning, to {item}. Floor {floor} came that close."
+525: "{hero} calls it a close one. Everyone else calls it {item}, on floor {floor}."
+526: "Floor {floor} had {hero} on the books as dead. {item} amended the record."
+527: "{hero} owes {item} a life. Floor {floor} owes {hero} nothing, as usual."
+528: "The corpse got up. {item}, floor {floor}, {hero} — in reverse order of dying."
+529: "Floor {floor} nearly closed {hero}'s account. {item} bounced the transaction."
+530: "{hero} died on floor {floor}, briefly, as a formality. {item} handled the appeal. Verdict overturned."
+531: "The {item} did the reviving on floor {floor}; {hero} did the dramatic gasping. Only one of them was strictly necessary."
+532: "Floor {floor} had {hero} down as settled. {item} disputed the charge. {hero} lives to dispute other things."
+533: [$"{PotionLifesave}/omen"]
+534: "{hero}'s thread was cut on floor {floor}, and {item} knotted it back. I felt the snap from here."
+535: "The ferryman reached for {hero} on floor {floor}; {item} paid him to wait."
+536: "Whatever the smith stirred into {item}, it argued with death on floor {floor} — and won {hero} back."
+537: "{hero} walked out of floor {floor} owing everything to {item}. The Mine remembers debts."
+538: "{hero}'s thread was cut on floor {floor}, and {item} knotted it back. I felt the snap."
+539: "The ferryman reached for {hero} on floor {floor}; {item} paid him to wait a while."
+540: "Whatever the smith stirred into {item} argued with death on floor {floor} — and won {hero} back."
+541: "{hero} owes everything to {item} for floor {floor}. The Mine remembers debts."
+542: "Death signed for {hero} on floor {floor}. {item} forged the release."
+543: "The candle relit when {item} touched {hero} on floor {floor}. Mark that."
+544: "{hero} crossed over on floor {floor} and {item} called them back. Such things cost."
+545: "The deep had {hero}'s name on floor {floor}. {item} scratched it out."
+546: "A red vial on floor {floor}, and {hero} breathing yet — the {item} gets the credit the portents wanted. The portents have been asked to cite their sources."
+547: "I called {hero}'s death on floor {floor}. The {item} called my bluff. The bones and I are no longer speaking."
+548: "The omens buried {hero} on floor {floor} a touch early — the {item} dug them right back out. Omens, revised. Again."
+551: [$"{FloorRecordSet}/gruff"]
+552: "{hero} hit floor {floor}. Nobody's been deeper. Yet."
+553: "New mark on the board: {hero}, floor {floor}."
+554: "Floor {floor}. {hero}. Deepest boots in town."
+555: "{hero} went to floor {floor} and came back to talk about it. That's new."
+556: "Deepest boots in town: {hero}, floor {floor}. For now."
+557: "{hero} touched floor {floor} and climbed back. New mark."
+558: "Nobody's gone past floor {floor}. {hero} owns it today."
+559: "Floor {floor}. {hero}. Chalk it on the board."
+560: "{hero} set the depth at floor {floor}. Somebody'll beat it. Not soon."
+561: "New low for the town, high for {hero}: floor {floor}."
+562: "{hero} went to floor {floor} on purpose and lived. That's the record."
+563: "Floor {floor} is the deep mark now. {hero} put it there."
+564: "{hero} hit floor {floor}. Deepest yet. Bought a round, then counted the change. Twice."
+565: "New record: {hero}, floor {floor}. Chalked it on the board. Charged them for the chalk. Fair's fair."
+566: "{hero} reached floor {floor}, deepest in town. I'll want that in writing, signed, before I believe the boasting."
+567: [$"{FloorRecordSet}/dramatic"]
+568: "Deeper than any before — {hero} has touched floor {floor}!"
+569: "History! {hero} stands alone at floor {floor}!"
+570: "Chalk it high: floor {floor} belongs to {hero} now!"
+571: "The record falls! {hero} has seen floor {floor} and returned!"
+572: "Deeper than any soul before — {hero} has walked floor {floor}!"
+573: "History carved in stone: {hero} stands alone at floor {floor}!"
+574: "The record shatters! {hero} has seen floor {floor} and come back!"
+575: "Chalk it to the rafters — floor {floor} belongs to {hero}!"
+576: "No boots ever pressed floor {floor} till {hero}'s! Sing it!"
+577: "The town has a new legend, and its name is {hero} — floor {floor}!"
+578: "Behold the deep-walker! {hero} has dared floor {floor}!"
+579: "Let it echo up every shaft — {hero} reached floor {floor}!"
+580: "{hero} has touched floor {floor}, deeper than any boot before — a feat! a legend! a very long way down some stairs!"
+581: "History trembles: {hero} stands upon floor {floor}! Chalk it to the rafters, then dust the rafters, for they are filthy!"
+582: "Deeper than mortal record — {hero}, floor {floor}! Bards will sing it, once someone teaches the bards the number!"
+583: [$"{FloorRecordSet}/wry"]
+584: "{hero} went to floor {floor} on purpose. Takes all kinds."
+585: "Floor {floor}: previously theoretical. {hero} disagrees."
+586: "New record — {hero}, floor {floor}. The old record is in mourning."
+587: "{hero} says floor {floor} is lovely this time of year. Nobody can check."
+588: "{hero} chose to visit floor {floor}. Takes all kinds."
+589: "Floor {floor}: once theoretical. {hero} begs to differ."
+590: "New record — {hero}, floor {floor}. The old one's in mourning."
+591: "{hero} reports floor {floor} is lovely this time of year. Nobody can check."
+592: "Congratulations to {hero} for finding a deeper way to nearly die: floor {floor}."
+593: "{hero} reached floor {floor}. The prize is bragging rights and a limp."
+594: "Floor {floor}, apparently. {hero} volunteered. We didn't ask."
+595: "{hero} set foot on floor {floor} so you don't have to. Considerate."
+596: "{hero} went to floor {floor} on purpose, which raises more questions about {hero} than about floor {floor}."
+597: "New record — {hero}, floor {floor}. The prize is bragging rights, a limp, and the deep respect of no one who values sense."
+598: "Floor {floor}. {hero} volunteered. Deepest in town, and the least surprised to end up down a hole."
+599: [$"{FloorRecordSet}/omen"]
+600: "{hero} walked floor {floor} and the Mine let them. Ask why."
+601: "Floor {floor} showed itself to {hero}. Depths don't open for free."
+602: "The deep has taken a liking to {hero} — floor {floor}, and still breathing."
+603: "Mark the day {hero} reached floor {floor}. The Mine marks it too."
+604: "{hero} walked floor {floor} and the Mine allowed it. Ask why."
+605: "Floor {floor} showed its face to {hero}. Depths don't open for nothing."
+606: "The deep took a liking to {hero} — floor {floor}, and still breathing."
+607: "Note the day {hero} reached floor {floor}. The Mine noted it too."
+608: "{hero} saw floor {floor} and came back changed. They always do."
+609: "The dark parted for {hero} at floor {floor}. Debts follow such gifts."
+610: "Floor {floor} let {hero} look upon it. That is not always a mercy."
+611: "The veins whispered when {hero} touched floor {floor}. Keep salt near."
+612: "The signs promised {hero} would turn back at floor {floor}. {hero} kept walking. The signs are updating their forecast."
+613: "I read ruin for {hero} at floor {floor}. Instead: a record. The dregs owe me an explanation and a fresh cup."
+614: "The portents marked floor {floor} as {hero}'s limit. {hero} marked it as a start. We do not always agree, the portents and I."
+617: [$"{RecruitArrived}/gruff"]
+618: "New face: {hero}. Give it a week."
+619: "{hero} signed on. Hope they can dig."
+620: "Another pair of boots — {hero}. The Mine will weigh them."
+621: "{hero}'s in town looking for work. Work's downstairs."
+622: "{hero} signed the book. We'll see if the Mine agrees."
+623: "Another pair of hands — {hero}. Hope they hold a pick."
+624: "{hero}'s here for work. Work's downstairs, in the dark."
+625: "Fresh boots: {hero}. The floors will test the leather."
+626: "{hero} turned up looking for coin. There's coin, and there's the Mine."
+627: "Name's {hero}. Ask again in a month if they're still standing."
+628: "{hero} joined on. Green as spring ore. The deep will temper them."
+629: "New blood, {hero}. Everybody's new until the first floor."
+630: "New face: {hero}. Signed the book, paid the tab up front. I like them already. Give it a week."
+631: "{hero} signed on. Handed them the rules, the pick, and the bill for the pick. Welcome to the trade."
+632: "{hero} turned up for work. Told them the terms twice. They nodded once. We'll see."
+633: [$"{RecruitArrived}/dramatic"]
+634: "A new soul steps into the tale — welcome, {hero}!"
+635: "{hero} has come! Fortune or funeral, we shall see!"
+636: "Make room at the fire — {hero} joins the company!"
+637: "Destiny walks in wearing new boots — {hero} has arrived!"
+638: "A new soul steps into the tale — hail, {hero}!"
+639: "The company grows — {hero} has come to seek glory or a grave!"
+640: "Make room at the fire — {hero} joins the roster!"
+641: "Fate walks in on new boots — {hero} has arrived!"
+642: "Herald it! {hero} takes up the miner's lot this day!"
+643: "The Mine has a new challenger, and {hero} is the name!"
+644: "Rise and welcome {hero} — may the deep be kind, though it rarely is!"
+645: "A hero unproven enters — {hero}, and the tale turns a page!"
+646: "{hero} has ARRIVED! The door has been informed. It remains a door, but a prouder one."
+647: "A new soul strides into legend — {hero}! The tavern stool has never held such promise, nor such an ordinary cloak!"
+648: "Herald {hero}, come at last! Trumpets would be fitting. We have a spoon and a tankard. They shall have to do!"
+649: [$"{RecruitArrived}/wry"]
+650: "{hero} just arrived and already looks braver than the last one. Low bar."
+651: "Fresh meat — sorry, fresh talent: {hero}."
+652: "{hero} came for work and glory. We're mostly out of the second."
+653: "Everyone say hello to {hero}. Don't get attached."
+654: "Everybody wave at {hero}. Try not to learn the name too well."
+655: "{hero}'s here. Fresh optimism, factory-sealed. The Mine opens it fast."
+656: "New recruit: {hero}. The odds on the first floor are not generous."
+657: "{hero} came for work and glory. We're fully stocked on the first one."
+658: "Meet {hero}, who has clearly not talked to the last recruit. There isn't one."
+659: "{hero} signed up eager. We'll fix that."
+660: "Welcome {hero}. The tavern takes bets; the Mine takes recruits."
+661: "{hero} arrived with all their limbs. Enjoy the set, {hero}."
+662: "Everyone say hello to {hero}, fresh optimism factory-sealed. The Mine does love opening a new one."
+663: "{hero} arrived with all their limbs and most of their illusions. We'll take good care of neither."
+664: "New recruit: {hero}. Came for work and glory. We've plenty of the former and a rumor of the latter."
+665: [$"{RecruitArrived}/omen"]
+666: "{hero} blew in with the cold wind. The cards say: interesting."
+667: "A stranger named {hero}. The Mine already knows the name."
+668: "I dreamt of a new face, and here stands {hero}. Keep the salt handy."
+669: "{hero} arrived at dusk. Dusk arrivals always matter."
+670: "{hero} arrived under a thin moon. Thin moons keep their secrets."
+671: "The dust stirred when {hero} crossed the threshold. It noticed."
+672: "I dreamt a new face three nights running. Here stands {hero}."
+673: "{hero} comes at the turning of the season. Such arrivals mean something."
+674: "The crows counted {hero} in. They keep an honest tally."
+675: "A name for the deep to learn: {hero}. It learns them all in time."
+676: "{hero} walked in from the dark. Remember which way they came."
+677: "The coals leaned toward {hero}. The fire has opinions. Heed them."
+678: "The signs foretold {hero}'s coming. The signs also foretold a rain of frogs. One out of two. Again."
+679: "I dreamt a great omen the night before {hero} came. Then I dreamt of breakfast. {hero} is, at least, real."
+680: "The crows announced {hero} at dawn. The crows announce most things. Still — welcome, {hero}, on their authority."
+683: [$"{VenueGraduated}/gruff"]
+684: "{hero} outgrew the ground they started on. Deeper dark waits now."
+685: "{hero} doesn't need the shallow dark anymore. Onward."
+686: "Word is {hero} cleared the bottom floor clean. No going back to the easy stuff."
+687: "{hero} put the old grounds behind them. Good. Standing still gets you buried."
+688: [$"{VenueGraduated}/dramatic"]
+689: "Behold! {hero} has conquered the depths and stands ready for darker ground!"
+690: "The old dungeon holds no more terror for {hero} — a deeper one awaits!"
+691: "{hero} has broken through! The way forward opens, and it opens wider!"
+692: "Sing of {hero}, who left the shallow dark behind and marches toward the deep!"
+693: [$"{VenueGraduated}/wry"]
+694: "{hero} graduated. There's no ceremony, just a longer walk into worse things."
+695: "Turns out {hero} finished the easy dungeon. There's a harder one now. Congratulations, I guess."
+696: "{hero} cleared the bottom floor. The reward for surviving one dark hole is a deeper one."
+697: "{hero} outgrew the old grounds. Growth, it turns out, means more dying, just later."
+698: [$"{VenueGraduated}/omen"]
+699: "The old dark released {hero} — a deeper one already knows the name."
+700: "{hero} crossed a threshold the mine doesn't give back easily. The deep dark noticed."
+701: "The bottom floor let {hero} pass. Something further down is already waiting."
+702: "{hero}'s shadow grew long enough to reach the next dark. It always does, eventually."
+705: [$"{CounterSalePinned}/gruff"]
+706: "{hero} named {price}g for {item} and didn't blink. Good read."
+707: "Priced {item} at {price}g. {hero} paid it on the spot — knew the mark."
+708: "{hero} took {item} at {price}g like it was already theirs. That's a read, not luck."
+709: "{price}g for {item}, and {hero} nodded before I finished the sentence. Good ears."
+710: [$"{CounterSalePinned}/dramatic"]
+711: "Named the price — {price}g! — and {hero} paid it without a flinch! {item}, sold true!"
+712: "A perfect read! {hero} handed over {price}g for {item} like fate itself set the number!"
+713: "The smith named {price}g, and {hero}'s coin was already on the counter for {item}!"
+714: "Behold the read of the age! {price}g for {item}, and {hero} agreed before the echo died!"
+715: [$"{CounterSalePinned}/wry"]
+716: "Named {price}g for {item}. {hero} paid it like they'd been waiting to. Unnerving, honestly."
+717: "{hero} handed over {price}g for {item} without the usual theater. Somebody read the room."
+718: "Priced {item} at {price}g. {hero} agreed instantly. I'm choosing to take the compliment."
+719: "{price}g, {item}, {hero} — no haggling, no drama. Suspicious how well that went."
+720: [$"{CounterSalePinned}/omen"]
+721: "The price came to {price}g before {hero} even reached for {item}. The numbers already knew."
+722: "{item} for {price}g — {hero} paid without a word. The scales were already balanced."
+723: "I named {price}g and the dregs had already shown it. {hero} took {item} same as foretold."
+724: "The coin and the want met at {price}g. {hero}, {item} — written before it was spoken."
+727: [$"{CounterSaleFleeced}/gruff"]
+728: "Charged {hero} {price}g for {item}. Steep. They paid anyway."
+729: "{item} went for {price}g. {hero} didn't argue hard enough. Their loss, my ledger."
+730: "Named {price}g for {item} and {hero} just paid it. Won't be doing that again, they said. We'll see."
+731: "{price}g for {item} — more than it's worth, and {hero} handed it over anyway."
+732: [$"{CounterSaleFleeced}/dramatic"]
+733: "{price}g! For {item}! And {hero} paid every coin without a word of protest — the town is TALKING!"
+734: "Robbery, some are calling it — {hero} paid {price}g for {item}, and the smith is not complaining!"
+735: "{item} sold for {price}g — a king's price — and {hero} never once said no!"
+736: "The gasps could be heard three streets over: {price}g for {item}, and {hero} simply paid it!"
+737: [$"{CounterSaleFleeced}/wry"]
+738: "{hero} paid {price}g for {item}. Nobody made them. That's the part that stings."
+739: "{price}g for {item}. {hero} agreed so fast I almost felt bad. Almost."
+740: "Sold {item} to {hero} for {price}g. They'll figure out the math eventually. Maybe."
+741: "{hero} paid {price}g for {item} without checking the going rate. Bless their confidence."
+742: [$"{CounterSaleFleeced}/omen"]
+743: "{hero} paid {price}g for {item} and the crows went quiet. Even they were surprised."
+744: "The price read {price}g for {item}, and {hero} paid it whole. The omens noted the number."
+745: "{item} changed hands for {price}g — {hero}'s coin, no argument. The ledger remembers such things."
+746: "I foresaw {hero} haggling hard. Instead: {price}g for {item}, paid flat. The bones were wrong, again."
+749: [$"{CounterSaleFairDeal}/gruff"]
+750: "{item} sold to {hero} for {price}g. Fair trade, nothing to write home about."
+751: "{price}g for {item}. {hero} paid, I stocked. Business as usual."
+752: "Closed {item} at {price}g with {hero}. Square deal, both ways."
+753: "{hero} took {item} for {price}g. Honest price, honest sale."
+754: [$"{CounterSaleFairDeal}/dramatic"]
+755: "A deal struck true! {hero} paid {price}g for {item}, and both sides walked away content!"
+756: "{item} changed hands for {price}g — {hero} paying fair, the smith asking fair. Rare harmony!"
+757: "Behold an honest bargain! {price}g for {item}, and {hero} shook on it without complaint!"
+758: "{hero} and the smith met in the middle — {price}g for {item}, and neither side sang a dirge!"
+759: [$"{CounterSaleFairDeal}/wry"]
+760: "{hero} paid {price}g for {item}. Nobody got robbed. Slow news day."
+761: "{item} sold for {price}g. {hero} didn't overpay, didn't underpay. Riveting stuff."
+762: "A plain sale: {price}g, {item}, {hero}. Write it down before it becomes interesting by accident."
+763: "{hero} paid {price}g for {item} and everyone went home satisfied. Suspicious how boring that is."
+764: [$"{CounterSaleFairDeal}/omen"]
+765: "{price}g passed for {item}, and {hero} left balanced. The scales approve, for once."
+766: "{item}, {price}g, {hero} — the numbers agreed with each other. No omen needed here."
+767: "A quiet exchange: {hero} paid {price}g for {item}. Even the dregs had nothing to add."
+768: "The coin met the want at a fair {price}g. {hero} and {item}, no debt either way."
+771: [$"{CommissionFulfilled}/gruff"]
+772: "{hero} wanted {item} by the day. Got it. Paid {premium}g over list and said nothing more."
+773: "Word kept: {item} into {hero}'s hands, on time, {premium}g premium. That's the job."
+774: "{item}'s with {hero}, deadline and all. {premium}g over list — earned, not asked for."
+775: "{hero} put in for {item} and it was there when promised. {premium}g extra. Smith doesn't miss those."
+776: [$"{CommissionFulfilled}/dramatic"]
+777: "The deadline loomed — and {item} reached {hero} in time! {premium}g over list, gladly paid!"
+778: "A promise kept! {hero} commissioned {item} and the forge DELIVERED — {premium}g premium, not one coin grudged!"
+779: "{hero} named the day, and on that day {item} was waiting! {premium}g over list for a word held true!"
+780: "Sound it out: {item}, finished, into {hero}'s hands before the deadline — and {premium}g over list besides!"
+781: [$"{CommissionFulfilled}/wry"]
+782: "{hero} ordered {item} and it actually arrived on time. {premium}g over list. Nobody fainted."
+783: "Commissioned work, delivered by the deadline: {item} to {hero}, {premium}g premium. Novel concept."
+784: "{item} reached {hero} exactly when promised. {premium}g over list. I'd call it a miracle, but it's just competence."
+785: "{hero} paid {premium}g over list for {item} and got it on the agreed day. Reliability. Very avant-garde."
+786: [$"{CommissionFulfilled}/omen"]
+787: "{hero} named a day and the day held — {item}, {premium}g over list, the bargain sealed clean."
+788: "The forge answered {hero}'s asking on time: {item}, {premium}g above list. Such debts settle well."
+789: "{item} went to {hero} as promised, {premium}g over list. A word kept binds tighter than iron."
+790: "A deadline came and went with {item} already in {hero}'s hands — {premium}g over list, and no ill omen in it."
+794: [$"{CommissionExpired}/gruff"]
+795: "{hero}'s {slot} order ran out of days. They go down with that {slot} empty."
+796: "Deadline passed on {hero}'s {slot} work. Nothing came of it; the {slot} is still bare."
+797: "{hero} asked for a {slot} by a date. The date's gone and the {slot} is still nothing."
+798: "No {slot} for {hero} — the commission aged out. They'll make do, same as everyone."
+799: [$"{CommissionExpired}/dramatic"]
+800: "The deadline fell, and {hero}'s {slot} was never forged! They walk down with that {slot} empty!"
+801: "A commission expired in the night — {hero} wanted a {slot}, and a {slot} there is not!"
+802: "{hero}'s order for a {slot} has run out of days! The Mine will not wait for a second asking!"
+803: "Gone, the day {hero} set for a {slot}! They go to the dark with the {slot} unfilled!"
+804: [$"{CommissionExpired}/wry"]
+805: "{hero}'s {slot} commission expired. They're going down with the {slot} empty, which is a kind of answer."
+806: "Someone asked for a {slot}. That someone was {hero}. There is no {slot}. The story ends there."
+807: "{hero}'s {slot} order timed out. The {slot} stays theoretical, and so does the premium."
+808: "The {slot} {hero} wanted didn't happen. The deadline was very clear about it. So is the empty slot."
+809: [$"{CommissionExpired}/omen"]
+810: "{hero}'s asking for a {slot} outlived its day. Empty slots have a way of being noticed down there."
+811: "The date for {hero}'s {slot} passed unanswered. The dark counts what a hero carries, and what they don't."
+812: "No {slot} came for {hero} before the day turned. What goes unfilled stays unfilled a while."
+813: "{hero} wanted a {slot} by a certain day; the day came alone. The Mine reads gaps well enough."
+817: [$"{HeirloomReforged}/gruff"]
+818: "{item} came off the anvil today, {lineage}. Steel outlasts the hand that held it."
+819: "New name on old steel: {item}, {lineage}. Nothing good gets buried in this town."
+820: "{item}, {lineage} — same metal, second life. That's how it ought to go."
+821: "They beat grief into {item}, {lineage}. Works better than mourning does."
+822: [$"{HeirloomReforged}/dramatic"]
+823: "Behold {item}, {lineage} — the dead do not stay buried here, they are REFORGED!"
+824: "{item} rises, {lineage}! What the Mine took, the forge has handed back under a new name!"
+825: "A second life hammered out of a first! {item}, {lineage}, and the line unbroken!"
+826: "Look upon {item}, {lineage} — grief, beaten into something with an edge!"
+827: [$"{HeirloomReforged}/wry"]
+828: "{item} exists now, {lineage}. Recycling, but with feelings."
+829: "{item}, {lineage}. The dead don't get to rest around here; they get repurposed. Touching."
+830: "Somebody reforged {item}, {lineage}. Sentiment with a blade on it. Efficient."
+831: "{item} turned up on the rack, {lineage}. Inheritance, the hard way."
+832: [$"{HeirloomReforged}/omen"]
+833: "{item} carries more than metal, {lineage}. Such things remember their first hand."
+834: "{item}, {lineage} — the old owner isn't gone from it, whatever the grave says."
+835: "There's a name inside {item}, {lineage}. Names like that walk back down eventually."
+836: "The forge gave up {item}, {lineage}. The dead lend their luck to steel, sometimes."
+841: [HeroDied] = "Raise a cup for {hero} — {cause} on floor {floor}. The Mine keeps what it takes."
+842: [KillingBlow] = "They say {hero}'s {item} did the deed down on floor {floor}."
+843: [LethalSave] = "{hero} walked out of floor {floor} alive thanks to {item}, folk say."
+844: [BreakpointClear] = "No {item}, no floor {floor} — ask {hero}."
+845: [FloorRecordSet] = "{hero} has gone deeper than ever before — floor {floor}!"
+846: [RecruitArrived] = "Fresh blood in town: {hero}, looking for work and glory."
+848: [Provisioned] = "{item} kept {hero} fighting down on floor {floor}, they say."
+849: [PotionLifesave] = "{item} saved {hero}'s life on floor {floor} — plain as that."
+851: [VenueGraduated] = "{hero} has proven themselves — a harder dark waits now."
+853: [CounterSalePinned] = "{hero} named {price}g for {item} and paid it straight — a good read."
+854: [CounterSaleFleeced] = "{hero} paid {price}g for {item}, well past a fair price, and didn't argue."
+855: [CounterSaleFairDeal] = "{hero} paid {price}g for {item}. An honest sale, plain as that."
+857: [CommissionFulfilled] = "{hero} got {item} on the day they asked for it — {premium}g over list, and the word kept."
+858: [CommissionExpired] = "{hero}'s commission for a {slot} ran out of days; the {slot} is still empty."
+859: [HeirloomReforged] = "{item} came off the anvil, {lineage} — the dead still hold an edge."
 ```
 
 ### A.2 LedgerPack — sim/GameSim/Flavor/Packs/LedgerPack.cs (evening fate lines)
@@ -1671,165 +1835,165 @@ Mechanical extraction at `28fd0452` (format: `line: "template"`; `[$"{key}/voice
 197: [Died] = "{hero}: DIED on floor {floor}"
 ```
 
-### A.3 FactionPack — sim/GameSim/Flavor/Packs/FactionPack.cs (standing-shift gossip; every `cooled` line carries the L1 lie)
+### A.3 FactionPack — sim/GameSim/Flavor/Packs/FactionPack.cs (standing-shift gossip)
 
 ```
-61: [Favored] = ["faction", "direction"],
-62: [Cooled] = ["faction", "direction"],
-70: [$"{Favored}/gruff"]
-71: "The {faction} {direction} to your custom. Cheaper ore while it lasts. Don't waste it."
-72: "The {faction} have {direction} to your shop — the ore comes down a coin. That's the trade."
-73: "Steady buying, and the {faction} {direction}. Picks and ingots ease off."
-74: "The {faction} {direction} toward your account. Ore's cheaper this season."
-75: "The {faction} {direction} to your coin. Ore's cheaper. Use it."
-76: "Word's out — the {faction} {direction} to your shop. Prices ease."
-77: "The {faction} {direction}. Buy while the ore runs kind."
-78: "Steady custom pays: the {faction} {direction}, the picks come down."
-79: "The {faction} {direction} toward you. Cheaper iron, plain and simple."
-80: "The {faction} {direction} on your account. Don't let it lapse this time."
-81: "Guild's warm — the {faction} {direction}, and ore's off a coin."
-82: "The {faction} {direction} to your custom. That's a discount, not a favor."
-83: "The {faction} {direction} to your custom. Filed the discount under 'earned.' Ore's down a coin. Don't make me refile it."
-84: "The {faction} {direction}. Stamped, sealed, cheaper ore approved. Keep buying and the stamp stays wet."
-85: "Permit's stamped clean — the {faction} {direction}. Ore's down a coin. Keep the receipt."
-86: "The {faction} {direction}. Signed, filed, cheaper ore. Don't make me chase the form twice."
-87: "The {faction} {direction}. Salt on the sill, the old hands say. The cheaper ore's real enough."
-88: "They don't warm on a Thirdday, but the {faction} {direction} today. Ore's off a coin. Take it."
-89: [$"{Favored}/dramatic"]
-90: "Rejoice! The {faction} have {direction} to your forge — the ore flows cheap!"
-91: "The great {faction} {direction} at last, and the price of iron bows before you!"
-92: "Sing it through the town: the {faction} {direction}, and every pick comes kinder!"
-93: "Behold — the {faction} {direction} to you, and the ledger sings a sweeter tune!"
-94: "Glad tidings! The {faction} {direction}, and iron bows to your purse!"
-95: "Sound the horns — the {faction} {direction}, and the ore runs gentle!"
-96: "The {faction} {direction} to your name, and the ledger sings sweet!"
-97: "Behold the guild's grace — the {faction} {direction}, ore cheap as spring water!"
-98: "A golden season! The {faction} {direction}, and the forge drinks cheap iron!"
-99: "The mighty {faction} {direction} toward you — let the anvils ring in thanks!"
-100: "Fortune smiles: the {faction} {direction}, and every ingot costs you less!"
-101: "The {faction} {direction} to your shop — sing it down every street!"
-102: "Rejoice — the {faction} {direction}! A whole coin off the ore! Kingdoms have risen on less, or nearly!"
-103: "The great {faction} {direction} to your name, and the price of iron bows — bows! — by an entire copper!"
-104: "Let the great seal descend — the {faction} {direction}, and the discount is entered by decree!"
-105: "By stamp and by signature, the {faction} {direction}! A single copper struck from the ore — history will note it!"
-106: "The tides of fortune turn! The {faction} {direction}, and the ore runs cheap as a blessed morning!"
-107: "Read the omens and rejoice — the {faction} {direction}, and every ingot bows a copper lower!"
-108: [$"{Favored}/wry"]
-109: "The {faction} {direction} to you. Miracles happen; so do discounts."
-110: "Turns out the {faction} {direction} — apparently coin buys affection. Who knew."
-111: "The {faction} {direction} to your shop. Enjoy the cheaper ore before they remember themselves."
-112: "The mighty {faction} {direction}. The ore's cheaper; try to look surprised."
-113: "The {faction} {direction} toward you. Turns out coin is very persuasive."
-114: "Apparently the {faction} {direction}. Enjoy it before they check the mood again."
-115: "The {faction} {direction} to your shop. Warmth you can measure in coppers off the ore."
-116: "The {faction} {direction}. Cheaper ore, no strings — well, the usual strings."
-117: "The great {faction} {direction} to you. Try to accept the affection gracefully."
-118: "The {faction} {direction}. The ore's down a coin; act like you expected it."
-119: "So the {faction} {direction} at last. Coin buys love. Noted for the ledger."
-120: "The {faction} {direction} toward your account. Sentiment, priced per ingot."
-121: "The {faction} {direction} to you. Somewhere a clerk stamped 'friend' and sighed. Ore's cheaper; don't thank the clerk."
-122: "Apparently the {faction} {direction}. There's a form for affection now, filed in triplicate. The ore's down a coin regardless."
-123: "The {faction} {direction}. Goodwill, stamped and countersigned, cheaper ore attached. The clerk looked almost moved."
-124: "Apparently the {faction} {direction} — there's a permit for it now. The discount's real; the permit, less so."
-125: "The {faction} {direction}. The signs foretold it, or the coin did. The ore's cheaper either way."
-126: "They swear they never warm on a Thirdday. The {faction} {direction} regardless. Cheaper ore, no explanation offered."
-127: [$"{Favored}/omen"]
-128: "The {faction} {direction} to you — the coals burned blue last night. The deep favors your coin."
-129: "I read it in the ore-dust: the {faction} {direction}. Kinder prices ride a kind wind."
-130: "The {faction} {direction}. Mark it — the mountain remembers who feeds its guild."
-131: "When the {faction} {direction}, the old miners say the veins run richer. Cheaper ore, and an omen."
-132: "The {faction} {direction}. The ore-dust settled kindly. Read it as you like."
-133: "Kinder prices ride a kind wind: the {faction} {direction} toward you."
-134: "The {faction} {direction}. The mountain feeds those who feed its guild."
-135: "The {faction} {direction} to your name. The deep marks a friend when it sees one."
-136: "The candles stood tall at the assay — the {faction} {direction} to you."
-137: "The {faction} {direction}. Cheaper ore, and an omen worth keeping."
-138: "The veins warmed the day the {faction} {direction}. Such signs hold, a while."
-139: "The {faction} {direction} to you. Salt the sill in thanks — cheap ore is a gift."
-140: "I foretold the {faction} would sour. Instead they {direction}, and the ore came cheap. The omens have filed a correction."
-141: "The signs said dear iron. The {faction} {direction} and made them liars. Cheaper ore, and a portent eating its words."
-142: "The tide came in kind, and the {faction} {direction}. Cheaper ore rides a turning tide — mark it."
-143: "Salt held its shape at the door — a friend's sign. The {faction} {direction}, and the ore comes gentle."
-144: "The signs promised a delay and a levy. Instead the {faction} {direction}, ore cheap in hand. The omens filed no apology."
-145: "I read dear iron in the dust. The {faction} {direction} and made it a lie — cheaper ore, and a portent left red-faced."
-148: [$"{Cooled}/gruff"]
-149: "The {faction} {direction} on you. Ore costs more now. Should've kept trading."
-150: "The {faction} have {direction} — neglect does that. The picks come dearer."
-151: "Word is the {faction} {direction} toward your shop. Prices climb. That's the trade."
-152: "The {faction} {direction}. Stop buying, they stop caring. Ore's up a coin."
-153: "The {faction} {direction} toward your shop. Dearer iron now. That's neglect."
-154: "Word is the {faction} {direction}. Prices climb. Nobody's fault but the empty ledger."
-155: "The {faction} {direction} on your account. Pay more or mend it. Your call."
-156: "The {faction} {direction}. The picks bite deeper now. Simple arithmetic."
-157: "Guild's cold — the {faction} {direction}, and the ore knows it."
-158: "The {faction} {direction} toward you. Dearer ore, colder welcome."
-159: "The {faction} {direction}. Should've fed the guild. Now it feeds on you."
-160: "The {faction} {direction} on your custom. Costs more to make good than to keep good."
-161: "The {faction} {direction} on you. Reclassified your account 'neglectful.' Ore's up a coin. Appeals go in the usual bin."
-162: "The {faction} {direction}. Marked the file 'lapsed,' dearer ore attached. Mend it or pay the surcharge. Your ledger."
-163: "Permit expired — the {faction} {direction}. Ore's up a coin. Renew it or pay the difference."
-164: "The {faction} {direction}. Marked 'overdue,' dearer ore attached. Should've filed on time."
-165: "The {faction} {direction}. Salt spilled toward the door, the old hands say. Dearer ore, and no arguing it."
-166: "They don't forgive on a Thirdday, they say — and the {faction} {direction}. Dearer ore. Mend it on a kinder one."
-167: [$"{Cooled}/dramatic"]
-168: "Alas! The {faction} have {direction} toward your forge — the ore turns dear!"
-169: "The {faction} {direction}, and the price of iron rises like a tide against you!"
-170: "Hear it and grieve: the {faction} {direction}, and every pick bites deeper into the purse!"
-171: "The great {faction} {direction} — cold shoulders, and colder prices!"
-172: "Woe! The {faction} {direction}, and iron's price rises against you!"
-173: "Grieve, tavern! The {faction} {direction}, and every ingot bites deeper!"
-174: "The great {faction} {direction} from you, and the forge pays the toll!"
-175: "Dark tidings — the {faction} {direction}, and the ore turns against your purse!"
-176: "The {faction} {direction}, and a chill settles on every price you pay!"
-177: "Hear and lament: the {faction} {direction}, the iron dear as gold!"
-178: "The {faction} {direction} toward you — the anvils ring a poorer tune!"
-179: "A bitter season! The {faction} {direction}, and the ledger weeps coin!"
-180: "Alas, the {faction} {direction}! The ore climbs a whole coin — a catastrophe measured in coppers, but felt in the soul!"
-181: "The great {faction} {direction} from you, and iron's price rises like a tide — a very small tide, but a cold one!"
-182: "By stamp and by grievance, the {faction} {direction}! A copper added to the ore — a small toll, grandly resented!"
-183: "The great seal turns its face away — the {faction} {direction}, and the ore climbs by decree!"
-184: "The tides of fortune ebb! The {faction} {direction}, and the ore turns dear as a cursed morning!"
-185: "Read the omens and grieve — the {faction} {direction}, and every ingot bites a copper deeper!"
-186: [$"{Cooled}/wry"]
-187: "The {faction} {direction} on you. Turns out they hold grudges and invoices."
-188: "The {faction} {direction} — nothing personal, just pricier ore. Somewhat personal."
-189: "The {faction} {direction} toward your shop. Absence makes the ore grow costlier."
-190: "The {faction} {direction}. The dearer prices are, I'm told, a coincidence."
-191: "The {faction} {direction} toward you. Nothing personal — well, the prices are."
-192: "The {faction} {direction}. Absence makes the ore grow costlier, apparently."
-193: "So the {faction} {direction}. Who knew loyalty was itemized."
-194: "The {faction} {direction} on your shop. The dearer ore is 'a coincidence.'"
-195: "The {faction} {direction}. You forgot them; they remembered, with a surcharge."
-196: "The {faction} {direction} toward you. Cold guild, warm invoice."
-197: "The {faction} {direction}. They're not upset. The prices are just expressing themselves."
-198: "The great {faction} {direction} on you. Grudges, now available by the ingot."
-199: "The {faction} {direction} on you. There's a form for grudges; they filled it out neatly. Dearer ore, itemized."
-200: "So the {faction} {direction}. Nothing personal — the surcharge, however, is extremely personal. Ore's up a coin."
-201: "The {faction} {direction}. Grievance filed in triplicate, dearer ore attached. The clerk seemed to enjoy it."
-202: "Apparently the {faction} {direction} — there's a form for disappointment now. Dearer ore, neatly itemized."
-203: "The {faction} {direction}. The signs warned of it, or the empty ledger did. Dearer ore either way."
-204: "They never cool on a Thirdday, they claim. The {faction} {direction} regardless. Costlier ore, no apology."
-205: [$"{Cooled}/omen"]
-206: "The {faction} {direction} toward you — the candles guttered at the assay. Dearer ore, darker signs."
-207: "I saw it in the slag: the {faction} {direction}. The veins turn their faces away."
-208: "The {faction} {direction}. The mountain keeps its grudges; the price remembers too."
-209: "When the {faction} {direction}, salt the threshold — cold guild, cold trade, costlier iron."
-210: "The {faction} {direction}. The slag showed it plain. Dearer ore, darker signs."
-211: "The veins turn their faces away: the {faction} {direction} from you."
-212: "The {faction} {direction} on your name. Salt the threshold; cold trade follows."
-213: "When the {faction} {direction}, the old ones say the ore sours. It has."
-214: "The {faction} {direction}. The coals leaned away from your account tonight."
-215: "The {faction} {direction} toward you. Costlier iron, and the deep's cold shoulder."
-216: "The {faction} {direction}. The mountain feeds a colder table now. Yours."
-217: "The {faction} {direction} from you. Dearer ore is how the deep says it's watching."
-218: "I swore the {faction} would hold. They {direction} instead, and the ore turned dear. My portents are in disgrace."
-219: "The signs promised warm trade. The {faction} {direction}, dearer iron in hand. Even the omens are asking for a refund."
-220: "The tide went out cold, and the {faction} {direction}. Dearer ore rides an ebbing tide — read it plain."
-221: "Salt spilled toward the sill — an ill sign. The {faction} {direction}, and the ore turns dear."
-222: "The signs promised a warm season. The {faction} {direction} instead, ore dear in hand. The omens keep no receipts."
-223: "I read cheap iron in the coals. The {faction} {direction} and made it a lie — dearer ore, and a portent hiding its face."
-227: [Favored] = "The {faction} have {direction} to your custom — cheaper ore, folk say."
-228: [Cooled] = "The {faction} have {direction} toward your shop — dearer ore, folk say."
+67: [Favored] = ["faction", "direction"],
+68: [Cooled] = ["faction", "direction"],
+76: [$"{Favored}/gruff"]
+77: "The {faction} {direction} to your custom. Cheaper ore while it lasts. Don't waste it."
+78: "The {faction} have {direction} to your shop — the ore comes down a coin. That's the trade."
+79: "Steady buying, and the {faction} {direction}. Picks and ingots ease off."
+80: "The {faction} {direction} toward your account. Ore's cheaper this season."
+81: "The {faction} {direction} to your coin. Ore's cheaper. Use it."
+82: "Word's out — the {faction} {direction} to your shop. Prices ease."
+83: "The {faction} {direction}. Buy while the ore runs kind."
+84: "Steady custom pays: the {faction} {direction}, the picks come down."
+85: "The {faction} {direction} toward you. Cheaper iron, plain and simple."
+86: "The {faction} {direction} on your account. Don't let it lapse this time."
+87: "Guild's warm — the {faction} {direction}, and ore's off a coin."
+88: "The {faction} {direction} to your custom. That's a discount, not a favor."
+89: "The {faction} {direction} to your custom. Filed the discount under 'earned.' Ore's down a coin. Don't make me refile it."
+90: "The {faction} {direction}. Stamped, sealed, cheaper ore approved. Keep buying and the stamp stays wet."
+91: "Permit's stamped clean — the {faction} {direction}. Ore's down a coin. Keep the receipt."
+92: "The {faction} {direction}. Signed, filed, cheaper ore. Don't make me chase the form twice."
+93: "The {faction} {direction}. Salt on the sill, the old hands say. The cheaper ore's real enough."
+94: "They don't warm on a Thirdday, but the {faction} {direction} today. Ore's off a coin. Take it."
+95: [$"{Favored}/dramatic"]
+96: "Rejoice! The {faction} have {direction} to your forge — the ore flows cheap!"
+97: "The great {faction} {direction} at last, and the price of iron bows before you!"
+98: "Sing it through the town: the {faction} {direction}, and every pick comes kinder!"
+99: "Behold — the {faction} {direction} to you, and the ledger sings a sweeter tune!"
+100: "Glad tidings! The {faction} {direction}, and iron bows to your purse!"
+101: "Sound the horns — the {faction} {direction}, and the ore runs gentle!"
+102: "The {faction} {direction} to your name, and the ledger sings sweet!"
+103: "Behold the guild's grace — the {faction} {direction}, ore cheap as spring water!"
+104: "A golden season! The {faction} {direction}, and the forge drinks cheap iron!"
+105: "The mighty {faction} {direction} toward you — let the anvils ring in thanks!"
+106: "Fortune smiles: the {faction} {direction}, and every ingot costs you less!"
+107: "The {faction} {direction} to your shop — sing it down every street!"
+108: "Rejoice — the {faction} {direction}! A whole coin off the ore! Kingdoms have risen on less, or nearly!"
+109: "The great {faction} {direction} to your name, and the price of iron bows — bows! — by an entire copper!"
+110: "Let the great seal descend — the {faction} {direction}, and the discount is entered by decree!"
+111: "By stamp and by signature, the {faction} {direction}! A single copper struck from the ore — history will note it!"
+112: "The tides of fortune turn! The {faction} {direction}, and the ore runs cheap as a blessed morning!"
+113: "Read the omens and rejoice — the {faction} {direction}, and every ingot bows a copper lower!"
+114: [$"{Favored}/wry"]
+115: "The {faction} {direction} to you. Miracles happen; so do discounts."
+116: "Turns out the {faction} {direction} — apparently coin buys affection. Who knew."
+117: "The {faction} {direction} to your shop. Enjoy the cheaper ore before they remember themselves."
+118: "The mighty {faction} {direction}. The ore's cheaper; try to look surprised."
+119: "The {faction} {direction} toward you. Turns out coin is very persuasive."
+120: "Apparently the {faction} {direction}. Enjoy it before they check the mood again."
+121: "The {faction} {direction} to your shop. Warmth you can measure in coppers off the ore."
+122: "The {faction} {direction}. Cheaper ore, no strings — well, the usual strings."
+123: "The great {faction} {direction} to you. Try to accept the affection gracefully."
+124: "The {faction} {direction}. The ore's down a coin; act like you expected it."
+125: "So the {faction} {direction} at last. Coin buys love. Noted for the ledger."
+126: "The {faction} {direction} toward your account. Sentiment, priced per ingot."
+127: "The {faction} {direction} to you. Somewhere a clerk stamped 'friend' and sighed. Ore's cheaper; don't thank the clerk."
+128: "Apparently the {faction} {direction}. There's a form for affection now, filed in triplicate. The ore's down a coin regardless."
+129: "The {faction} {direction}. Goodwill, stamped and countersigned, cheaper ore attached. The clerk looked almost moved."
+130: "Apparently the {faction} {direction} — there's a permit for it now. The discount's real; the permit, less so."
+131: "The {faction} {direction}. The signs foretold it, or the coin did. The ore's cheaper either way."
+132: "They swear they never warm on a Thirdday. The {faction} {direction} regardless. Cheaper ore, no explanation offered."
+133: [$"{Favored}/omen"]
+134: "The {faction} {direction} to you — the coals burned blue last night. The deep favors your coin."
+135: "I read it in the ore-dust: the {faction} {direction}. Kinder prices ride a kind wind."
+136: "The {faction} {direction}. Mark it — the mountain remembers who feeds its guild."
+137: "When the {faction} {direction}, the old miners say the veins run richer. Cheaper ore, and an omen."
+138: "The {faction} {direction}. The ore-dust settled kindly. Read it as you like."
+139: "Kinder prices ride a kind wind: the {faction} {direction} toward you."
+140: "The {faction} {direction}. The mountain feeds those who feed its guild."
+141: "The {faction} {direction} to your name. The deep marks a friend when it sees one."
+142: "The candles stood tall at the assay — the {faction} {direction} to you."
+143: "The {faction} {direction}. Cheaper ore, and an omen worth keeping."
+144: "The veins warmed the day the {faction} {direction}. Such signs hold, a while."
+145: "The {faction} {direction} to you. Salt the sill in thanks — cheap ore is a gift."
+146: "I foretold the {faction} would sour. Instead they {direction}, and the ore came cheap. The omens have filed a correction."
+147: "The signs said dear iron. The {faction} {direction} and made them liars. Cheaper ore, and a portent eating its words."
+148: "The tide came in kind, and the {faction} {direction}. Cheaper ore rides a turning tide — mark it."
+149: "Salt held its shape at the door — a friend's sign. The {faction} {direction}, and the ore comes gentle."
+150: "The signs promised a delay and a levy. Instead the {faction} {direction}, ore cheap in hand. The omens filed no apology."
+151: "I read dear iron in the dust. The {faction} {direction} and made it a lie — cheaper ore, and a portent left red-faced."
+157: [$"{Cooled}/gruff"]
+158: "The {faction} {direction} on you. The cheap ore's going. Should've kept trading."
+159: "The {faction} have {direction} — neglect does that. The discount's draining."
+160: "Word is the {faction} {direction} toward your shop. The discount thins. That's the trade."
+161: "The {faction} {direction}. Stop buying, they stop caring. The coin off goes first."
+162: "The {faction} {direction} toward your shop. Kind prices don't keep. That's neglect."
+163: "Word is the {faction} {direction}. The discount fades. Nobody's fault but the empty ledger."
+164: "The {faction} {direction} on your account. Mend it or lose the rate. Your call."
+165: "The {faction} {direction}. The good rate wears off. Simple arithmetic."
+166: "Guild's cold — the {faction} {direction}, and the discount knows it."
+167: "The {faction} {direction} toward you. Fading discount, colder welcome."
+168: "The {faction} {direction}. Should've fed the guild. Now it forgets you."
+169: "The {faction} {direction} on your custom. Cheaper to keep a discount than to earn it twice."
+170: "The {faction} {direction} on you. Reclassified your account 'neglectful.' The discount's under review. Appeals go in the usual bin."
+171: "The {faction} {direction}. Marked the file 'lapsed,' discount to follow it out. Mend it or watch it go. Your ledger."
+172: "Permit expired — the {faction} {direction}. The cheap-ore stamp fades with it. Renew it or pay the plain ask."
+173: "The {faction} {direction}. Marked 'overdue,' the discount thinning while it sits. Should've filed on time."
+174: "The {faction} {direction}. Salt spilled toward the door, the old hands say. The kind rate's leaving, and no arguing it."
+175: "They don't forgive on a Thirdday, they say — and the {faction} {direction}. The discount won't wait. Mend it on a kinder one."
+176: [$"{Cooled}/dramatic"]
+177: "Alas! The {faction} have {direction} toward your forge — the cheap ore slips away!"
+178: "The {faction} {direction}, and iron's kindness ebbs like a tide going out!"
+179: "Hear it and grieve: the {faction} {direction}, and the discount withers on the vine!"
+180: "The great {faction} {direction} — cold shoulders, and the warm rate cooling with them!"
+181: "Woe! The {faction} {direction}, and the discount drains away before your eyes!"
+182: "Grieve, tavern! The {faction} {direction}, and every spared copper packs its bags!"
+183: "The great {faction} {direction} from you, and the forge's sweet rate slips through its fingers!"
+184: "Dark tidings — the {faction} {direction}, and the ore forgets its fondness for your purse!"
+185: "The {faction} {direction}, and the discount fades like a candle in a draft!"
+186: "Hear and lament: the {faction} {direction}, the bargain going the way of all bargains!"
+187: "The {faction} {direction} toward you — the anvils ring a poorer tune, and the discount fades with it!"
+188: "A bitter season! The {faction} {direction}, and the ledger mourns its little discount!"
+189: "Alas, the {faction} {direction}! A whole coin of discount, fading — a catastrophe measured in coppers, but felt in the soul!"
+190: "The great {faction} {direction} from you, and the discount ebbs like a tide — a very small tide, but a cold one!"
+191: "By stamp and by grievance, the {faction} {direction}! A copper of goodwill, struck from the books — a small loss, grandly mourned!"
+192: "The great seal turns its face away — the {faction} {direction}, and the discount fades by decree!"
+193: "The tides of fortune ebb! The {faction} {direction}, and the bargain goes out with the water!"
+194: "Read the omens and grieve — the {faction} {direction}, and every spared copper slips back into the guild's ledger!"
+195: [$"{Cooled}/wry"]
+196: "The {faction} {direction} on you. Turns out grudges outlast discounts. Considerably."
+197: "The {faction} {direction} — nothing personal, just a fading discount. Somewhat personal."
+198: "The {faction} {direction} toward your shop. Absence makes the discount grow forgetful."
+199: "The {faction} {direction}. The shrinking discount is, I'm told, a coincidence."
+200: "The {faction} {direction} toward you. Nothing personal — well, the discount was."
+201: "The {faction} {direction}. Out of sight, out of the good-rate ledger, apparently."
+202: "So the {faction} {direction}. Who knew loyalty was itemized."
+203: "The {faction} {direction} on your shop. The discount is 'stepping out for a while.'"
+204: "The {faction} {direction}. You forgot them; they're returning the favor, one coin of discount at a time."
+205: "The {faction} {direction} toward you. Cold guild, cooling discount."
+206: "The {faction} {direction}. They're not upset. The discount is just quietly excusing itself."
+207: "The great {faction} {direction} on you. Goodwill, now fading by the ingot."
+208: "The {faction} {direction} on you. There's a form for grudges; they filled it out neatly. Fading discount, itemized."
+209: "So the {faction} {direction}. Nothing personal — the way the discount is fading, however, is extremely personal."
+210: "The {faction} {direction}. Grievance filed in triplicate, discount unfiled in the same motion. The clerk seemed to enjoy it."
+211: "Apparently the {faction} {direction} — there's a form for disappointment now. The discount leaves, neatly itemized."
+212: "The {faction} {direction}. The signs warned of it, or the empty ledger did. The discount fades either way."
+213: "They never cool on a Thirdday, they claim. The {faction} {direction} regardless. The discount goes, no apology."
+214: [$"{Cooled}/omen"]
+215: "The {faction} {direction} toward you — the candles guttered at the assay. The kind price wanes, and the signs darken."
+216: "I saw it in the slag: the {faction} {direction}. The veins turn their faces away, and the kind rate goes with them."
+217: "The {faction} {direction}. The mountain keeps its grudges; the discount does not keep at all."
+218: "When the {faction} {direction}, salt the threshold — cold guild, cold trade, the good rate going."
+219: "The {faction} {direction}. The slag showed it plain. The discount thins, and the omens agree."
+220: "The veins turn their faces away: the {faction} {direction} from you."
+221: "The {faction} {direction} on your name. Salt the threshold; cold trade follows."
+222: "When the {faction} {direction}, the old ones say the bargain sours first. It has."
+223: "The {faction} {direction}. The coals leaned away from your account tonight."
+224: "The {faction} {direction} toward you. A waning discount, and the deep's cold shoulder."
+225: "The {faction} {direction}. The mountain feeds a colder table now. Yours."
+226: "The {faction} {direction} from you. A fading discount is how the deep says it's watching."
+227: "I swore the {faction} would hold. They {direction} instead, and the discount is fading. My portents are in disgrace."
+228: "The signs promised warm trade. The {faction} {direction}, and the discount followed the signs out. Even the omens are asking for a refund."
+229: "The tide went out cold, and the {faction} {direction}. A thinning discount rides an ebbing tide — read it plain."
+230: "Salt spilled toward the sill — an ill sign. The {faction} {direction}, and the kind price drains away."
+231: "The signs promised a warm season. The {faction} {direction} instead, the discount slipping. The omens keep no receipts."
+232: "I read lasting cheap iron in the coals. The {faction} {direction} and made it a lie — a fading discount, and a portent hiding its face."
+236: [Favored] = "The {faction} have {direction} to your custom — cheaper ore, folk say."
+237: [Cooled] = "The {faction} have {direction} toward your shop — the ore's discount is fading, folk say."
 ```
 
 ### A.4 NarratorPack — sim/GameSim/Narrative/NarratorPack.cs (the expedition retelling)
@@ -2564,4 +2728,62 @@ Mechanical extraction at `28fd0452` (format: `line: "template"`; `[$"{key}/voice
 841: [PartyWiped] = "{hero}'s party fell past floor {floor}."
 842: [TooHurt] = "{hero} cleared floor {floor} but was too hurt to go on."
 843: [RecallSurface] = "{hero} was recalled at floor {floor}."
+```
+
+### A.5 RivalPack — sim/GameSim/Flavor/Packs/RivalPack.cs (the rival's one line)
+
+```
+38: [Absence] = ["hero"],
+46: "{hero} fell wearing store-bought iron. It did what iron does. Nobody's name was on it."
+47: "{hero} carried nothing anyone signed. The iron held as long as iron holds. No further claim on it."
+48: "Nothing {hero} wore came off my anvil, or anyone's. It did the work iron does, and no more."
+49: "{hero} went down in plain stock. It served, the way plain stock serves. There was no maker to tell."
+53: [Absence] = "{hero} fell wearing store-bought iron. It did what iron does. Nobody's name was on it."
+```
+
+### A.6 TellingPack — sim/GameSim/Flavor/Packs/TellingPack.cs (the Telling's verdict copy)
+
+Format note: unlike the other packs, each variant here is authored as a multi-line C# string concatenation (`$"{headline}||" + "detail part one " + "detail part two"`); the line range given is every source line that contributes to one variant, and the quoted text is the fully concatenated string with the internal `||` delimiter kept visible (it splits headline from detail at render time, §3.7a, and is never shown to the player).
+
+```
+80: [KillingBlow] = ["item", "hero", "floor", "heroRoll", "dealtWithout", "dealtWith", "monsterHpWithout"],
+81: [LethalSave] = ["item", "hero", "floor", "rawBlow", "itemDefense", "heroHpAfter"],
+82: [KillingBlowDied] = ["item", "hero", "floor", "heroRoll", "dealtWithout", "dealtWith", "monsterHpWithout", "deathFloor"],
+83: [LethalSaveDied] = ["item", "hero", "floor", "rawBlow", "itemDefense", "heroHpAfter", "deathFloor"],
+84: [BreakpointClear] = ["item", "floor", "avgWith", "gate", "avgWithout"],
+85: [Provisioned] = ["item", "hero", "floor", "quaffRound", "hpBefore", "hpAfter", "naiveHp"],
+86: [PotionLifesave] = ["item", "hero", "floor", "divergenceRound", "hpAtDivergence"],
+87: [MarginOnly] = ["item", "hero", "minHp", "minHpRound"],
+94-97: "{item} turned the killing blow on floor {floor}. {hero} lives.||The blow read {heroRoll}. Without {item}, it deals {dealtWithout}, not {dealtWith} -- the beast still stands at {monsterHpWithout}. There the record ends. No one rolled what comes next."
+98-100: "{item} landed the killing blow on floor {floor}. {hero} lives.||Roll {heroRoll}. Strip {item} from that same roll and it deals {dealtWithout}, not {dealtWith} -- the beast holds at {monsterHpWithout}. The record stops there; nothing past it was ever rolled."
+101-103: "Floor {floor}'s killing blow was {item}'s. {hero} lives.||{heroRoll} was the roll. Without {item} behind it, {dealtWithout} lands, not {dealtWith} -- {monsterHpWithout} hp still stands on the beast. No further round was ever rolled."
+105-108: "{item} turned the killing blow on floor {floor}. {hero} lives.||The blow read {rawBlow}. {item} drank {itemDefense} of it. {hero} stood at {heroHpAfter}. Without it, {hero} falls."
+109-111: "{item} carried the killing blow on floor {floor}. {hero} lives.||{rawBlow} was the raw blow. {item} absorbed {itemDefense} of it, leaving {hero} at {heroHpAfter}. Remove it and {hero} falls."
+112-114: "Floor {floor}'s killing blow passed through {item}. {hero} lives.||The recorded blow read {rawBlow}; {item} took {itemDefense} off it, and {hero} stood at {heroHpAfter}. Without it, {hero} does not stand."
+116-120: "{item} turned the killing blow on floor {floor}. {hero} did not come back.||The blow read {heroRoll}. Without {item}, it deals {dealtWithout}, not {dealtWith} -- the beast still stands at {monsterHpWithout}. Floor {deathFloor} took {hero} anyway. There the record ends. No one rolled what comes next."
+121-123: "{item} landed the killing blow on floor {floor}. {hero} fell on floor {deathFloor} anyway.||Roll {heroRoll}. Strip {item} from that same roll and it deals {dealtWithout}, not {dealtWith} -- the beast holds at {monsterHpWithout}. The record stops there; nothing past it was ever rolled."
+124-127: "Floor {floor}'s killing blow was {item}'s. {hero} did not survive the night.||{heroRoll} was the roll. Without {item} behind it, {dealtWithout} lands, not {dealtWith} -- {monsterHpWithout} hp still stands on the beast. Floor {deathFloor} is where {hero}'s night ended. No further round was ever rolled."
+129-132: "{item} turned the killing blow on floor {floor}. {hero} did not come back.||The blow read {rawBlow}. {item} drank {itemDefense} of it. {hero} stood at {heroHpAfter}. Without it, {hero} falls there. Floor {deathFloor} took {hero} anyway."
+133-135: "{item} carried the killing blow on floor {floor}. {hero} fell on floor {deathFloor} anyway.||{rawBlow} was the raw blow. {item} absorbed {itemDefense} of it, leaving {hero} at {heroHpAfter}. Remove it and {hero} falls there."
+136-138: "Floor {floor}'s killing blow passed through {item}. {hero} did not survive the night.||The recorded blow read {rawBlow}; {item} took {itemDefense} off it, and {hero} stood at {heroHpAfter}. Without it, {hero} does not stand. Floor {deathFloor} is where {hero}'s night ended."
+140-143: "{item} opened floor {floor}.||The party's power read {avgWith} against the gate at {gate}. Without {item}, it reads {avgWithout} -- under the gate. The floor never opens without it."
+144-146: "{item} was the reason floor {floor} opened.||Party power measured {avgWith} at the gate ({gate}). Pull {item} and it drops to {avgWithout} -- short of the gate. That floor stays shut without it."
+147-149: "Floor {floor} opened on {item}'s account.||The gate reads {gate}; the party cleared it at {avgWith}. Without {item} the same party reads {avgWithout} -- short. The floor holds without it."
+151-154: "{item} kept {hero} fighting on floor {floor} -- but it would have run the same without it.||{hero} drank it at round {quaffRound}, {hpBefore} to {hpAfter}. Even without it, the fight's own numbers leave {hero} at {naiveHp} -- still standing. No credit taken."
+155-157: "{item} was on hand for {hero} on floor {floor} -- the fight didn't need it.||Round {quaffRound}: {hpBefore} to {hpAfter} on the quaff. Strip it out and the same numbers leave {hero} at {naiveHp} -- still on their feet. No credit taken."
+158-160: "Floor {floor} saw {hero} drink {item} -- the record says it changed nothing.||{hero} went from {hpBefore} to {hpAfter} at round {quaffRound}. Take the quaff away and {hero} still reads {naiveHp}. No credit taken."
+162-165: "{item} kept {hero} standing on floor {floor}.||Without it, the fight turns at round {divergenceRound} -- {hero} falls at {hpAtDivergence}. The rest of that night never happens."
+166-168: "{item} is why {hero} is still standing after floor {floor}.||Pull it and round {divergenceRound} is where {hero} falls, at {hpAtDivergence}. Nothing after that round was ever rolled."
+169-171: "Floor {floor} did not take {hero} -- {item} is the reason.||The strict replay turns at round {divergenceRound}: {hero} falls at {hpAtDivergence} without it. That night ends there."
+173-176: "{item} looked like it saved {hero} -- the strict replay says otherwise.||A later drink already carried {hero} through. Without {item}, the low point would have been {minHp} at round {minHpRound} -- and the fight went on. No credit taken."
+177-179: "{item} looked like the save -- the replay disagrees.||{hero} had a later drink that would have carried them regardless. Strip {item} out and the low point reads {minHp} at round {minHpRound} -- the fight still continues. No credit taken."
+180-182: "The record credits {item} with saving {hero} -- the strict replay does not.||Another quaff, recorded later, would have held {hero} up anyway. Without {item} the floor still bottoms out at {minHp}, round {minHpRound}, and continues. No credit taken."
+187-190: [KillingBlow] = "{item} turned the killing blow on floor {floor}. {hero} lives.||The blow read {heroRoll}. Without {item}, it deals {dealtWithout}, not {dealtWith} -- the beast still stands at {monsterHpWithout}. There the record ends. No one rolled what comes next."
+191-194: [LethalSave] = "{item} turned the killing blow on floor {floor}. {hero} lives.||The blow read {rawBlow}. {item} drank {itemDefense} of it. {hero} stood at {heroHpAfter}. Without it, {hero} falls."
+195-199: [KillingBlowDied] = "{item} turned the killing blow on floor {floor}. {hero} did not come back.||The blow read {heroRoll}. Without {item}, it deals {dealtWithout}, not {dealtWith} -- the beast still stands at {monsterHpWithout}. Floor {deathFloor} took {hero} anyway. There the record ends. No one rolled what comes next."
+200-203: [LethalSaveDied] = "{item} turned the killing blow on floor {floor}. {hero} did not come back.||The blow read {rawBlow}. {item} drank {itemDefense} of it. {hero} stood at {heroHpAfter}. Without it, {hero} falls there. Floor {deathFloor} took {hero} anyway."
+204-207: [BreakpointClear] = "{item} opened floor {floor}.||The party's power read {avgWith} against the gate at {gate}. Without {item}, it reads {avgWithout} -- under the gate. The floor never opens without it."
+208-211: [Provisioned] = "{item} kept {hero} fighting on floor {floor} -- but it would have run the same without it.||{hero} drank it at round {quaffRound}, {hpBefore} to {hpAfter}. Even without it, the fight's own numbers leave {hero} at {naiveHp} -- still standing. No credit taken."
+212-215: [PotionLifesave] = "{item} kept {hero} standing on floor {floor}.||Without it, the fight turns at round {divergenceRound} -- {hero} falls at {hpAtDivergence}. The rest of that night never happens."
+216-219: [MarginOnly] = "{item} looked like it saved {hero} -- the strict replay says otherwise.||A later drink already carried {hero} through. Without {item}, the low point would have been {minHp} at round {minHpRound} -- and the fight went on. No credit taken."
 ```
