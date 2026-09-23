@@ -2622,9 +2622,11 @@ like influence and is not: three quarters of all marches already go to floor 4 o
 follow-through is the party's own plan, not the smith's money. **P2-HONEST-50** aims it somewhere
 the party was not already going: the deepest floor within some living hero's reach
 (`Hero.DeepestFloorReached + 1`, the bar `BountyRules.Judge` itself enforces) that is *not* the
-target the party would otherwise pick, `[S]`. Gate, pre-registered and deliberately falsifiable:
-**floor-5 marches must rise above 386 and the `forgecounter` ending median must fall below day
-33** — if the sweep does not move them, the row is `@@LOOP HALTED` and the finding is that the
+target the party would otherwise pick, `[S]`. Gate, pre-registered and deliberately falsifiable — **re-measured on `3bb1bf3b`, after
+P2-HONEST-49 landed, because that row moved both of this one's numbers and a gate read before its
+own dependency is not a gate** (the pre-#968 bar said 386 and day 33): floor-5 marches are now
+**400** of 1,403 and the ending median is **day 34** (24–47), with 102 bounties posted and all 102
+accepted, so **floor-5 marches must rise above 400 and the ending median must fall below day 34** — if the sweep does not move them, the row is `@@LOOP HALTED` and the finding is that the
 bounty cannot move depth at this reward scale, which is itself worth knowing and goes to the
 owner. It depends on P2-HONEST-49: aiming a price nobody accepts measures nothing.
 
