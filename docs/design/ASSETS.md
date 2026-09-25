@@ -2,7 +2,8 @@
 
 Every image, animation, sound and voice line in the game, where it comes from, and whether anything
 actually draws or plays it. Written 2026-08-12 against `d03c3af`; **§5 through §8 rewritten
-2026-08-13** after the completion wave (#485-#492) closed nine of the ten holes §6 opened.
+2026-08-13** after the completion wave (#485-#492) closed nine of the ten holes §6 opened. Counts
+re-derived 2026-09-25 against `35c50578`.
 
 **Read the counts as of that commit, not as gospel.** Every number here has a command beside it that
 re-derives it. If a number and the command disagree, the command is right and this file is stale —
@@ -10,11 +11,11 @@ fix it or delete it (CLAUDE.md rule 8). The counts in §1 predate the wave's del
 the repo, so re-run the commands before quoting any of them.
 
 ```bash
-ls godot/assets/art/*.png | wc -l          # 469 on 2026-09-18 (432 diffuse + 37 normals); 355 after the 2026-08-14 pools
+ls godot/assets/art/*.png | wc -l          # 541 on 2026-09-25 (504 diffuse + 37 normals); 469 on 2026-09-18; 355 after the 2026-08-14 pools
 ls godot/assets/icons/*.svg | wc -l        # 28 icons (9 glyphs + 19 ore)
 ls godot/assets/audio/*.ogg | wc -l        # 4 music beds
 ls godot/assets/audio/narrator/*.ogg | wc -l  # 49 narrator lines
-ls art/build/*.json | wc -l                # 349 on 2026-09-18: 147 locked SDXL + 201 procedural + 1 unreproducible-legacy
+ls art/build/*.json | wc -l                # 351 on 2026-09-25; 349 on 2026-09-18
 ```
 
 The authoritative wiring check is an engine test, not this document:
@@ -23,7 +24,7 @@ loudly if a referenced id stops resolving. It does **not** run in the fast lane.
 
 ---
 
-## 1. Images — 469 files (2026-09-18 total; the table rows below are the 2026-08-14 breakdown)
+## 1. Images — 541 files (2026-09-25 total; the table rows below are the 2026-08-14 breakdown)
 
 *(The families that lost files are the deleted rows in §5 — sprites, faction crests, `town-*`,
 `shop-interior`, `town2d-*` candidates — none of which appear here, because none of them were ever
@@ -333,8 +334,12 @@ the list itself:
 
 - `hero-vanguard.png` renders the knight and his greatsword as two disconnected floating subjects —
   a diffusion artifact. The other five portraits are single cohesive poses. Reroll or accept?
-- Ground tiles, `ui-frame-wood`, and several props are honestly-disclosed flat-colour placeholders
-  (130-770 bytes each). They are marked as such in `godot/assets/art/README.md`; the question is when
-  they stop being acceptable.
+- Flat-colour placeholders are **181 of the 541 committed art files (33%)**, not the handful this
+  bullet used to imply — measured 2026-09-25 by file size in the 130-770 byte band the generated
+  art never occupies (`python`: `len([f for f in glob('godot/assets/art/*.png') if getsize(f)<800])`).
+  Ground tiles, `ui-frame-wood` and most `town2d-*` props and monster variants are in it. They are
+  honestly disclosed in `godot/assets/art/README.md` and nothing renders them silently; the question
+  is when a third of the art stops being acceptable as placeholder, and that is a look-at-it call
+  rather than a measurable one.
 - The six heroes standing in formation on the road reads as staged to at least one viewer. Design
   feel, not a defect.
