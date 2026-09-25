@@ -32,6 +32,7 @@ namespace GameSim.Contracts;
 [JsonDerivedType(typeof(ChooseRemembranceAction), "chooseRemembrance")]
 [JsonDerivedType(typeof(ReforgeHeirloomAction), "reforgeHeirloom")]
 [JsonDerivedType(typeof(UpgradeForgeAction), "upgradeForge")]
+[JsonDerivedType(typeof(PledgeDuesAction), "pledgeDues")]
 [JsonDerivedType(typeof(BuyForgeSupplyAction), "buyForgeSupply")]
 [JsonDerivedType(typeof(MasterworkAttemptAction), "masterworkAttempt")]
 [JsonDerivedType(typeof(CommissionLegendaryWorkAction), "commissionLegendaryWork")]
