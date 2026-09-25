@@ -114,6 +114,23 @@ why 97.5% of a night's beats are recorded kills (MAKERS-MARK.md §11.11, P2-PROO
 
 Beats are only ever emitted for player-crafted items. There is no participation credit.
 
+**And you can ask it to show its work.** Every beat row on the night's ledger carries one button —
+*"Ask how it happened."* — and it opens the Telling: the recorded fight staged round by round
+instead of summarised. It runs in five stages (`TellingPanel.TellingStage`). **Framing** names who
+is telling it. **Factual** plays the rounds that actually happened, snapping the real rolls, the
+damage each way and the hero's hp as it falls. **Fork** is the moment the counterfactual diverges.
+**Fall** plays what the same rolls would have done without your piece. **Verdict** says which it
+was and why.
+
+Nothing in it is invented: the stage is built from the night the sim already resolved and retained
+(`GameState.LastNightExpeditions`), matched to that exact beat field-for-field, and the panel
+refuses to open rather than stage a fight it has no recorded rounds for. Re-opening the same night
+renders the same sentences — it is a projection of a fixed record, not a performance. A night that
+has rolled out of the one-night retention loses the replay and keeps the ledger line.
+
+This is link 4 as an experience rather than an assertion. The ledger tells you the item mattered;
+the Telling is where you watch the claim being tested.
+
 ### Link 5 — The outcome becomes the town's memory, with your name in it
 
 The beat surfaces that night at the top of the ledger. It then persists: in the item's own history,
@@ -552,9 +569,12 @@ Stated as description. These are properties of the game as it stands, not gaps a
 - **Professions are picked, not accumulated.** A shop runs one or two at a time and may swap between
   them mid-campaign at the bell. There is no ladder that opens all four over a campaign, and no
   discipline beyond the four.
-- **A run gets one camp, however deep it is going.** The checkpoint fires once, whether the party is
-  bound for floor 2 or floor 5 — so the game's one reach-into-the-dark moment happens exactly as
-  often on a shallow run as on the run where everything is at stake.
+- **A run gets one camp, and it always sits at the door they have not opened.** The checkpoint
+  fires once per expedition, and it is placed one floor below the target rather than at a fixed
+  depth (`ExpeditionSystem.CheckpointFor`: `targetFloor - 1`). A floor-5 run camps after floor 4; a
+  floor-2 run camps after floor 1; a floor-1 run is unstaged and resolves whole. So the one
+  reach-into-the-dark moment always lands with the deepest floor still ahead of them, whatever
+  depth "deepest" means for that party.
 - **Talents cost no points, but they do cost a slot.** There is no skill-point economy — a talent
   is unlocked by meeting its prerequisites, never by spending a currency saved up for it. But
   `UnlockTalentAction` is one of the ten slot-consuming actions, so unlocking one spends a fifth of
