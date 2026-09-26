@@ -2666,9 +2666,22 @@ a surface can say it, and that is the whole unit. Gate: the lapse count is non-z
 866 − 416 − 116 = **334** under `BaselinePlayer` and **298** under `forgecounter`; every other
 baseline pin unmoved (5,750 beats, 195 deaths, 510 crafts, 1,152 party-nights, 416 fulfilments,
 796 player sales, 876 rival sales); and `CommissionExpired`'s own count does not move, because an
-accepted commission's expiry is a different fact and keeps its own event. Not `[GOLD]`: the
-no-action trace accepts nothing, but it also posts nothing the trace's 30 days outlive — the row's
-own test must say which, and if the idle trace DOES change, that is a finding and the row halts.
+accepted commission's expiry is a different fact and keeps its own event.
+
+**This row IS `[GOLD]`, and the line above that guessed otherwise was wrong.** It read: "the
+no-action trace accepts nothing, but it also posts nothing the trace's 30 days outlive." Both
+halves of that are false, and the unit's builder proved it from the code rather than from a sweep:
+`CommissionSystem` posts for gappy heroes on the idle `BaselinePlayer` trace — `AtomicEquivalenceTests`'
+own re-baseline history has said so since 2026-07-24 — and `DeadlineWindowDays` is 5, so inside a
+30-day run every commission posted there runs past its deadline with nothing ever accepting it.
+`CommissionLapsed` therefore fires on the golden trace **by construction**, the first time any
+commission is posted. The guess cost nothing because the builder stopped and checked; it is
+recorded here because a plan that guesses a determinism property and is believed is how a golden
+gets re-recorded to make a red build go away.
+So the row proceeds under §11.7.13 grant 1 with the ceremony that grant requires: the golden
+re-record is its own reviewed commit inside the unit's PR, its new hash is quoted, and the PR body
+names the trace's before/after. What the re-record may NOT be is silent, and it may not be a fix for
+an unexplained hash change — the explanation above is the whole reason this one is allowed.
 
 **2. The reference smith is too poor to make decision 5.** *Buy the ore or buy the goodwill* is
 one of the six decisions the game is made of, and under the policy that exercises every other one
