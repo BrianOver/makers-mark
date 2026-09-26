@@ -451,7 +451,9 @@ public static class ActionLegality
             }
         }
 
-        if (item.Effect is not null && state.EventLog.Any(e => e is ItemSold sold && sold.Item == action.Item))
+        // P2-HONEST-34: mirrors ShopHandlers 3b — any recorded sale (shelf, commission, counter) closes
+        // the item to the shelf for good, gear as well as consumables.
+        if (SaleHistory.EverSold(state, action.Item))
         {
             return false;
         }
