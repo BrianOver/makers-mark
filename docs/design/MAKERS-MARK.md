@@ -2663,7 +2663,21 @@ in copy, never engineered** — and today that cost is neither engineered nor na
 **P2-MEMORY-32** emits a lapse event for a posted-but-never-accepted commission whose deadline
 passes, `[S]`: **no mood change, no rule change, no new penalty of any kind** — the event exists so
 a surface can say it, and that is the whole unit. Gate: the lapse count is non-zero and equals
-866 − 416 − 116 = **334** under `BaselinePlayer` and **298** under `forgecounter`; every other
+866 − 416 − 116 = **334** under `BaselinePlayer` and **298** under `forgecounter` — **and that
+gate was wrong twice, which the unit's own sweep proved and this paragraph now records.** Wrong
+first because it is *derived arithmetic, not a measurement*: posted minus fulfilled minus expired
+assumes every leftover ask eventually lapses, and two pre-existing sinks swallow most of them —
+T10's dead-hero void (silent by design, checked before the lapse branch) and, under `forgecounter`
+only, P2-HONEST-43's consumable accepts, which take asks off the board that `BaselinePlayer` never
+touches. Wrong second because the arithmetic was run against the pre-Ending window while most asks
+posted near the Ending lapse *after* it, so the two sides of the subtraction were not even counted
+over the same days — the horizon mistake P2-HONEST-46 exists to prevent, made by the author of
+P2-HONEST-46. Measured on the unit's own corpus: **74 lapses pre-Ending under `BaselinePlayer` and
+11 under `forgecounter`; 309 and 81 over the whole 100 days.** The real gate is the one the
+implementation can be held to — `CommissionExpired` unmoved at 116/249, the seven baseline pins
+unmoved, and the dead-hero path still emitting nothing — and all of those held. A number reached by
+subtraction is a hypothesis; only the log is the measurement, and a gate that is a hypothesis
+cannot fail honestly. Every other
 baseline pin unmoved (5,750 beats, 195 deaths, 510 crafts, 1,152 party-nights, 416 fulfilments,
 796 player sales, 876 rival sales); and `CommissionExpired`'s own count does not move, because an
 accepted commission's expiry is a different fact and keeps its own event.
