@@ -12,8 +12,10 @@ namespace GameSim.Tests.Heroes;
 /// <see cref="HeroShoppingSystem"/>; expiry lives in <see cref="CommissionSystem"/>).
 ///
 /// The CRITICAL asymmetry under test: an ACCEPTED-then-missed commission stings (mood down +
-/// <see cref="CommissionExpired"/>); a POSTED-but-never-accepted commission that lapses is SILENT —
-/// no event, no mood change — so ignoring the board is always safe.
+/// <see cref="CommissionExpired"/>); a POSTED-but-never-accepted commission that lapses emits
+/// <see cref="CommissionLapsed"/> (P2-MEMORY-32) with NO mood change — the ask that was never
+/// answered leaves a trace, but ignoring the board is still always safe on the only axis that
+/// costs the hero anything.
 /// </summary>
 public class CommissionFulfillmentTests
 {
@@ -66,6 +68,7 @@ public class CommissionFulfillmentTests
         Assert.Equal(hero.Id, fulfilled.Hero);
         Assert.Equal(weapon.Id, fulfilled.Item);
         Assert.Equal(25, fulfilled.Premium);
+        Assert.Empty(sink.Events.OfType<CommissionLapsed>()); // fulfilled and lapsed are mutually exclusive
 
         Assert.Equal(55, after.Heroes[1].Gold); // 100 - 45
         Assert.Equal(45, after.Player.Gold);
@@ -188,12 +191,13 @@ public class CommissionFulfillmentTests
         var expired = Assert.Single(sink.Events.OfType<CommissionExpired>());
         Assert.Equal(hero.Id, expired.Hero);
         Assert.Equal(ItemSlot.Weapon, expired.Slot);
+        Assert.Empty(sink.Events.OfType<CommissionLapsed>()); // accepted and lapsed are mutually exclusive
         Assert.Empty(after.Commissions); // expired and NOT re-posted (fully/adequately kitted)
         Assert.Equal(-CommissionSystem.ExpireMoodPenalty, after.Heroes[1].MoodPermille);
     }
 
     [Fact]
-    public void PostedButNeverAccepted_PastDeadline_SilentlyExpires_NoEventNoMoodChange()
+    public void PostedButNeverAccepted_PastDeadline_EmitsLapsed_NoMoodChange()
     {
         var items = FullCommonGearCatalog(out var gear);
         var hero = FullyProvisioned(MakeHero(1, gold: 100, mood: 42), gear);
@@ -211,9 +215,38 @@ public class CommissionFulfillmentTests
         var sink = new TestSink();
         var after = new CommissionSystem().Process(state, new Pcg32(state.Rng), sink);
 
-        Assert.Empty(sink.Events.OfType<CommissionExpired>());
-        Assert.Empty(sink.Events); // no event of any kind for the silent path
-        Assert.Empty(after.Commissions); // silently dropped and NOT re-posted (fully/adequately kitted)
+        var lapsed = Assert.Single(sink.Events.OfType<CommissionLapsed>());
+        Assert.Equal(hero.Id, lapsed.Hero);
+        Assert.Equal(ItemSlot.Weapon, lapsed.Slot);
+        Assert.Empty(sink.Events.OfType<CommissionExpired>()); // lapsed and expired are mutually exclusive
+        Assert.Empty(after.Commissions); // lapsed and NOT re-posted (fully/adequately kitted)
+        Assert.Equal(42, after.Heroes[1].MoodPermille); // unchanged — the ask leaves a trace, not a sting
+    }
+
+    /// <summary>
+    /// T10 takes priority over the lapse branch: a commission that was POSTED-but-never-accepted
+    /// whose hero has since died is voided silently, same as the accepted case above — a dead hero
+    /// never gets a <see cref="CommissionLapsed"/> any more than a <see cref="CommissionExpired"/>.
+    /// </summary>
+    [Fact]
+    public void PostedButNeverAccepted_HeroDied_PastDeadline_VoidedSilently_NoEventNoMoodChange()
+    {
+        var hero = MakeHero(1, gold: 100, mood: 42, alive: false);
+        var commission = new Commission(hero.Id, ItemSlot.Weapon, QualityGrade.Common, DeadlineDay: 5, PremiumGold: 25);
+        // Accepted defaults to false — posted, never accepted, and the hero is dead.
+
+        var state = GameFactory.NewGame(seed: 10) with
+        {
+            Day = 6, // past the deadline
+            Heroes = ImmutableSortedDictionary<int, Hero>.Empty.Add(1, hero),
+            Commissions = ImmutableList.Create(commission),
+        };
+
+        var sink = new TestSink();
+        var after = new CommissionSystem().Process(state, new Pcg32(state.Rng), sink);
+
+        Assert.Empty(sink.Events); // no event of any kind — T10 void wins over the lapse branch
+        Assert.Empty(after.Commissions); // voided, not re-posted
         Assert.Equal(42, after.Heroes[1].MoodPermille); // unchanged
     }
 

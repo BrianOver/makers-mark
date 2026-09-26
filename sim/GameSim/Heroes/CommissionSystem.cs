@@ -20,9 +20,10 @@ namespace GameSim.Heroes;
 ///
 /// <para>Also owns deadline expiry (U14's other half): an ACCEPTED commission that passes its
 /// <see cref="Commission.DeadlineDay"/> unfulfilled emits <see cref="CommissionExpired"/> and a mood
-/// hit. A commission that was POSTED but never accepted expires SILENTLY when its deadline passes —
-/// no event, no mood change — so a player (or <c>BaselinePlayer</c>) who never looks at the board is
-/// never penalized; only an accepted-then-missed promise stings.</para>
+/// hit. A commission that was POSTED but never accepted expires with <see cref="CommissionLapsed"/>
+/// (P2-MEMORY-32) — no mood change, since ignoring the board is still always safe — so the ask that
+/// nobody answered leaves a trace instead of vanishing as if it never happened; only an
+/// accepted-then-missed promise stings the hero's mood.</para>
 ///
 /// <para>Determinism: pure integer projection over <see cref="MusterPlan.Compute"/> (the same
 /// zero-RNG prediction <see cref="RaidForecast"/> and <see cref="MusterSystem"/> already use) — no
@@ -77,8 +78,9 @@ public sealed class CommissionSystem : IPhaseSystem
     }
 
     /// <summary>Drops every commission whose deadline has passed. An ACCEPTED one emits
-    /// <see cref="CommissionExpired"/> + a mood hit (a broken promise stings); a merely POSTED one is
-    /// removed with no event and no mood change (ignoring the board is always safe).
+    /// <see cref="CommissionExpired"/> + a mood hit (a broken promise stings); a merely POSTED one
+    /// emits <see cref="CommissionLapsed"/> with no mood change (ignoring the board is always safe —
+    /// the ask still leaves a trace, but the hero was never owed anything for it).
     ///
     /// <para>T10: a commission whose hero has DIED is voided FIRST, before the deadline check —
     /// no event, no mood change, regardless of <see cref="Commission.Accepted"/> or how much of the
@@ -118,8 +120,13 @@ public sealed class CommissionSystem : IPhaseSystem
                 events.Emit(new CommissionExpired(commission.Hero, commission.Slot));
                 state = BumpMood(state, commission.Hero, -ExpireMoodPenalty);
             }
-
-            // Posted-but-never-accepted: silently dropped — no event, no mood change (U14 rule).
+            else
+            {
+                // Posted-but-never-accepted: no mood change (U14 rule unchanged) — but the ask that
+                // was never answered now emits CommissionLapsed (P2-MEMORY-32) instead of vanishing
+                // with no trace at all.
+                events.Emit(new CommissionLapsed(commission.Hero, commission.Slot));
+            }
         }
 
         return state with { Commissions = kept.ToImmutable() };

@@ -486,8 +486,14 @@ public class AtomicEquivalenceTests
     // den it surges and the tension trace all move. Gated two-sided by VenueIncidentTests and the
     // 20-seed venue-incident sweep quoted in the PR.
     // Previous pin 490387BF2AC294A8CF9062B45D445AECE9C059A4508EF76617C3E4D3DF25336F.
+    //
+    // Re-baselined 2026-09-26 for P2-MEMORY-32 (owner ruling §11.7.13 grant 1, [GOLD] by construction
+    // per §11.20): the posted-but-never-accepted expiry branch now emits CommissionLapsed instead of
+    // firing nothing, and this 30-day no-action trace posts and never accepts at least one commission,
+    // so the event log gains that entry. No mood change, no gold change, no rule change — only the
+    // shape of the log. Previous pin 3C4F2400AF1FC12DF6887CB8D20E42A18AA06464B43FA4369F071BAE48100DCC.
     private const string ExpectedPreCounterSha256 =
-        "3C4F2400AF1FC12DF6887CB8D20E42A18AA06464B43FA4369F071BAE48100DCC";
+        "3B6B9746858F096FA10334765EF7F0623ABAC2DA79894E88951F8724D7B2E669";
 
     [Fact]
     public void ThirtyDayRun_NoCounterActions_IsByteIdenticalToPrePa3Kernel()
