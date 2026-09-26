@@ -392,15 +392,16 @@ public class HaggleEconomicsTests
             // INTENTIONALLY scaled by RelationshipBand, which is itself partly mood-derived (KTD4:
             // price/verdict scaling is a legal expression of mood — same list "gossip prose" already
             // lived on). That legitimately makes the commission board — AND the CommissionPosted/
-            // Expired/Fulfilled events already stamped into the log this run — differ between two
-            // starting moods even though this test never opens the counter. This test's actual job —
+            // Expired/Fulfilled/Lapsed events already stamped into the log this run — differ between
+            // two starting moods even though this test never opens the counter. This test's actual job —
             // proving party formation, target floor, and expedition resolution are mood-independent
             // (PKD7) — is unaffected by that; strip the board and those events here the same way
             // MoodPermille itself is zeroed above, rather than widen the invariant to cover a surface
             // it was never about.
             Commissions = ImmutableList<Commission>.Empty,
             EventLog = state.EventLog
-                .Where(e => e is not CommissionPosted and not CommissionExpired and not CommissionFulfilled)
+                .Where(e => e is not CommissionPosted and not CommissionExpired and not CommissionFulfilled
+                    and not CommissionLapsed)
                 .ToImmutableList(),
         };
 
