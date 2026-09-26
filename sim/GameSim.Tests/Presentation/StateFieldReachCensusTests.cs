@@ -768,7 +768,13 @@ public class StateFieldReachCensusTests
     /// <para>The name says 50 and the pin says 52, which is the shape rule 8 warns about in a test
     /// name rather than a doc. The pin is the assertion and the name is prose, so the name is the
     /// half that is corrected: <c>EventTypeCount_MatchesThePriorCensus</c> stays true at every
-    /// count.</para></summary>
+    /// count.</para>
+    ///
+    /// <para>56 -> 57 (P2-MEMORY-32): <see cref="GameSim.Contracts.CommissionLapsed"/> records a
+    /// posted-but-never-accepted commission running out of days, which until now left no event at
+    /// all — 334 of 866 asks a sweep. Same note as above applies: bumping this re-proves the regex
+    /// still finds the new type; it does not stand in for the surfaces-census wiring audit, and the
+    /// new event is deliberately unwired to any surface in the unit that adds it.</para></summary>
     [Fact]
     public void EventTypeCount_MatchesThePriorCensus()
     {
@@ -777,8 +783,8 @@ public class StateFieldReachCensusTests
         var code = File.ReadAllText(eventsPath);
         var count = Regex.Matches(code, @": GameEvent;").Count;
 
-        Assert.True(count == 56,
-            $"Events.cs now declares {count} GameEvent types, not 56 — the event surface census "
+        Assert.True(count == 57,
+            $"Events.cs now declares {count} GameEvent types, not 57 — the event surface census "
             + "this file deliberately excludes state-field work from needs re-running, not just this "
             + "count updated.");
     }
