@@ -3687,7 +3687,6 @@ changes when it is done. A regression pin now holds that.
 | U34 | She says what she's seen | `godot/scripts/ui/MentorVoice.cs` | U33 |
 | U35 | She leaves | `godot/scripts/town2d/InteriorLayout2D.cs`, `godot/scripts/ui/MentorVoice.cs` | U32, U33 |
 | U36 | She has a body and a face | `art/specs/`, `godot/scripts/ui/MentorBanner.cs` | U33 |
-| P2-SCREEN-34 | The dead ASCII-grid path stops accepting town-cast ids (root cause of U36's blocked art) | `tools/art/gen_town_sprites.py` | — | [G] |
 | U37 | She is somewhere, and she remembers | `godot/scripts/town2d/`, `godot/scripts/ui/TutorialFlow.cs` | U34, U35 |
 | U38 | A harness takes the course | `godot/scripts/tools/FullPlaytest.cs` | U15, U29 |
 | U39 | Copy cannot outlive its control | `godot/tests/`, `godot/scripts/PlaytestLog.cs` | U33 |
@@ -5849,81 +5848,38 @@ re-record · **[BAL]** balance re-baseline. Units marked ⚑ carry a body below;
 at index level on purpose and get their bodies when their wave is granted a `docs/plans/` slot by
 name (§11.6 rule 4).
 
+**This index lists OPEN work only, and that is the whole of its contract.** A row here is work
+nobody has done; a row that ships is deleted, not annotated, because rule 8 puts progress in
+`git log` and nowhere else. It used to carry delivered rows marked `evidence:`, and the marker
+rotted exactly as a hand-maintained second copy of git always does: audited 2026-10-05 against
+`git log --all`, **134 of its 166 rows described work already on `main`** — 95 of them carrying no
+marker at all, so they read as owed. A session choosing work off that table had better than even
+odds of rebuilding something that existed. The 134 are deleted here.
+
+One row was worse than stale. `P2-PEOPLE-08` carried `evidence:sim/GameSim/Contracts/Heroes.cs:KinKind`
+and `KinKind` appears nowhere in the tree — a receipt for work that was never done, with
+`P2-PEOPLE-09`/`-10` booked behind it. Rule 12 names this case: the receipt can lie, the census
+cannot, and a false receipt is a rule-8 lie living in git. Its citation is stripped and the row
+stands open where it always belonged.
+
+To ask whether a unit shipped, grep `git log --all --oneline` for its id, then grep the tree for
+the deliverable — the id alone undercounts, because a unit is often delivered under a later row's
+number.
+
 | Unit | Title | Key files | Depends on | Flags |
 |---|---|---|---|---|
-| P2-SCREEN-11 | The strip decodes — delete, relabel, reclaim the height | `godot/scripts/MainUi.cs` | — | [G] |
-| P2-SCREEN-12 | The Books tray becomes a shelf with gate reasons as text | `godot/scripts/MainUi.cs`, `godot/scripts/ui/SurfaceUnlocks.cs` | P2-SCREEN-11 | [G] |
-| P2-SCREEN-13 | Hygiene — the stamp gated, the orphans deleted, `HANDOFF.md` dies | `godot/scripts/MainUi.cs`, `godot/assets/art/`, repo root | — | [G] |
-| P2-SCREEN-14 | The Bestiary's door never came — the panel dies instead (OQ6) | `godot/scripts/town2d/InteriorLayout2D.cs`, `godot/scripts/MainUi.cs`, `godot/scripts/ui/TutorialSurfaceRegistry.cs` | — | [G] |
-| P2-SCREEN-15 | The three split lessons speak on screen, not only in the book | `godot/scripts/MainUi.cs`, `godot/scripts/ui/MentorVoice.cs`, `godot/scripts/ui/TutorialFlow.cs` | — | [G] |
-| ⚑ P2-SCREEN-16 | The audio column gets an owner — every ceremony names its cues (P2-KTD11) | `godot/scripts/MainUi.cs` (`SoundTheTick`), `godot/scripts/audio/SfxLibrary.cs` (read-only), `godot/tests/` | — | [G] |
-| P2-SCREEN-17 | The save-replace press names the day it destroys | `godot/scripts/NewGameSelect.cs` | — | [G] |
-| ⚑ P2-SCREEN-18 | The muster names what the full slots already hold, not only the gaps | `sim/GameSim/Heroes/RaidForecast.cs`, `godot/scripts/panels/RaidForecastBoard.cs` | — | [S] |
-| ⚑ P2-SCREEN-21 | The room you stand in stops being a sliver when a drawer is open | `godot/scripts/town2d/Town2D.cs`, `godot/scripts/town2d/InteriorLayout2D.cs` | — | [G] |
-| ⚑ P2-SCREEN-22 | The interact prompt anchors to what it names, not to the bottom of the screen | `godot/scripts/MainUi.cs` | — | [G] |
-| ⚑ P2-SCREEN-23 | The forge's Day-1 card stops reading as four error messages | `godot/scripts/panels/ForgePanel.cs` | — | [G] |
-| ⚑ P2-SCREEN-24 | The drawer header's icon tile stops being clipped by its own banner | `godot/scripts/ui/UiKit.cs` | — | [G] |
-| ⚑ P2-SCREEN-25 | One phase vocabulary — the HUD and the tab strip stop disagreeing in the same frame | `godot/scripts/ui/PhaseVocab.cs`, `godot/scripts/MainUi.cs` | — | [G] |
-| ⚑ P2-SCREEN-26 | The gate line becomes true — heroes muster where the HUD says they are | `godot/scripts/town2d/Town2D.cs` | — | [G] |
-| ⚑ P2-SCREEN-27 | Small placements: the wandering caption, the orphan spinner, the floating class sprite, the loose shelf label | `godot/scripts/town2d/`, `godot/scripts/panels/` | — | [G] |
-| ⚑ P2-SCREEN-28 | The capture harness's own usage header stops naming states it does not have | `tools/shoot.ps1` | — | [G] |
-| ⚑ P2-SCREEN-29 | A sized `TextureRect` cannot silently claim its texture's size | `sim/GameSim.Tests/Hygiene/TextureRectExpandModeCensusTests.cs`, `godot/scripts/MainUi.cs`, `godot/scripts/panels/MineWatch.cs`, `godot/scripts/panels/ProvenanceCard.cs`, `godot/scripts/panels/SimPanel.cs`, `godot/scripts/ui/UiKit.cs` | — | [S] |
-| P2-SCREEN-32 | The Shop sheds 171px of decoration (Stock still does not clear the fold) | `godot/scripts/panels/ShopPanel.cs`, `godot/scripts/panels/CounterPanel.cs` | — | [G] |
-| P2-SCREEN-35 | Follow one piece — the send-off and the night card open with the item you marked | `godot/scripts/panels/LedgerModal.cs`, `godot/scripts/ui/MusterVoice.cs` | — | [G] |
-| P2-SCREEN-36 | The marcher's empty slot names the open commission that would have filled it | `godot/scripts/ui/MusterVoice.cs`, `godot/scripts/panels/RaidForecastBoard.cs` | — | [G] |
-| P2-ONBOARD-09 | The Goodwill chip speaks the band or dies (the beat's own half landed) | `godot/scripts/panels/CounterPanel.cs` | — | [G] |
-| P2-ONBOARD-10 | The seed becomes enterable at New Game | `godot/scripts/NewGameSelect.cs` | — | [G] |
 | P2-PROOF-03 | The stage, pass one — one duel, recorded rolls | new `godot/scripts/panels/TellingPanel.cs` (+`.uid`) | — | [G] |
-| P2-PROOF-05 | The reflective enumeration (every shape is already staged; nothing proves a SEVENTH would be) | `godot/tests/` | — | [G] |
-| P2-PROOF-06 | The copy pack — deterministic pick, tone guards | `godot/scripts/panels/TellingPanel.cs` corpus | — | [G] |
-| P2-PROOF-07 | Full-tale dies (the "Ask how it happened" wiring landed) | `godot/scripts/panels/LedgerModal.cs`, `docs/debugging.md` | — | [G] |
-| ⚑ P2-PROOF-11 | Legible defeat — the death names its margin (research M4) | `godot/scripts/panels/LedgerModal.cs`, `sim/GameSim/Expedition/TellingQuery.cs` (read-only) | — | [G] |
 | ⚑ P2-PROOF-13 | The maker names the signed work — the glossary's own sentence becomes true | `sim/GameSim/Contracts/Actions.cs`, `sim/GameSim/Crafting/CraftingHandlers.cs`, `godot/scripts/panels/ForgePanel.cs` | P4 | [S][C] |
-| ⚑ P2-PROOF-14 | The counterfactual reaches the ledger — the beat carries its own arithmetic | `sim/GameSim/Expedition/AttributionEngine.cs`, `godot/scripts/panels/LedgerModal.cs` | — | [S][GOLD] |
-| P2-PROOF-17 | The rank-up says which part of it your mark earned — an XP split that cannot disagree with the grant | `sim/GameSim/Drama/`, `sim/GameSim.Tests/`, `godot/scripts/panels/LedgerModal.cs` | — | [S] |
-| P2-PROOF-18 | The closest call — the survivor who nearly didn't, with the floor, the monster and the slot | `sim/GameSim/Drama/`, `godot/scripts/panels/LedgerModal.cs` | — | [S] |
-| P2-PROOF-24 | The killing blow has a pose — `MonsterSlain` gives the hero whose item killed a distinct beat, drawn on the frame the sim says it landed (motion-only, no new art; U52's part (c)) | `godot/scripts/panels/DelveStage.cs`, `godot/tests/DelveStageTests.cs` `evidence:godot/scripts/panels/DelveStage.cs:CombatPoseKind.Kill` | — | [G] |
-| P2-MEMORY-02 | The death card reads the pack and the last blow | `godot/scripts/panels/LedgerModal.cs` | — | [G] |
-| P2-MEMORY-05 | The Signed Work speaks; the idle line varies | `godot/scripts/panels/ForgePanel.cs`, advisor idle copy | — | [G] |
-| P2-MEMORY-06 | Provenance derives sales instead of omitting them | `godot/scripts/panels/ProvenanceCard.cs` | — | [G] |
-| P2-MEMORY-07 | The commendation — three reasons at the bar | scene-engine client registration | — | [G] |
-| P2-MEMORY-08 | The death-pool rewrite in place + the `{cause}` grammar contract | `sim/GameSim/Flavor/Packs/TavernPack.cs`, pack tests | — | [S] |
-| P2-MEMORY-10 | The book shell — `LegendsWall` refit, verbs and anchors migrated | `godot/scripts/panels/LegendsWall.cs` | — | [G] |
-| P2-MEMORY-11 | The item pages (the fallen's page is P2-MEMORY-10's shell, already shipped) | `godot/scripts/panels/LegendsWall.cs`, `godot/scripts/panels/ProvenanceCard.cs` | — | [G] |
-| P2-MEMORY-13 | `ChronicleComposer` and the fifteen predicates | new `sim/GameSim/Chronicle/ChronicleComposer.cs`, `sim/GameSim.Tests/` | — | [S] |
-| P2-MEMORY-15 | `BountyRefunded` — the silent refund gets an event | `sim/GameSim/Contracts/Events.cs`, `sim/GameSim/Bounties/BountySystems.cs` `evidence:sim/GameSim/Contracts/Events.cs:BountyRefunded` | — | [S][C][GOLD] |
-| P2-MEMORY-16 | `Fleeced` on the close event; fleece and pinned gossip | `sim/GameSim/Contracts/Events.cs`, `sim/GameSim/Counter/HaggleResolver.cs`, `sim/GameSim/Drama/GossipGenerator.cs` `evidence:sim/GameSim/Contracts/Events.cs:Fleeced` | P2-MEMORY-15 | [S][C][GOLD] |
-| ⚑ P2-MEMORY-20 | The forecast gets a face (research M3) | `godot/scripts/ui/ArcScenes.cs`, `godot/scripts/panels/RaidForecastBoard.cs` | — | [G] |
-| ⚑ P2-MEMORY-21 | The reforge row previews the lineage it will write, from the one template that writes it | `sim/GameSim/Crafting/HeirloomHandlers.cs`, `godot/scripts/panels/LegendsWall.cs` | — | [S] |
-| ⚑ P2-MEMORY-22 | The east field remembers — the town gets an outdoor memory, one lantern per fallen hero | `godot/scripts/town2d/TownLayout2D.cs`, `godot/scripts/town2d/Town2D.cs` | — | [G] |
-| P2-MEMORY-23 | "Famous" stops counting cave rats — the legend predicate counts decisive deeds, not every beat | `sim/GameSim/Drama/LegendQuery.cs`, `sim/GameSim/Arc/ArcDirectorSystem.cs` `evidence:sim/GameSim/Drama/LegendQuery.cs:LegendDeedCount` | — | [S][GOLD] |
-| P2-PEOPLE-02 | The register gate's remaining two rules — trigger-id taxonomy validation and no-punchline-on-death scenes (the jargon rule already shipped under P2-PEOPLE-01) | `godot/tests/`, scene corpus | — | [G] |
 | P2-PEOPLE-03 | The remaining arcs — Torvald 4–8, Brunhilde, Kael, Sable, Elowen, Moss | scene corpus | P2-PEOPLE-02, P4 | [G] |
-| P2-PEOPLE-04 | Durable-fact read-back on the VIGIL (the muster board's own half landed) | `godot/scripts/panels/MineWatch.cs`, `godot/scripts/panels/CampPanel.cs` | — | [G] |
-| P2-PEOPLE-05 | Wake contracts — `Memorial.MarkerItem`, remembrance action | `sim/GameSim/Contracts/` `evidence:sim/GameSim/Contracts/World.cs:MarkerItem` | — | [S][C] |
-| P2-PEOPLE-06 | The fallen's page and the three verbs, on the death night | `sim/GameSim/Drama/`, `sim/GameSim/Heroes/`, `godot/scripts/panels/LegendsWall.cs` `evidence:godot/scripts/panels/LegendsWall.cs:PlaceGraveMarkerAction` | P2-PEOPLE-05 | [S] |
-| P2-PEOPLE-07 | Death-night staging | `godot/scripts/panels/LegendsWall.cs`, `godot/scripts/panels/LedgerModal.cs` `evidence:godot/scripts/panels/LedgerModal.cs:SitTheWakeRequested` | P2-PEOPLE-06 | [G] |
-| P2-PEOPLE-08 | Kin contracts — `KinKind`, `KinLink`, `Hero.Kin`, null default | `sim/GameSim/Contracts/Heroes.cs` `evidence:sim/GameSim/Contracts/Heroes.cs:KinKind` | P4 | [S][C] |
+| P2-PEOPLE-08 | Kin contracts — `KinKind`, `KinLink`, `Hero.Kin`, null default | `sim/GameSim/Contracts/Heroes.cs` | P4 | [S][C] |
 | P2-PEOPLE-09 | Kin derivation and mood — the blanket +60 dies | `sim/GameSim/Drama/RecruitSystem.cs`, `sim/GameSim/Heroes/HeroRoster.cs` (read-only) | P2-PEOPLE-08, P2-MEMORY-16 | [S][GOLD][BAL] |
 | P2-PEOPLE-10 | Kin surfaces — Wren at the counter, warm and cold | `godot/scripts/panels/CounterPanel.cs`, scene corpus | P2-PEOPLE-09 | [G] |
-| P2-PEOPLE-11 | The no-march day (P2-OQ1, ruled 2026-08-31: full town rest) | `sim/GameSim/Heroes/PartyFormation.cs` | P2-PEOPLE-06 | [S][GOLD][BAL] |
 | P2-PEOPLE-12 | Wake staging and the deletions — the advisor nag retires, render ownership fixed | `godot/scripts/`, `sim/GameSim/Advisor/ObjectiveAdvisor.cs` | P2-PEOPLE-07, P2-PEOPLE-11 | [G] |
 | P2-PEOPLE-13 | Recruit micro-arcs — starters and kin first, the rest later | scene corpus | P2-PEOPLE-03 | [G] |
 | ⚑ P2-PEOPLE-14 | Wake versus Quiet Morning — the precedence, written and pinned (P2-KTD12) | `sim/GameSim/Heroes/PartyFormation.cs`, `sim/GameSim.Tests/` | P2-LONG-16 | [S] |
-| ⚑ P2-PEOPLE-15 | The camp speaks first — the vigil slate opens with the party's own ask | `godot/scripts/panels/CampPanel.cs`, `godot/scripts/ui/CustomerVoice.cs` (read-only) | — | [G] |
-| ⚑ P2-PEOPLE-16 | The camped rows carry the trait and band chips the roster already shows | `godot/scripts/panels/CampPanel.cs`, `godot/scripts/panels/HeroPanel.cs` (read-only) | — | [G] |
-| ⚑ P2-PEOPLE-17 | Stocking a piece names the morning queue that will reach it first | `godot/scripts/panels/ShopPanel.cs`, `sim/GameSim/Heroes/CommissionHandlers.cs` | — | [S] |
 | ⚑ P2-PEOPLE-18 | The morning pass's fixed hero order is a standing bias — measured, then ruled | `sim/GameSim/Heroes/HeroShoppingSystem.cs`, Balance suite | P4 | [S][BAL] |
 | ⚑ P2-PEOPLE-19 | A counter sale can fulfil the commission the customer came to collect | `sim/GameSim/Counter/HaggleResolver.cs`, `sim/GameSim/Heroes/CommissionHandlers.cs` | P4 | [S][BAL] |
-| ⚑ P2-PEOPLE-21 | "Forge it — Torvald waits" — the counter stops dead-ending on an empty shelf | `godot/scripts/panels/CounterPanel.cs` | — | [G] |
-| ⚑ P2-PEOPLE-22 | The recipe card names the marcher it would arm | `godot/scripts/panels/ForgePanel.cs`, `sim/GameSim/Advisor/HeroForecast.cs` (read-only) | — | [G] |
-| ⚑ P2-PEOPLE-23 | Your mark on the walker — a hero carrying your work shows it in the street | `godot/scripts/town2d/HeroActor2D.cs` | — | [G] |
-| ⚑ P2-PEOPLE-24 | The tracker knows the vigil is the moment, not a shut vendor | `godot/scripts/ui/TutorialFlow.cs` | — | [G] |
 | ⚑ P2-PEOPLE-20 | The Patron (research M1) | `sim/GameSim/Contracts/Player.cs`, `sim/GameSim/Chronicle/`, `godot/scripts/` | P4 | [S][C] |
-| P2-PEOPLE-25 | The customer thanks you for last night's save before they ask for anything | `godot/scripts/ui/CustomerVoice.cs` | — | [G] |
-| P2-PEOPLE-26 | The saved hero remembers the smith — a counterfactual beat moves the bearer's mood, a kill never does | `sim/GameSim/Expedition/ExpeditionRevealSystem.cs`, `sim/GameSim/Heroes/` `evidence:sim/GameSim/Drama/ExpeditionRevealSystem.cs:SavedByYourWorkMood` | — | [S][GOLD][BAL] |
-| P2-PEOPLE-27 | "One like the one that held" — a commission names the recipe a party-mate's save proved | `sim/GameSim/Heroes/CommissionSystem.cs`, `sim/GameSim/Contracts/Events.cs` `evidence:sim/GameSim/Heroes/CommissionProof.cs:CommissionProof` | P2-PEOPLE-26 | [S][C][GOLD] |
-| ⚑ P2-LONG-01 | Re-date the wall on the current build | `sim/GameSim.Cli/`, one instrumented sweep | — | [S] |
 | P2-LONG-02 | Typed consumable kinds; hazard type on `VenueDefinition` | `sim/GameSim/Contracts/`, `sim/GameSim/Venues/VenueDefinition.cs` | P2-LONG-01, P4 | [S][C][GOLD] |
 | P2-LONG-03 | The teeth — the venom week, the redistribution rule, the ToolAssist emitter | `sim/GameSim/Drama/DirectorSystem.cs`, `sim/GameSim/Expedition/` | P2-LONG-02 | [S][BAL] |
 | P2-LONG-04 | Demand reads the hazard; named heroes start asking | `sim/GameSim/Economy/`, `sim/GameSim/Heroes/` | P2-LONG-03 | [S][GOLD] |
@@ -5938,83 +5894,12 @@ name (§11.6 rule 4).
 | P2-LONG-13 | The Chronicle Night — the coda becomes the composition | `sim/GameSim/Chronicle/ChronicleComposer.cs`, `godot/scripts/` | P2-MEMORY-13, P2-LONG-12 | [G] |
 | P2-LONG-14 | A harness policy plays the commission; the ending stays ≤36, two-sided | `sim/GameSim/Harness/`, Balance suite | P2-LONG-11 | [S][BAL] |
 | P2-LONG-16 | The latch lands — the Quiet Morning and the Rekindling | `sim/GameSim/Drama/`, `sim/GameSim/Heroes/PartyFormation.cs` | — | [S][GOLD][BAL] |
-| P2-LONG-17 | Rent demoted; the assessor gets a face | `godot/scripts/MainUi.cs`, `godot/scripts/` | P2-SCREEN-11 | [G] |
-| P2-LONG-18 | The pledge — dues paid in proven work, the cost named | `sim/GameSim/Contracts/Actions.cs`, `sim/GameSim/Contracts/Events.cs`, `sim/GameSim/Economy/`, `godot/scripts/` | P2-LONG-17 | [S][C] |
-| P2-LONG-19 | The rival's face, and the spoken absence of proof | `godot/scripts/town2d/`, flavor packs | — | [G] |
 | P2-LONG-20 | The rival breathes, capped — irrelevance is the victory | `sim/GameSim/Economy/` | P2-LONG-19 | [S][BAL] |
 | P2-LONG-21 | The Mark Endures — the carryover contract and the no-stats tripwire | `sim/GameSim/Contracts/`, `sim/GameSim/Kernel/GameFactory.cs` | P2-LONG-13 | [S][C][GOLD] |
 | P2-LONG-22 | The seventh decision — the choice, the door, the commission echo | `godot/scripts/`, `sim/GameSim/Economy/` | P2-LONG-21 | [G] |
-| ⚑ P2-LONG-25 | Aim the send verb at where camped heroes actually are — one knob, re-baselined | `sim/GameSim/Expedition/ExpeditionResolver.cs`, `sim/GameSim/Expedition/ExpeditionSystem.cs`, the two tests above | — | [S][BAL] |
-| ⚑ P2-LONG-26 | Measure the FELT wall, not the novelty wall | `sim/GameSim.Cli/`, one instrumented sweep | P2-LONG-01 | [S] |
-| ⚑ P2-LONG-27 | The Deep vigil gets a stakes slate — words, never numbers | `godot/scripts/panels/MineWatch.cs` | — | [G] |
-| ⚑ P2-LONG-28 | The muster names the record the party is pressing past | `godot/scripts/panels/RaidForecastBoard.cs`, `sim/GameSim/Drama/DepthCopy.cs` (read-only) | — | [G] |
-| P2-LONG-29 | The vigil moves to the last door — `CheckpointFor` camps below the FINAL floor, not floor 1 (§11.7.5) | `sim/GameSim/Expedition/ExpeditionSystem.cs`, `sim/GameSim.Tests/Balance/CampProvisioningBalanceTests.cs` | — | [S][GOLD][BAL] |
-| P2-LONG-30 | The runner's fee names the floor it is reaching — stakes, not decoration | `sim/GameSim/Expedition/CampHandlers.cs`, `godot/scripts/panels/` | P2-LONG-29 | [G] |
-| P2-HONEST-02 | Four dead-mechanism sentences die; `Gate.Reason` splits closed/opened | `godot/scripts/ui/SurfaceUnlocks.cs`, copy | — | [G] |
-| P2-HONEST-03 | The sentence "your commission died with them" gets a home (the sim half landed in #667) | `godot/scripts/panels/LedgerModal.cs`, `godot/scripts/panels/LegendsWall.cs` `evidence:godot/scripts/panels/LedgerModal.cs:OpenCommissionSentence` | P2-PEOPLE-07 | [G] |
-| P2-HONEST-04 | The queued suffix dies; eight panels stop teaching a console command | `godot/scripts/panels/SimPanel.cs`, `godot/scripts/panels/` | — | [G] |
-| P2-HONEST-05 | Classes and materials get display names | `sim/GameSim/Materials/MaterialDefinition.cs`, `sim/GameSim/Classes/` | — | [S] |
-| P2-HONEST-06 | The vocabulary census — seven generators, first run triaged | `sim/GameSim.Tests/` (`PlayerVocabularyCensusTests`) | P2-HONEST-04, P2-HONEST-05 | [S] |
-| P2-HONEST-07 | The satisfiable-gate census | `sim/GameSim.Tests/` | — | [S] |
-| P2-HONEST-08 | The comment sweep and the comment census (the two known stale comments are `EmberfallFoundryVenue`'s "Mine-peer difficulty curve" and `World`'s own header) | `sim/GameSim/Venues/Emberfall/EmberfallFoundryVenue.cs`, `sim/GameSim/Contracts/World.cs`, `godot/scripts/`, `sim/GameSim.Tests/` | — | [S] |
-| P2-HONEST-09 | `SkilledSmithPlayer` and `SmithSkill` die — 123 lines held alive by their own tests | `sim/GameSim/Harness/` | — | [S] |
-| P2-HONEST-13 | `TickResult.Traces` is ingested or deleted | `sim/GameSim/Kernel/GameKernel.cs`, `tools/Analytics/` or `sim/GameSim/Contracts/` | — | [S] |
-| P2-HONEST-14 | The CLI's own printed prose enters the vocabulary census's scope | `sim/GameSim.Cli/Program.cs`, `sim/GameSim.Tests/` (`PlayerVocabularyCensusTests`) | P2-HONEST-06 | [S] |
-| P2-HONEST-16 | `ConsumableEffect.Magnitude` gets a client reader — a potion's heal amount becomes legible | `godot/scripts/panels/ForgePanel.cs`, `godot/scripts/panels/ShopPanel.cs` | — | [G] |
-| P2-HONEST-17 | `GameState.RivalMarketSharePermille` gets a client reader — the idle-day cost becomes legible | `godot/scripts/panels/ShopPanel.cs` | — | [G] |
-| P2-HONEST-18 | `InFlightExpedition.Gold` gets a client reader, or its withholding gets a stated reason | `godot/scripts/panels/CampPanel.cs` | — | [G] |
-| P2-HONEST-19 | The numeric-threshold gate family gets a satisfiability guard — `SatisfiableGateCensusTests` cannot see it | `sim/GameSim.Tests/`, `sim/GameSim/Drama/DirectorSystem.cs`, `sim/GameSim/Venues/`, `sim/GameSim/Crafting/TalentTree.cs` | P2-HONEST-07 | [S] |
-| P2-HONEST-20 | `SHOT_STATE=PhaseN` lands somewhere its own comment does not claim — the capture harness's phase map is wrong | `godot/tools/shot_harness.gd`, `tools/shoot.ps1` | — | [G] |
-| P2-HONEST-21 | One art `.import` uid regenerates on every import, dirtying a clean tree | `godot/assets/art/item-mithril-warblade.png.import` | — | [G] |
-| ⚑ P2-HONEST-22 | The runner fee is mirrored in four files and guarded in none | `sim/GameSim/Expedition/CampHandlers.cs`, `godot/scripts/panels/CampPanel.cs`, `sim/GameSim.Tests/`, `godot/tests/` | — | [S] |
-| ⚑ P2-HONEST-24 | The advisor states the stake instead of giving the order (law 1) | `sim/GameSim/Advisor/ObjectiveAdvisor.cs`, `sim/GameSim.Tests/` | — | [S] |
-| ⚑ P2-HONEST-25 | Every ore row names the faction it feeds, not only the tariffed ones | `godot/scripts/panels/TavernPanel.cs`, `godot/scripts/panels/LedgerModal.cs` | — | [G] |
-| ⚑ P2-HONEST-26 | The night's narration is shown or stops being composed | `godot/scripts/panels/LedgerModal.cs`, `sim/GameSim/Drama/ExpeditionNarrator.cs` | — | [G] |
-| P2-HONEST-28 | Banking a slot is a decision or it is not — measure `ActionBudget` spend, then carry or correct the text | `sim/GameSim/Kernel/ActionBudget.cs`, `sim/GameSim.Tests/` | — | [S] |
-| P2-PROOF-20 | The fold that did not fold — one KillingBlow row per item per card, the deepest kill leads, the count folds | `godot/scripts/panels/LedgerModal.cs`, `godot/scripts/panels/TellingPanel.cs`, `godot/tests/` | — | [G] |
-| P2-PROOF-21 | The night card says the sentence — the lead row is the Telling's own headline, the arithmetic beneath it | `godot/scripts/panels/LedgerModal.cs`, `godot/scripts/panels/TellingPanel.cs`, `sim/GameSim/Flavor/Packs/TellingPack.cs` (read-only) | P2-PROOF-22 | [G] |
-| P2-PROOF-22 | "{hero} lives" is never said of the dead — the Telling reads the night's Deaths before it picks a headline | `godot/scripts/panels/TellingPanel.cs`, `sim/GameSim/Flavor/Packs/TellingPack.cs`, `sim/GameSim.Tests/Flavor/TellingPackTests.cs` | — | [S] |
 | P2-PROOF-23 | "Without the item" means without YOUR item, not bare-handed — the counterfactual strips to the piece the hero would otherwise have carried | `sim/GameSim/Expedition/AttributionEngine.cs`, `sim/GameSim/Expedition/TellingQuery.cs`, `sim/GameSim.Tests/` | P4 | [S][GOLD][BAL] |
-| P2-MEMORY-24 | Gossip stops retelling the kill — deaths, saves and records outrank an incidental kill, one kill line per item per day | `sim/GameSim/Drama/GossipGenerator.cs`, `sim/GameSim.Tests/` | — | [S][GOLD] |
-| P2-MEMORY-25 | The counter sale becomes town memory — `CounterSaleClosed` gets a gossip voice, pinned and fleeced alike | `sim/GameSim/Drama/GossipGenerator.cs`, `sim/GameSim/Flavor/Packs/TavernPack.cs` | P2-MEMORY-24 | [S][GOLD] |
-| P2-LONG-31 | The send-off names what the bounty bought — the venue, not the depth, when the floor was theirs already | `godot/scripts/ui/MusterVoice.cs`, `godot/scripts/panels/RaidForecastBoard.cs`, `sim/GameSim/Drama/ProvenanceQuery.cs` (read-only) | — | [G] |
 | P2-LONG-32 | The bounty follows the party's rung — a Mine-scoped bounty stops pulling graduated parties back down the ladder | `sim/GameSim/Expedition/ExpeditionSystem.cs`, `sim/GameSim/Venues/VenueRouter.cs`, `sim/GameSim/Bounties/BountyRules.cs`, `sim/GameSim.Tests/Balance/` | P4 | [S][GOLD][BAL] |
 | P2-LONG-33 | "Send them deeper" leaves a record — the vigil's abstain arm becomes an event the ledger and chronicle can read | `sim/GameSim/Contracts/Events.cs`, `sim/GameSim/Expedition/CampHandlers.cs`, `godot/scripts/panels/CampPanel.cs` | P4 | [S][C][GOLD] |
-| P2-HONEST-29 | The surcharge that cannot happen — the ore line's "surcharge +N%" branch dies, or standing learns to fall | `godot/scripts/panels/LedgerModal.cs`, `sim/GameSim/Economy/OreMarketHandlers.cs` (read-only), `godot/tests/` | — | [G] |
-| P2-SCREEN-37 | Every venue's monsters walk — the fourteen Gloomwood, Crypt and Foundry kinds get pixel minis from the rig the Mine's five already use, and the census pins all nineteen | `tools/art/gen_town_sprites.py`, `godot/assets/art/`, `godot/tests/AssetResolutionCensusTests.cs`, `godot/scripts/panels/DelveStage.cs` (read-only) `evidence:godot/assets/art/town2d-monster-bramble-boar.png` | — | [G] |
-| P2-SCREEN-38 | The record and the rank-up get a sting, and the night card opens on a cue — three synthesized cues, each with a declared rank | `godot/scripts/audio/SfxLibrary.cs`, `godot/scripts/audio/TickCuePriority.cs`, `godot/scripts/panels/LedgerModal.cs`, `godot/tests/` | — | [G] |
-| P2-SCREEN-39 | The deadline kept — a commission fulfilled on its due day says so on the night it lands | `godot/scripts/panels/LedgerModal.cs`, `godot/scripts/panels/LegendsWall.cs`, `godot/tests/` | — | [G] |
-| P2-MEMORY-26 | The rival takes a name — when a hero buys rival iron while your matching piece sat on the shelf that morning, the night says who, what, and at what price | new `sim/GameSim/Drama/RivalSaleQuery.cs`, `sim/GameSim.Tests/`, `godot/scripts/panels/LedgerModal.cs`, `godot/scripts/panels/LegendsWall.cs` `evidence:sim/GameSim/Drama/RivalSaleQuery.cs` | — | [S] |
-| P2-HONEST-30 | A harness policy that crafts, stocks and works the counter — decisions 1 and 2 get their first measured occurrence | new `sim/GameSim/Harness/ForgeCounterPlayer.cs`, `sim/GameSim.Cli/BatchRunner.cs`, `sim/GameSim.Tests/` `evidence:sim/GameSim/Harness/ForgeCounterPlayer.cs` | — | [S] |
-| P2-HONEST-31 | `DuesPledged` is emitted and never registered — the first pledged cycle makes the save unwritable | `sim/GameSim/Contracts/Events.cs`, `sim/GameSim.Tests/` `evidence:sim/GameSim/Contracts/Events.cs:JsonDerivedType(typeof(DuesPledged)` | — | [S][C] |
-| P2-HONEST-32 | `DenThreatShifted` never fires in 2,000 days while `MineWatch` reads it in four places — measure the den arithmetic, then make it reachable or delete the reader | `sim/GameSim/Drama/DirectorSystem.cs`, `godot/scripts/panels/MineWatch.cs`, `sim/GameSim.Tests/` `evidence:sim/GameSim/Drama/DirectorSystem.cs:ClearsLastNight` | — | [S][GOLD] |
-| P2-LONG-34 | Measure the felt wall where the player reads it — a Godot-side verbatim-repeat census over the night card's rendered lines on days 3, 12 and 25 | `godot/tests/`, `godot/scripts/panels/LedgerModal.cs` (read-only), `tools/Analytics/` | — | [G] |
-| P2-PEOPLE-28 | Hold it for Torvald — an earmark hides a stocked piece from ordinary shopping and shows it to the one hero it was made for | `sim/GameSim/Contracts/Actions.cs`, `sim/GameSim/Economy/ShopHandlers.cs`, `sim/GameSim/Heroes/HeroShoppingSystem.cs`, `godot/scripts/panels/ShopPanel.cs` `evidence:godot/scripts/panels/ShopPanel.cs:EarmarkAction` | P2-HONEST-30 | [S][C][GOLD] |
-| P2-PEOPLE-29 | The price moves the relationship by its margin — pin and fleece scale with the gap, and an in-band sale is not nothing | `sim/GameSim/Counter/HaggleResolver.cs`, `sim/GameSim/Counter/WillingnessModel.cs`, `sim/GameSim.Tests/Balance/` | P2-HONEST-30 | [S][BAL] |
-| P2-HONEST-33 | Counter-served heroes never take the shelf path — an accepted commission or an earmarked piece is never fulfilled on a day the counter served that hero (0 of 1,018 commissions fulfilled under `forgecounter`, with or without earmarks); make the counter honour the standing request, or say in copy that it does not | `sim/GameSim/Heroes/HeroShoppingSystem.cs`, `sim/GameSim/Counter/`, `sim/GameSim.Tests/` `evidence:sim/GameSim/Heroes/HeroShoppingSystem.cs:FulfillServedHeroCommissions` | P2-PEOPLE-28 | [S][GOLD] |
-| P2-HONEST-34 | A sold piece does not come back for free — a gear piece a hero has bought never returns to the shelf unrecorded (rule 3b, which already closes consumables, extended to gear) | `sim/GameSim/Economy/ShopHandlers.cs`, `sim/GameSim/Harness/BaselinePlayer.cs`, `godot/scripts/panels/ShopPanel.cs`, `sim/GameSim.Tests/Balance/` | — | [S][GOLD][BAL] |
-| P2-HONEST-35 | The harness fleeces — a counter arm that closes above the ask, so the fleece's mood, gossip and boycott get a first measured occurrence | `sim/GameSim/Harness/ForgeCounterPlayer.cs`, `sim/GameSim.Cli/BatchRunner.cs`, `sim/GameSim.Tests/` `evidence:sim/GameSim/Harness/ForgeCounterPlayer.cs:IsFleeceArm` | — | [S] |
-| P2-HONEST-36 | The advisor's fallback is news or it is quiet — the cheapest-path line fires when something changed, otherwise the board says nothing needs you tonight | `sim/GameSim/Advisor/ObjectiveAdvisor.cs`, `sim/GameSim.Tests/` `evidence:sim/GameSim/Advisor/ObjectiveAdvisor.cs:IsFallbackNews` | — | [S] |
-| P2-PEOPLE-31 | A hold for the dead is released at the wake — the earmark clears on the death night and the card says the piece is yours to sell again | `sim/GameSim/Drama/ExpeditionRevealSystem.cs`, `sim/GameSim/Drama/EarmarkQuery.cs`, `godot/scripts/panels/LedgerModal.cs`, `sim/GameSim.Tests/` `evidence:sim/GameSim/Drama/EarmarkQuery.cs:ReleasedForDead` | — | [S] |
-| P2-SCREEN-40 | The camp's receipt reaches the night card — where they camped, how low they were, what you did, in `CampNarration`'s own six sentences | `godot/scripts/panels/LedgerModal.cs`, `sim/GameSim/Drama/CampNarration.cs` (read-only), `godot/tests/` `evidence:godot/scripts/panels/LedgerModal.cs:AddCampReceiptLines` | — | [G] |
-| P2-LONG-35 | The ore line names the standing it moves — the faction, where you stand with them, and what this load earns | `godot/scripts/panels/LedgerModal.cs`, `sim/GameSim/Factions/FactionStandingThresholds.cs` (read-only), `godot/tests/` `evidence:godot/scripts/panels/LedgerModal.cs:StandingNote` | — | [G] |
-| P2-PEOPLE-30 | The newcomer's arrival names the vacancy — whose seat they take, how many days cold, and what the fallen wore | `godot/scripts/panels/LegendsWall.cs`, `godot/scripts/panels/TavernPanel.cs`, `sim/GameSim/Drama/WakeQuery.cs` (read-only), `godot/tests/` `evidence:godot/scripts/panels/LegendsWall.cs:VacatedBy` | — | [G] |
-| P2-MEMORY-27 | The director learns three more dungeons — a rumor and a notable each for Gloomwood, the Crypt and the Foundry, gated on the venue being raided | `sim/GameSim/Drama/DirectorSystem.cs`, `godot/scripts/panels/LegendsWall.cs`, `sim/GameSim.Tests/` `evidence:sim/GameSim/Drama/DirectorSystem.cs:RaidedVenues` | — | [S][GOLD] |
-| P2-SCREEN-41 | The newcomer's purse — the arrival card names what they carry, which shelved piece they could afford and wear tomorrow, and that they march at dawn | `godot/scripts/panels/LegendsWall.cs`, `godot/scripts/panels/LedgerModal.cs`, `sim/GameSim/Heroes/ShoppingAi.cs` (read-only), `sim/GameSim/Classes/ClassRegistry.cs` (read-only), `godot/tests/` `evidence:godot/scripts/panels/LegendsWall.cs:PurseClause` | P2-PEOPLE-30 | [G] |
-| P2-PEOPLE-32 | The wake names the absence — when the fallen wore and carried nothing of yours and earned no beat, the card says so in one line instead of saying nothing | `sim/GameSim/Drama/FallenQuery.cs`, `godot/scripts/panels/LedgerModal.cs`, `sim/GameSim.Tests/`, `godot/tests/` `evidence:sim/GameSim/Drama/FallenQuery.cs:AbsenceLine` | — | [S] |
-| P2-LONG-36 | The light armory — a tier-2 and a tier-3 armor a mystic can carry, on §11.7.12's curve, with icons through the existing draw-size pipeline | `sim/GameSim/Crafting/RecipeTable.cs`, `godot/assets/` (icons via `tools/art/`), `godot/scripts/ui/IconRegistry.cs` (read-only), `sim/GameSim.Tests/Balance/` `evidence:sim/GameSim/Crafting/RecipeTable.cs:quilted-jack` | — | [S][GOLD][BAL] |
-| P2-HONEST-37 | The advisor stops prescribing shields to hands that cannot hold them — `MissingItemSlots` learns the class, and a hero who has never gone down is new, not stalled | `sim/GameSim/Heroes/RaidForecast.cs`, `sim/GameSim/Drama/DemandBoard.cs`, `sim/GameSim/Drama/DepthCopy.cs`, `sim/GameSim/Advisor/ObjectiveAdvisor.cs` (read-only), `sim/GameSim.Tests/` `evidence:sim/GameSim/Heroes/RaidForecast.cs:MissingItemSlots` | — | [S] |
-| P2-HONEST-38 | The harness sits the wake — `forgecounter` honours the memorial, sets the best legal marker, takes the default remembrance and reforges the heirloom when legal, so link 5's four verbs get a first measured occurrence | `sim/GameSim/Harness/ForgeCounterPlayer.cs`, `sim/GameSim.Tests/Hygiene/BalanceCorpusCoverageCensusTests.cs`, `sim/GameSim.Tests/` `evidence:sim/GameSim/Harness/ForgeCounterPlayer.cs:AddWakeActions` | — | [S] |
-| P2-HONEST-39 | The harness sends the runner — `forgecounter` crafts a heal and sends it to a camper under the too-hurt bar, so `SupplyDelivered` and the two consumable beats get measured | `sim/GameSim/Harness/ForgeCounterPlayer.cs`, `sim/GameSim.Tests/Hygiene/BalanceCorpusCoverageCensusTests.cs`, `sim/GameSim.Tests/` `evidence:sim/GameSim/Expedition/CampHandlers.cs:RunnerBandPct` | P2-LONG-25 | [S] |
-| P2-HONEST-40 | The masterwork policy joins the sweep — `--policy masterwork` wires `MasterworkSeekingPlayer` into `BatchRunner`, and the sweep reports why `BuyForgeSupply` never opens under `BaselinePlayer` | `sim/GameSim.Cli/BatchRunner.cs`, `sim/GameSim/Harness/MasterworkSeekingPlayer.cs`, `sim/GameSim.Tests/` `evidence:sim/GameSim.Cli/BatchRunner.cs:Masterwork` | — | [S] |
-| P2-HONEST-41 | "Scale Mail over Scale Mail" — when the chosen piece and its runner-up share a name, the decision card names the grade and price that split them | `sim/GameSim/Heroes/HeroShoppingSystem.cs`, `godot/scripts/panels/HeroPanel.cs` (read-only), `sim/GameSim.Tests/` `evidence:sim/GameSim/Heroes/HeroShoppingSystem.cs:DisambiguatedRunnerUpName` | — | [S][GOLD] |
-| P2-HONEST-42 | The counter stops starving the town — a customer who walks browses the morning like anyone else (the rival's shelf and yours); only the customer who bought is "served" | `sim/GameSim/Counter/CounterQueueSystem.cs`, `sim/GameSim/Heroes/HeroShoppingSystem.cs`, `sim/GameSim.Tests/Counter/`, `sim/GameSim.Tests/Balance/` `evidence:sim/GameSim/Counter/CounterQueueSystem.cs:AdvanceAfterWalk` | — | [S][BAL] |
-| P2-HONEST-43 | The reference smith fills the consumable ask — `forgecounter` accepts a consumable commission when a heal recipe is legal, shelves the salve, and the coverage census pins a consumable `CommissionFulfilled` above zero | `sim/GameSim/Harness/ForgeCounterPlayer.cs`, `sim/GameSim.Tests/Hygiene/BalanceCorpusCoverageCensusTests.cs`, `sim/GameSim.Tests/` `evidence:sim/GameSim/Harness/ForgeCounterPlayer.cs:AcceptConsumableCommissions` | — | [S] |
-| P2-LONG-37 | The smith's hand reaches the light armory — before its heaviest-first pick, `forgecounter` crafts the best armor a marching light-class hero can wear when that hero's armor slot holds nothing of yours | `sim/GameSim/Harness/ForgeCounterPlayer.cs`, `sim/GameSim/Harness/BaselinePlayer.cs` (read-only), `sim/GameSim.Tests/Balance/LightArmoryBalanceTests.cs` `evidence:sim/GameSim/Harness/ForgeCounterPlayer.cs:DressTheLightMarcher` | P2-HONEST-42 | [S][BAL] |
-| P2-MEMORY-28 | The beat row names the dead hand the steel came from — the ledger's beat line and the Telling's item line carry `ProvenanceQuery.HeirloomClause` when the item is an heirloom | `godot/scripts/panels/LedgerModal.cs`, `godot/scripts/panels/TellingPanel.cs`, `sim/GameSim/Drama/ProvenanceQuery.cs` (read-only), `godot/tests/` `evidence:godot/scripts/panels/LedgerModal.cs:HeirloomClause` | — | [G] |
-| P2-MEMORY-29 | The town talks about the smith's word — gossip arms and `TavernPack` keys for `CommissionFulfilled`, `CommissionExpired` and `HeirloomReforged`, copy through the FlavorForge pipeline | `sim/GameSim/Flavor/Packs/TavernPack.cs`, `sim/GameSim/Drama/GossipGenerator.cs`, `tools/FlavorForge/`, `sim/GameSim.Tests/` `evidence:sim/GameSim/Flavor/Packs/TavernPack.cs:CommissionExpired` | — | [S] |
-| P2-HONEST-44 | The masterwork policy stops being a shortsword factory — `MasterworkSeekingPlayer` takes `BaselinePlayer`'s buyer gate, so the masterwork corpus measures the masterwork chain | `sim/GameSim/Harness/MasterworkSeekingPlayer.cs`, `sim/GameSim/Harness/BaselinePlayer.cs` (`HasBuyer` made internal, behaviour unchanged), `sim/GameSim.Tests/Cli/MasterworkPolicySweepCensusTests.cs`, `sim/GameSim.Tests/Balance/MasterworkDominanceBalanceTests.cs` `evidence:sim/GameSim/Harness/MasterworkSeekingPlayer.cs:HasBuyer` | — | [S][BAL] |
-| P2-HONEST-45 | The counter's opener shows an upgrade, not a role token — the harness presents the shelf piece with the largest gear-score gain the customer can wear and afford, or a consumable when their pack is under target | `sim/GameSim/Harness/CounterPlayer.cs`, `sim/GameSim/Harness/ForgeCounterPlayer.cs` (read-only), `sim/GameSim.Tests/Counter/` `evidence:sim/GameSim/Harness/CounterPlayer.cs:UpgradeFitScore` | — | [S] |
 
 **P2-HONEST-33** is booked from P2-PEOPLE-28's own measurement: `HeroShoppingSystem.ShoppingOrder` skips
 every hero the counter served that day ("counter-served heroes don't shop twice", PKD5), and
@@ -6369,7 +6254,6 @@ booked to answer.
 
 | Unit | Title | Key files | Depends on | Flags |
 |---|---|---|---|---|
-| P2-PROOF-12 | One monster-name rule, read from one place — the boss beat stops reading "the The Forgeworm" | `sim/GameSim/Venues/`, `sim/GameSim/Expedition/AttributionEngine.cs`, `sim/GameSim/Drama/`, `sim/GameSim.Tests/` | — | [S] |
 
 ### The AFK-loop port, gathered 2026-09-11 (owner ruling: gather only)
 
