@@ -2934,7 +2934,7 @@ public partial class MainUi : Control
 
         if (reason.Contains("was already sold", StringComparison.Ordinal))
         {
-            return "Sold consumables don't come back.";
+            return "Sold pieces don't come back — a hero paid for that.";
         }
 
         // ── Camp / runner refusals. These were all falling through to the shrug below. ──

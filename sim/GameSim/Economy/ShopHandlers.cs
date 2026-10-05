@@ -68,15 +68,16 @@ public sealed class ShopHandlers : IActionHandler
             }
         }
 
-        // 3b. A consumable that has ever been sold never returns to the shelf (P2):
-        //     once bought it lives in a hero's pack until drunk, and a drunk salve is
-        //     gone — re-shelving either would duplicate the physical item. Sale history
-        //     is read from the event log (recorded data, no new state), and the check
-        //     is keyed off ConsumableEffect DATA like all consumable behavior.
-        if (item.Effect is not null
-            && state.EventLog.Any(e => e is ItemSold sold && sold.Item == action.Item))
+        // 3b. A piece that has ever been sold never returns to the shelf. Consumables first (P2):
+        //     once bought one lives in a hero's pack until drunk, and a drunk salve is gone.
+        //     Gear too (P2-HONEST-34): a sword a hero paid for and later dropped for an upgrade
+        //     stays in GameState.Items with nobody bearing it, and until this rule it read as an
+        //     "unshelved craft" again — the smith pocketed the full price a second time, unrecorded,
+        //     and one item's kills sat under two bearers. Sale history is read from the event log
+        //     (SaleHistory: ItemSold and the counter's CounterSaleClosed), recorded data, no new state.
+        if (SaleHistory.EverSold(state, action.Item))
         {
-            return (state, new RejectedAction(action, $"{item.Name} ({action.Item}) was already sold — consumables don't come back."));
+            return (state, new RejectedAction(action, $"{item.Name} ({action.Item}) was already sold — a piece a hero paid for does not come back for free."));
         }
 
         // 4. One shelf slot per item.

@@ -3,6 +3,7 @@ using System.Collections.Immutable;
 using System.Linq;
 using GameSim.Advisor;
 using GameSim.Contracts;
+using GameSim.Economy;
 using GameSim.Drama;
 using GameSim.Heroes;
 using Godot;
@@ -789,8 +790,13 @@ public partial class ShopPanel : SimPanel
             }
         }
 
+        // P2-HONEST-34: a piece a hero has paid for is closed to the shelf (ShopHandlers 3b, gear
+        // included) — it no longer appears as a draggable "unshelved craft", the same double-sale
+        // shape the Trinket fix above closed for worn gear.
+        var sold = SaleHistory.SoldItemIds(state);
         return state.Items.Values.Where(i =>
-            i.PlayerCrafted && !shelved.Contains(i.Id.Value) && !equipped.Contains(i.Id.Value));
+            i.PlayerCrafted && !shelved.Contains(i.Id.Value) && !equipped.Contains(i.Id.Value)
+            && !sold.Contains(i.Id.Value));
     }
 
     private void EnsureBuilt()

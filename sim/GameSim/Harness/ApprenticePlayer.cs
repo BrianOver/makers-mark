@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using GameSim.Advisor;
 using GameSim.Contracts;
+using GameSim.Economy;
 using GameSim.Crafting;
 
 namespace GameSim.Harness;
@@ -114,16 +115,13 @@ public static class ApprenticePlayer
             .Where(id => id is not null)
             .Select(id => id!.Value.Value)
             .ToHashSet();
-        // A consumable that has ever sold is gone for good (ShopHandlers 3b) — never re-offer it.
-        var soldConsumables = state.EventLog.OfType<ItemSold>()
-            .Select(e => e.Item.Value)
-            .Where(id => state.Items.TryGetValue(id, out var sold) && sold.Effect is not null)
-            .ToHashSet();
+        // A piece that has ever sold is gone for good (ShopHandlers 3b; gear too since P2-HONEST-34) — never re-offer it.
+        var sold = SaleHistory.SoldItemIds(state);
 
         foreach (var item in state.Items.Values.Where(i =>
                      i.PlayerCrafted && i.Id != reserve
                      && !shelved.Contains(i.Id.Value) && !equipped.Contains(i.Id.Value)
-                     && (i.Effect is null || !soldConsumables.Contains(i.Id.Value))))
+                     && !sold.Contains(i.Id.Value)))
         {
             var value = item.Effect is { } effect ? effect.Magnitude : item.Stats.Attack + item.Stats.Defense;
             var stock = new StockAction(item.Id, Math.Max(1, value * 2));

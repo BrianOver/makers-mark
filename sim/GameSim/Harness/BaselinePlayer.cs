@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using GameSim.Advisor;
 using GameSim.Classes;
 using GameSim.Contracts;
+using GameSim.Economy;
 using GameSim.Crafting;
 using GameSim.Heroes;
 using GameSim.Professions;
@@ -109,23 +110,20 @@ public static class BaselinePlayer
                     .Where(id => id is not null)
                     .Select(id => id!.Value.Value)
                     .ToHashSet();
-                // U-T1: a CONSUMABLE that has ever sold is gone for good (ShopHandlers 3b — it lives
-                // in a hero's pack until drunk, then it's just gone). Neither "shelved" nor "equipped"
-                // (gear slots only) ever catches that case, so pre-fix this re-offered the SAME sold
-                // consumable id as a doomed StockAction every single morning for the rest of the
-                // campaign (harmless to state — rejections never mutate — but pure ActionLog noise a
-                // shopkeeper who remembers their own sales wouldn't generate). GEAR is deliberately
-                // exempt: a sold weapon a hero later drops for an upgrade has no "already sold" rule
-                // in ShopHandlers — it is genuinely second-hand stock, and re-shelving it for whichever
-                // hero needs it next is real income this policy should keep (an early cut of this fix
-                // blocked it and peak gold measurably dropped, 399g -> 286g, for exactly that reason).
-                var soldConsumables = state.EventLog.OfType<ItemSold>()
-                    .Select(e => e.Item.Value)
-                    .Where(id => state.Items.TryGetValue(id, out var sold) && sold.Effect is not null)
-                    .ToHashSet();
+                // U-T1: a piece that has ever sold is gone for good (ShopHandlers 3b). Neither
+                // "shelved" nor "equipped" (gear slots only) catches that case, so pre-fix this
+                // re-offered the SAME sold id as a doomed StockAction every single morning for the rest
+                // of the campaign (harmless to state — rejections never mutate — but pure ActionLog
+                // noise a shopkeeper who remembers their own sales wouldn't generate).
+                // P2-HONEST-34: gear is no longer exempt. U-T1 kept it because "a sold weapon a hero
+                // later drops for an upgrade is genuinely second-hand stock" — but the hero PAID for
+                // it, nothing recorded it coming back, and the smith pocketed the full price twice
+                // (41% of baseline shelf revenue). The honest second-hand shape is a recorded, priced
+                // hand-back (§11.14's third proposal, owner's call); until then the free path is closed.
+                var sold = SaleHistory.SoldItemIds(state);
                 foreach (var item in state.Items.Values.Where(i =>
                              i.PlayerCrafted && !shelved.Contains(i.Id.Value) && !equipped.Contains(i.Id.Value)
-                             && (i.Effect is null || !soldConsumables.Contains(i.Id.Value))))
+                             && !sold.Contains(i.Id.Value)))
                 {
                     // U-T1-11 re-baseline: a consumable's ItemStats are ALWAYS zero (Attack/Defense/
                     // Weight — it carries no gear score, by design, see RecipeTable), so the gear

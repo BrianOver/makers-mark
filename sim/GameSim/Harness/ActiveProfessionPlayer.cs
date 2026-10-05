@@ -153,13 +153,11 @@ internal static class PuzzleCraftPlayer
             .Where(id => id is not null)
             .Select(id => id!.Value.Value)
             .ToHashSet();
-        var soldConsumables = state.EventLog.OfType<ItemSold>()
-            .Select(e => e.Item.Value)
-            .Where(id => state.Items.TryGetValue(id, out var sold) && sold.Effect is not null)
-            .ToHashSet();
+        // P2-HONEST-34: anything a hero ever paid for (gear included) is closed to the shelf — ShopHandlers 3b.
+        var sold = SaleHistory.SoldItemIds(state);
         foreach (var item in state.Items.Values.Where(i =>
                      i.PlayerCrafted && !shelved.Contains(i.Id.Value) && !equipped.Contains(i.Id.Value)
-                     && (i.Effect is null || !soldConsumables.Contains(i.Id.Value))))
+                     && !sold.Contains(i.Id.Value)))
         {
             var value = item.Effect is { } effect ? effect.Magnitude : item.Stats.Attack + item.Stats.Defense;
             actions.Add(new StockAction(item.Id, Math.Max(1, value * 2)));
